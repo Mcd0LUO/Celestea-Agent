@@ -13,5 +13,5 @@ serde_json.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
 async-stream.workspace = true
-async-openai.workspace = true
+async-openai = { workspace = true, features = ["chat-completion"] }
 thiserror.workspace = true

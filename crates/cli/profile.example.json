@@ -1,0 +1,6 @@
+{
+  "model": "deepseek-chat",
+  "system_prompt": "You are a helpful assistant.",
+  "max_steps": 16,
+  "max_parallel_tool_calls": 4
+}
