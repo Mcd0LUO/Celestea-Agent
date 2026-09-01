@@ -1,7 +1,9 @@
 /target
 *.swp
 *.tmp
+*.pdb
 .idea/
 .vscode/
 .env
 .env.*
+profile.json
