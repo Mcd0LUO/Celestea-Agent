@@ -416,6 +416,13 @@ fn load_profile(path: &Path, strict: bool) -> Result<Profile> {
 /// legacy JSON file, then fall back to defaults. All three share the same
 /// merge semantics (9 documented keys; `--strict` rejects unknown keys and
 /// wrong types in any format).
+/// User-level config dir: ~/.celestea (home-dir fallback so celestea
+/// works from any working directory).
+fn home_config_dir() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    Some(std::path::PathBuf::from(home).join(".celestea"))
+}
+
 fn resolve_profile(
     explicit: Option<&Path>,
     strict: bool,
@@ -436,6 +443,22 @@ fn resolve_profile(
             fallback.display()
         );
         return Ok(p);
+    }
+    // Home-dir fallback: ~/.celestea/celestea.toml then ~/.celestea/profile.json.
+    if let Some(dir) = home_config_dir() {
+        let hp = dir.join(primary);
+        if let Some(p) = load_profile_file(&hp, strict)? {
+            return Ok(p);
+        }
+        let hf = dir.join(fallback);
+        if let Some(p) = load_profile_file(&hf, strict)? {
+            eprintln!(
+                "'{}' not found; using home '{}'",
+                primary.display(),
+                hf.display()
+            );
+            return Ok(p);
+        }
     }
     eprintln!(
         "no config file ('{}' / '{}'); using defaults",
@@ -2299,6 +2322,9 @@ fn load_dotenv_at(path: &Path) -> bool {
 /// Load `.env` from the current directory at startup (best-effort).
 fn load_dotenv() {
     let _ = load_dotenv_at(Path::new(".env"));
+    if let Some(dir) = home_config_dir() {
+        let _ = load_dotenv_at(&dir.join(".env"));
+    }
 }
 
 /// Resolve the DeepSeek API key with 3-path precedence:
