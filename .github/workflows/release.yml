@@ -1,4 +1,4 @@
-# Builds prebuilt release binaries (Linux / macOS / Windows) and attaches them to
+# Builds prebuilt release binaries (Linux / Windows) and attaches them to
 # a GitHub Release on v* tag pushes. Manual runs (workflow_dispatch) build and
 # upload the binaries as run artifacts so they can be grabbed from the Actions
 # page without cutting a tag.
@@ -30,14 +30,6 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             asset: celestea-linux-x86_64
-            ext: tar.gz
-          - os: macos-14
-            target: aarch64-apple-darwin
-            asset: celestea-macos-aarch64
-            ext: tar.gz
-          - os: macos-14
-            target: x86_64-apple-darwin
-            asset: celestea-macos-x86_64
             ext: tar.gz
           - os: windows-2022
             target: x86_64-pc-windows-msvc
