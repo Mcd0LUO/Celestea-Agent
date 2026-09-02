@@ -1,6 +1,7 @@
 //! celestea-workers：WorkersPlugin / WatchdogPlugin 插件挂载（W185/W186）。
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -86,6 +87,11 @@ impl Plugin for WorkersPlugin {
 pub struct WatchdogPlugin {
     watchdog: Arc<Watchdog>,
     interval: Duration,
+    /// F4 (W224): mount 幂等守卫 —— 已启动则后续 mount 不再重复 spawn 巡检循环
+    /// （原实现无条件 tokio::spawn：每个 mount 一个无限循环，不可停止/不可观测）。
+    started: AtomicBool,
+    /// 实际 spawn 的巡检循环数（幂等守卫下最多 1；测试/观测用）。
+    spawned_loops: AtomicUsize,
 }
 
 impl WatchdogPlugin {
@@ -102,11 +108,26 @@ impl WatchdogPlugin {
     /// 自定义 registry + 任意配置。
     pub fn with(reg: Arc<WorkerRegistry>, config: WatchdogConfig) -> Self {
         let interval = config.interval;
-        Self { watchdog: Arc::new(Watchdog::new(reg, config)), interval }
+        Self {
+            watchdog: Arc::new(Watchdog::new(reg, config)),
+            interval,
+            started: AtomicBool::new(false),
+            spawned_loops: AtomicUsize::new(0),
+        }
     }
 
     pub fn watchdog(&self) -> &Arc<Watchdog> {
         &self.watchdog
+    }
+
+    /// F4 (W224): 巡检循环是否已启动（幂等守卫状态）。
+    pub fn is_started(&self) -> bool {
+        self.started.load(Ordering::SeqCst)
+    }
+
+    /// F4 (W224): 实际 spawn 的巡检循环数（幂等守卫下最多 1；测试/观测用）。
+    pub fn spawned_loop_count(&self) -> usize {
+        self.spawned_loops.load(Ordering::SeqCst)
     }
 }
 
@@ -125,6 +146,13 @@ impl Plugin for WatchdogPlugin {
         // 共享同一 WorkerRegistry（若上层已挂 WorkersPlugin，provide 会替换）。
         ctx.provide(WorkerRegistryService(self.watchdog.registry().clone()));
 
+        // F4 (W224): 幂等守卫 —— 重复 mount 不再重复 spawn 巡检循环（W222 F4：
+        // 原实现无条件 tokio::spawn 且不留句柄，N 个 mount = N 个无限循环）。
+        if self.started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        self.spawned_loops.fetch_add(1, Ordering::SeqCst);
+
         let wd = self.watchdog.clone();
         let interval = self.interval;
         tokio::spawn(async move {
@@ -137,6 +165,60 @@ impl Plugin for WatchdogPlugin {
                 }
             }
         });
+    }
+}
+
+// ============================================================================
+// WatchdogPlugin 单测（W224 F4）：mount 幂等
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use celestea_core::Plugin;
+
+    fn tmp_prefix(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "celestea-watchdog-plugin-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    #[tokio::test]
+    async fn watchdog_mount_is_idempotent() {
+        let prefix = tmp_prefix("idem");
+        let reg = Arc::new(WorkerRegistry::new(prefix.join("registry.tsv")));
+        let plugin = WatchdogPlugin::with(reg.clone(), WatchdogConfig::for_test(&prefix));
+
+        assert!(!plugin.is_started(), "not started before first mount");
+        assert_eq!(plugin.spawned_loop_count(), 0);
+
+        // 第一次 mount：恰好 spawn 1 个巡检循环。
+        let mut ctx = Context::new();
+        plugin.mount(&mut ctx);
+        assert!(plugin.is_started());
+        assert_eq!(plugin.spawned_loop_count(), 1, "first mount must spawn exactly one loop");
+        assert!(ctx.get::<WorkerRegistryService>().is_some(), "mount provides WorkerRegistryService");
+
+        // 重复 mount（新 Context）：不再重复 spawn（F4 幂等守卫，W222 F4）。
+        let mut ctx2 = Context::new();
+        plugin.mount(&mut ctx2);
+        assert!(plugin.is_started());
+        assert_eq!(
+            plugin.spawned_loop_count(),
+            1,
+            "repeated mount must NOT spawn another loop (W222 F4)"
+        );
+        assert!(ctx2.get::<WorkerRegistryService>().is_some(), "repeat mount still provides the service");
+
+        // 第三次 mount 同样幂等。
+        plugin.mount(&mut Context::new());
+        assert_eq!(plugin.spawned_loop_count(), 1);
+        assert!(plugin.is_started());
     }
 }
 

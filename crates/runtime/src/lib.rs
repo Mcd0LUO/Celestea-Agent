@@ -35,7 +35,7 @@ mod tools;
 pub use celestea_agent_loop::{EventSink, LoopEvent};
 pub use celestea_core::{
     AgentConfig, AgentError, AgentLoop, Context, SessionEvent, SessionLog,
-    ToolRegistry, ToolSpec,
+    ToolRegistry, ToolSpec, Usage,
 };
 pub use celestea_tools::ToolRegistryImpl;
 pub use celestea_workers::{WorkerRegistry, WorkerRegistryService};

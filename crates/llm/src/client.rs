@@ -29,7 +29,7 @@ use async_openai::types::chat::{
 use async_stream::stream;
 use async_trait::async_trait;
 use celestea_core::{
-    Content, Llm, LlmError, LlmStream, Message, ModelRequest, Role, StreamEvent, ToolCall, ToolSpec,
+    Content, Llm, LlmError, LlmStream, Message, ModelRequest, Role, StreamEvent, ToolCall, ToolSpec, Usage,
 };
 use eventsource_stream::EventStream;
 use futures_util::{Stream, StreamExt};
@@ -242,6 +242,9 @@ where
 fn stream_events(mut upstream: RawChunkStream) -> LlmStream {
     let s = stream! {
         let mut text = String::new();
+        // Provider-reported usage (W220): arrives either in a usage-only
+        // final frame or in the last chunk; the last seen wins.
+        let mut usage: Option<Usage> = None;
         // Tool-call deltas arrive in fragments keyed by index; accumulate
         // id / name / arguments per index and reconstruct in order.
         let mut acc: BTreeMap<u32, ToolCallAcc> = BTreeMap::new();
@@ -283,6 +286,9 @@ fn stream_events(mut upstream: RawChunkStream) -> LlmStream {
                     }
                 }
             }
+            if let Some(u) = chunk.usage {
+                usage = Some(u);
+            }
         }
 
         let mut content = Vec::new();
@@ -297,6 +303,11 @@ fn stream_events(mut upstream: RawChunkStream) -> LlmStream {
             }));
         }
 
+        // Usage rides just before the authoritative Done so consumers that
+        // treat Done as the terminal event still observe it (stream end).
+        if let Some(u) = usage {
+            yield StreamEvent::Usage(u);
+        }
         yield StreamEvent::Done(Message {
             role: Role::Assistant,
             content,
@@ -313,6 +324,9 @@ struct RawChunk {
     reasoning: Option<String>,
     /// Per-choice content / tool-call deltas, in wire order.
     choices: Vec<RawChoiceDelta>,
+    /// Provider-reported usage, when the chunk carries one (usage frame or
+    /// the final chunk with a usage object).
+    usage: Option<Usage>,
 }
 
 /// The content + tool_calls part of a single choice's delta.
@@ -336,10 +350,13 @@ type RawChunkStream = Pin<Box<dyn Stream<Item = Result<RawChunk, String>> + Send
 
 /// Parse one SSE data payload (a raw chat-completions chunk) into the delta
 /// view used by the live loop. Returns None when the payload is not a JSON
-/// chunk (heartbeats, usage-only frames, noise) — the caller skips it.
+/// chunk (heartbeats, noise) — the caller skips it. A usage-only final frame
+/// (no choices, no deltas) still yields a chunk carrying [RawChunk::usage], so
+/// stream_events can surface it as StreamEvent::Usage (W220).
 fn parse_raw_chunk(data: &str) -> Option<RawChunk> {
     let value: serde_json::Value = serde_json::from_str(data).ok()?;
     let reasoning = extract_reasoning(&value);
+    let usage = extract_usage(&value);
     let mut choices: Vec<RawChoiceDelta> = Vec::new();
 
     if let Some(array) = value.get("choices").and_then(|c| c.as_array()) {
@@ -379,10 +396,10 @@ fn parse_raw_chunk(data: &str) -> Option<RawChunk> {
         }
     }
 
-    if reasoning.is_none() && choices.is_empty() {
+    if reasoning.is_none() && choices.is_empty() && usage.is_none() {
         None
     } else {
-        Some(RawChunk { reasoning, choices })
+        Some(RawChunk { reasoning, choices, usage })
     }
 }
 
@@ -431,6 +448,43 @@ fn extract_reasoning(chunk: &serde_json::Value) -> Option<String> {
         None
     } else {
         Some(parts.join(""))
+    }
+}
+
+/// Extract provider-reported token usage from a raw chat-completions chunk
+/// (W220). OpenAI-compatible streams report usage either in a usage-only
+/// final frame or in the last chunk: { "usage": { "prompt_tokens": ... } }.
+/// Cache-hit prompt tokens arrive under provider-specific keys — DeepSeek
+/// `prompt_cache_hit_tokens`, OpenAI `prompt_tokens_details.cached_tokens`,
+/// others `cache_read_input_tokens` — so all are probed. Returns None when no
+/// token counter is present at all (pre-usage chunks, non-usage payloads).
+fn extract_usage(chunk: &serde_json::Value) -> Option<Usage> {
+    let usage = chunk.get("usage")?.as_object()?;
+    let top = |keys: &[&str]| -> Option<u64> {
+        keys.iter().find_map(|k| usage.get(*k).and_then(|v| v.as_u64()))
+    };
+    let nested = |outer: &str, inner: &str| -> Option<u64> {
+        usage.get(outer)?.get(inner).and_then(|v| v.as_u64())
+    };
+    let prompt_tokens = top(&["prompt_tokens"]).unwrap_or(0);
+    let completion_tokens = top(&["completion_tokens"]).unwrap_or(0);
+    let total_tokens = top(&["total_tokens"]).unwrap_or(0);
+    let cache_read = top(&["prompt_cache_hit_tokens", "cache_read_input_tokens"])
+        .or_else(|| nested("prompt_tokens_details", "cached_tokens"))
+        .unwrap_or(0);
+    let reasoning_tokens =
+        nested("completion_tokens_details", "reasoning_tokens").unwrap_or(0);
+    let u = Usage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        cache_read,
+        reasoning_tokens,
+    };
+    if u.is_empty() {
+        None
+    } else {
+        Some(u)
     }
 }
 
@@ -923,11 +977,12 @@ mod tests {
     #[tokio::test]
     async fn stream_events_emits_thinking_in_real_time_before_final_answer() {
         let chunks: Vec<Result<RawChunk, String>> = vec![
-            Ok(RawChunk { reasoning: Some("Let me".into()), choices: vec![] }),
-            Ok(RawChunk { reasoning: Some(" think".into()), choices: vec![] }),
+            Ok(RawChunk { reasoning: Some("Let me".into()), choices: vec![], usage: None, }),
+            Ok(RawChunk { reasoning: Some(" think".into()), choices: vec![], usage: None, }),
             Ok(RawChunk {
                 reasoning: None,
                 choices: vec![RawChoiceDelta { text: Some("Hello".into()), tool_calls: vec![] }],
+                usage: None,
             }),
         ];
         let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
@@ -956,10 +1011,12 @@ mod tests {
             Ok(RawChunk {
                 reasoning: None,
                 choices: vec![RawChoiceDelta { text: Some("a".into()), tool_calls: vec![] }],
+                usage: None,
             }),
             Ok(RawChunk {
                 reasoning: None,
                 choices: vec![RawChoiceDelta { text: Some("b".into()), tool_calls: vec![] }],
+                usage: None,
             }),
         ];
         let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
@@ -980,7 +1037,7 @@ mod tests {
     #[tokio::test]
     async fn stream_events_accumulates_tool_calls_alongside_reasoning() {
         let chunks: Vec<Result<RawChunk, String>> = vec![
-            Ok(RawChunk { reasoning: Some("r1".into()), choices: vec![] }),
+            Ok(RawChunk { reasoning: Some("r1".into()), choices: vec![], usage: None, }),
             Ok(RawChunk {
                 reasoning: Some("r2".into()),
                 choices: vec![RawChoiceDelta {
@@ -992,6 +1049,7 @@ mod tests {
                         arguments: Some("{\"pa".into()),
                     }],
                 }],
+                usage: None,
             }),
             Ok(RawChunk {
                 reasoning: None,
@@ -1004,6 +1062,7 @@ mod tests {
                         arguments: Some("th\":\"/tmp/a\"}".into()),
                     }],
                 }],
+                usage: None,
             }),
         ];
         let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
@@ -1065,8 +1124,8 @@ mod tests {
     #[tokio::test]
     async fn stream_events_skips_blank_reasoning_deltas() {
         let chunks: Vec<Result<RawChunk, String>> = vec![
-            Ok(RawChunk { reasoning: Some("   ".into()), choices: vec![] }),
-            Ok(RawChunk { reasoning: Some("ok".into()), choices: vec![] }),
+            Ok(RawChunk { reasoning: Some("   ".into()), choices: vec![], usage: None, }),
+            Ok(RawChunk { reasoning: Some("ok".into()), choices: vec![], usage: None, }),
         ];
         let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
         let mut events: Vec<StreamEvent> = Vec::new();
@@ -1077,5 +1136,156 @@ mod tests {
         assert!(matches!(&events[0], StreamEvent::Thinking(t) if t == "ok"));
         assert!(matches!(&events[1], StreamEvent::Done(_)));
     }
-}
 
+    // ---- W220: token-usage extraction + StreamEvent::Usage ---------------
+
+    #[test]
+    fn extract_usage_reads_deepseek_direct_fields() {
+        // DeepSeek reports cache hits flat on the usage object.
+        let chunk = serde_json::json!({
+            "usage": {
+                "prompt_tokens": 12,
+                "completion_tokens": 7,
+                "total_tokens": 19,
+                "prompt_cache_hit_tokens": 5,
+                "prompt_cache_miss_tokens": 7
+            }
+        });
+        let u = extract_usage(&chunk).unwrap();
+        assert_eq!(u.prompt_tokens, 12);
+        assert_eq!(u.completion_tokens, 7);
+        assert_eq!(u.total_tokens, 19);
+        assert_eq!(u.cache_read, 5);
+        assert_eq!(u.reasoning_tokens, 0);
+    }
+
+    #[test]
+    fn extract_usage_reads_openai_details_keys() {
+        // OpenAI-style nested details: cached_tokens + reasoning_tokens.
+        let chunk = serde_json::json!({
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "total_tokens": 30,
+                "prompt_tokens_details": { "cached_tokens": 6 },
+                "completion_tokens_details": { "reasoning_tokens": 4 }
+            }
+        });
+        let u = extract_usage(&chunk).unwrap();
+        assert_eq!(u.cache_read, 6);
+        assert_eq!(u.reasoning_tokens, 4);
+        assert_eq!(u.total_tokens, 30);
+    }
+
+    #[test]
+    fn extract_usage_none_for_absent_or_empty_usage() {
+        assert!(extract_usage(&serde_json::json!({ "choices": [] })).is_none());
+        assert!(extract_usage(&serde_json::json!({ "usage": {} })).is_none());
+        assert!(extract_usage(&serde_json::json!({})).is_none());
+    }
+
+    #[test]
+    fn parse_raw_chunk_reads_usage_from_final_chunk() {
+        // Providers attach usage to the finished chunk (choices + usage).
+        let chunk = parse_raw_chunk(
+            r#"{"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16,"prompt_cache_hit_tokens":3}}"#,
+        )
+        .unwrap();
+        assert_eq!(chunk.choices.len(), 1);
+        let u = chunk.usage.expect("usage present");
+        assert_eq!(u.total_tokens, 16);
+        assert_eq!(u.cache_read, 3);
+    }
+
+    #[test]
+    fn parse_raw_chunk_usage_only_frame_yields_chunk() {
+        // A usage-only final frame (no choices at all) still surfaces usage.
+        let chunk = parse_raw_chunk(
+            r#"{"id":"x","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}}"#,
+        )
+        .unwrap();
+        assert!(chunk.choices.is_empty());
+        assert_eq!(chunk.usage.unwrap().total_tokens, 10);
+    }
+
+    #[tokio::test]
+    async fn stream_events_emits_usage_before_done() {
+        let chunks: Vec<Result<RawChunk, String>> = vec![
+            Ok(RawChunk { reasoning: None, choices: vec![], usage: Some(Usage {
+                prompt_tokens: 9,
+                completion_tokens: 4,
+                total_tokens: 13,
+                cache_read: 2,
+                reasoning_tokens: 1,
+            }) }),
+        ];
+        let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
+        let mut events: Vec<StreamEvent> = Vec::new();
+        while let Some(ev) = stream.next().await {
+            events.push(ev);
+        }
+        assert_eq!(events.len(), 2, "Usage + Done (no text chunks)");
+        match &events[0] {
+            StreamEvent::Usage(u) => {
+                assert_eq!(u.total_tokens, 13);
+                assert_eq!(u.cache_read, 2);
+                assert_eq!(u.reasoning_tokens, 1);
+            }
+            other => panic!("expected Usage, got {other:?}"),
+        }
+        assert!(matches!(&events[1], StreamEvent::Done(_)));
+    }
+
+    #[tokio::test]
+    async fn stream_events_usage_rides_between_text_and_done() {
+        let chunks: Vec<Result<RawChunk, String>> = vec![
+            Ok(RawChunk { reasoning: None, choices: vec![RawChoiceDelta {
+                text: Some("Hi".into()), tool_calls: vec![],
+            }], usage: None }),
+            Ok(RawChunk { reasoning: None, choices: vec![], usage: Some(Usage {
+                total_tokens: 12, ..Usage::default()
+            }) }),
+        ];
+        let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
+        let mut events: Vec<StreamEvent> = Vec::new();
+        while let Some(ev) = stream.next().await {
+            events.push(ev);
+        }
+        assert_eq!(events.len(), 3, "Text + Usage + Done");
+        assert!(matches!(&events[0], StreamEvent::Text(t) if t == "Hi"));
+        assert!(matches!(&events[1], StreamEvent::Usage(u) if u.total_tokens == 12));
+        assert!(matches!(&events[2], StreamEvent::Done(_)));
+    }
+
+    #[tokio::test]
+    async fn sse_pipeline_emits_usage_at_stream_end() {
+        // Bytes-level pipeline with a usage-only final frame before [DONE].
+        let sse = concat!(
+            r#"data: {"choices":[{"delta":{"content":"Hi"}}]}"#,
+            "
+
+",
+            r#"data: {"choices":[],"usage":{"prompt_tokens":6,"completion_tokens":3,"total_tokens":9}}"#,
+            "
+
+",
+            "data: [DONE]
+
+",
+        );
+        let byte_stream = futures_util::stream::iter(vec![
+            Ok::<Vec<u8>, io::Error>(sse.as_bytes().to_vec()),
+        ]);
+        let mut stream = stream_events(raw_chunk_stream(byte_stream));
+        let mut events: Vec<StreamEvent> = Vec::new();
+        while let Some(ev) = stream.next().await {
+            events.push(ev);
+        }
+        assert_eq!(events.len(), 3, "Text + Usage + Done");
+        match &events[1] {
+            StreamEvent::Usage(u) => assert_eq!(u.total_tokens, 9),
+            other => panic!("expected Usage, got {other:?}"),
+        }
+        assert!(matches!(&events[2], StreamEvent::Done(_)));
+    }
+}

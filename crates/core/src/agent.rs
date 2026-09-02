@@ -14,6 +14,12 @@ pub struct AgentConfig {
     pub system_prompt: String,
     pub max_steps: usize,
     pub max_parallel_tool_calls: usize,
+    /// Model context window in tokens. 0 disables context trimming (W220).
+    pub context_window_tokens: u64,
+    /// Trim factor (0..=1) of the window that triggers old-message trimming.
+    pub context_trim_threshold: f64,
+    /// How many most-recent messages to keep when trimming (plus system).
+    pub context_keep_recent: usize,
 }
 
 impl Default for AgentConfig {
@@ -25,6 +31,9 @@ impl Default for AgentConfig {
                     .into(),
             max_steps: 16,
             max_parallel_tool_calls: 4,
+            context_window_tokens: 65_536,
+            context_trim_threshold: 0.8,
+            context_keep_recent: 10,
         }
     }
 }

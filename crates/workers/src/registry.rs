@@ -183,6 +183,10 @@ impl WorkerRegistry {
     /// 若驱动 seam 齐备且会话存在，tokio 后台驱动该会话一轮 run_turn。
     /// 返回是否真的启动了后台任务。
     pub async fn drive_if_possible(&self, sid: &str, brief: &str) -> bool {
+        // F1 (W224): 每次新 spawn 前先收割已完成的后台驱动任务 —— 生产路径此前从不
+        // 调用 prune_completed，完成但未收割的槽位在进程生命周期内无界累积（W222 F1）。
+        self.prune_completed().await;
+
         let (Some(llm), Some(tools), Some(loop_)) = (
             self.llm.read().map(|g| g.clone()).unwrap_or(None),
             self.tools.read().map(|g| g.clone()).unwrap_or(None),

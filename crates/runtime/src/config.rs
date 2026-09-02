@@ -17,6 +17,12 @@ pub struct Profile {
     pub system_prompt: String,
     pub max_steps: usize,
     pub max_parallel_tool_calls: usize,
+    /// Model context window in tokens; 0 disables context trimming (W220).
+    pub context_window_tokens: u64,
+    /// Window fraction (0..=1) that triggers old-message trimming.
+    pub context_trim_threshold: f64,
+    /// How many most-recent messages to keep when trimming (plus system).
+    pub context_keep_recent: usize,
     /// Optional API base URL; falls back to env DEEPSEEK_BASE_URL, then the
     /// provider default. The token value itself NEVER lives here (env only).
     pub base_url: Option<String>,
@@ -42,6 +48,9 @@ impl Default for Profile {
                 .into(),
             max_steps: 16,
             max_parallel_tool_calls: 4,
+            context_window_tokens: 65_536,
+            context_trim_threshold: 0.8,
+            context_keep_recent: 10,
             base_url: None,
             reasoning_effort: None,
             max_output_tokens: None,
@@ -54,11 +63,14 @@ impl Default for Profile {
 /// The documented profile keys the runtime understands today. W178 added the
 /// model-config keys and W192 added api_key_file; strict unknown-key rejection
 /// keys off this list.
-pub const PROFILE_KEYS: [&str; 9] = [
+pub const PROFILE_KEYS: [&str; 12] = [
     "model",
     "system_prompt",
     "max_steps",
     "max_parallel_tool_calls",
+    "context_window_tokens",
+    "context_trim_threshold",
+    "context_keep_recent",
     "base_url",
     "reasoning_effort",
     "max_output_tokens",
@@ -130,6 +142,40 @@ pub fn merge_profile_mode(json: &Value, strict: bool) -> Result<Profile> {
             Some(n) => profile.max_parallel_tool_calls = n as usize,
             None if strict => bail!(
                 "profile field 'max_parallel_tool_calls' must be a non-negative integer, got {}",
+                json_kind(v)
+            ),
+            None => {}
+        }
+    }
+    if let Some(v) = obj.get("context_window_tokens") {
+        match v.as_u64() {
+            Some(n) => profile.context_window_tokens = n,
+            None if strict => bail!(
+                "profile field 'context_window_tokens' must be a non-negative integer, got {}",
+                json_kind(v)
+            ),
+            None => {}
+        }
+    }
+    if let Some(v) = obj.get("context_trim_threshold") {
+        match v.as_f64() {
+            Some(f) if (0.0..=1.0).contains(&f) => profile.context_trim_threshold = f,
+            Some(_) if strict => bail!(
+                "profile field 'context_trim_threshold' must be between 0.0 and 1.0, got {}",
+                json_kind(v)
+            ),
+            None if strict => bail!(
+                "profile field 'context_trim_threshold' must be a number, got {}",
+                json_kind(v)
+            ),
+            _ => {}
+        }
+    }
+    if let Some(v) = obj.get("context_keep_recent") {
+        match v.as_u64() {
+            Some(n) => profile.context_keep_recent = n as usize,
+            None if strict => bail!(
+                "profile field 'context_keep_recent' must be a non-negative integer, got {}",
                 json_kind(v)
             ),
             None => {}
@@ -871,5 +917,65 @@ bogus = 1
         let _ = std::fs::remove_file(&missing);
         assert!(!load_dotenv_at(&missing));
     }
-}
+    // ---- W220: context-trim profile keys -----------------------------------
+    #[test]
+    fn context_keys_parse_lenient() {
+        let p = merge_profile(&json!({
+            "context_window_tokens": 131072,
+            "context_trim_threshold": 0.9,
+            "context_keep_recent": 6
+        }))
+        .unwrap();
+        assert_eq!(p.context_window_tokens, 131072);
+        assert_eq!(p.context_trim_threshold, 0.9);
+        assert_eq!(p.context_keep_recent, 6);
+    }
 
+    #[test]
+    fn context_keys_defaults() {
+        let p = Profile::default();
+        assert_eq!(p.context_window_tokens, 65_536);
+        assert_eq!(p.context_trim_threshold, 0.8);
+        assert_eq!(p.context_keep_recent, 10);
+    }
+
+    #[test]
+    fn context_keys_zero_disables_trimming() {
+        let p = merge_profile(&json!({ "context_window_tokens": 0 })).unwrap();
+        assert_eq!(p.context_window_tokens, 0);
+    }
+
+    #[test]
+    fn strict_rejects_bad_context_key_types() {
+        assert!(merge_profile_strict(&json!({ "context_window_tokens": "many" })).is_err());
+        assert!(merge_profile_strict(&json!({ "context_trim_threshold": 1.5 })).is_err());
+        assert!(merge_profile_strict(&json!({ "context_trim_threshold": "high" })).is_err());
+        assert!(merge_profile_strict(&json!({ "context_keep_recent": -1 })).is_err());
+    }
+
+    #[test]
+    fn lenient_ignores_bad_context_keys() {
+        let p = merge_profile(&json!({
+            "context_window_tokens": "many",
+            "context_trim_threshold": 7,
+            "context_keep_recent": true
+        }))
+        .unwrap();
+        assert_eq!(p.context_window_tokens, Profile::default().context_window_tokens);
+        assert_eq!(p.context_trim_threshold, Profile::default().context_trim_threshold);
+        assert_eq!(p.context_keep_recent, Profile::default().context_keep_recent);
+    }
+
+    #[test]
+    fn strict_accepts_context_keys() {
+        let p = merge_profile_strict(&json!({
+            "context_window_tokens": 4096,
+            "context_trim_threshold": 0.75,
+            "context_keep_recent": 4
+        }))
+        .unwrap();
+        assert_eq!(p.context_window_tokens, 4096);
+        assert_eq!(p.context_trim_threshold, 0.75);
+        assert_eq!(p.context_keep_recent, 4);
+    }
+}

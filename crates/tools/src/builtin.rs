@@ -184,7 +184,7 @@ fn list_dir_spec() -> ToolSpec {
 fn run_shell_spec() -> ToolSpec {
     ToolSpec {
         name: "run_shell".into(),
-        description: "Run a shell command inside the v1 sandbox (fixed workdir, sanitized env, bounded timeout and output) and return stdout, stderr, and exit code.".into(),
+        description: "Run a shell command inside the sandbox (v2 OS isolation when available: namespaces + read-only root + resource limits, else the v1 userspace path; fixed workdir, sanitized env, bounded timeout and output) and return stdout, stderr, and exit code.".into(),
         parameters: json!({
             "type": "object",
             "properties": {

@@ -8,16 +8,18 @@
 
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use tokio::sync::watch;
 use celestea_core::{
     AgentConfig, AgentError, AgentLoop, Content, Context, LlmService, ModelRequest,
-    SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput,
+    SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, Usage,
     ToolRegistryService,
 };
 use futures_util::StreamExt;
 
+use crate::context::{estimate_tokens, trim_context};
 use crate::events::{EventSink, LoopEvent};
 
 /// The default agent loop: a stateless (modulo a turn counter) driver, with
@@ -43,25 +45,70 @@ pub struct DefaultAgentLoop {
     cancel: Option<watch::Receiver<bool>>,
     /// Event sink. None = legacy stdout printing (back-compat).
     sink: Option<EventSink>,
+    /// Shared usage tracker (W220). None = usage not recorded (back-compat).
+    usage: Option<Arc<UsageTracker>>,
 }
+
+/// Thread-safe cumulative usage accounting (W220).
+///
+/// The agent loop records every LLM stream's StreamEvent::Usage into an
+/// optional tracker; the runtime reads latest()/total() to expose usage via
+/// /api/status and to drive future trimming decisions. Cheap interior
+/// mutability (std::sync::Mutex) keeps record() callable from the &self loop.
+#[derive(Debug, Default)]
+pub struct UsageTracker {
+    inner: Mutex<UsageState>,
+}
+
+#[derive(Debug, Default)]
+struct UsageState {
+    total: Usage,
+    latest: Usage,
+}
+
+impl UsageTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record one LLM stream's usage: adds to the cumulative total and
+    /// makes it the latest observed stream.
+    pub fn record(&self, u: Usage) {
+        if let Ok(mut st) = self.inner.lock() {
+            st.total += u;
+            st.latest = u;
+        }
+    }
+
+    /// The usage of the most recent LLM stream (zeroed when none yet).
+    pub fn latest(&self) -> Usage {
+        self.inner.lock().map(|st| st.latest).unwrap_or_default()
+    }
+
+    /// Cumulative usage across all recorded streams.
+    pub fn total(&self) -> Usage {
+        self.inner.lock().map(|st| st.total).unwrap_or_default()
+    }
+}
+
 
 impl DefaultAgentLoop {
     /// Build a loop from an AgentConfig (no cancellation signal, no sink).
     pub fn new(config: AgentConfig) -> Self {
-        Self { config, turn_id: AtomicU64::new(0), cancel: None, sink: None }
+        Self::with_bindings(config, None, None, None)
     }
 
     /// Build a loop that stops cooperatively once the watch value reads true.
     /// The sender half is owned by the caller (e.g. hooked to ctrl_c at the
     /// composition / CLI layer).
     pub fn with_cancel(config: AgentConfig, cancel: watch::Receiver<bool>) -> Self {
-        Self { config, turn_id: AtomicU64::new(0), cancel: Some(cancel), sink: None }
+        Self::with_bindings(config, Some(cancel), None, None)
     }
 
     /// Build a loop that routes every LoopEvent to the given sink (stream
     /// deltas and tool events are no longer printed).
     pub fn with_sink(config: AgentConfig, sink: EventSink) -> Self {
-        Self { config, turn_id: AtomicU64::new(0), cancel: None, sink: Some(sink) }
+        Self::with_bindings(config, None, Some(sink), None)
     }
 
     /// Build a loop with both a cooperative cancel signal and an event sink.
@@ -70,7 +117,20 @@ impl DefaultAgentLoop {
         cancel: watch::Receiver<bool>,
         sink: EventSink,
     ) -> Self {
-        Self { config, turn_id: AtomicU64::new(0), cancel: Some(cancel), sink: Some(sink) }
+        Self::with_bindings(config, Some(cancel), Some(sink), None)
+    }
+
+    /// Build a loop with every optional binding (W220): cooperative
+    /// cancellation, an event sink, and a shared usage tracker. The
+    /// convenience constructors above pass None for the unbound slots, so all
+    /// existing call sites keep working unchanged.
+    pub fn with_bindings(
+        config: AgentConfig,
+        cancel: Option<watch::Receiver<bool>>,
+        sink: Option<EventSink>,
+        usage: Option<Arc<UsageTracker>>,
+    ) -> Self {
+        Self { config, turn_id: AtomicU64::new(0), cancel, sink, usage }
     }
 
     /// Allocate the next unique turn id.
@@ -151,7 +211,16 @@ impl AgentLoop for DefaultAgentLoop {
         let mut cancel_rx = self.cancel.clone();
         let mut cancel_requested = false;
 
-        for _step in 0..self.config.max_steps {
+        // max_steps == 0 means unlimited steps (W220); otherwise the hard cap
+        // is enforced exactly as before. The loop still ends on cancellation
+        // or when the model answers without tool calls.
+        let mut steps_done: usize = 0;
+        loop {
+            if self.config.max_steps > 0 && steps_done >= self.config.max_steps {
+                break;
+            }
+            steps_done += 1;
+
             // Step-level checkpoint before issuing the next model request.
             if let Some(rx) = cancel_rx.as_ref() {
                 if cancel_set(rx) {
@@ -162,6 +231,18 @@ impl AgentLoop for DefaultAgentLoop {
 
             // History is derived from the log, never stored separately.
             let messages = session.derive_messages();
+            // Context-budget trimming (W220): when the estimated history nears
+            // the configured window threshold, drop old messages and mark the
+            // removal with a short system message. No-op when
+            // context_window_tokens == 0 (back-compat).
+            let system_tokens = estimate_tokens(&self.config.system_prompt);
+            let (messages, _trim) = trim_context(
+                messages,
+                system_tokens,
+                self.config.context_window_tokens,
+                self.config.context_trim_threshold,
+                self.config.context_keep_recent,
+            );
 
             let request = ModelRequest {
                 model: self.config.model.clone(),
@@ -219,6 +300,13 @@ impl AgentLoop for DefaultAgentLoop {
                     // the sink when one is installed (no direct print).
                     StreamEvent::Text(delta) => self.emit(LoopEvent::Text(delta)),
                     StreamEvent::Thinking(delta) => self.emit(LoopEvent::Thinking(delta)),
+                    StreamEvent::Usage(u) => {
+                        // Record provider-reported usage into the optional
+                        // shared tracker (runtime /api/status surface).
+                        if let Some(tracker) = &self.usage {
+                            tracker.record(u);
+                        }
+                    }
                     StreamEvent::Done(message) => {
                         self.emit(LoopEvent::Done(message.clone()));
                         for content in message.content {

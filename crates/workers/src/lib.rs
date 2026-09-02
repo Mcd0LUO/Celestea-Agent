@@ -451,22 +451,67 @@ mod tests {
         // Tracked set grew with the spawns (all still pending at this instant).
         assert!(reg.background_len() >= 1, "tracked tasks should be >=1");
 
-        // Wait for all turns to finish by watching each session log get the brief.
+        // Wait for all turns to actually finish (TurnEnd is appended right before the
+        // driver task returns), then give each join-set slot a settle window so the
+        // subsequent prune sees every task as completed.
         for sid in &spawned_sids {
             let log = reg.sessions().get(sid).expect("session present").log.clone();
-            let mut seen = false;
-            for _ in 0..100 {
-                if log.events().iter().any(|e| matches!(e, SessionEvent::UserMessage { .. })) {
-                    seen = true;
+            let mut ended = false;
+            for _ in 0..200 {
+                if log.events().iter().any(|e| matches!(e, SessionEvent::TurnEnd { .. })) {
+                    ended = true;
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
-            assert!(seen, "session {sid} background turn did not run");
+            assert!(ended, "session {sid} background turn did not finish");
         }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         // After completion + prune, no background task remains -> no task leak.
         reg.prune_completed().await;
         assert_eq!(reg.background_len(), 0, "background joinset must drain to zero after completion");
+    }
+
+    // ---- W224 F1: 每次新 spawn 前收割已完成的后台驱动任务（生产路径不再无界累积） ----
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn drive_reaps_completed_tasks_on_next_spawn() {
+        let reg = Arc::new(WorkerRegistry::new(temp_tsv("stress-reap")));
+        let llm = LlmService(Arc::new(FakeLlm::new(vec![Message::assistant_text("hi")])));
+        let tools_svc = ToolRegistryService(Arc::new(EmptyRegistry));
+        let agent: Arc<dyn AgentLoop> = Arc::new(DefaultAgentLoop::new(AgentConfig::default()));
+        reg.attach_drivers(Some(Arc::new(llm)), Some(Arc::new(tools_svc)), Some(agent));
+        assert!(reg.can_drive());
+
+        // 逐轮 spawn + 等待该轮完成：若每次新 spawn 前不收割（旧行为），
+        // 后台任务数会随轮次线性累积；F1 修后每轮 start 处先 prune_completed。
+        const N: usize = 20;
+        for i in 0..N {
+            let sid = reg.sessions().create(SessionSpec { title: format!("r{i}").into(), ..Default::default() });
+            assert!(reg.drive_if_possible(&sid, &format!("task {i}")).await, "seam must start a background turn");
+
+            // 等本轮的 TurnEnd 落进该会话 log（任务即将返回），再留 50ms 让任务收尾。
+            let log = reg.sessions().get(&sid).expect("session present").log.clone();
+            let mut ended = false;
+            for _ in 0..200 {
+                if log.events().iter().any(|e| matches!(e, SessionEvent::TurnEnd { .. })) {
+                    ended = true;
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            assert!(ended, "session {sid} background turn did not finish");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            // F1: 仅本轮的任务可能未完成，其余已完成槽位已被本次 drive 收割。
+            assert!(
+                reg.background_len() <= 1,
+                "iteration {i}: completed slots must be reaped on next spawn, background_len={}",
+                reg.background_len()
+            );
+        }
+        reg.prune_completed().await;
+        assert_eq!(reg.background_len(), 0, "background joinset must drain to zero after final prune");
     }
 }

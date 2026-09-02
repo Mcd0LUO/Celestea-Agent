@@ -10,13 +10,18 @@
 //! Downstream crates keep importing `DefaultAgentLoop`, `LoopEvent` and
 //! `EventSink` straight from the crate root.
 
+mod context;
 mod events;
 
 #[path = "loop.rs"]
 mod loop_module;
 
+pub use context::{
+    estimate_message_tokens, estimate_messages_tokens, estimate_tokens, trim_context,
+    trimmed_marker_message, TrimOutcome,
+};
 pub use events::{EventSink, LoopEvent};
-pub use loop_module::DefaultAgentLoop;
+pub use loop_module::{DefaultAgentLoop, UsageTracker};
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
@@ -30,7 +35,7 @@ mod tests {
     use futures_util::StreamExt;
     use celestea_core::{
         AgentConfig, AgentError, AgentLoop, Content, Context, LlmService, ModelRequest,
-        SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput,
+        SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, Usage,
         ToolRegistryService, Llm, LlmError, LlmStream, Message, Role, SessionLog,
         Tool, ToolGuard, ToolDecision, ToolOutput, ToolRegistry, ToolSpec,
     };
@@ -42,6 +47,9 @@ mod tests {
     #[derive(Default)]
     struct FakeSession {
         events: Mutex<Vec<SessionEvent>>,
+        /// Pre-baked derive_messages projection (W220 tests). Empty by
+        /// default, so existing tests keep the old "no history" behavior.
+        derived: Mutex<Vec<Message>>,
     }
 
     impl FakeSession {
@@ -58,8 +66,8 @@ mod tests {
             self.all()
         }
         fn derive_messages(&self) -> Vec<Message> {
-            // The fake Llm ignores the request, so an empty projection is fine.
-            Vec::new()
+            // Pre-baked projection when a test sets derived; empty by default.
+            self.derived.lock().unwrap().clone()
         }
         fn clear(&self) {
             self.events.lock().unwrap().clear();
@@ -604,5 +612,206 @@ mod tests {
 
         let events = session.all();
         assert_eq!(logged_tool_results(&events), vec!["c1", "c2", "c3"]);
+    }
+    // ---- W220: usage aggregation, unlimited steps, history trimming --------
+
+    /// Fake Llm that records every request and replies with a plain text
+    /// (terminating) message — lets tests assert what was actually sent.
+    struct RecordingLlm {
+        requests: Mutex<Vec<ModelRequest>>,
+    }
+    impl RecordingLlm {
+        fn new() -> Self {
+            Self { requests: Mutex::new(Vec::new()) }
+        }
+        fn requests(&self) -> Vec<ModelRequest> {
+            self.requests.lock().unwrap().clone()
+        }
+    }
+    #[async_trait]
+    impl Llm for RecordingLlm {
+        async fn generate(&self, req: ModelRequest) -> Result<LlmStream, LlmError> {
+            self.requests.lock().unwrap().push(req.clone());
+            Ok(stream::iter(vec![StreamEvent::Done(Message::assistant_text("ok"))]).boxed())
+        }
+    }
+
+    /// Drive one turn with an explicit max_steps (0 = unlimited).
+    fn run_turn_steps(
+        session: &Arc<FakeSession>,
+        registry: &Arc<FakeRegistry>,
+        replies: Vec<Message>,
+        max_steps: usize,
+    ) {
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let llm = LlmService(Arc::new(FakeLlm::new(replies)));
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(llm);
+        let config = AgentConfig { max_steps, ..AgentConfig::default() };
+        let loop_ = DefaultAgentLoop::new(config);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(loop_.run_turn(&ctx, "hello")).unwrap();
+    }
+
+    #[test]
+    fn usage_events_accumulate_into_shared_tracker() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let tracker = Arc::new(UsageTracker::new());
+        let events = vec![
+            StreamEvent::Text("answer".to_string()),
+            StreamEvent::Usage(Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cache_read: 3,
+                reasoning_tokens: 2,
+            }),
+            StreamEvent::Done(Message::assistant_text("answer")),
+        ];
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let llm = LlmService(Arc::new(EventLlm::new(events)));
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(llm);
+        let config = AgentConfig { model: "deepseek-chat".into(), ..AgentConfig::default() };
+        let loop_ = DefaultAgentLoop::with_bindings(config, None, None, Some(tracker.clone()));
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(loop_.run_turn(&ctx, "hi")).unwrap();
+        // latest() is the last stream's usage; total() accumulates it.
+        assert_eq!(tracker.latest().total_tokens, 15);
+        assert_eq!(tracker.latest().cache_read, 3);
+        assert_eq!(tracker.latest().reasoning_tokens, 2);
+        assert_eq!(tracker.total().total_tokens, 15);
+        assert_eq!(tracker.total().prompt_tokens, 10);
+    }
+
+    #[test]
+    fn usage_events_without_tracker_are_ignored() {
+        // A plain DefaultAgentLoop (no tracker) still consumes Usage events —
+        // back-compat: providers that report usage never break old consumers.
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let events = vec![
+            StreamEvent::Usage(Usage { total_tokens: 9, ..Usage::default() }),
+            StreamEvent::Done(Message::assistant_text("done")),
+        ];
+        let res = run_with(&session, &registry, events, None, None);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn max_steps_zero_runs_unlimited_tool_steps() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        // Five tool-call steps, then a plain answer terminates the turn.
+        run_turn_steps(
+            &session,
+            &registry,
+            vec![
+                tool_call_message(&["c1"]),
+                tool_call_message(&["c2"]),
+                tool_call_message(&["c3"]),
+                tool_call_message(&["c4"]),
+                tool_call_message(&["c5"]),
+                Message::assistant_text("done"),
+            ],
+            0,
+        );
+        // max_steps = 0 is native unlimited: all five steps ran.
+        assert_eq!(registry.dispatch_order(), vec!["c1", "c2", "c3", "c4", "c5"]);
+    }
+
+    #[test]
+    fn max_steps_cap_is_preserved_for_nonzero() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        run_turn_steps(
+            &session,
+            &registry,
+            vec![
+                tool_call_message(&["c1"]),
+                tool_call_message(&["c2"]),
+                tool_call_message(&["c3"]),
+                tool_call_message(&["c4"]),
+                Message::assistant_text("done"),
+            ],
+            3,
+        );
+        // A nonzero cap still stops the loop after that many steps.
+        assert_eq!(registry.dispatch_order(), vec!["c1", "c2", "c3"]);
+    }
+
+    #[test]
+    fn loop_trims_history_and_marks_with_system_message() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        {
+            let mut derived = Vec::new();
+            for i in 0..30 {
+                derived.push(Message::user(format!("message {i} ").repeat(20)));
+            }
+            *session.derived.lock().unwrap() = derived;
+        }
+        let recording = Arc::new(RecordingLlm::new());
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let llm = LlmService(recording.clone());
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(llm);
+        let config = AgentConfig {
+            context_window_tokens: 1000,
+            context_trim_threshold: 0.8,
+            context_keep_recent: 4,
+            ..AgentConfig::default()
+        };
+        let loop_ = DefaultAgentLoop::new(config);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(loop_.run_turn(&ctx, "hello")).unwrap();
+
+        let reqs = recording.requests();
+        assert_eq!(reqs.len(), 1);
+        let msgs = &reqs[0].messages;
+        // The request the model sees was trimmed: one leading system marker
+        // plus the 4 most-recent user messages, nothing older.
+        assert_eq!(msgs[0].role, Role::System);
+        assert!(matches!(&msgs[0].content[0], Content::Text(t) if t.contains("context-trimmed")));
+        assert_eq!(msgs.len(), 5);
+        assert!(matches!(&msgs[1].content[0], Content::Text(t) if t.starts_with("message 26")));
+        assert!(matches!(&msgs[4].content[0], Content::Text(t) if t.starts_with("message 29")));
+    }
+
+    #[test]
+    fn loop_default_window_does_not_trim_small_histories() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        {
+            *session.derived.lock().unwrap() = vec![
+                Message::user("hello"),
+                Message::assistant_text("hi"),
+            ];
+        }
+        let recording = Arc::new(RecordingLlm::new());
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let llm = LlmService(recording.clone());
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(llm);
+        let loop_ = DefaultAgentLoop::new(AgentConfig::default());
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(loop_.run_turn(&ctx, "hello")).unwrap();
+        let reqs = recording.requests();
+        let msgs = &reqs[0].messages;
+        assert_eq!(msgs.len(), 2, "no trim under the default window");
+        assert!(!matches!(msgs[0].role, Role::System), "no marker inserted");
     }
 }

@@ -129,10 +129,13 @@ impl WatchAction {
 
 /// 会话是否仍在产出：mailbox 有待处理消息（有活要干）或日志里有进行中的 turn
 /// （TurnStart 未配对的 TurnEnd）。
-pub fn session_alive(session: &Session, pending_mail: usize) -> bool {
-    if pending_mail > 0 {
-        return true;
-    }
+pub fn session_alive(session: &Session, _pending_mail: usize) -> bool {
+    // F3 (W224): 仅当「有进行中 turn」时才算存活。原实现把 pending_mail > 0 一律判为
+    // 存活，而生产 agent 循环从不消费 mailbox（W222 F3），导致已结束的 worker 被永久
+    // 钉在 RUNNING —— tick 永远 KeepRunning，走不到 anomaly / DONE / FAILED 判定。
+    // 修正后：无进行中 turn 的 pending 邮件不视为存活（无消费者的消息随 F2 的
+    // sessions().remove + mailbox().purge 清理）；有进行中 turn 时会话本身即存活，
+    // 此时队列里还有未处理消息则更是"有活要干"（由 in_progress 覆盖）。
     let events = session.log.events();
     let starts = events
         .iter()
@@ -214,6 +217,15 @@ impl Watchdog {
         Self::log_appender(&self.config.alerts_log, line);
     }
 
+    /// F2 (W224): 会话结束时释放 SessionRegistry 里的会话（连同其日志）与
+    /// SessionMailbox 里未消费的消息队列，避免已结束 worker 的会话/日志/入队消息
+    /// 在进程内无界累积（W222 F2）。仅在判定会话已结束（无进行中 turn，见 F3 的
+    /// [session_alive]）后调用 —— 避免误杀仍有进行中 turn 的存活 worker。
+    fn release_session(&self, sess: &str) {
+        self.reg.sessions().remove(sess);
+        self.reg.mailbox().purge(sess);
+    }
+
     /// 一轮巡检：读 registry → 对 RUNNING 行逐一裁决 → 原子重写 → 返回裁决清单。
     pub async fn tick(&self) -> Result<Vec<WatchAction>, io::Error> {
         let mut entries = self.reg.read_entries();
@@ -266,6 +278,9 @@ impl Watchdog {
 
         if deliverable {
             entry.status = WorkerStatus::Done;
+            // F2 (W224): 会话已结束（无进行中 turn，见 F3）→ 释放会话与 mailbox 队列，
+            // 终止 DONE 行会话/日志/消息的永久留存（W222 F2）。
+            self.release_session(&sess);
             self.log_watcher(&format!("[{now_str}] {} -> DONE (deliverable present)", entry.wid));
             return TickOutcome::Action(WatchAction::MarkDone { wid: entry.wid.clone() });
         }
@@ -279,6 +294,9 @@ impl Watchdog {
 impl Watchdog {
     async fn decide_anomaly<'a>(&'a self, entry: &'a mut WorkerEntry, now_str: &str) -> TickOutcome {
         let wid = entry.wid.clone();
+        // F2 (W224): 记录当前会话 id，供终态（FAILED / 重派换新会话）时释放；
+        // 宽限期（GraceDeferred）内保留，保持短暂窗口内会话仍可被消息寻址。
+        let old_sess = entry.get_extra("sess");
         let now_secs = parse_utc(now_str).unwrap_or(0);
 
         // --- 宽限期：新派 < grace 不重派 ---
@@ -301,11 +319,20 @@ impl Watchdog {
             let Some(brief) = entry.get_extra("brief") else {
                 // 无简报 → 无法重派 → FAILED（W180 B3(c) 错误模型）
                 entry.status = WorkerStatus::Failed;
+                // F2 (W224): 终态释放会话/mailbox（会话已结束，见 F3）。
+                if let Some(old) = &old_sess {
+                    self.release_session(old);
+                }
                 self.log_watcher(&format!("[{now_str}] {wid} -> FAILED (no brief to respawn)"));
                 self.log_alert(&format!("[{now_str}] {wid} FAILED: no brief to auto-respawn"));
                 return TickOutcome::Action(WatchAction::MarkFailed { wid });
             };
 
+            // F2 (W224): 先释放旧会话（已结束，见 F3）再建新会话 —— 否则每次自动重派
+            // 都会永久留存一个旧会话（W222 F2 证据：重派新建会话、旧会话继续留存）。
+            if let Some(old) = &old_sess {
+                self.release_session(old);
+            }
             // 重建会话（标题沿用原 wid·短名）
             let title = entry.get_extra("title").unwrap_or_else(|| wid.clone());
             let sid = self.reg.sessions().create(SessionSpec {
@@ -336,6 +363,10 @@ impl Watchdog {
 
         // --- retries 耗尽 → FAILED ---
         entry.status = WorkerStatus::Failed;
+        // F2 (W224): 终态释放会话/mailbox（会话已结束，见 F3）。
+        if let Some(old) = &old_sess {
+            self.release_session(old);
+        }
         self.log_watcher(&format!("[{now_str}] {wid} -> FAILED (retries exhausted at {retries})"));
         self.log_alert(&format!(
             "[{now_str}] {wid} FAILED: retries exhausted ({retries} >= max {})",
@@ -531,8 +562,10 @@ mod tests {
         let e = reg.get_entry("W5").unwrap();
         assert_eq!(e.status, WorkerStatus::Running);
         assert_eq!(e.count_retries(), 1);
-        // 重派建立了新会话，且 sess 指向新 id
-        assert_eq!(reg.sessions().len(), pre_count + 1);
+        // F2 (W224): 重派释放旧会话并建立新会话，sess 指向新 id；会话总数不再增长。
+        assert_eq!(reg.sessions().len(), pre_count, "old session released, new one created (W222 F2)");
+        assert!(reg.sessions().get(&sid0).is_none(), "old session must be released on respawn (W222 F2)");
+        assert_eq!(reg.mailbox().pending(&sid0), 0, "old mailbox must be purged on respawn (W222 F2)");
         let new_sid = e.get_extra("sess").unwrap();
         assert_ne!(new_sid, sid0);
         assert!(reg.sessions().get(&new_sid).is_some());
@@ -586,6 +619,72 @@ mod tests {
         let p = std::env::temp_dir().join(format!("not-a-dir-{}.txt", std::process::id()));
         let _ = fs::write(&p, "x");
         p
+    }
+
+    // ---- W224 F3: pending 邮件仅在「有进行中 turn」时才算存活 ----
+
+    #[test]
+    fn session_alive_pending_mail_requires_in_progress_turn() {
+        let (reg, _cfg) = fixture("alive3");
+        // 已结束会话（TurnStart+TurnEnd）+ 1 条未消费邮件 → F3：不视为存活
+        // （否则已结束 worker 被永久钉 RUNNING；邮件留存交由 F2 的 release_session 清理）。
+        let sid = reg.sessions().create(SessionSpec { title: "W11·t".into(), workspace: None, model: None });
+        let s = reg.sessions().get(&sid).unwrap();
+        s.log.append(SessionEvent::TurnStart { id: "t1".into() });
+        s.log.append(SessionEvent::TurnEnd { id: "t1".into() });
+        reg.mailbox().send(&sid, "follow-up", "coordinator");
+        assert_eq!(reg.mailbox().pending(&sid), 1);
+        assert!(
+            !session_alive(&s, reg.mailbox().pending(&sid)),
+            "ended session with pending mail must NOT be alive (W222 F3)"
+        );
+
+        // 有进行中 turn + 邮件 → 存活。
+        let sid2 = reg.sessions().create(SessionSpec { title: "W12·t".into(), workspace: None, model: None });
+        let s2 = reg.sessions().get(&sid2).unwrap();
+        s2.log.append(SessionEvent::TurnStart { id: "t2".into() });
+        reg.mailbox().send(&sid2, "live", "coordinator");
+        assert!(
+            session_alive(&s2, reg.mailbox().pending(&sid2)),
+            "in-progress turn stays alive even with pending mail"
+        );
+    }
+
+    // ---- W224 F2: DONE / FAILED 释放会话与 mailbox ----
+
+    #[tokio::test]
+    async fn tick_done_releases_session_and_mailbox() {
+        let (reg, cfg) = fixture("release-done");
+        let sid = ended_started(&reg, "W21", "brief=write report", now_secs() - 660);
+        // 已结束会话 + 未消费邮件（F3 后不判活）→ DONE 时释放会话与 mailbox（W222 F2）。
+        reg.mailbox().send(&sid, "follow-up", "coordinator");
+        fs::create_dir_all(&cfg.results_dir).unwrap();
+        fs::write(cfg.results_dir.join("W21-看门狗.md"), "report").unwrap();
+
+        let wd = Watchdog::new(reg.clone(), cfg);
+        let actions = wd.tick().await.unwrap();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0], WatchAction::MarkDone { wid: "W21".into() });
+
+        assert!(reg.sessions().get(&sid).is_none(), "ended session must be released on DONE");
+        assert_eq!(reg.mailbox().pending(&sid), 0, "mailbox must be purged on DONE");
+        assert_eq!(reg.mailbox().pending_total(), 0);
+    }
+
+    #[tokio::test]
+    async fn tick_failed_releases_session_and_mailbox() {
+        let (reg, cfg) = fixture("release-fail");
+        let sid = ended_started(&reg, "W22", "note=no-brief", now_secs() - 660);
+        reg.mailbox().send(&sid, "follow-up", "coordinator");
+
+        let wd = Watchdog::new(reg.clone(), cfg);
+        let actions = wd.tick().await.unwrap();
+        assert_eq!(actions[0], WatchAction::MarkFailed { wid: "W22".into() });
+        assert_eq!(reg.get_entry("W22").unwrap().status, WorkerStatus::Failed);
+
+        assert!(reg.sessions().get(&sid).is_none(), "ended session must be released on FAILED");
+        assert_eq!(reg.mailbox().pending(&sid), 0, "mailbox must be purged on FAILED");
+        assert_eq!(reg.mailbox().pending_total(), 0);
     }
 }
 

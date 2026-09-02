@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
-use celestea_agent_loop::DefaultAgentLoop;
+use celestea_agent_loop::{DefaultAgentLoop, UsageTracker};
 use celestea_core::{
     AgentConfig, AgentLoop, AgentLoopService, Context, LlmRegistryService,
     LlmService, SessionLog, SessionService, ToolRegistry,
@@ -43,6 +43,9 @@ pub struct Runtime {
     /// The shared WorkerRegistry (registry.tsv + session references +
     /// drive seams), also surfaced as WorkerRegistryService in ctx.
     pub workers: Arc<WorkerRegistry>,
+    /// Cumulative usage accounting across all turns driven by this Runtime
+    /// (W220): the agent loop records every LLM stream's usage here.
+    pub usage: Arc<UsageTracker>,
 }
 
 impl Runtime {
@@ -115,15 +118,25 @@ impl Runtime {
         register_all_tools(&mut registry, workers.clone());
         let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
 
+        let usage = Arc::new(UsageTracker::new());
         let config = AgentConfig {
             model: profile.model.clone(),
             system_prompt: profile.system_prompt.clone(),
             max_steps: profile.max_steps,
             max_parallel_tool_calls: profile.max_parallel_tool_calls,
+            context_window_tokens: profile.context_window_tokens,
+            context_trim_threshold: profile.context_trim_threshold,
+            context_keep_recent: profile.context_keep_recent,
         };
-        // Back-compat plain loop (no sink, no cancel); run paths rebuild a
-        // per-turn loop with cancel + optional sink via run::make_loop.
-        let agent: Arc<dyn AgentLoop> = Arc::new(DefaultAgentLoop::new(config.clone()));
+        // Back-compat plain loop (no sink, no cancel), wired to the shared
+        // usage tracker so worker-driven sessions also report usage; run paths
+        // rebuild a per-turn loop with cancel + optional sink via run::make_loop.
+        let agent: Arc<dyn AgentLoop> = Arc::new(DefaultAgentLoop::with_bindings(
+            config.clone(),
+            None,
+            None,
+            Some(usage.clone()),
+        ));
 
         let mut ctx = Context::new();
         ctx.provide(LlmService(resolved));
@@ -142,7 +155,7 @@ impl Runtime {
             ctx.get::<AgentLoopService>().map(|s| s.0.clone()),
         );
         ctx.provide(celestea_workers::WorkerRegistryService(workers.clone()));
-        Ok(Runtime { ctx, session, registry, config, workers })
+        Ok(Runtime { ctx, session, registry, config, workers, usage })
     }
 }
 

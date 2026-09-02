@@ -35,12 +35,12 @@ impl Runtime {
         sink: Option<EventSink>,
     ) -> Arc<dyn AgentLoop> {
         let cfg = self.config.clone();
-        match (cancel, sink) {
-            (Some(rx), Some(s)) => Arc::new(DefaultAgentLoop::with_cancel_sink(cfg, rx, s)),
-            (Some(rx), None) => Arc::new(DefaultAgentLoop::with_cancel(cfg, rx)),
-            (None, Some(s)) => Arc::new(DefaultAgentLoop::with_sink(cfg, s)),
-            (None, None) => Arc::new(DefaultAgentLoop::new(cfg)),
-        }
+        Arc::new(DefaultAgentLoop::with_bindings(
+            cfg,
+            cancel,
+            sink,
+            Some(self.usage.clone()),
+        ))
     }
 
     /// Run one turn with cooperative cancellation and streaming events.
@@ -76,6 +76,18 @@ impl Runtime {
     pub fn summarize_turn(&self) -> TurnSummary {
         summarize_turn(&self.session.events())
     }
+
+    /// The token usage of the most recent LLM stream driven by this Runtime
+    /// (zeroed when no turn has run yet). Additive surface for /api/status
+    /// and future context-trimming telemetry (W220).
+    pub fn latest_usage(&self) -> celestea_core::Usage {
+        self.usage.latest()
+    }
+
+    /// Cumulative token usage across all turns driven by this Runtime.
+    pub fn total_usage(&self) -> celestea_core::Usage {
+        self.usage.total()
+    }
 }
 
 #[cfg(test)]
@@ -92,6 +104,7 @@ mod tests {
         ToolGuard,
     };
     use crate::LoopEvent;
+    use celestea_agent_loop::UsageTracker;
     use celestea_session::InMemorySessionLog;
     use celestea_workers::WorkerRegistry;
     use futures_util::stream;
@@ -175,7 +188,14 @@ mod tests {
             )),
         ));
         (
-            Runtime { ctx, session, registry: registry.clone(), config, workers },
+            Runtime {
+                ctx,
+                session,
+                registry: registry.clone(),
+                config,
+                workers,
+                usage: Arc::new(UsageTracker::new()),
+            },
             registry,
         )
     }
@@ -255,5 +275,56 @@ mod tests {
         assert!(events.iter().any(|e| matches!(e, SessionEvent::TurnEnd { .. })));
         assert!(!events.iter().any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
     }
-}
+    #[tokio::test]
+    async fn run_turn_reports_latest_and_total_usage() {
+        // Fake LLM streams a Usage event; the Runtime exposes latest + total.
+        struct UsageLlm;
+        #[async_trait]
+        impl Llm for UsageLlm {
+            async fn generate(&self, _req: ModelRequest) -> Result<LlmStream, LlmError> {
+                Ok(stream::iter(vec![
+                    StreamEvent::Usage(celestea_core::Usage {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                        cache_read: 3,
+                        reasoning_tokens: 2,
+                    }),
+                    StreamEvent::Done(Message::assistant_text("done")),
+                ]).boxed())
+            }
+        }
 
+        let session = Arc::new(InMemorySessionLog::new());
+        let registry = Arc::new(FakeRegistry::default());
+        let mut ctx = Context::new();
+        ctx.provide(LlmService(Arc::new(UsageLlm)));
+        ctx.provide(SessionService(session.clone()));
+        ctx.provide(ToolRegistryService(registry.clone()));
+        let config = celestea_core::AgentConfig::default();
+        let workers = Arc::new(WorkerRegistry::new(std::env::temp_dir().join(format!(
+            "celestea-rt-usage-{}-{}.tsv",
+            std::process::id(),
+            rand_tag()
+        ))));
+        let rt = Runtime {
+            ctx,
+            session,
+            registry: registry.clone(),
+            config,
+            workers,
+            usage: Arc::new(UsageTracker::new()),
+        };
+
+        let outcome = rt.run_turn("hi", None, None).await.unwrap();
+        assert_eq!(outcome, TurnOutcome::Completed);
+        assert_eq!(rt.latest_usage().total_tokens, 15);
+        assert_eq!(rt.latest_usage().cache_read, 3);
+        assert_eq!(rt.latest_usage().reasoning_tokens, 2);
+        assert_eq!(rt.total_usage().total_tokens, 15);
+        assert_eq!(rt.total_usage().prompt_tokens, 10);
+        // A second turn accumulates: the fake LLM reports the same usage again.
+        rt.run_turn("again", None, None).await.unwrap();
+        assert_eq!(rt.total_usage().total_tokens, 30);
+    }
+}
