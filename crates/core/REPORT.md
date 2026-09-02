@@ -73,3 +73,26 @@
 ### Leftover
 - agent-loop still resolves the single-adapter LlmService; LlmRegistryService is
   the extension seam for name-routed multi-provider consumers.
+
+
+
+## W191: StreamEvent::Thinking + 默认身份
+
+### 变更
+- `StreamEvent` 新增 `Thinking(String)` 变体：reasoning 模型的链式思考（CoT）delta 独立成事件，
+  与最终回答 `Text(String)` 明确区分，供消费方（agent-loop）以可辨识形态输出、P1 富渲染接入。
+  `Done(Message)` 仍是唯一权威最终消息，语义不变。
+- `AgentConfig::default()` 的 `system_prompt` 从通用占位改为明确 agent 身份：
+  `You are celestea, an AI agent. You are concise, accurate and direct.`
+  （C·身份）。注：cli 的 Profile::default() 仍为旧文案，属 cli 范围，按红线禁改 cli 未动。
+
+### 验证
+- cargo build -p celestea-core: OK；cargo test -p celestea-core: 18 passed（+2：
+  stream_event_thinking_is_a_distinct_variant / agent_config_default_has_explicit_identity）。
+- 全仓 cargo build --workspace 与 cargo test --workspace: 通过（见 W191 结果报告）。
+
+### 回滚
+- git -C /src/celestea_harness checkout -- crates/core/
+
+### 遗留
+- StreamEvent 增变体为 additive，但显式 match 的消费方需补 Thinking 分支（agent-loop 已补）。

@@ -143,3 +143,32 @@ reasoning_effort/max_tokens 映射、模型校验、supported_models 元数据�
 
 ### 回滚
 - git -C /src/celestea_harness checkout -- crates/llm/
+
+
+
+## W191 补充：reasoning → StreamEvent::Thinking 映射（seam + 源码核验）
+
+### 变更
+- 新增 `thinking_event(reasoning) -> Option<StreamEvent>`：非空 reasoning → StreamEvent::Thinking
+  （trim 后），空/空白 → None。
+- 新增 `extract_reasoning(chunk: &serde_json::Value) -> Option<String>`：从流式 chunk 原始 JSON
+  提取 DeepSeek 的 `choices[].delta.reasoning_content`（多 choice 按序拼接）。
+- 关键核验（源码为准）：async-openai 0.41.3 的 `ChatCompletionStreamResponseDelta`
+  （src/types/chat/chat_.rs:1140）只建模 content / function_call / tool_calls / role / refusal，
+  **不含 reasoning_content / reasoning 字段**；无 `deny_unknown_fields`，serde 会静默丢弃未知字段。
+  公开 `Chat::create_stream` 固定返回类型化 `CreateChatCompletionStreamResponse`，无公开原始
+  SSE/JSON 出口。因此本迭代内，实时 generate() 流无法从类型化 delta 取到 CoT——映射函数已实现
+  并对真实线格式单测，接入实时流是 P1 接原始 SSE 传输后的接线工作（seam 已就绪，标注 #[allow(dead_code)]）。
+  Thinking 缝本体已端到端可用：agent-loop 消费 StreamEvent::Thinking（见 agent-loop 测试）。
+
+### 验证
+- cargo test -p celestea-llm: 17 passed（+5：thinking_event 非空/空、extract_reasoning 读取/
+  多 choice 拼接/缺失为 None）。
+- 全仓 build/test: 通过。
+
+### 回滚
+- git -C /src/celestea_harness checkout -- crates/llm/
+
+### 遗留
+- 实时 reasoning 落地依赖 async-openai 提供 raw SSE（当前版本无公开出口）或 provider 直连；
+  seam 与映射已单测覆盖，P1 接传输即可点亮。

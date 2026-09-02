@@ -272,11 +272,18 @@ pub struct ModelRequest {
     pub temperature: Option<f32>,
 }
 
-/// Stream events from a provider. Providers emit incremental text deltas for the
+/// Stream events from a provider. Providers emit incremental deltas for the
 /// UI, then a single final Message (text + tool calls) as the last event.
+///
+/// - StreamEvent::Text — a final-answer text delta.
+/// - StreamEvent::Thinking — a chain-of-thought / reasoning delta from a
+///   reasoning model (e.g. DeepSeek reasoning_content). Carried as its own
+///   event so consumers can distinguish it from the final answer (W191).
+/// - StreamEvent::Done — the single authoritative final message.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     Text(String),
+    Thinking(String),
     Done(Message),
 }
 
@@ -469,7 +476,9 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             model: "deepseek-chat".into(),
-            system_prompt: "You are a helpful assistant.".into(),
+            system_prompt:
+                "You are celestea, an AI agent. You are concise, accurate and direct."
+                    .into(),
             max_steps: 16,
             max_parallel_tool_calls: 4,
         }
@@ -747,5 +756,30 @@ mod tests {
     fn event_bus_modes_are_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<EventBus>();
+    }
+
+    // ---- W191: StreamEvent::Thinking + default identity ----------------------
+
+    #[test]
+    fn stream_event_thinking_is_a_distinct_variant() {
+        // Thinking carries its own payload, distinct from Text and Done.
+        let thinking = StreamEvent::Thinking("reasoning...".to_string());
+        assert!(matches!(&thinking, StreamEvent::Thinking(_)));
+        assert!(!matches!(&thinking, StreamEvent::Text(_)));
+        assert!(!matches!(&thinking, StreamEvent::Done(_)));
+    }
+
+    #[test]
+    fn agent_config_default_has_explicit_identity() {
+        let cfg = AgentConfig::default();
+        // C·identity: the default system prompt states an explicit agent identity
+        // instead of the old generic "helpful assistant" boilerplate.
+        assert!(
+            cfg.system_prompt.contains("celestea"),
+            "default system_prompt should name the agent identity, got: {}",
+            cfg.system_prompt
+        );
+        assert!(cfg.system_prompt.contains("concise"));
+        assert!(!cfg.system_prompt.contains("helpful assistant"));
     }
 }

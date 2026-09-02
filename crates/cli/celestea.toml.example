@@ -1,0 +1,43 @@
+# celestea.toml.example — 9-key TOML config template for the celestea CLI.
+#
+# Copy this file to "celestea.toml" next to where you run the CLI. The loader
+# prefers "celestea.toml" (TOML), then falls back to the legacy "profile.json",
+# then to built-in defaults. All 9 keys are optional; any key you omit keeps
+# its default (shown in the comments).
+#
+# API key resolution (highest priority first):
+#   1. env var named by "api_key_env" (default DEEPSEEK_API_KEY);
+#   2. trimmed contents of the file named by "api_key_file";
+#   3. hard error.
+# A ".env" file in the current directory is loaded at startup if present
+# (best-effort, silent on failure). Key values are never stored in this file.
+
+# Model name passed to the DeepSeek-compatible endpoint. Default: deepseek-chat.
+model = "deepseek-chat"
+
+# System prompt for the agent loop. Default: "You are celestea, an AI agent.
+# You are concise, accurate and direct." (the celestea agent identity).
+system_prompt = "You are celestea, an AI agent. You are concise, accurate and direct."
+
+# Max agent steps per turn. Default: 16.
+max_steps = 16
+
+# Max parallel tool calls. Default: 4.
+max_parallel_tool_calls = 4
+
+# Optional API base URL. Default: env DEEPSEEK_BASE_URL, then
+# https://api.deepseek.com.
+base_url = "https://api.deepseek.com"
+
+# Optional reasoning effort for reasoning models: "low" | "medium" | "high".
+reasoning_effort = "medium"
+
+# Optional output-token cap.
+max_output_tokens = 4096
+
+# Env var that holds the API key. Default: DEEPSEEK_API_KEY.
+api_key_env = "DEEPSEEK_API_KEY"
+
+# Optional path to a file whose trimmed contents hold the API key (used when
+# the env var above is unset). Omit to skip.
+api_key_file = "/path/to/deepseek.key"

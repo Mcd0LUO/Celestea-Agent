@@ -325,6 +325,58 @@ pub fn deepseek_registry(llm: DeepSeekLlm) -> LlmRegistry {
     reg
 }
 
+/// Build a StreamEvent::Thinking out of a non-empty reasoning string, if any.
+///
+/// Chain-of-thought deltas are surfaced as their own StreamEvent so a consumer
+/// can tell reasoning from the final answer. Empty/whitespace reasoning yields
+/// None (nothing to emit).
+// The mapping seam below is exercised by the W191 unit tests (against the real
+// DeepSeek wire shape). The pinned async-openai 0.41.3 typed stream drops
+// reasoning_content before our loop sees it (see extract_reasoning's NOTE), so
+// the live provider cannot feed it yet; P1 wires a raw-SSE transport here.
+#[allow(dead_code)]
+fn thinking_event(reasoning: &str) -> Option<StreamEvent> {
+    let r = reasoning.trim();
+    if r.is_empty() {
+        None
+    } else {
+        Some(StreamEvent::Thinking(r.to_string()))
+    }
+}
+
+/// Extract the chain-of-thought text from a streamed chat-completions chunk's
+/// raw JSON. DeepSeek streams the CoT in \`choices[0].delta.reasoning_content\`
+/// (absent for non-reasoning models). Given the chunk verbatim it returns the
+/// joined reasoning text, or None when the chunk carries none.
+///
+/// NOTE (W191, source-verified): async-openai 0.41.3's typed stream drops this
+/// field before our loop sees it — its ChatCompletionStreamResponseDelta models
+/// only content / function_call / tool_calls / role / refusal (chat_.rs). The
+/// current generate() therefore cannot obtain the raw delta of a typed chunk, so
+/// while this mapper is exercised against the real wire shape in tests, wiring it
+/// into the live loop is P1-ready work that only needs a raw-SSE transport (the
+/// pinned library offers no public raw stream). The Thinking seam itself is live
+/// end-to-end (agent-loop consumes StreamEvent::Thinking; see agent-loop tests).
+#[allow(dead_code)]
+fn extract_reasoning(chunk: &serde_json::Value) -> Option<String> {
+    let deltas = chunk.get("choices")?.as_array()?;
+    let mut parts: Vec<String> = Vec::new();
+    for choice in deltas {
+        if let Some(r) = choice.get("delta").and_then(|d| d.get("reasoning_content")) {
+            if let Some(t) = r.as_str() {
+                if !t.is_empty() {
+                    parts.push(t.to_string());
+                }
+            }
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(""))
+    }
+}
+
 /// Per-index accumulator for a streamed tool call.
 #[derive(Default)]
 struct ToolCallAcc {
@@ -620,6 +672,66 @@ mod tests {
             parse_arguments("not json"),
             serde_json::Value::String("not json".into())
         );
+    }
+
+    // ---- W191: StreamEvent::Thinking mapping (chain-of-thought) ---------------
+
+    #[test]
+    fn thinking_event_maps_non_empty_reasoning() {
+        // Non-empty reasoning -> StreamEvent::Thinking (whitespace-trimmed).
+        let ev = thinking_event("  Let me reconsider.  ").unwrap();
+        assert!(matches!(ev, StreamEvent::Thinking(_)));
+        if let StreamEvent::Thinking(t) = ev {
+            assert_eq!(t, "Let me reconsider.");
+        }
+    }
+
+    #[test]
+    fn thinking_event_none_for_empty_or_blank() {
+        assert!(thinking_event("").is_none());
+        assert!(thinking_event("   ").is_none());
+        assert!(thinking_event("\n\t").is_none());
+    }
+
+    #[test]
+    fn extract_reasoning_reads_deepseek_reasoning_content() {
+        // A chunk shaped like DeepSeek's streamed reasoning delta.
+        let chunk = serde_json::json!({
+            "id": "chunk-1",
+            "choices": [{
+                "index": 0,
+                "delta": { "reasoning_content": "Let me trace the steps." },
+                "finish_reason": null
+            }]
+        });
+        assert_eq!(
+            extract_reasoning(&chunk).as_deref(),
+            Some("Let me trace the steps.")
+        );
+    }
+
+    #[test]
+    fn extract_reasoning_concatenates_multi_choice_reasoning_in_order() {
+        // Multi-choice reasoning deltas join in array order.
+        let chunk = serde_json::json!({
+            "choices": [
+                { "index": 0, "delta": { "reasoning_content": "ab" } },
+                { "index": 1, "delta": { "reasoning_content": "cd" } }
+            ]
+        });
+        assert_eq!(extract_reasoning(&chunk).as_deref(), Some("abcd"));
+    }
+
+    #[test]
+    fn extract_reasoning_none_when_absent() {
+        // A normal final-answer chunk carries no reasoning_content.
+        let chunk = serde_json::json!({
+            "choices": [{ "index": 0, "delta": { "content": "hello" } }]
+        });
+        assert!(extract_reasoning(&chunk).is_none());
+        // Malformed / empty chunks also yield None (no panic).
+        assert!(extract_reasoning(&serde_json::json!({})).is_none());
+        assert!(extract_reasoning(&serde_json::json!({"choices": []})).is_none());
     }
 
     #[test]
