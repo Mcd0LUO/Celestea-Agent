@@ -6,16 +6,88 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use celestea_core::{SessionLog, ToolRegistry};
+use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
+use rustyline::validate::Validator;
+use rustyline::{Context, Editor, Helper};
 use tokio::io::AsyncReadExt;
 
 use crate::config::{Env, Profile};
 use crate::interrupt::{run_turn_interruptible, InterruptKind};
 use crate::redirect::stdout_redirect;
-use crate::render::{format_profile, format_tool_list, parse_repl_command, summarize_turn, ReplCommand};
+use crate::render::{complete_repl_command, format_profile, format_tool_list, parse_repl_command, summarize_turn, ReplCommand};
 use crate::rich;
 use crate::ExitKind;
+
+/// rustyline helper that tab-completes and hints leading-/ REPL commands
+/// (/tools /model /clear /profile /exit /quit; quit is the alias of exit
+/// and is offered for completion too). Non-/ lines are never touched.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ReplHelper;
+
+impl Completer for ReplHelper {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<String>)> {
+        // Only complete a /-command token whose end the cursor sits at.
+        if pos < line.len() {
+            return Ok((pos, Vec::new()));
+        }
+        let head = &line[..pos];
+        let trimmed = head.trim_start();
+        let Some(prefix) = trimmed.strip_prefix('/') else {
+            return Ok((pos, Vec::new()));
+        };
+        // A space after the command word ends the token: stop completing.
+        if prefix.contains(char::is_whitespace) {
+            return Ok((pos, Vec::new()));
+        }
+        let cands = complete_repl_command(head);
+        if cands.is_empty() {
+            return Ok((pos, Vec::new()));
+        }
+        let start = head.len() - prefix.len() - 1; // byte offset of '/'
+        Ok((start, cands))
+    }
+}
+
+impl Hinter for ReplHelper {
+    type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
+        if pos < line.len() {
+            return None;
+        }
+        let head = &line[..pos];
+        let trimmed = head.trim_start();
+        let Some(prefix) = trimmed.strip_prefix('/') else {
+            return None;
+        };
+        if prefix.is_empty() || prefix.contains(char::is_whitespace) {
+            return None;
+        }
+        let cands = complete_repl_command(head);
+        if cands.len() == 1 {
+            let c = &cands[0];
+            if c.len() > head.len() {
+                return Some(c[head.len()..].to_string());
+            }
+        }
+        None
+    }
+}
+
+impl Highlighter for ReplHelper {}
+impl Validator for ReplHelper {}
+impl Helper for ReplHelper {}
 
 pub(crate) async fn read_all_stdin() -> std::io::Result<String> {
     let mut stdin = tokio::io::stdin();
@@ -82,8 +154,11 @@ pub(crate) async fn run_one_shot(env: &Env, input: &str, json: bool) -> ExitKind
 /// Ctrl-D / exit / /exit stop; a failing turn sets the accumulated exit code,
 /// returned when the REPL ends.
 pub(crate) async fn run_repl(env: &Env, profile: &Profile) -> ExitKind {
-    let mut rl = match DefaultEditor::new() {
-        Ok(rl) => rl,
+    let mut rl = match Editor::<ReplHelper, DefaultHistory>::new() {
+        Ok(mut rl) => {
+            rl.set_helper(Some(ReplHelper));
+            rl
+        }
         Err(e) => {
             eprintln!("failed to init line editor: {e}");
             return ExitKind::Runtime;
@@ -189,3 +264,48 @@ pub(crate) fn handle_repl_command(
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_ctx() -> Context<'static> {
+        let history: &'static _ = Box::leak(Box::new(rustyline::history::DefaultHistory::new()));
+        Context::new(history)
+    }
+
+    #[test]
+    fn repl_helper_completes_slash_commands() {
+        let h = ReplHelper;
+        let ctx = empty_ctx();
+        let (start, cands) = h.complete("/t", 2, &ctx).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(cands, vec!["/tools".to_string()]);
+        let (_, cands) = h.complete("/", 1, &ctx).unwrap();
+        assert_eq!(cands.len(), 6);
+        // Non-slash input is not completed.
+        let (start, cands) = h.complete("hello", 5, &ctx).unwrap();
+        assert_eq!(start, 5);
+        assert!(cands.is_empty());
+        // No match -> no candidates.
+        let (start, cands) = h.complete("/x", 2, &ctx).unwrap();
+        assert_eq!(start, 2);
+        assert!(cands.is_empty());
+        // Cursor not at end of line -> no completion.
+        let (start, cands) = h.complete("/t", 1, &ctx).unwrap();
+        assert_eq!(start, 1);
+        assert!(cands.is_empty());
+    }
+
+    #[test]
+    fn repl_helper_hints_single_candidate() {
+        let h = ReplHelper;
+        let ctx = empty_ctx();
+        assert_eq!(h.hint("/t", 2, &ctx).as_deref(), Some("ools"));
+        // Already complete -> no hint.
+        assert_eq!(h.hint("/tools", 6, &ctx), None);
+        // Non-slash -> no hint.
+        assert_eq!(h.hint("hello", 5, &ctx), None);
+    }
+}
+

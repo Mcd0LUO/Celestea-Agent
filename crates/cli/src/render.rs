@@ -37,6 +37,28 @@ pub(crate) fn parse_repl_command(line: &str) -> Option<ReplCommand> {
     })
 }
 
+/// Every /-command word (without the leading slash), in a canonical order.
+/// 'quit' is an alias for 'exit' and is offered for completion too.
+pub(crate) const REPL_COMMANDS: [&str; 6] = ["tools", "model", "clear", "profile", "exit", "quit"];
+
+/// Prefix-match completion for a leading-/ command line. Returns the full
+/// /command candidates (sorted, deduped) whose name starts with the typed
+/// prefix after the slash; empty when the line is not a / command or nothing
+/// matches. Pure - unit tested.
+pub(crate) fn complete_repl_command(line: &str) -> Vec<String> {
+    let Some(prefix) = line.trim().strip_prefix('/') else {
+        return Vec::new();
+    };
+    let mut cands: Vec<String> = REPL_COMMANDS
+        .iter()
+        .filter(|cmd| cmd.starts_with(prefix))
+        .map(|cmd| format!("/{}", cmd))
+        .collect();
+    cands.sort();
+    cands.dedup();
+    cands
+}
+
 /// Human-readable listing of the registered tools (name + description).
 pub(crate) fn format_tool_list(specs: &[ToolSpec]) -> String {
     let mut out = String::new();
@@ -194,3 +216,47 @@ pub(crate) fn summarize_turn(events: &[SessionEvent]) -> TurnSummary {
     }
     summary
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complete_repl_command_prefix_matches_single() {
+        assert_eq!(complete_repl_command("/t"), vec!["/tools".to_string()]);
+        assert_eq!(complete_repl_command("/m"), vec!["/model".to_string()]);
+        assert_eq!(complete_repl_command("/c"), vec!["/clear".to_string()]);
+        assert_eq!(complete_repl_command("/p"), vec!["/profile".to_string()]);
+        assert_eq!(complete_repl_command("/e"), vec!["/exit".to_string()]);
+        assert_eq!(complete_repl_command("/q"), vec!["/quit".to_string()]);
+    }
+
+    #[test]
+    fn complete_repl_command_empty_prefix_lists_all_sorted() {
+        assert_eq!(
+            complete_repl_command("/"),
+            vec![
+                "/clear".to_string(),
+                "/exit".to_string(),
+                "/model".to_string(),
+                "/profile".to_string(),
+                "/quit".to_string(),
+                "/tools".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn complete_repl_command_no_match_or_not_slash_is_empty() {
+        assert!(complete_repl_command("/x").is_empty());
+        assert!(complete_repl_command("hello").is_empty());
+        assert!(complete_repl_command("").is_empty());
+    }
+
+    #[test]
+    fn complete_repl_command_trims_leading_whitespace_and_dedups() {
+        assert_eq!(complete_repl_command("  /cl"), vec!["/clear".to_string()]);
+        assert_eq!(complete_repl_command("/tools"), vec!["/tools".to_string()]);
+    }
+}
+

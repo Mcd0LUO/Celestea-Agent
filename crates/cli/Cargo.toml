@@ -27,3 +27,4 @@ ratatui.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+unicode-width = "0.2"

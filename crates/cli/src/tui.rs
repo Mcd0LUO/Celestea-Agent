@@ -14,11 +14,12 @@ use celestea_core::{AgentError, AgentLoop, ToolDecision, ToolOutput};
 
 use crate::config::{Env, Profile};
 use crate::interrupt::InterruptKind;
-use crate::render::{format_profile, parse_repl_command, ReplCommand};
+use crate::render::{complete_repl_command, format_profile, parse_repl_command, ReplCommand};
 use crate::rich;
 use crate::ExitKind;
 
     use crossterm::event::{self, Event as TermEvent, KeyCode, KeyModifiers};
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
     use ratatui::layout::{Constraint, Layout, Margin, Rect};
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span, Text};
@@ -167,6 +168,32 @@ use crate::ExitKind;
     }
 
 
+    /// Choose the tail slice of the input that fits in the given number of
+    /// display columns, plus the cursor's column offset within it. When the
+    /// whole input fits, the cursor sits right after the text; when it is
+    /// longer than the box, the view scrolls so the tail (where the cursor is)
+    /// stays visible and the cursor lands at the right edge of the visible
+    /// area. Uses Unicode display width, so CJK / wide glyphs count as two
+    /// columns. Pure - unit tested.
+    pub(crate) fn input_view(input: &str, avail: usize) -> (String, usize) {
+        let total = input.width();
+        if total <= avail {
+            return (input.to_string(), total);
+        }
+        let mut used = 0usize;
+        let mut cut = input.len();
+        for (idx, c) in input.char_indices().rev() {
+            let w = c.width().unwrap_or(0);
+            if used + w <= avail {
+                used += w;
+                cut = idx;
+            } else {
+                break;
+            }
+        }
+        (input[cut..].to_string(), used)
+    }
+
     /// Convert one rich ANSI-styled line into a ratatui Line of styled spans.
     /// Parses the SGR codes the rich module emits (bold/dim/italic/underline/
     /// reverse, 16-colour, indexed 256, true-colour). Pure - unit tested.
@@ -271,6 +298,9 @@ use crate::ExitKind;
         pub running: bool,
         pub interrupted: bool,
         pub input: String,
+        /// Tab-completion candidate list (full "/cmd" strings) + selected index.
+        pub completion: Vec<String>,
+        pub completion_idx: usize,
         /// Active streaming assistant buffer + its markdown streamer.
         pub buf: MessageBuf,
         pub md: rich::StreamingMarkdown,
@@ -289,6 +319,8 @@ use crate::ExitKind;
                 running: false,
                 interrupted: false,
                 input: String::new(),
+                completion: Vec::new(),
+                completion_idx: 0,
                 buf: MessageBuf::new(),
                 md: rich::StreamingMarkdown::new(None),
                 thinking_tail: String::new(),
@@ -307,6 +339,13 @@ use crate::ExitKind;
             self.tool_names.clear();
             self.running = true;
             self.interrupted = false;
+        }
+
+        /// Forget any active Tab-completion state (called whenever the user
+        /// types, clears, or moves the input, so only bare Tab advances it).
+        pub fn clear_completion(&mut self) {
+            self.completion.clear();
+            self.completion_idx = 0;
         }
 
         /// Feed a thinking delta; completed lines are pushed to conv.
@@ -475,6 +514,19 @@ use crate::ExitKind;
         if state.interrupted {
             segs.push(Span::styled("   ⏹ 已中断", Style::new().fg(Color::Yellow)));
         }
+        // Show the active Tab-completion candidate list (with the selected one
+        // marked) so /-command cycling is visible.
+        if !state.completion.is_empty() {
+            let mut hint = String::from("  tab:");
+            for (i, c) in state.completion.iter().enumerate() {
+                hint.push(' ');
+                if i == state.completion_idx {
+                    hint.push('>');
+                }
+                hint.push_str(c);
+            }
+            segs.push(Span::styled(hint, Style::new().fg(Color::Yellow)));
+        }
         frame.render_widget(
             Paragraph::new(Line::from(segs)).style(Style::new().bg(Color::DarkGray)),
             area,
@@ -487,18 +539,30 @@ use crate::ExitKind;
         } else {
             " > "
         };
+        // Interior line of the box; the prompt plus the visible input slice must
+        // fit within it (long input scrolls so the cursor stays inside).
+        let inner = area.inner(Margin { horizontal: 1, vertical: 1 });
+        let prompt_w = prompt.width();
+        let avail = (inner.width as usize).saturating_sub(prompt_w);
+        let (view, cursor_col) = input_view(&state.input, avail);
+
         let mut segs = vec![
             Span::styled(prompt, Style::new().fg(Color::Cyan)),
-            Span::styled(state.input.clone(), Style::new()),
+            Span::styled(view, Style::new()),
         ];
         if state.running {
             segs.push(Span::styled(" ▌", Style::new().fg(Color::Cyan)));
         }
         let block = Block::bordered().title("input").title_style(Style::new().fg(Color::DarkGray));
         frame.render_widget(Paragraph::new(Line::from(segs)).block(block), area);
-        // put the terminal cursor inside the input box after the typed text
-        let inner = area.inner(Margin { horizontal: 1, vertical: 1 });
-        let x = inner.x + (prompt.chars().count() + state.input.chars().count()) as u16;
+
+        // Terminal cursor always lands on a legal position inside the box:
+        // after the prompt + visible text, clamped to the box interior so long
+        // or wide input (or the long running prompt) never pushes it out of
+        // bounds and the terminal never starts eating keystrokes.
+        let cursor_x = inner.x + (prompt_w + cursor_col) as u16;
+        let max_x = inner.x.saturating_add(inner.width.saturating_sub(1));
+        let x = cursor_x.min(max_x).max(inner.x);
         frame.set_cursor_position((x, inner.y));
     }
 
@@ -517,21 +581,34 @@ use crate::ExitKind;
         })
     }
 
-    /// Read the next terminal event asynchronously by running crossterm's
-    /// blocking read on a helper thread and forwarding over a tokio mpsc.
-    async fn next_term_event() -> Option<TermEvent> {
-        let (tx, mut rx) = mpsc::unbounded_channel::<TermEvent>();
-        std::thread::spawn(move || loop {
-            match event::read() {
-                Ok(ev) => {
-                    if tx.send(ev).is_err() {
-                        break;
+    /// Persistent terminal-event reader. One background thread runs crossterm's
+    /// blocking event::read() and forwards every event over a tokio mpsc for the
+    /// whole TUI session, so no key can be dropped by a per-read thread race
+    /// (the root cause of the "occasionally eaten key / Enter does not submit"
+    /// bug).
+    struct EventReader {
+        rx: mpsc::UnboundedReceiver<TermEvent>,
+    }
+
+    impl EventReader {
+        fn spawn() -> Self {
+            let (tx, rx) = mpsc::unbounded_channel::<TermEvent>();
+            std::thread::spawn(move || loop {
+                match event::read() {
+                    Ok(ev) => {
+                        if tx.send(ev).is_err() {
+                            break;
+                        }
                     }
+                    Err(_) => break,
                 }
-                Err(_) => break,
-            }
-        });
-        rx.recv().await
+            });
+            Self { rx }
+        }
+
+        async fn next(&mut self) -> Option<TermEvent> {
+            self.rx.recv().await
+        }
     }
 
     type Backend = ratatui::backend::CrosstermBackend<std::io::Stdout>;
@@ -546,6 +623,7 @@ use crate::ExitKind;
         term: &mut Term,
         state: &Arc<Mutex<TuiState>>,
         input: &str,
+        reader: &mut EventReader,
     ) -> (Result<(), AgentError>, InterruptKind) {
         let (cancel_tx, cancel_rx) = watch::channel(false);
         {
@@ -575,7 +653,7 @@ use crate::ExitKind;
 
             let event = tokio::select! {
                 _ = notify_rx.recv() => continue,
-                ev = next_term_event() => ev,
+                ev = reader.next() => ev,
                 r = &mut turn => {
                     return if cancelled {
                         (r, InterruptKind::Cancelled)
@@ -619,6 +697,7 @@ use crate::ExitKind;
         let mut history_idx: Option<usize> = None;
 
         let mut term = ratatui::init();
+        let mut reader = EventReader::spawn();
         let state = Arc::new(Mutex::new(TuiState::new(profile.model.clone())));
         let mut code = ExitKind::Ok;
 
@@ -629,7 +708,7 @@ use crate::ExitKind;
                 let _ = term.draw(|f| draw(f, &st, &mut scroll));
             }
 
-            let ev = next_term_event().await;
+            let ev = reader.next().await;
 
             // Ctrl-D (raw-mode char 'd' + CONTROL) quits the fullscreen TUI.
             if let Some(TermEvent::Key(k)) = ev.as_ref() {
@@ -646,24 +725,51 @@ use crate::ExitKind;
                 if ctrl_c {
                     // At the prompt Ctrl-C clears the current input line.
                     let mut st = state.lock().unwrap();
+                    st.clear_completion();
                     st.input.clear();
                     continue;
                 }
                 match k.code {
                     KeyCode::Enter => {
                         let mut st = state.lock().unwrap();
+                        st.clear_completion();
                         submitted = Some(std::mem::take(&mut st.input));
+                    }
+                    KeyCode::Tab => {
+                        let mut st = state.lock().unwrap();
+                        // Only /-command lines are completed; ordinary text is
+                        // left untouched. Once a candidate list is active, Tab
+                        // cycles within it; typing/backspace clears it first.
+                        if st.input.starts_with('/') {
+                            if !st.completion.is_empty() && st.completion.contains(&st.input) {
+                                st.completion_idx = (st.completion_idx + 1) % st.completion.len();
+                                st.input = st.completion[st.completion_idx].clone();
+                            } else {
+                                let cands = complete_repl_command(&st.input);
+                                if cands.is_empty() {
+                                    st.completion.clear();
+                                    st.completion_idx = 0;
+                                } else {
+                                    st.completion = cands.clone();
+                                    st.completion_idx = 0;
+                                    st.input = st.completion[0].clone();
+                                }
+                            }
+                        }
                     }
                     KeyCode::Backspace => {
                         let mut st = state.lock().unwrap();
+                        st.clear_completion();
                         st.input.pop();
                     }
                     KeyCode::Char(c) => {
                         let mut st = state.lock().unwrap();
+                        st.clear_completion();
                         st.input.push(c);
                     }
                     KeyCode::Esc => {
                         let mut st = state.lock().unwrap();
+                        st.clear_completion();
                         st.input.clear();
                     }
                     KeyCode::Up => {
@@ -671,6 +777,7 @@ use crate::ExitKind;
                             let idx = history_idx.unwrap_or(history.len()).saturating_sub(1);
                             history_idx = Some(idx);
                             let mut st = state.lock().unwrap();
+                            st.clear_completion();
                             st.input = history.get(idx).cloned().unwrap_or_default();
                         }
                     }
@@ -680,9 +787,11 @@ use crate::ExitKind;
                             let mut st = state.lock().unwrap();
                             if ni < history.len() {
                                 history_idx = Some(ni);
+                                st.clear_completion();
                                 st.input = history[ni].clone();
                             } else {
                                 history_idx = None;
+                                st.clear_completion();
                                 st.input.clear();
                             }
                         }
@@ -734,7 +843,7 @@ use crate::ExitKind;
 
             history.push(line.clone());
             history_idx = None;
-            let (result, interrupt) = run_tui_turn(env, &mut term, &state, &line).await;
+            let (result, interrupt) = run_tui_turn(env, &mut term, &state, &line, &mut reader).await;
             match interrupt {
                 InterruptKind::ForceQuit => {
                     code = ExitKind::Interrupted;
@@ -866,6 +975,42 @@ use crate::ExitKind;
             assert_eq!(spans[0].content, "hi");
             assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
             assert_eq!(spans[0].style.fg, Some(Color::Cyan));
+        }
+
+        #[test]
+        fn input_view_fits_without_scroll() {
+            let (view, col) = input_view("abc", 10);
+            assert_eq!(view, "abc");
+            assert_eq!(col, 3);
+        }
+
+        #[test]
+        fn input_view_scrolls_tail_for_long_input() {
+            let (view, col) = input_view("abcdefghij", 4);
+            assert_eq!(view, "ghij");
+            assert_eq!(col, 4);
+        }
+
+        #[test]
+        fn input_view_counts_wide_cjk_as_two_columns() {
+            // 4 CJK chars = 8 columns; a 6-column box shows the tail 3.
+            let (view, col) = input_view("你好世界", 6);
+            assert_eq!(view, "好世界");
+            assert_eq!(col, 6);
+            // The whole string fits in an 8-column box.
+            let (view, col) = input_view("你好世界", 8);
+            assert_eq!(view, "你好世界");
+            assert_eq!(col, 8);
+        }
+
+        #[test]
+        fn input_view_empty_or_zero_avail() {
+            let (view, col) = input_view("", 5);
+            assert_eq!(view, "");
+            assert_eq!(col, 0);
+            let (view, col) = input_view("abc", 0);
+            assert_eq!(view, "");
+            assert_eq!(col, 0);
         }
 
 
