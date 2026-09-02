@@ -14,6 +14,7 @@ An "everything is a plugin" AI agent harness in Rust, inspired by DeepSeek Harne
 | 平台 | 产物 | 架构 |
 | --- | --- | --- |
 | Linux | `celestea-linux-x86_64.tar.gz` | x86_64 |
+| macOS（Apple Silicon） | `celestea-macos-aarch64.tar.gz` | arm64 |
 | Windows | `celestea-windows-x86_64.zip` | x86_64 |
 
 解压后把 `celestea`（Windows 为 `celestea.exe`）加入 `PATH` 即可直接使用。
@@ -130,5 +131,5 @@ celestea tools
 ## 开发
 
 - 核心契约见 `crates/core/src/lib.rs`；架构设计见 `ARCHITECTURE.md`。
-- CI：每次 push / PR 自动跑 `cargo test --workspace`；打 `v*` tag 自动构建 Linux / Windows 两平台预编译产物并发布到 GitHub Releases（也可在 Actions 页手动 `workflow_dispatch` 触发）。
+- CI：每次 push / PR 自动跑 `cargo test --workspace`；打 `v*` tag 自动构建 Linux / macOS(Apple Silicon) / Windows 三平台预编译产物并发布到 GitHub Releases（也可在 Actions 页手动 `workflow_dispatch` 触发）。
 
