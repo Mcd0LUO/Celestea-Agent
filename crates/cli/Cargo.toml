@@ -14,6 +14,7 @@ celestea-llm = { path = "../llm" }
 celestea-session = { path = "../session" }
 celestea-tools = { path = "../tools" }
 celestea-agent-loop = { path = "../agent-loop" }
+celestea-workers = { path = "../workers" }
 tokio.workspace = true
 serde_json.workspace = true
 clap.workspace = true

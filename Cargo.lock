@@ -321,6 +321,7 @@ dependencies = [
  "celestea-llm",
  "celestea-session",
  "celestea-tools",
+ "celestea-workers",
  "clap",
  "crossterm",
  "dotenvy",

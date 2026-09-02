@@ -14,6 +14,7 @@ use celestea_core::{
 use celestea_llm::{deepseek_registry, DeepSeekConfig, DeepSeekLlm, ReasoningEffort};
 use celestea_session::InMemorySessionLog;
 use celestea_tools::{builtin_tools, ToolRegistryImpl};
+use celestea_workers::{worker_tools_with, WorkerRegistry, WorkerRegistryService};
 use serde_json::Value;
 use tokio::sync::watch;
 
@@ -485,10 +486,10 @@ pub(crate) fn compose(profile: &Profile) -> Result<Env> {
 
     let session: Arc<dyn SessionLog> = Arc::new(InMemorySessionLog::new());
 
+    let workers = Arc::new(WorkerRegistry::with_default_path());
+
     let mut registry = ToolRegistryImpl::new();
-    for tool in builtin_tools() {
-        registry.register(tool);
-    }
+    register_all_tools(&mut registry, workers.clone());
     let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
 
     let config = AgentConfig {
@@ -507,5 +508,29 @@ pub(crate) fn compose(profile: &Profile) -> Result<Env> {
     ctx.provide(SessionService(session.clone()));
     ctx.provide(ToolRegistryService(registry.clone()));
     ctx.provide(AgentLoopService(agent.clone()));
+    // WorkersPlugin::mount semantics (see crates/workers/src/plugin.rs): the
+    // driver seam (LlmService / ToolRegistryService / AgentLoopService) must be
+    // provided *before* attach_drivers so spawn_worker can background-drive
+    // spawned sessions (driven:true) instead of only registering them. Then the
+    // shared WorkerRegistry is surfaced as a service for consumers to resolve.
+    workers.attach_drivers(
+        ctx.get::<LlmService>(),
+        ctx.get::<ToolRegistryService>(),
+        ctx.get::<AgentLoopService>().map(|s| s.0.clone()),
+    );
+    ctx.provide(WorkerRegistryService(workers.clone()));
     Ok(Env { ctx, session, registry, config, renderer: None })
+}
+
+/// Register every tool the CLI surfaces into `registry`: the built-in file tools
+/// plus the three worker-orchestration tools, all bound to the shared
+/// [WorkerRegistry]. Used by both [compose] (the real agent tool face) and the
+/// `tools` subcommand so the two can never drift.
+pub(crate) fn register_all_tools(registry: &mut ToolRegistryImpl, workers: Arc<WorkerRegistry>) {
+    for tool in builtin_tools() {
+        registry.register(tool);
+    }
+    for tool in worker_tools_with(workers) {
+        registry.register(tool);
+    }
 }

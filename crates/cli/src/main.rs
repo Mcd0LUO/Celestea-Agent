@@ -24,13 +24,16 @@ mod tui;
 
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use celestea_core::ToolRegistry;
-use celestea_tools::{builtin_tools, ToolRegistryImpl};
+use celestea_tools::ToolRegistryImpl;
+use celestea_workers::WorkerRegistry;
 use clap::{Parser, Subcommand};
 
 use crate::config::{
-    compose, load_dotenv, resolve_profile, DEFAULT_CONFIG, LEGACY_CONFIG,
+    compose, load_dotenv, register_all_tools, resolve_profile,
+    DEFAULT_CONFIG, LEGACY_CONFIG,
 };
 use crate::repl::{read_all_stdin, run_one_shot, run_repl};
 use crate::render::format_tool_list;
@@ -132,12 +135,12 @@ async fn main() {
 }
 
 async fn run(args: &Args) -> ExitKind {
-    // `tools` needs no profile / LLM: list builtin tools and exit.
+    // `tools` needs no profile / LLM: list the full tool surface (the builtin
+    // file tools plus the worker-orchestration tools) via the same registration
+    // compose() uses, so the listing always matches the agent's runtime tool face.
     if matches!(&args.command, Some(Command::Tools)) {
         let mut registry = ToolRegistryImpl::new();
-        for tool in builtin_tools() {
-            registry.register(tool);
-        }
+        register_all_tools(&mut registry, Arc::new(WorkerRegistry::with_default_path()));
         print!("{}", format_tool_list(&registry.schemas()));
         let _ = std::io::stdout().flush();
         return ExitKind::Ok;
@@ -214,10 +217,12 @@ mod tests {
 
     use celestea_core::{LlmRegistryService, LlmService, SessionEvent, ToolSpec};
     use celestea_llm::ReasoningEffort;
+    use celestea_workers::WorkerRegistryService;
 
     use crate::config::{
         compose, load_dotenv_at, load_profile, merge_profile, merge_profile_strict,
-        resolve_api_key, resolve_base_url, resolve_profile, validate_model, Profile,
+        register_all_tools, resolve_api_key, resolve_base_url, resolve_profile, validate_model,
+        Profile,
     };
     use crate::interrupt::InterruptKind;
     use crate::render::{
@@ -763,6 +768,57 @@ mod tests {
         std::env::remove_var(key_env);
     }
 
+    // ---- W206: worker tool surface + driven wiring ---------------------------
+    fn worker_tool_names(reg: &dyn ToolRegistry) -> Vec<String> {
+        reg.schemas().into_iter().map(|s| s.name).collect()
+    }
+
+    /// compose() must register the three worker-orchestration tools alongside the
+    /// four builtin file tools, so the real agent tool face has all 7.
+    #[test]
+    fn compose_tool_surface_has_seven_tools() {
+        let key_env = "W206_TOOL_SURFACE_KEY";
+        std::env::set_var(key_env, "sk-test");
+        let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
+        let env = compose(&profile).unwrap();
+        let names = worker_tool_names(&*env.registry);
+        assert_eq!(names.len(), 7, "tool surface = {names:?}");
+        for want in ["read_file", "write_file", "list_dir", "run_shell",
+                     "spawn_worker", "session_send_message", "worker_status"] {
+            assert!(names.iter().any(|n| n == want), "missing {want} in {names:?}");
+        }
+        std::env::remove_var(key_env);
+    }
+
+    /// The `tools` subcommand registration (shared helper) must also surface all 7.
+    #[test]
+    fn tools_subcommand_registers_all_seven() {
+        let mut registry = ToolRegistryImpl::new();
+        register_all_tools(&mut registry, Arc::new(WorkerRegistry::with_default_path()));
+        let names = worker_tool_names(&registry);
+        assert_eq!(names.len(), 7, "tool list = {names:?}");
+        for want in ["read_file", "write_file", "list_dir", "run_shell",
+                     "spawn_worker", "session_send_message", "worker_status"] {
+            assert!(names.iter().any(|n| n == want), "missing {want} in {names:?}");
+        }
+    }
+
+    /// compose() must provide the shared WorkerRegistry as a service AND attach the
+    /// Llm/ToolRegistry/AgentLoop driver seams (WorkersPlugin::mount semantics), so
+    /// a real spawn_worker is background-driven (driven:true) rather than only
+    /// registered.
+    #[test]
+    fn compose_wires_worker_drivers_driven_true() {
+        let key_env = "W206_DRIVEN_KEY";
+        std::env::set_var(key_env, "sk-test");
+        let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
+        let env = compose(&profile).unwrap();
+
+        let wr = env.ctx.get::<WorkerRegistryService>().expect("WorkerRegistryService provided");
+        // All three driver seams attached => spawn_worker would be driven:true.
+        assert!(wr.0.can_drive(), "worker registry must be driver-attached");
+        std::env::remove_var(key_env);
+    }
     // ---- W192: TOML config, .env, api_key_file -----------------------------
     #[test]
     fn toml_profile_parses_and_maps_types() {
