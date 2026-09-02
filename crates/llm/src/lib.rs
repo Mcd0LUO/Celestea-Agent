@@ -2,10 +2,11 @@
 //!
 //! Implements the celestea_core::Llm seam on top of async-openai 0.41, which
 //! speaks the OpenAI-compatible HTTP API that DeepSeek exposes. Streaming is
-//! handled by async-openai's SSE parser; this crate translates the core seam
-//! types (Message, ToolSpec, ModelRequest) into a chat-completions request and
-//! maps the streamed chunks back into StreamEvent::Text deltas plus a single
-//! final StreamEvent::Done message.
+//! handled by a raw SSE transport (reqwest + eventsource-stream): async-openai
+//! 0.41.3's typed stream drops reasoning_content, so this crate decodes the
+//! provider's chunks itself and maps them back into StreamEvent::Thinking
+//! (real-time CoT) and StreamEvent::Text deltas plus a single final
+//! StreamEvent::Done message.
 //!
 //! The model-adapter types live here, not in `celestea-core`: the adapter is a
 //! replaceable plugin, so its configuration and capability catalog are plugin

@@ -4,20 +4,24 @@
 //! (W103). Implements `celestea_core::ToolRegistry` over a name-keyed map of
 //! `Arc<dyn Tool>` and an ordered list of `Arc<dyn ToolGuard>`.
 //!
-//! Split into two modules by responsibility:
+//! Split into three modules by responsibility:
 //! - [`registry`]: `ToolRegistryImpl` + the `ToolRegistry` impl;
 //! - [`builtin`]: `builtin_tools`, the `FnTool` seam, the hand-written JSON
-//!   schemas and the platform shell invocation for `run_shell`.
+//!   schemas and the `run_shell` tool wired to the v1 sandbox;
+//! - [`sandbox`]: the userspace v1 execution sandbox for `run_shell` (W209).
 
 pub mod builtin;
 mod registry;
+mod sandbox;
 
 pub use crate::builtin::builtin_tools;
 pub use crate::registry::ToolRegistryImpl;
 
 // Internal re-exports consumed by `mod tests` (super::*) within this crate.
 #[cfg(test)]
-pub(crate) use crate::builtin::{fn_tool, human_render, read_file_spec};
+pub(crate) use crate::builtin::{fn_tool, human_render, read_file_spec, run_shell_tool};
+#[cfg(test)]
+pub(crate) use crate::sandbox::SandboxConfig;
 
 #[cfg(test)]
 use async_trait::async_trait;
@@ -253,5 +257,73 @@ mod tests {
         let per_sec = (ITERS as f64 / dur.as_secs_f64()).round();
         eprintln!("[bench] dispatch(pipeline, miss path): iters={ITERS} {:?} -> {per_sec}/s", dur);
         assert!(dur.as_secs_f64() < 30.0, "benchmark must not stall the suite");
+    }
+
+    // ---- W209: run_shell v1 sandbox (dispatch-level contract) --------------
+
+    #[tokio::test]
+    async fn run_shell_timeout_violation_is_structured_tool_error() {
+        let mut registry = ToolRegistryImpl::new();
+        let cfg = SandboxConfig::new()
+            .with_workdir(std::env::temp_dir())
+            .with_root(std::env::temp_dir())
+            .with_timeout(std::time::Duration::from_millis(200));
+        registry.register(run_shell_tool(cfg));
+        let out = registry
+            .dispatch(sample_input("c-timeout", "run_shell", json!({ "command": "sleep 5" })))
+            .await;
+        assert_eq!(out.value, None);
+        assert_eq!(out.render, None);
+        let err = out.error.expect("structured timeout error");
+        assert!(err.starts_with("run_shell-sandbox: code=timeout"), "{err}");
+        // ToolOutput decision/render contract unchanged for violations.
+        assert_eq!(out.decision, Some(ToolDecision::Allow));
+    }
+
+    #[tokio::test]
+    async fn run_shell_workdir_violation_is_structured_tool_error() {
+        let root =
+            std::env::temp_dir().join(format!("celestea-dispatch-wd-{}", std::process::id()));
+        let outside =
+            std::env::temp_dir().join(format!("celestea-dispatch-out-{}", std::process::id()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        tokio::fs::create_dir_all(&outside).await.unwrap();
+        let mut registry = ToolRegistryImpl::new();
+        let cfg = SandboxConfig::new()
+            .with_workdir(&root)
+            .with_root(&root)
+            .with_timeout(std::time::Duration::from_secs(5));
+        registry.register(run_shell_tool(cfg));
+        let out = registry
+            .dispatch(sample_input(
+                "c-wd",
+                "run_shell",
+                json!({ "command": "pwd", "workdir": outside.to_string_lossy() }),
+            ))
+            .await;
+        assert_eq!(out.value, None);
+        let err = out.error.expect("structured workdir error");
+        assert!(err.starts_with("run_shell-sandbox: code=workdir"), "{err}");
+        assert!(err.contains("outside the sandbox root"), "{err}");
+        assert_eq!(out.decision, Some(ToolDecision::Allow));
+    }
+
+    #[tokio::test]
+    async fn run_shell_success_reports_sandbox_metadata() {
+        let mut registry = ToolRegistryImpl::new();
+        let cfg = SandboxConfig::new()
+            .with_workdir(std::env::temp_dir())
+            .with_root(std::env::temp_dir())
+            .with_timeout(std::time::Duration::from_secs(5));
+        registry.register(run_shell_tool(cfg));
+        let out = registry
+            .dispatch(sample_input("c-sbox", "run_shell", json!({ "command": "printf hi" })))
+            .await;
+        let value = out.value.expect("value");
+        assert_eq!(value["exit_code"], json!(0));
+        assert_eq!(value["stdout"], json!("hi"));
+        assert_eq!(value["stdout_truncated"], json!(false));
+        assert_eq!(value["stderr_truncated"], json!(false));
+        assert_eq!(out.error, None);
     }
 }

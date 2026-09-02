@@ -110,7 +110,7 @@ celestea run --json -e "1+1=?"       # 结构化 JSON 输出
 celestea tools
 ```
 
-无需模型/网络即可运行。内置工具：`read_file`、`write_file`、`list_dir`、`run_shell`。
+无需模型/网络即可运行。内置工具共 7 个：四个文件/Shell 工具（`read_file`、`write_file`、`list_dir`、`run_shell`）加三个编排工具（`spawn_worker`、`session_send_message`、`worker_status`）。
 
 ### 退出码
 

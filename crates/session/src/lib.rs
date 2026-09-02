@@ -1,5 +1,5 @@
-
-//! celestea-session — append-only session log (W102) + multi-session seams (W184).
+//! celestea-session — append-only session log (W102) + multi-session seams (W184)
+//! + v1 persistence (W210).
 //!
 //! InMemorySessionLog is the single source of truth for a conversation:
 //! it records SessionEvents in insertion order and derives the
@@ -16,11 +16,20 @@
 //!   signal: send(session_id, content, from_label) enqueues and wakes
 //!   waiting consumers via tokio::sync::Notify; recv awaits the next
 //!   message, poll / try_recv drain non-blockingly.
+//!
+//! W210 adds v1 persistence without touching the existing API:
+//!
+//! - [PersistentSessionLog] — drop-in SessionLog implementation backed by an
+//!   append-only per-session JSONL event log (crash-safe: replay + validate +
+//!   truncate torn tail; flush per append or batched; optional fsync).
+//!   Recovery replays the file into the exact same derive_messages history.
 
 mod log;
 mod mailbox;
+mod persistent;
 mod registry;
 
 pub use log::*;
 pub use mailbox::*;
+pub use persistent::*;
 pub use registry::*;

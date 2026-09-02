@@ -9,6 +9,8 @@ use async_trait::async_trait;
 use celestea_core::{Tool, ToolSpec};
 use serde_json::{json, Value};
 
+use crate::sandbox::SandboxConfig;
+
 /// The four MVP builtin tools: read_file, write_file, list_dir, run_shell.
 pub fn builtin_tools() -> Vec<Box<dyn Tool>> {
     vec![
@@ -40,17 +42,7 @@ pub fn builtin_tools() -> Vec<Box<dyn Tool>> {
                 Ok(Value::Array(names))
             })
         }),
-        fn_tool(run_shell_spec(), |args| {
-            Box::pin(async move {
-                let command = arg_str(&args, "command")?.to_owned();
-                let output = shell_command(&command).output().await.map_err(|e| e.to_string())?;
-                Ok(json!({
-                    "stdout": String::from_utf8_lossy(&output.stdout).into_owned(),
-                    "stderr": String::from_utf8_lossy(&output.stderr).into_owned(),
-                    "exit_code": output.status.code(),
-                }))
-            })
-        }),
+        run_shell_tool(SandboxConfig::from_env()),
     ]
 }
 
@@ -115,19 +107,30 @@ impl Tool for FnTool {
     }
 }
 
-/// Build the platform shell invocation for run_shell.
-#[cfg(windows)]
-fn shell_command(command: &str) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new("cmd");
-    cmd.args(["/C", command]);
-    cmd
-}
-
-#[cfg(not(windows))]
-fn shell_command(command: &str) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new("sh");
-    cmd.args(["-c", command]);
-    cmd
+/// `run_shell` tool instance wired to the v1 execution sandbox (W209).
+///
+/// Default builtins use `SandboxConfig::from_env()` so operators can tune
+/// timeouts / output caps / workdir via `CELAESTEA_RUN_SHELL_*` env vars;
+/// tests and embeddings may build a `SandboxConfig` directly.
+pub(crate) fn run_shell_tool(config: SandboxConfig) -> Box<dyn Tool> {
+    fn_tool(run_shell_spec(), move |args| {
+        let config = Arc::new(config.clone());
+        Box::pin(async move {
+            let command = arg_str(&args, "command")?.to_owned();
+            let workdir = args.get("workdir").and_then(Value::as_str);
+            let timeout_ms = args.get("timeout_ms").and_then(Value::as_i64);
+            let out = crate::sandbox::execute_sandboxed(&command, &config, workdir, timeout_ms)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(json!({
+                "stdout": String::from_utf8_lossy(&out.stdout).into_owned(),
+                "stderr": String::from_utf8_lossy(&out.stderr).into_owned(),
+                "exit_code": out.exit_code,
+                "stdout_truncated": out.stdout_truncated,
+                "stderr_truncated": out.stderr_truncated,
+            }))
+        })
+    })
 }
 
 // --- JSON schemas (hand-written, stable argument contracts) ---
@@ -181,11 +184,13 @@ fn list_dir_spec() -> ToolSpec {
 fn run_shell_spec() -> ToolSpec {
     ToolSpec {
         name: "run_shell".into(),
-        description: "Run a shell command and return its stdout, stderr, and exit code.".into(),
+        description: "Run a shell command inside the v1 sandbox (fixed workdir, sanitized env, bounded timeout and output) and return stdout, stderr, and exit code.".into(),
         parameters: json!({
             "type": "object",
             "properties": {
-                "command": { "type": "string", "description": "The command line to execute." }
+                "command": { "type": "string", "description": "The command line to execute." },
+                "workdir": { "type": "string", "description": "Optional working directory. Must already exist inside the sandbox root; relative paths resolve against the sandbox workdir." },
+                "timeout_ms": { "type": "integer", "minimum": 1, "description": "Optional per-call timeout in milliseconds, bounded by the sandbox maximum (default: 30000)." }
             },
             "required": ["command"],
             "additionalProperties": false

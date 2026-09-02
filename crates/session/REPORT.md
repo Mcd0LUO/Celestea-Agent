@@ -43,3 +43,33 @@
 ## What was NOT changed
 - Root Cargo.toml、ARCHITECTURE.md、crates/core/、crates/llm/、crates/cli/、crates/tools/、crates/agent-loop/ 均未改动（仅 crates/session/ 内变更）。
 
+
+## W210 扩展（本次变更：session v1 持久化）
+
+### 变更（Changes）
+- 新增 crates/session/src/persistent.rs：[PersistentSessionLog]（v1 持久化变体，celestea-session 无新外部依赖）：
+  - 落盘：append-only JSONL 事件日志，每 session 一个文件 <dir>/<sanitized-id>.jsonl（如 ~/.celestea/sessions/session-0.jsonl）；open(dir, session_id) / open_with(dir, session_id, PersistentOptions) 创建/打开；一条记录 = 一行 serde_json，追加写。
+  - flush：默认每条 append 后 flush（进程崩溃不丢记录）；flush_each_append=false 走批量 + 显式 flush()/sync()（定期 flush）；Drop 时 best-effort flush（关闭时 flush）；sync_each_append=true 每条 sync_data（防断电）。
+  - 恢复：open 时逐行重放记录重建内存视图；derive_messages 语义与 InMemorySessionLog 完全一致（共用 log.rs 的 derive_messages_from 投影）。
+  - 崩溃安全：追加写 + 校验——重放保留最长有效前缀，从第一条不可解析记录（典型：崩溃半条尾记录）起截断文件；打开时若文件末字节非 \n 先补一个换行分隔符，防止下一条记录与未终止的尾记录合并成一行。
+  - 不变量：磁盘顺序 == 内存顺序（同一把写锁保护镜像与写盘）；写失败优雅降级（事件保留在内存视图、write_error_count() 计数、stderr 告警）。
+- log.rs：抽出 pub(crate) derive_messages_from(&[SessionEvent]) 共享投影，InMemorySessionLog::derive_messages 改为委托（行为不变，8 个 W102 既有测试原样通过）。
+- lib.rs：注册 persistent 模块并 re-export。
+- CLI 最小切换点（crates/cli/src/config.rs compose）：读环境变量 CELESTEA_SESSION_DIR；设置时宿主会话改用 PersistentSessionLog::open(dir, "cli-main")（启动重放 + 追加），未设置或打开失败一律回退 InMemorySessionLog（默认行为不变）。
+
+### 开启方式（How to enable）
+- CLI：export CELESTEA_SESSION_DIR=~/.celestea/sessions 后运行 celestea —— 宿主会话持久化到 ~/.celestea/sessions/cli-main.jsonl，重启自动重放续接；不设该变量行为与之前完全一致（InMemory）。
+- 代码：celestea_session::PersistentSessionLog::open(dir, session_id) 得到 Arc<dyn SessionLog> 直接使用；PersistentOptions { flush_each_append, sync_each_append } 可选调优。关联便利函数 file_path/file_name_for。
+
+### 验证（Verification）
+- cargo test -p celestea-session：41 passed, 0 failed —— 既有 30 个全保留 + 新增 11 个持久化/恢复测试（open 建文件即空；append→落盘→重启重放同历史，事件 JSON 与 derive 投影逐一相等；崩溃半条尾记录截断恢复；中部损坏保留最长有效前缀；clear 截断文件后继续可用；批量模式 flush 后可见；与 InMemorySessionLog 投影一致性含 tool-call 合并；空行/末记录无换行容忍 + 追加分隔符修复；session id 消毒为安全文件名防路径穿越；8 线程 400 并发 append 全量落盘且重放顺序 == 追加顺序；Send+Sync 编译期断言）。
+- cargo test --workspace：全绿 —— agent-loop 12 / cli 90 / core 18 / llm 17 / session 41 / tools 11 / workers 24，0 failed。
+- cargo build -p celestea-cli：无警告。
+
+### 回滚（Rollback）
+- git -C /src/celestea_harness checkout -- crates/session crates/cli 即恢复全部改动；新增的 crates/session/src/persistent.rs 是 untracked 文件，需单独删除（rm crates/session/src/persistent.rs）。
+
+### 遗留（Open items）
+- 单进程模型：未做多进程 append 同一文件的文件锁（v1 文档已注明 each session = one file, single writer）。
+- 磁盘写失败仅降级计数（write_error_count + stderr），未做重试/告警通道。
+- Worker 会话（SessionRegistry::create 的 InMemorySessionLog）本轮未接持久化；CLI 宿主会话已可通过 CELESTEA_SESSION_DIR 开关。

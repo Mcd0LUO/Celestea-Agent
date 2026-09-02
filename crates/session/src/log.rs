@@ -43,26 +43,7 @@ impl SessionLog for InMemorySessionLog {
     }
 
     fn derive_messages(&self) -> Vec<Message> {
-        let mut messages = Vec::new();
-        let mut pending: Vec<ToolCall> = Vec::new();
-
-        for event in self.events() {
-            match event {
-                SessionEvent::ToolCall { id, name, args } => {
-                    pending.push(ToolCall { id, name, args });
-                }
-                other => {
-                    flush_tool_calls(&mut messages, &mut pending);
-                    if let Some(msg) = project(other) {
-                        messages.push(msg);
-                    }
-                }
-            }
-        }
-
-        // Trailing tool calls (no following event) still need flushing.
-        flush_tool_calls(&mut messages, &mut pending);
-        messages
+        derive_messages_from(&self.events())
     }
 
     fn clear(&self) {
@@ -70,6 +51,34 @@ impl SessionLog for InMemorySessionLog {
             events.clear();
         }
     }
+}
+
+/// Shared event-to-message projection (W210).
+///
+/// Both [InMemorySessionLog] and [crate::PersistentSessionLog] derive the
+/// model-visible history through this single function, so a log recovered
+/// from disk produces exactly the same messages as before the restart.
+pub(crate) fn derive_messages_from(events: &[SessionEvent]) -> Vec<Message> {
+    let mut messages = Vec::new();
+    let mut pending: Vec<ToolCall> = Vec::new();
+
+    for event in events {
+        match event {
+            SessionEvent::ToolCall { id, name, args } => {
+                pending.push(ToolCall { id: id.clone(), name: name.clone(), args: args.clone() });
+            }
+            other => {
+                flush_tool_calls(&mut messages, &mut pending);
+                if let Some(msg) = project(other.clone()) {
+                    messages.push(msg);
+                }
+            }
+        }
+    }
+
+    // Trailing tool calls (no following event) still need flushing.
+    flush_tool_calls(&mut messages, &mut pending);
+    messages
 }
 
 /// Flush any accumulated tool calls as a single assistant message whose

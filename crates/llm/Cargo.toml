@@ -14,4 +14,10 @@ futures-core.workspace = true
 futures-util.workspace = true
 async-stream.workspace = true
 async-openai = { workspace = true, features = ["chat-completion"] }
+# Raw SSE transport for the streaming path: async-openai's typed stream drops
+# reasoning_content (see client.rs extract_reasoning NOTE), so we decode the
+# provider's SSE events ourselves. Both crates are already resolved in the
+# workspace lockfile through async-openai.
+eventsource-stream = "0.2"
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 thiserror.workspace = true
