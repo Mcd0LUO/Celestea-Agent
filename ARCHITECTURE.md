@@ -108,3 +108,13 @@ multi-agent orchestration. These are later phases; keep the seams ready for them
 
 - DEEPSEEK_API_KEY (required at runtime for the llm crate)
 - DEEPSEEK_BASE_URL (optional, default https://api.deepseek.com)
+
+## CLI 技术栈（架构师确立 2026-09）
+
+- 命令框架：clap 4.6（derive）+ 子命令：`chat`（默认交互 REPL）/ `run -e|--input`（one-shot）/ `tools`（列内置工具）。
+- 异步运行时：tokio 1.53（full）。
+- REPL 行编辑：rustyline 18（历史 / 编辑 / Ctrl-C·D）。TTY 走 rustyline，非 TTY（管道）走 one-shot 读全量输入。
+- 错误处理：anyhow + thiserror。
+- 日志：tracing + tracing-subscriber（env-filter，RUST_LOG 可调）。
+- 结构化输出：serde + serde_json（--json）。
+- 退出码契约：0 成功 / 1 配置·初始化错误 / 2 turn 执行错误 / 3 运行时 IO·内部错误。

@@ -75,3 +75,45 @@ Tests:
   and celestea-core were already pinned and sufficient.
 - `ToolDecision::Ask` is surfaced as an `error` string prefixed `"ask: "` per the pinned
   dispatch contract; no separate interactive confirmation path exists in this seam.
+
+
+## M5b guard chain monotonic (Deny/Ask structured facts)
+
+### Change
+- dispatch fills decision on Deny and Ask short-circuits (structured fact)
+- Deny(s): decision Some(Deny(s)), value None, error kept ("denied: {s}")
+- Ask(q): decision Some(Ask(q)), value None, error kept ("ask: {q}")
+- allow/execution path: decision Some(Allow) (both success and permitted-but-failed)
+
+### Verify
+- cargo build -p celestea-tools: OK
+- cargo test -p celestea-tools: 6 passed (incl new guard_ask and guard_allow cases)
+
+### Rollback
+- git checkout crates/tools (falls back to HEAD)
+
+### Leftover
+- no interactive Ask confirmation path yet; Ask surfaces as structured fact + error string
+
+## W189: ToolOutput.render filled at dispatch
+
+### Change
+- dispatch now fills render on the success path via a new human_render(&value) helper:
+  - run_shell ({stdout, stderr, exit_code}) -> condensed stream summary
+    (exit_code / stdout / stderr lines);
+  - read_file / write_file / list_dir (plain text / arrays / other) -> None
+    (the canonical value is already human-readable).
+- All non-success ToolOutput literals (Deny/Ask/unknown-tool/execute-error) set
+  render: None — the error string is the human view.
+
+### Verify
+- cargo build -p celestea-tools: OK
+- cargo test -p celestea-tools: passed (new render cases: read_file None,
+  run_shell summary, human_render unit tests)
+
+### Rollback
+- git checkout crates/tools
+
+### Leftover
+- render is a dispatch-time heuristic keyed on the value shape; a per-tool
+  renderer hook would let tools supply their own summary (future).

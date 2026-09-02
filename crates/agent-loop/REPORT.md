@@ -1,77 +1,61 @@
 # celestea-agent-loop (W104) — Implementation Report
 
-## Files created / modified
+## 变更
 
-- `crates/agent-loop/src/lib.rs` — implemented `DefaultAgentLoop` (only file written).
-- `crates/agent-loop/REPORT.md` — this report.
+本次迭代实现 `AgentConfig.max_parallel_tool_calls` 的并行工具派发（此前为串行，REPORT 已自述缺口）。
 
-## What was implemented
+- `crates/agent-loop/src/lib.rs`（唯一改动文件，均落在 crates/agent-loop/ 目录内）：
+  - **并行派发**：`StreamEvent::Done` 含多个 `ToolCall` 时，将全部工具调用按
+    `max_parallel_tool_calls` 分批，每批用 `futures_util::future::join_all` 并发派发。
+  - **契约不变**：先 append 全部 `ToolCall` 事件，再按模型返回顺序 append 各自的
+    `ToolResult` 事件；`join_all` 按输入顺序 resolve，结果落盘顺序确定、不随并发完成
+    先后乱序。
+  - **边界处理**：`max_parallel_tool_calls == 0` 时 clamp 到 1（退化为串行）；
+    工具数 > 上限时分批并发，批内并发、批间顺序衔接。
+  - **单测**（`#[cfg(test)] mod tests`，共 3 个，全部通过）：
+    1. `dispatches_all_tool_calls_with_deterministic_result_order` — 多工具调用全部被
+       派发、`ToolCall`/`ToolResult` 顺序均与模型返回一致，且全部 `ToolCall` 先于任何
+       `ToolResult`。
+    2. `batches_dispatch_concurrently_up_to_limit` — 5 个调用、上限 2：分批并发、并发度
+       不超过上限（用记录派发顺序 + 同时在飞计数器的 fake `ToolRegistry` 验证），结果
+       顺序确定。
+    3. `zero_max_parallel_clamps_to_serial` — 上限 0 clamp 到 1，串行派发且顺序正确。
+  - 依赖零变更：复用已 pin 的 async-trait / tokio / futures-util / serde_json /
+    celestea-core，未执行 `cargo add/remove`。
 
-`DefaultAgentLoop` implements the pinned `celestea_core::AgentLoop` seam exactly as
-specified in ARCHITECTURE.md:
+## 验证
 
-- `pub struct DefaultAgentLoop { config: AgentConfig, turn_id: AtomicU64 }`.
-- `DefaultAgentLoop::new(config: AgentConfig) -> Self`.
-- `#[async_trait] impl AgentLoop for DefaultAgentLoop` with
-  `async fn run_turn(&self, ctx, user_input) -> Result<(), AgentError>`.
+命令（工具链在 /opt）：
+```
+export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
+cd /src/celestea_harness && cargo build -p celestea-agent-loop && cargo test -p celestea-agent-loop
+```
 
-`run_turn` follows the required turn flow:
+结果（本次实测）：
+- `cargo build -p celestea-agent-loop`：**PASSED**（exit 0，无警告无错误）。
+- `cargo test -p celestea-agent-loop`：**PASSED**，3 passed / 0 failed
+  （+ doc-tests 0）。基线为 18/18 全仓通过；本次只改本 crate，未触碰 crates/core 与其它
+  crate 代码。
+- 负载核查：构建时 1 分钟 load 约 0.25~0.43，远低于 >20 阈值，且只 build 本 crate，与
+  W176 错峰。
 
-1. Resolve `LlmService`, `SessionService`, `ToolRegistryService` from `ctx`;
-   any missing service returns an `AgentError`.
-2. Allocate a monotonic turn id via `AtomicU64` (no new dependency), then append
-   `TurnStart { id }` and `UserMessage { text }`.
-3. Loop up to `config.max_steps` times:
-   - `messages = session.derive_messages()`.
-   - Build `ModelRequest { model, system: Some(system_prompt), messages,
-     tools: registry.schemas(), max_tokens: None, temperature: None }`.
-   - `llm.generate(req)` then consume the stream with `futures_util::StreamExt`.
-   - `StreamEvent::Text` deltas are printed to stdout and flushed.
-   - `StreamEvent::Done(message)` is collected: `Content::Text` fragments are
-     concatenated into `assistant_text`; `Content::ToolCall` entries are gathered
-     into `tool_calls`.
-   - If there are no tool calls, append `AssistantMessage { text }` and break.
-   - Otherwise: first append ALL `ToolCall { id, name, args }` events (they form
-     one assistant message in the LLM protocol), THEN dispatch each call via
-     `registry.dispatch(ToolInput { call_id, name, args })` and append its
-     `ToolResult { id: output.call_id, value: output.value, error: output.error }`.
-     This avoids interleaving ToolCall/ToolResult per call; then continue to the
-     next loop iteration.
-4. Append `TurnEnd { id }` and return `Ok(())`.
+## 回滚
 
-## Key implementation notes
+变更集中在 `crates/agent-loop/`（含本 REPORT.md），回滚命令：
 
-- `DefaultAgentLoop` stays `Send + Sync` by using `AtomicU64` for the turn id
-  counter (interior mutability without a lock).
-- Stdout printing failures are ignored (`let _ = ...`) so a broken pipe cannot
-  abort the turn; this is the right call for a streamed-UI driver.
-- Tool results use `ToolOutput.call_id` as the `ToolResult.id`, which lets the
-  session layer match results to calls (the log's `ToolResult.id` is not required
-  to equal the model's `ToolCall.id`, but call_id is the natural key).
-- Multi-tool-call ordering respects the LLM protocol: all `ToolCall` events of a
-  single assistant step are appended together BEFORE any `ToolResult`, so a
-  session-layer `derive_messages` can group them into one assistant message
-  followed by the individual tool-result messages. Dispatch still happens per
-  call and appends results in the same order.
-- No tool-call parallel fan-out was implemented: the MVP dispatches calls
-  sequentially even though `config.max_parallel_tool_calls` exists. See below.
+```
+git -C /src/celestea_harness checkout -- crates/agent-loop/
+```
 
-## Build verification
+即可恢复本轮全部改动。未做任何 git 写操作（commit/add 等），未改 root Cargo.toml /
+ARCHITECTURE.md / crates/core / 其它 crate。
 
-`cargo build -p celestea-agent-loop` from the repo root: **PASSED** (exit code 0,
-no warnings, no errors). Re-verified after the tool-call/tool-result ordering
-fix.
+## 遗留
 
-## Assumptions / open items
-
-- `config.max_parallel_tool_calls` is currently unused: tool calls are dispatched
-  sequentially in the order the model returns them. Parallel dispatch is a later
-  enhancement and was intentionally left out to keep the MVP simple and correct.
-- In the tool-call branch the assistant's accompanying text (if any) is not
-  appended as an `AssistantMessage`; the flow strictly follows ARCHITECTURE.md,
-  which only appends `AssistantMessage` in the no-tool-call case. If the model
-  emits both text and tool calls in one step, that text is discarded from the
-  log (though the model still sees tool results on the next iteration).
-- No extra dependencies were required; all needed crates (async-trait, tokio,
-  futures-util, serde_json, celestea-core) were already pinned in Cargo.toml.
+- 并行派发按批串行衔接（批内并发、批间等待）：`max_parallel_tool_calls` 很小而调用很多时，
+  尾部批次的完成会受最慢调用拖累，尚未做跨批滑动窗口调度。当前语义满足契约，后续可按需优化。
+- 工具调用结果的错误（`ToolOutput.error`）会原样落盘，并行下错误顺序仍按模型返回顺序确定；
+  尚无跨调用结果合并/聚合逻辑。
+- 并发度上限目前仅由本 crate 的 `AgentConfig.max_parallel_tool_calls` 控制，未接全局
+  资源配额/信号量；多 agent 并发时若需全局约束，建议在调度层另做。
 

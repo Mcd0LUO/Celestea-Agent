@@ -2,5 +2,9 @@
   "model": "deepseek-chat",
   "system_prompt": "You are a helpful assistant.",
   "max_steps": 16,
-  "max_parallel_tool_calls": 4
+  "max_parallel_tool_calls": 4,
+  "base_url": "https://api.deepseek.com",
+  "reasoning_effort": "medium",
+  "max_output_tokens": 4096,
+  "api_key_env": "DEEPSEEK_API_KEY"
 }

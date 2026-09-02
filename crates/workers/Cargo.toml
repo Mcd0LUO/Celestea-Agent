@@ -1,23 +1,17 @@
 [package]
-name = "celestea-cli"
+name = "celestea-workers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "celestea"
-path = "src/main.rs"
-
 [dependencies]
 celestea-core = { path = "../core" }
-celestea-llm = { path = "../llm" }
 celestea-session = { path = "../session" }
 celestea-tools = { path = "../tools" }
 celestea-agent-loop = { path = "../agent-loop" }
 tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-clap.workspace = true
-rustyline.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-anyhow.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true

@@ -65,14 +65,18 @@ impl ToolRegistry for ToolRegistryImpl {
                     return ToolOutput {
                         call_id,
                         value: None,
+                        render: None,
                         error: Some(format!("denied: {reason}")),
+                        decision: Some(ToolDecision::Deny(reason)),
                     };
                 }
                 ToolDecision::Ask(question) => {
                     return ToolOutput {
                         call_id,
                         value: None,
+                        render: None,
                         error: Some(format!("ask: {question}")),
+                        decision: Some(ToolDecision::Ask(question)),
                     };
                 }
             }
@@ -84,14 +88,31 @@ impl ToolRegistry for ToolRegistryImpl {
                 return ToolOutput {
                     call_id,
                     value: None,
+                    render: None,
                     error: Some(format!("unknown tool: {}", input.name)),
+                    decision: Some(ToolDecision::Allow),
                 };
             }
         };
 
         match tool.execute(input.args).await {
-            Ok(value) => ToolOutput { call_id, value: Some(value), error: None },
-            Err(e) => ToolOutput { call_id, value: None, error: Some(e) },
+            Ok(value) => {
+                let render = human_render(&value);
+                ToolOutput {
+                    call_id,
+                    value: Some(value),
+                    render,
+                    error: None,
+                    decision: Some(ToolDecision::Allow),
+                }
+            }
+            Err(e) => ToolOutput {
+                call_id,
+                value: None,
+                render: None,
+                error: Some(e),
+                decision: Some(ToolDecision::Allow),
+            },
         }
     }
 }
@@ -149,6 +170,36 @@ fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("missing '{key}' (expected string)"))
+}
+
+/// Best-effort human-readable rendering of a successful tool result for the
+/// ToolOutput::render field (W189). The canonical value stays authoritative;
+/// render only improves the human/UI view:
+/// - run_shell ({stdout, stderr, exit_code}) -> condensed stream summary;
+/// - read_file (plain text) and everything else -> None (the value is already
+///   human-readable, or a compact JSON view is adequate).
+fn human_render(value: &Value) -> Option<String> {
+    if let Some(obj) = value.as_object() {
+        if obj.contains_key("stdout") || obj.contains_key("stderr") || obj.contains_key("exit_code") {
+            let mut out = String::new();
+            if let Some(code) = obj.get("exit_code").filter(|c| !c.is_null()) {
+                out.push_str(&format!("exit_code: {code}\n"));
+            }
+            if let Some(s) = obj.get("stdout").and_then(Value::as_str) {
+                if !s.is_empty() {
+                    out.push_str(&format!("stdout: {s}\n"));
+                }
+            }
+            if let Some(e) = obj.get("stderr").and_then(Value::as_str) {
+                if !e.is_empty() {
+                    out.push_str(&format!("stderr: {e}"));
+                }
+            }
+            let out = out.trim_end().to_string();
+            return if out.is_empty() { None } else { Some(out) };
+        }
+    }
+    None
 }
 
 /// A `Tool` whose behavior is a boxed async closure. Keeps the builtin
@@ -287,12 +338,88 @@ mod tests {
         assert_eq!(out.value, Some(json!("hello celestea")));
     }
 
+    // ---- W189: ToolOutput render (canonical value vs human render) ----------
+
+    #[tokio::test]
+    async fn read_file_dispatch_render_is_none() {
+        let dir = std::env::temp_dir().join(format!("celestea-tools-render-{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let file = dir.join("r.txt");
+        tokio::fs::write(&file, "plain text").await.unwrap();
+
+        let mut registry = ToolRegistryImpl::new();
+        for tool in builtin_tools() {
+            registry.register(tool);
+        }
+        let out = registry
+            .dispatch(sample_input("c-r", "read_file", json!({ "path": file.to_string_lossy() })))
+            .await;
+
+        // read_file: the canonical value IS the human-readable text -> render None.
+        assert_eq!(out.value, Some(json!("plain text")));
+        assert_eq!(out.render, None);
+    }
+
+    #[tokio::test]
+    async fn run_shell_dispatch_render_summarizes_stream() {
+        let mut registry = ToolRegistryImpl::new();
+        for tool in builtin_tools() {
+            registry.register(tool);
+        }
+        let out = registry
+            .dispatch(sample_input("c-sh", "run_shell", json!({ "command": "printf hi" })))
+            .await;
+
+        // run_shell: canonical value is the structured object, render is the
+        // condensed stdout+stderr summary.
+        let value = out.value.expect("run_shell value");
+        assert_eq!(value["exit_code"], json!(0));
+        assert_eq!(value["stdout"], json!("hi"));
+        let render = out.render.expect("run_shell render");
+        assert!(render.contains("exit_code: 0"), "{render}");
+        assert!(render.contains("stdout: hi"), "{render}");
+    }
+
+    #[test]
+    fn human_render_plain_text_is_none() {
+        // read_file / write_file style string values need no separate render.
+        assert_eq!(human_render(&json!("plain text")), None);
+        assert_eq!(human_render(&json!([])), None);
+        assert_eq!(human_render(&json!({ "n": 1 })), None);
+    }
+
+    #[test]
+    fn human_render_run_shell_shape_summarizes() {
+        let v = json!({
+            "stdout": "hello",
+            "stderr": "",
+            "exit_code": 0
+        });
+        let render = human_render(&v).expect("shell render");
+        assert!(render.contains("exit_code: 0"), "{render}");
+        assert!(render.contains("stdout: hello"), "{render}");
+        assert!(!render.contains("stderr"), "{render}");
+
+        // empty streams but a known exit code -> one-line render
+        assert_eq!(
+            human_render(&json!({ "stdout": "", "stderr": "", "exit_code": 0 })),
+            Some("exit_code: 0".to_string())
+        );
+
+        // nothing worth rendering (empty streams + unknown exit code) -> None
+        assert_eq!(
+            human_render(&json!({ "stdout": "", "stderr": "", "exit_code": null })),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn unknown_tool_reports_error() {
         let registry = ToolRegistryImpl::new();
         let out = registry.dispatch(sample_input("c2", "nope", json!({}))).await;
         assert_eq!(out.value, None);
         assert_eq!(out.error, Some("unknown tool: nope".to_string()));
+        assert_eq!(out.decision, Some(ToolDecision::Allow));
     }
 
     #[tokio::test]
@@ -310,6 +437,61 @@ mod tests {
         let out = registry.dispatch(sample_input("c3", "read_file", json!({}))).await;
         assert_eq!(out.error, Some("denied: policy says no".to_string()));
         assert_eq!(out.value, None);
+        assert_eq!(out.decision, Some(ToolDecision::Deny("policy says no".into())));
+    }
+
+    #[tokio::test]
+    async fn guard_ask_short_circuits_with_structured_decision() {
+        struct AskAll;
+        #[async_trait]
+        impl ToolGuard for AskAll {
+            async fn check(&self, _input: &ToolInput) -> ToolDecision {
+                ToolDecision::Ask("confirm overwrite?".into())
+            }
+        }
+
+        let mut registry = ToolRegistryImpl::new();
+        registry.add_guard(Box::new(AskAll));
+        let out =
+            registry.dispatch(sample_input("c-ask", "write_file", json!({ "path": "x" }))).await;
+        assert_eq!(out.error, Some("ask: confirm overwrite?".to_string()));
+        assert_eq!(out.value, None);
+        assert_eq!(out.decision, Some(ToolDecision::Ask("confirm overwrite?".into())));
+    }
+
+    #[tokio::test]
+    async fn guard_allow_execution_path_sets_allow_decision() {
+        struct AllowAll;
+        #[async_trait]
+        impl ToolGuard for AllowAll {
+            async fn check(&self, _input: &ToolInput) -> ToolDecision {
+                ToolDecision::Allow
+            }
+        }
+
+        let mut registry = ToolRegistryImpl::new();
+        registry.add_guard(Box::new(AllowAll));
+        for tool in builtin_tools() {
+            registry.register(tool);
+        }
+
+        // Success path: guards all Allow, tool executes Ok.
+        let dir = std::env::temp_dir().join(format!("celestea-tools-allow-{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let file = dir.join("a.txt");
+        tokio::fs::write(&file, "ok").await.unwrap();
+        let out = registry
+            .dispatch(sample_input("c-ok", "read_file", json!({ "path": file.to_string_lossy() })))
+            .await;
+        assert_eq!(out.value, Some(json!("ok")));
+        assert_eq!(out.error, None);
+        assert_eq!(out.decision, Some(ToolDecision::Allow));
+
+        // Unknown tool after the Allow chain still records Allow (permitted but failed).
+        let unk = registry.dispatch(sample_input("c-unk", "nope", json!({}))).await;
+        assert_eq!(unk.value, None);
+        assert_eq!(unk.error, Some("unknown tool: nope".to_string()));
+        assert_eq!(unk.decision, Some(ToolDecision::Allow));
     }
 
     #[tokio::test]
@@ -324,5 +506,35 @@ mod tests {
         sorted.sort_unstable();
         assert_eq!(names, sorted);
         assert_eq!(names, vec!["list_dir", "read_file", "run_shell", "write_file"]);
+    }
+
+    // ---- W188: dispatch 基准 (std::time::Instant, 输出到测试日志) ----------
+
+    #[tokio::test]
+    async fn bench_dispatch_throughput() {
+        // Dispatch with NO guard and an unknown tool name: exercises the guard
+        // loop + registry lookup + ToolOutput construction, i.e. the dispatch
+        // pipeline overhead without filesystem/shell IO.
+        let mut registry = ToolRegistryImpl::new();
+        registry.register(fn_tool(read_file_spec(), |_args| {
+            Box::pin(async move { Ok(json!("ok")) })
+        }));
+        let _input = sample_input("c1", "no_such_tool", json!({ "path": "x" }));
+
+        // Warm up.
+        for _ in 0..100 {
+            let _ = registry.dispatch(sample_input("w", "no_such_tool", json!({}))).await;
+        }
+
+        const ITERS: usize = 20_000;
+        let t0 = std::time::Instant::now();
+        for i in 0..ITERS {
+            let out = registry.dispatch(sample_input("c1", "no_such_tool", json!({}))).await;
+            assert!(out.error.is_some(), "unknown tool must error at iter {i}");
+        }
+        let dur = t0.elapsed();
+        let per_sec = (ITERS as f64 / dur.as_secs_f64()).round();
+        eprintln!("[bench] dispatch(pipeline, miss path): iters={ITERS} {:?} -> {per_sec}/s", dur);
+        assert!(dur.as_secs_f64() < 30.0, "benchmark must not stall the suite");
     }
 }
