@@ -40,6 +40,18 @@ fn derive_short(brief: &str, wid: &str) -> String {
     }
 }
 
+/// W234 A：report_to 非空时追加到 worker 简报尾部的完成反馈指令。
+/// 强制三步：写完成报告 → session_send_message 回执 → 结束本回合。
+fn completion_feedback(wid: &str, short: &str, report_to: &str) -> String {
+    let path = format!("results/{wid}-{}.md", sanitize_extra(short));
+    format!(
+        "【强制交付】任务完成后，必须立即执行以下三步，然后结束本回合：\n\
+         1. 用 write_file 工具把完成报告写到 {path}（路径相对进程当前工作目录，报告用 Markdown 写清结论/成果/验证/卡点）；\n\
+         2. 用 session_send_message 工具（target={report_to}）发送一行回执：完成状态（成功或失败）+ 报告路径 {path}；\n\
+         3. 回执发送完成后立即结束本回合，不得再继续任何其他工作。"
+    )
+}
+
 // --- ToolSpec（按 W180 B1 / B2 给出，worker_status 为 B3 查询工具） ---
 
 fn spawn_worker_spec() -> ToolSpec {
@@ -182,6 +194,15 @@ async fn spawn_worker_impl(reg: Arc<WorkerRegistry>, args: &Value) -> Result<Val
         None => derive_short(&brief, &wid),
     };
     let full_title = format!("{wid}·{short}");
+
+    // --- W234 A: report_to 非空 → 把完成反馈指令追加到简报尾部。驱动 brief 与
+    // tsv 的 brief token 都用注入后的文本（此前只把 report_to 存进 tsv token，
+    // drive_if_possible 传原始 brief → worker 从不写报告/发回执）。
+    let brief = match &report_to {
+        Some(rt) => format!("{brief}\n\n{}", completion_feedback(&wid, &short, rt)),
+        None => brief,
+    };
+
     let sid = reg.sessions().create(SessionSpec {
         title: full_title.clone(),
         workspace: workspace.clone(),

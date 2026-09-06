@@ -41,6 +41,10 @@ pub struct WorkerRegistry {
     /// 看门狗的整表重写并发时，各自写各自唯一的 tmp 文件再 rename，
     /// 避免同 pid 下共享 tmp 路径的写交织（tmp+rename 原子替换语义不变）。
     write_seq: AtomicU64,
+    /// W234: 本进程 pid —— 构造时记下，upsert 写行时随 extra 的 proc token
+    /// 落盘。/tmp registry.tsv 跨进程共享（残留旧行 sess 会因 SessionRegistry
+    /// next_id 归零而撞车），行归属以 proc 标记区分；旧行无 proc 视为他进程。
+    pid: u32,
 }
 
 impl WorkerRegistry {
@@ -61,6 +65,7 @@ impl WorkerRegistry {
             background: Mutex::new(JoinSet::new()),
             stops: Mutex::new(HashMap::new()),
             write_seq: AtomicU64::new(0),
+            pid: std::process::id(),
         }
     }
 
@@ -70,6 +75,16 @@ impl WorkerRegistry {
 
     pub fn tsv_path(&self) -> &Path {
         &self.path
+    }
+
+    /// 本进程 pid（registry 行的 proc 归属标记）。
+    pub fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    /// 行是否由本进程写入（无 proc 的旧行视为其他进程 → false）。
+    fn is_own(&self, entry: &WorkerEntry) -> bool {
+        entry.proc_id() == Some(self.pid)
     }
 
     /// SessionRegistry 引用（spawn 建会话 / send 解析目标）。
@@ -156,8 +171,11 @@ impl WorkerRegistry {
         std::fs::rename(&tmp, &self.path)
     }
 
-    /// 按 wid upsert（存在则替换整行，否则追加）。
+    /// 按 wid upsert（存在则替换整行，否则追加）。写入前给行打上本进程
+    /// proc 标记（W234）：行归属 = 写它的进程；其余进程的行原样保留。
     pub fn upsert(&self, entry: WorkerEntry) -> std::io::Result<()> {
+        let mut entry = entry;
+        entry.set_proc(self.pid);
         let mut entries = self.read_entries();
         match entries.iter().position(|e| e.wid == entry.wid) {
             Some(pos) => entries[pos] = entry,
@@ -171,8 +189,15 @@ impl WorkerRegistry {
     }
 
     /// 汇总：缺省返回 RUNNING/DONE/FAILED 计数 + 全表；按 wid 过滤返回单条。
+    /// W234: 视图只统计本进程行——其他进程（含无 proc 的旧残留行）不进
+    /// by_status/by_state/workers，也不会被 wid 过滤命中，避免跨进程残留行
+    /// 污染 worker_status 的状态视图。
     pub fn summarize(&self, filter: Option<&str>) -> Value {
-        let entries = self.read_entries();
+        let entries: Vec<WorkerEntry> = self
+            .read_entries()
+            .into_iter()
+            .filter(|e| self.is_own(e))
+            .collect();
         if let Some(wid) = filter {
             return match entries.iter().find(|e| e.wid == wid) {
                 Some(e) => json!({ "ok": true, "wid": wid, "worker": e.to_json() }),
@@ -331,10 +356,13 @@ impl WorkerRegistry {
     }
 
     /// 按 sess=<sid> 反查 wid（状态标注需要 wid 定位 registry 行）。
+    /// W234: 只匹配本进程写入的行——跨进程残留旧行的 sess 会撞车（两个进程的
+    /// 首个会话都是 session-0），旧行无 proc 一律视为其他进程跳过，
+    /// 状态 token 不再写错行。
     fn find_wid_for_sess(&self, sid: &str) -> Option<String> {
         self.read_entries()
             .into_iter()
-            .find(|e| e.get_extra("sess").as_deref() == Some(sid))
+            .find(|e| self.is_own(e) && e.get_extra("sess").as_deref() == Some(sid))
             .map(|e| e.wid)
     }
 

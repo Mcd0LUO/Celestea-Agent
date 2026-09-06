@@ -101,6 +101,27 @@ impl WorkerEntry {
         self.get_extra("state")
     }
 
+    /// extra 里的 proc 标记：写入该行的进程 pid（W234 跨进程行治理）。
+    /// 本改动前的旧行无 proc → None，视为其他进程写入，跳过不匹配。
+    pub fn proc_id(&self) -> Option<u32> {
+        self.get_extra("proc").and_then(|v| v.parse::<u32>().ok())
+    }
+
+    /// 把 proc 标记设为 pid（覆盖既有 proc token；只改 extra，不动其他字段）。
+    pub fn set_proc(&mut self, pid: u32) {
+        let mut tokens: Vec<String> = Vec::new();
+        for tok in self.extra.split_whitespace() {
+            if let Some((k, _)) = tok.split_once('=') {
+                if k == "proc" {
+                    continue; // 由 set 覆盖
+                }
+            }
+            tokens.push(tok.to_string());
+        }
+        tokens.push(format!("proc={pid}"));
+        self.extra = tokens.join(" ");
+    }
+
     /// 面向 AI 的 JSON 视图。
     pub fn to_json(&self) -> Value {
         json!({
@@ -112,6 +133,7 @@ impl WorkerEntry {
             "title": self.get_extra("title").unwrap_or_default(),
             "driven": self.get_extra("driven").unwrap_or_default(),
             "state": self.state().unwrap_or_default(),
+            "proc": self.proc_id(),
             "extra": self.extra,
         })
     }
@@ -121,12 +143,16 @@ impl WorkerEntry {
 // 2. 时间戳（无 chrono 依赖的 UTC 民用历格式化，对齐 dsh 的 %Y-%m-%d_%H:%M:%S）
 // ============================================================================
 
+/// W234: 带时区标记的当前时间戳 —— 旧格式 `%Y-%m-%d_%H:%M:%S` 无时区信息，
+/// 在 UTC+8 服务器上显示误导（看起来像本地时间实为 UTC）；自 W234 起写
+/// registry 时以尾部 `Z` 显式标记 UTC（`2026-09-06_17:24:17Z`），
+/// parse_utc 同时兼容新旧两种格式（读旧行不崩）。
 pub(crate) fn utc_now() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    format_utc(secs)
+    format!("{}Z", format_utc(secs))
 }
 
 /// Howard Hinnant 的 civil-from-days 算法；对任意 i64 秒（含前纪元）都正确。

@@ -27,8 +27,11 @@ use crate::{WorkerEntry, WorkerRegistry, WorkerStatus};
 // ==== 时间戳反向解析（format_utc 的逆，供宽限期判定） ====
 
 /// 解析 "%Y-%m-%d_%H:%M:%S"（UTC，format_utc 的逆）。失败返回 None。
+/// W234: 同时接受尾部 'Z' 时区标记（新版 utc_now 输出 `...Z`）与无后缀旧格式，
+/// 读旧行不崩。
 pub fn parse_utc(s: &str) -> Option<i64> {
     let s = s.trim();
+    let s = s.strip_suffix('Z').unwrap_or(s);
     if s.len() != 19 { return None; }
     let (date, time) = s.split_once('_')?;
     let (y, rest) = date.split_once('-')?;

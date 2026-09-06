@@ -352,9 +352,106 @@ mod tests {
         assert_eq!(format_utc(0), "1970-01-01_00:00:00");
         assert_eq!(format_utc(86_400), "1970-01-02_00:00:00");
         assert_eq!(format_utc(1_234_567_890), "2009-02-13_23:31:30");
+        // W234: utc_now 带 'Z' 时区标记（YYYY-MM-DD_HH:MM:SSZ），不再误导为本地时间。
         let now = utc_now();
-        assert_eq!(now.len(), 19, "expected YYYY-MM-DD_HH:MM:SS, got {now}");
+        assert_eq!(now.len(), 20, "expected YYYY-MM-DD_HH:MM:SSZ, got {now}");
+        assert!(now.ends_with('Z'), "utc_now must carry the Z timezone marker: {now}");
         assert!(now.starts_with("20"), "now should be 2000s: {now}");
+        // 新格式（带 Z）与旧格式（无后缀）都能被 parse_utc 反向解析：读旧行不崩。
+        assert!(parse_utc(&now).is_some(), "Z-suffixed timestamp must parse: {now}");
+        assert_eq!(parse_utc(&now), parse_utc(&now[..19]));
+        assert_eq!(
+            parse_utc("2026-09-06_17:24:17"),
+            parse_utc("2026-09-06_17:24:17Z"),
+            "old rows without Z must parse identically"
+        );
+    }
+
+    // ---- W234 B: 跨进程 registry 行治理（proc 标记） -------------------------
+
+    #[tokio::test]
+    async fn worker_status_view_excludes_foreign_proc_rows() {
+        let path = temp_tsv("w234-status");
+        // 预置其他进程（旧格式，无 proc）的残留行：sess 与本进程会话空间撞车。
+        std::fs::write(
+            &path,
+            concat!(
+                "W216T\t2026-09-06_17:24:17\tRUNNING\tsess=session-0 state=idle brief=ghost1\n",
+                "W101\t2026-09-06_17:24:18\tDONE\tsess=session-1\n",
+                "W001\t2026-09-06_17:24:19\tRUNNING\tsess=session-2\n",
+            ),
+        )
+        .unwrap();
+
+        let reg = Arc::new(WorkerRegistry::new(&path));
+        let tools = worker_tools_with(reg.clone());
+        let spawn = tool_by_name(&tools, "spawn_worker");
+        spawn.execute(json!({ "wid": "WOWN", "brief": "own" })).await.unwrap();
+
+        // 原始读不受影响：upsert / 看门狗整表重写仍保留全部行（不丢他进程数据）。
+        assert_eq!(reg.read_entries().len(), 4, "raw read must keep foreign rows");
+
+        let status = tool_by_name(&tools, "worker_status");
+        let all = status.execute(json!({})).await.unwrap();
+        assert_eq!(all["ok"], json!(true));
+        assert_eq!(all["total"], json!(1), "view counts only own-process rows: {all}");
+        assert_eq!(all["by_status"]["RUNNING"], json!(1));
+        assert_eq!(all["by_status"]["DONE"], json!(0), "foreign DONE row must not be counted");
+        assert_eq!(all["by_state"]["idle"], json!(0), "foreign RUNNING state=idle must not be counted");
+        assert_eq!(all["by_state"]["in-turn"], json!(0));
+        assert_eq!(all["workers"][0]["wid"], json!("WOWN"));
+
+        // 按 wid 过滤：他进程行不可见；本进程行可见且带 proc 标记。
+        let filtered = status.execute(json!({ "wid": "W216T" })).await.unwrap();
+        assert_eq!(filtered["ok"], json!(false), "foreign wid lookup must miss: {filtered}");
+        assert_eq!(filtered["step"], json!("lookup"));
+
+        let own = status.execute(json!({ "wid": "WOWN" })).await.unwrap();
+        assert_eq!(own["ok"], json!(true));
+        assert_eq!(own["worker"]["wid"], json!("WOWN"));
+        assert_eq!(own["worker"]["proc"], json!(std::process::id()));
+    }
+
+    #[tokio::test]
+    async fn spawn_sid_collision_state_lands_on_own_row() {
+        let path = temp_tsv("w234-collide");
+        // 预置旧进程残留行：sess=session-0、无 proc（旧格式），模拟跨进程撞车。
+        std::fs::write(
+            &path,
+            "W216T\t2026-09-06_17:24:17\tRUNNING\tsess=session-0 state=idle brief=ghost\n",
+        )
+        .unwrap();
+
+        let reg = Arc::new(WorkerRegistry::new(&path));
+        let recorder = Arc::new(RecordingLoop::new(true)); // 门控：in-turn 可观测
+        attach_recording(&reg, recorder.clone());
+
+        let tools = worker_tools_with(reg.clone());
+        let spawn = tool_by_name(&tools, "spawn_worker");
+        let out = spawn.execute(json!({ "wid": "WNEW", "brief": "fresh task" })).await.unwrap();
+        assert_eq!(out["ok"], json!(true));
+        // 新进程 SessionRegistry next_id 归零 → 新会话也是 session-0（撞车）。
+        assert_eq!(out["sessionId"], json!("session-0"));
+
+        // 驱动的 in-turn 标注必须落在本进程行（WNEW，带 proc）；旧行不得被改写。
+        wait_until(|| reg.get_entry("WNEW").and_then(|e| e.state()) == Some("in-turn".to_string()), 3000).await;
+
+        let entries = reg.read_entries();
+        let ghost = entries.iter().find(|e| e.wid == "W216T").expect("ghost row preserved");
+        let own = entries.iter().find(|e| e.wid == "WNEW").expect("own row present");
+        assert_eq!(ghost.get_extra("state").as_deref(), Some("idle"), "ghost row must not be touched: {ghost:?}");
+        assert_eq!(ghost.started_at, "2026-09-06_17:24:17", "ghost started_at must stay intact");
+        assert_eq!(ghost.proc_id(), None, "old row has no proc token");
+        assert_eq!(own.proc_id(), Some(std::process::id()), "own row stamped with this pid");
+        assert_eq!(own.state().as_deref(), Some("in-turn"));
+
+        // 收尾：放行 → idle，释放会话让驱动退出。
+        recorder.release();
+        wait_until(|| reg.get_entry("WNEW").and_then(|e| e.state()) == Some("idle".to_string()), 3000).await;
+        let sid = out["sessionId"].as_str().unwrap().to_string();
+        reg.sessions().remove(&sid);
+        reg.mailbox().purge(&sid);
+        reg.stop_driver(&sid);
     }
 
     // ---- 后台驱动 ---------------------------------------------------------------
@@ -734,6 +831,91 @@ mod tests {
         reg.sessions().remove(&sid);
         reg.mailbox().purge(&sid);
         reg.stop_driver(&sid);
+    }
+
+    // ---- W234 A: report_to 完成反馈指令注入 ---------------------------------
+
+    #[tokio::test]
+    async fn spawn_injects_report_to_feedback_into_brief_and_tsv() {
+        let reg = Arc::new(WorkerRegistry::new(temp_tsv("w234-report")));
+        let recorder = Arc::new(RecordingLoop::new(false));
+        attach_recording(&reg, recorder.clone());
+
+        let tools = worker_tools_with(reg.clone());
+        let spawn = tool_by_name(&tools, "spawn_worker");
+        let out = spawn
+            .execute(json!({
+                "wid": "WPROBE",
+                "brief": "只回复两个汉字：收到。然后结束。",
+                "report_to": "cli-main"
+            }))
+            .await
+            .unwrap();
+        assert_eq!(out["ok"], json!(true));
+        assert_eq!(out["driven"], json!(true));
+        let sid = out["sessionId"].as_str().unwrap().to_string();
+
+        // 驱动收到的 brief = 原始简报 + 注入的完成反馈指令（含 wid / report_to / 结果路径）。
+        wait_until(
+            || recorder.inputs().iter().any(|i| {
+                i.starts_with("只回复两个汉字：收到。然后结束。")
+                    && i.contains("results/WPROBE-")
+                    && i.contains("target=cli-main")
+            }),
+            3000,
+        )
+        .await;
+        let injected = recorder.inputs().into_iter().next().expect("brief turn input");
+        assert!(injected.contains("write_file"), "injected brief must name write_file: {injected}");
+        assert!(injected.contains("session_send_message"), "injected brief must name session_send_message: {injected}");
+        assert!(injected.contains("【强制交付】"), "injected brief must carry the mandatory feedback header: {injected}");
+        assert!(injected.contains("结束本回合"), "injected brief must force ending the turn: {injected}");
+        assert!(
+            injected.contains("results/WPROBE-只回复两个汉字：收到。然后结束。.md"),
+            "injected brief must carry results/<wid>-<short>.md path: {injected}"
+        );
+
+        // tsv 的 brief token 存注入后的文本（仍截断 300 + sanitize：无 tab/换行）。
+        // brief 值可含空格，get_extra 按空白拆块只取首块，这里直接断言整行 extra。
+        let entry = reg.get_entry("WPROBE").expect("registry entry written");
+        assert_eq!(entry.get_extra("report_to").as_deref(), Some("cli-main"));
+        assert!(entry.extra.contains("write_file"), "tsv brief token must be injected: {}", entry.extra);
+        assert!(entry.extra.contains("results/WPROBE-"), "tsv brief token must carry the path: {}", entry.extra);
+        assert!(entry.extra.contains("target=cli-main"), "tsv brief token must carry report_to: {}", entry.extra);
+        assert!(
+            entry.extra.contains("不得再继续任何其他工作。"),
+            "injected text must survive the 300-char truncation: {}",
+            entry.extra
+        );
+        assert!(!entry.extra.contains('\t') && !entry.extra.contains('\n'), "extra sanitized: {}", entry.extra);
+
+        // 收尾：释放会话让驱动退出。
+        reg.sessions().remove(&sid);
+        reg.mailbox().purge(&sid);
+        reg.stop_driver(&sid);
+    }
+
+    #[tokio::test]
+    async fn spawn_report_to_injects_even_without_drivers() {
+        // 未接驱动 seam（仅登记不驱动）时，tsv 的 brief token 同样存注入后文本。
+        let reg = Arc::new(WorkerRegistry::new(temp_tsv("w234-report-nodrv")));
+        let tools = worker_tools_with(reg.clone());
+        let spawn = tool_by_name(&tools, "spawn_worker");
+        let out = spawn
+            .execute(json!({ "wid": "WNODRV", "brief": "do it", "report_to": "cli-main" }))
+            .await
+            .unwrap();
+        assert_eq!(out["ok"], json!(true));
+        assert_eq!(out["driven"], json!(false));
+
+        let entry = reg.get_entry("WNODRV").expect("registry entry written");
+        assert!(
+            entry.extra.contains("results/WNODRV-do it.md"),
+            "injected even when not driven: {}",
+            entry.extra
+        );
+        assert!(entry.extra.contains("target=cli-main"), "report_to target present: {}", entry.extra);
+        assert!(!entry.extra.contains('\t') && !entry.extra.contains('\n'), "extra sanitized: {}", entry.extra);
     }
 
 }
