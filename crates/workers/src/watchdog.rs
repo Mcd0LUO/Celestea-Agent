@@ -221,9 +221,13 @@ impl Watchdog {
     /// SessionMailbox 里未消费的消息队列，避免已结束 worker 的会话/日志/入队消息
     /// 在进程内无界累积（W222 F2）。仅在判定会话已结束（无进行中 turn，见 F3 的
     /// [session_alive]）后调用 —— 避免误杀仍有进行中 turn 的存活 worker。
+    /// W232: 同时 stop_driver 通知该会话的 mailbox 事件循环驱动退出——
+    /// W232 起驱动任务随会话存活（阻塞在 mailbox.recv），不停止的话会在
+    /// remove+purge 之后仍然挂着，JoinSet 槽位与任务双双泄漏。
     fn release_session(&self, sess: &str) {
         self.reg.sessions().remove(sess);
         self.reg.mailbox().purge(sess);
+        self.reg.stop_driver(sess);
     }
 
     /// 一轮巡检：读 registry → 对 RUNNING 行逐一裁决 → 原子重写 → 返回裁决清单。

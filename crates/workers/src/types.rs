@@ -78,6 +78,29 @@ impl WorkerEntry {
         })
     }
 
+    /// 设置（或删除）extra 里的 state token（W232 状态模型：RUNNING 行标注
+    /// in-turn / idle）。只改 extra，不动 wid/started_at/status。
+    pub fn set_extra_state(&mut self, state: Option<&str>) {
+        let mut tokens: Vec<String> = Vec::new();
+        for tok in self.extra.split_whitespace() {
+            if let Some((k, _)) = tok.split_once('=') {
+                if k == "state" {
+                    continue; // 由 set 覆盖
+                }
+            }
+            tokens.push(tok.to_string());
+        }
+        if let Some(s) = state {
+            tokens.push(format!("state={s}"));
+        }
+        self.extra = tokens.join(" ");
+    }
+
+    /// RUNNING 行的当前状态标注：Some("in-turn") / Some("idle") / None（未标注）。
+    pub fn state(&self) -> Option<String> {
+        self.get_extra("state")
+    }
+
     /// 面向 AI 的 JSON 视图。
     pub fn to_json(&self) -> Value {
         json!({
@@ -88,6 +111,7 @@ impl WorkerEntry {
             "ws": self.get_extra("ws").unwrap_or_default(),
             "title": self.get_extra("title").unwrap_or_default(),
             "driven": self.get_extra("driven").unwrap_or_default(),
+            "state": self.state().unwrap_or_default(),
             "extra": self.extra,
         })
     }

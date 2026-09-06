@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use celestea_agent_loop::{DefaultAgentLoop, EventSink};
-use celestea_core::{AgentError, AgentLoop};
+use celestea_core::{AgentError, AgentLoop, SessionEvent};
 use tokio::sync::watch;
 
 use crate::compose::Runtime;
@@ -60,6 +60,18 @@ impl Runtime {
         cancel: Option<watch::Receiver<bool>>,
         sink: Option<EventSink>,
     ) -> Result<TurnOutcome, AgentError> {
+        // W232 会话通讯闭环（宿主侧消费）：每轮开始先把 cli-main mailbox 里
+        // 的 pending 消息按 FIFO drain 进宿主 SessionLog，标注来源 from_label，
+        // 再处理本次输入 —— worker 的回执/协作消息由此在宿主的下一轮真实可见。
+        // 只做日志注入，不动 SSE（sink）/取消（cancel）/热重载路径。
+        for msg in self.workers.mailbox().poll(crate::compose::HOST_SID) {
+            let text = if msg.from_label.is_empty() {
+                msg.content
+            } else {
+                format!("[from {}] {}", msg.from_label, msg.content)
+            };
+            self.session.append(SessionEvent::UserMessage { text });
+        }
         let agent = self.make_loop(cancel.clone(), sink.clone());
         agent.run_turn(&self.ctx, input).await?;
         let cancelled = cancel.as_ref().map(|rx| *rx.borrow()).unwrap_or(false);
@@ -105,7 +117,7 @@ mod tests {
     };
     use crate::LoopEvent;
     use celestea_agent_loop::UsageTracker;
-    use celestea_session::InMemorySessionLog;
+    use celestea_session::{InMemorySessionLog, Session, SessionMeta};
     use celestea_workers::WorkerRegistry;
     use futures_util::stream;
     use futures_util::StreamExt;
@@ -275,6 +287,50 @@ mod tests {
         assert!(events.iter().any(|e| matches!(e, SessionEvent::TurnEnd { .. })));
         assert!(!events.iter().any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
     }
+    // ---- W232: 宿主消费 mailbox（worker 回执在宿主下一轮真实可见） -------------
+
+    #[tokio::test]
+    async fn run_turn_drains_host_mailbox_before_input() {
+        let (rt, _reg) = test_runtime(vec![Message::assistant_text("replied")]);
+        // compose() 的 W232 行为：宿主会话登记进共享 SessionRegistry，回执投进
+        // mailbox["cli-main"]（worker 侧 session_send_message 的投递路径）。
+        let host = Arc::new(Session::new(SessionMeta {
+            id: "cli-main".into(),
+            title: "cli-main".into(),
+            workspace: None,
+            model: None,
+        }));
+        rt.workers.sessions().register(host).unwrap();
+        rt.workers.mailbox().send("cli-main", "receipt one", "W1");
+        rt.workers.mailbox().send("cli-main", "receipt two", "W2");
+        assert_eq!(rt.workers.mailbox().pending("cli-main"), 2);
+
+        let outcome = rt.run_turn("now go", None, None).await.unwrap();
+        assert_eq!(outcome, TurnOutcome::Completed);
+
+        // 回执按 FIFO 注入宿主日志、标注来源 from_label，且排在本次输入之前。
+        let texts: Vec<String> = rt
+            .session
+            .events()
+            .iter()
+            .filter_map(|e| match e {
+                SessionEvent::UserMessage { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                "[from W1] receipt one".to_string(),
+                "[from W2] receipt two".to_string(),
+                "now go".to_string(),
+            ]
+        );
+        assert_eq!(rt.workers.mailbox().pending("cli-main"), 0, "host mailbox drained");
+        // 本轮仍正常完成（drain 不影响 turn 语义）。
+        assert_eq!(rt.summarize_turn().assistant_text, "replied");
+    }
+
     #[tokio::test]
     async fn run_turn_reports_latest_and_total_usage() {
         // Fake LLM streams a Usage event; the Runtime exposes latest + total.

@@ -83,7 +83,7 @@ fn session_send_message_spec() -> ToolSpec {
 fn worker_status_spec() -> ToolSpec {
     ToolSpec {
         name: "worker_status".into(),
-        description: "查询 harness 侧 worker registry（registry.tsv）：返回 RUNNING/DONE/FAILED 汇总；可选按 wid 过滤查看单个 worker 的会话与状态。".into(),
+        description: "查询 harness 侧 worker registry（registry.tsv）：返回 RUNNING/DONE/FAILED 汇总（RUNNING 行再按 state 标注细分 in-turn=正在跑 turn / idle=等待 mailbox 消息）；可选按 wid 过滤查看单个 worker 的会话与状态。".into(),
         parameters: json!({
             "type": "object",
             "properties": {
@@ -142,10 +142,10 @@ fn spawn_worker_exec(
     reg: Arc<WorkerRegistry>,
     args: Value,
 ) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send>> {
-    Box::pin(async move { spawn_worker_impl(&reg, &args).await })
+    Box::pin(async move { spawn_worker_impl(reg, &args).await })
 }
 
-async fn spawn_worker_impl(reg: &WorkerRegistry, args: &Value) -> Result<Value, String> {
+async fn spawn_worker_impl(reg: Arc<WorkerRegistry>, args: &Value) -> Result<Value, String> {
     // --- validate ---
     let wid = match args.get("wid").and_then(Value::as_str) {
         Some(w) => w.trim().to_string(),
@@ -263,33 +263,38 @@ async fn session_send_message_impl(reg: &WorkerRegistry, args: &Value) -> Result
         return Ok(contract_err("validate", "content required"));
     }
 
-    match reg.sessions().resolve(&target) {
+    Ok(internal_send(reg, &target, &content))
+}
+
+/// 引擎侧内部路径（W185 原语义）：SessionRegistry::resolve → SessionMailbox::send。
+fn internal_send(reg: &WorkerRegistry, target: &str, content: &str) -> Value {
+    match reg.sessions().resolve(target) {
         Ok(session) => {
             let from = reg.source_label();
-            let sent = reg.mailbox().send(session.meta.id.clone(), content, from.clone());
-            Ok(json!({
+            let sent = reg.mailbox().send(session.meta.id.clone(), content.to_string(), from.clone());
+            json!({
                 "ok": true,
                 "delivered": true,
                 "queued": true,
                 "target": session.meta.id,
                 "sourceSession": from,
                 "message_id": sent.id,
-            }))
+            })
         }
         Err(ResolveError::NotFound(t)) => {
-            Ok(contract_err("resolve", format!("no session matches target: {t}")))
+            contract_err("resolve", format!("no session matches target: {t}"))
         }
         Err(ResolveError::Ambiguous { target: t, candidates }) => {
             let cands: Vec<Value> = candidates
                 .iter()
                 .map(|m| json!({ "id": m.id, "title": m.title, "workspace": m.workspace, "model": m.model }))
                 .collect();
-            Ok(json!({
+            json!({
                 "ok": false,
                 "step": "resolve",
                 "target": t,
                 "candidates": cands,
-            }))
+            })
         }
     }
 }

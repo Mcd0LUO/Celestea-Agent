@@ -15,7 +15,7 @@ use celestea_core::{
     ToolRegistryService,
 };
 use celestea_llm::{deepseek_registry, DeepSeekConfig, DeepSeekLlm};
-use celestea_session::{InMemorySessionLog, PersistentSessionLog};
+use celestea_session::{InMemorySessionLog, PersistentSessionLog, Session, SessionMeta};
 use celestea_tools::ToolRegistryImpl;
 use celestea_workers::WorkerRegistry;
 
@@ -23,6 +23,12 @@ use crate::config::{
     resolve_api_key, resolve_base_url, validate_model, Profile,
 };
 use crate::tools::register_all_tools;
+
+/// 宿主（协调者）会话在引擎内的固定 id：持久化文件名、SessionRegistry 里的
+/// 注册 id 与 mailbox 队列键三处共用（W232 会话通讯闭环）。worker 用
+/// session_send_message(target="cli-main") 投递回执，Runtime::run_turn 在每轮
+/// 开始时 drain 该 mailbox 队列注入宿主日志。
+pub(crate) const HOST_SID: &str = "cli-main";
 
 /// The composed runtime engine: every service a turn needs, wired and
 /// ready. Built once per process (or per frontend session) via
@@ -98,7 +104,7 @@ impl Runtime {
         let session: Arc<dyn SessionLog> = match std::env::var("CELESTEA_SESSION_DIR") {
             Ok(dir) if !dir.trim().is_empty() => {
                 let dir = PathBuf::from(dir.trim());
-                match PersistentSessionLog::open(&dir, "cli-main") {
+                match PersistentSessionLog::open(&dir, HOST_SID) {
                     Ok(log) => Arc::new(log),
                     Err(e) => {
                         eprintln!(
@@ -113,6 +119,19 @@ impl Runtime {
         };
 
         let workers = Arc::new(WorkerRegistry::with_default_path());
+
+        // W232 会话通讯闭环：把宿主会话（cli-main）登记进共享 SessionRegistry，
+        // 使 worker 侧 session_send_message(target="cli-main") 可按 id 解析并把
+        // 回执投进 mailbox["cli-main"]；Runtime::run_turn 每轮开始时 drain 它。
+        // 这里只用到 SessionMeta（resolve/send 的寻址面），注册项的日志是空的
+        // 影子日志——宿主真实日志是上方的 session。id 固定，不会与 worker 的
+        // session-<n> 冲突；register 失败（理论上不会）不阻断 compose。
+        let _ = workers.sessions().register(Arc::new(Session::new(SessionMeta {
+            id: HOST_SID.to_string(),
+            title: HOST_SID.to_string(),
+            workspace: None,
+            model: Some(profile.model.clone()),
+        })));
 
         let mut registry = ToolRegistryImpl::new();
         register_all_tools(&mut registry, workers.clone());
@@ -236,6 +255,25 @@ mod tests {
                      "spawn_worker", "session_send_message", "worker_status"] {
             assert!(names.iter().any(|n| n == want), "missing {want} in {names:?}");
         }
+    }
+
+    // ---- W232: 宿主会话登记（worker 回执可寻址） --------------------------------
+
+    /// compose() must register the host conversation as "cli-main" in the shared
+    /// SessionRegistry, so worker-side session_send_message(target="cli-main")
+    /// resolves and Runtime::run_turn can drain its mailbox (receipt loop).
+    #[test]
+    fn compose_registers_host_session_for_receipts() {
+        let key_env = "W232_HOST_KEY";
+        std::env::set_var(key_env, "sk-test");
+        let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
+        let rt = Runtime::compose(&profile).unwrap();
+
+        let wr = rt.ctx.get::<WorkerRegistryService>().expect("WorkerRegistryService provided");
+        let host = wr.0.sessions().resolve("cli-main").expect("host session registered");
+        assert_eq!(host.meta.id, "cli-main");
+        assert_eq!(host.meta.model.as_deref(), Some(profile.model.as_str()));
+        std::env::remove_var(key_env);
     }
 
     /// compose() must provide the shared WorkerRegistry as a service AND attach the
