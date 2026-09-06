@@ -40,16 +40,12 @@ fn derive_short(brief: &str, wid: &str) -> String {
     }
 }
 
-/// W234 A：report_to 非空时追加到 worker 简报尾部的完成反馈指令。
-/// 强制三步：写完成报告 → session_send_message 回执 → 结束本回合。
-fn completion_feedback(wid: &str, short: &str, report_to: &str) -> String {
-    let path = format!("results/{wid}-{}.md", sanitize_extra(short));
-    format!(
-        "【强制交付】任务完成后，必须立即执行以下三步，然后结束本回合：\n\
-         1. 用 write_file 工具把完成报告写到 {path}（路径相对进程当前工作目录，报告用 Markdown 写清结论/成果/验证/卡点）；\n\
-         2. 用 session_send_message 工具（target={report_to}）发送一行回执：完成状态（成功或失败）+ 报告路径 {path}；\n\
-         3. 回执发送完成后立即结束本回合，不得再继续任何其他工作。"
-    )
+/// W235 B：report_to 非空时追加到 worker 简报尾部的中性提示。回执协议已改为
+/// 由驱动循环机械执行（W235 A：brief turn 后自动写报告 + mailbox 回执），
+/// 不再要求模型调用任何工具——避免与主简报指令冲突、避免 LLM 与驱动
+/// 双写不一致。注入结构不变（report_to 非空 → 简报尾部追加一段），只换内容。
+fn completion_feedback(_wid: &str, _short: &str, _report_to: &str) -> String {
+    "【回执】完成后引擎会自动生成报告并发送回执，你只需专注完成任务本身。".to_string()
 }
 
 // --- ToolSpec（按 W180 B1 / B2 给出，worker_status 为 B3 查询工具） ---
@@ -68,7 +64,7 @@ fn spawn_worker_spec() -> ToolSpec {
                 "provider":  { "type": "string", "description": "模型 provider（缺省取 harness 默认）" },
                 "model":     { "type": "string", "description": "模型名（缺省取 harness 默认）" },
                 "reasoning_effort": { "type": "string", "description": "推理档位（可选）" },
-                "report_to": { "type": "string", "description": "回报目标会话 id：非空时在简报尾部注入完成反馈指令（写 results/<wid>-*.md + session_send_message 回执）" }
+                "report_to": { "type": "string", "description": "回报目标会话 id：非空时在简报尾部注入中性回执提示；brief 轮结束后引擎机械写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到该会话 mailbox" }
             },
             "required": ["wid", "brief"],
             "additionalProperties": false

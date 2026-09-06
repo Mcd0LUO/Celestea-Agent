@@ -11,6 +11,11 @@
 //!   多命中候选）→ SessionMailbox::send 入队（Notify 唤醒等待中的 worker 驱动循环）。
 //! - [worker_status]：读 registry.tsv 返回 RUNNING/DONE/FAILED 汇总（RUNNING 行再按
 //!   state 标注细分 in-turn / idle；可选按 wid 过滤）。
+//! - W235 回执协议：spawn(report_to=…) 时注入中性提示（不再强制模型调工具）；
+//!   brief turn 结束后由驱动循环机械执行——写 results/<wid>-<short>.md 报告 +
+//!   mailbox 回执 WORKER_<wid>_DONE/FAILED（from=worker sid），Ok/Err 都执行，
+//!   只在 brief turn 后执行一次；报告基目录可经
+//!   [WorkerRegistry::set_results_dir] 注入（缺省 "results"，相对进程 CWD）。
 //!
 //! [WorkersPlugin] 在 mount 时 provide 一个含 builtin + 三内置工具的组合
 //! [ToolRegistryService]，并把 [WorkerRegistry]（registry.tsv 读写 + SessionRegistry/
@@ -50,7 +55,7 @@ mod tests {
     use async_trait::async_trait;
     use celestea_session::SessionSpec;
     use futures_util::StreamExt;
-    use serde_json::{json, Value};
+    use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Arc;
     use std::path::PathBuf;
@@ -658,10 +663,15 @@ mod tests {
         inputs: Mutex<Vec<String>>,
         gate: tokio::sync::Notify,
         gated: bool,
+        /// W235: true 时 run_turn 返回 Err（测试 brief turn 失败分支的回执协议）。
+        fail: bool,
     }
     impl RecordingLoop {
         fn new(gated: bool) -> Self {
-            Self { inputs: Mutex::new(Vec::new()), gate: tokio::sync::Notify::new(), gated }
+            Self { inputs: Mutex::new(Vec::new()), gate: tokio::sync::Notify::new(), gated, fail: false }
+        }
+        fn failing(gated: bool) -> Self {
+            Self { inputs: Mutex::new(Vec::new()), gate: tokio::sync::Notify::new(), gated, fail: true }
         }
         fn inputs(&self) -> Vec<String> {
             self.inputs.lock().unwrap().clone()
@@ -682,6 +692,9 @@ mod tests {
             }
             if self.gated {
                 self.gate.notified().await;
+            }
+            if self.fail {
+                return Err(AgentError("W235 test: brief turn failed".into()));
             }
             Ok(())
         }
@@ -833,11 +846,16 @@ mod tests {
         reg.stop_driver(&sid);
     }
 
-    // ---- W234 A: report_to 完成反馈指令注入 ---------------------------------
+    // ---- W234 A + W235 B: report_to 注入（内容改为中性提示，不再强制工具调用） ----
 
     #[tokio::test]
-    async fn spawn_injects_report_to_feedback_into_brief_and_tsv() {
+    async fn spawn_injects_report_to_neutral_hint_into_brief_and_tsv() {
         let reg = Arc::new(WorkerRegistry::new(temp_tsv("w234-report")));
+        // 该 worker 带 report_to → brief 轮后回执协议会写报告文件；注入
+        // tempdir 基目录，避免污染测试进程 CWD。
+        let results = temp_results("w234-report");
+        let _ = std::fs::remove_dir_all(&results);
+        reg.set_results_dir(results.clone());
         let recorder = Arc::new(RecordingLoop::new(false));
         attach_recording(&reg, recorder.clone());
 
@@ -855,36 +873,32 @@ mod tests {
         assert_eq!(out["driven"], json!(true));
         let sid = out["sessionId"].as_str().unwrap().to_string();
 
-        // 驱动收到的 brief = 原始简报 + 注入的完成反馈指令（含 wid / report_to / 结果路径）。
+        // W235 B: 驱动收到的 brief = 原始简报 + 中性回执提示（不再强制工具调用，
+        // 避免与主简报指令冲突、避免 LLM 与驱动双写不一致）。
         wait_until(
             || recorder.inputs().iter().any(|i| {
                 i.starts_with("只回复两个汉字：收到。然后结束。")
-                    && i.contains("results/WPROBE-")
-                    && i.contains("target=cli-main")
+                    && i.contains("完成后引擎会自动生成报告并发送回执")
             }),
             3000,
         )
         .await;
         let injected = recorder.inputs().into_iter().next().expect("brief turn input");
-        assert!(injected.contains("write_file"), "injected brief must name write_file: {injected}");
-        assert!(injected.contains("session_send_message"), "injected brief must name session_send_message: {injected}");
-        assert!(injected.contains("【强制交付】"), "injected brief must carry the mandatory feedback header: {injected}");
-        assert!(injected.contains("结束本回合"), "injected brief must force ending the turn: {injected}");
         assert!(
-            injected.contains("results/WPROBE-只回复两个汉字：收到。然后结束。.md"),
-            "injected brief must carry results/<wid>-<short>.md path: {injected}"
+            injected.contains("你只需专注完成任务本身"),
+            "injected brief must carry the neutral hint: {injected}"
         );
+        assert!(!injected.contains("write_file"), "injected brief must not force tool calls: {injected}");
+        assert!(!injected.contains("session_send_message"), "injected brief must not force tool calls: {injected}");
+        assert!(!injected.contains("【强制交付】"), "injected brief must not be mandatory: {injected}");
 
-        // tsv 的 brief token 存注入后的文本（仍截断 300 + sanitize：无 tab/换行）。
+        // tsv 行：report_to token 落盘；brief token 存注入后的文本（仍截断 300 + sanitize）。
         // brief 值可含空格，get_extra 按空白拆块只取首块，这里直接断言整行 extra。
         let entry = reg.get_entry("WPROBE").expect("registry entry written");
         assert_eq!(entry.get_extra("report_to").as_deref(), Some("cli-main"));
-        assert!(entry.extra.contains("write_file"), "tsv brief token must be injected: {}", entry.extra);
-        assert!(entry.extra.contains("results/WPROBE-"), "tsv brief token must carry the path: {}", entry.extra);
-        assert!(entry.extra.contains("target=cli-main"), "tsv brief token must carry report_to: {}", entry.extra);
         assert!(
-            entry.extra.contains("不得再继续任何其他工作。"),
-            "injected text must survive the 300-char truncation: {}",
+            entry.extra.contains("完成后引擎会自动生成报告并发送回执"),
+            "tsv brief token must carry the hint: {}",
             entry.extra
         );
         assert!(!entry.extra.contains('\t') && !entry.extra.contains('\n'), "extra sanitized: {}", entry.extra);
@@ -893,6 +907,7 @@ mod tests {
         reg.sessions().remove(&sid);
         reg.mailbox().purge(&sid);
         reg.stop_driver(&sid);
+        let _ = std::fs::remove_dir_all(&results);
     }
 
     #[tokio::test]
@@ -910,12 +925,165 @@ mod tests {
 
         let entry = reg.get_entry("WNODRV").expect("registry entry written");
         assert!(
-            entry.extra.contains("results/WNODRV-do it.md"),
-            "injected even when not driven: {}",
+            entry.extra.contains("完成后引擎会自动生成报告并发送回执"),
+            "neutral hint injected even when not driven: {}",
             entry.extra
         );
-        assert!(entry.extra.contains("target=cli-main"), "report_to target present: {}", entry.extra);
+        assert!(entry.extra.contains("report_to=cli-main"), "report_to target present: {}", entry.extra);
         assert!(!entry.extra.contains('\t') && !entry.extra.contains('\n'), "extra sanitized: {}", entry.extra);
+    }
+
+    // ---- W235 A: 回执协议由驱动循环机械执行（不依赖模型遵从） ------------------
+
+    /// 每个测试独立的 results 基目录：经 reg.set_results_dir 注入，避免
+    /// 测试进程 CWD 下的 results/ 被污染（最小方案：可注入基目录，缺省 "results"）。
+    fn temp_results(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("celestea-workers-results-{tag}-{}", std::process::id()))
+    }
+
+    /// 收尾：释放 worker 会话让驱动退出，并清理注入的 results 目录。
+    fn cleanup(reg: &WorkerRegistry, sid: &str, results: &PathBuf) {
+        reg.sessions().remove(sid);
+        reg.mailbox().purge(sid);
+        reg.stop_driver(sid);
+        let _ = std::fs::remove_dir_all(results);
+    }
+
+    #[test]
+    fn report_file_stem_sanitizes_illegal_chars() {
+        // 消毒语义仿照 crates/session file_name_for：非 [A-Za-z0-9._-] → '_'。
+        use crate::registry::sanitize_file_stem;
+        assert_eq!(sanitize_file_stem("W101"), "W101");
+        assert_eq!(sanitize_file_stem("../etc/passwd"), ".._etc_passwd");
+        assert_eq!(sanitize_file_stem("W 1/2:3"), "W_1_2_3");
+        assert_eq!(sanitize_file_stem("机械回执"), "____");
+        assert_eq!(sanitize_file_stem(""), "worker");
+    }
+
+    #[tokio::test]
+    async fn receipt_protocol_runs_after_brief_turn_ok() {
+        let reg = Arc::new(WorkerRegistry::new(temp_tsv("w235-receipt-ok")));
+        let results = temp_results("w235-receipt-ok");
+        let _ = std::fs::remove_dir_all(&results);
+        reg.set_results_dir(results.clone());
+
+        let recorder = Arc::new(RecordingLoop::new(false));
+        attach_recording(&reg, recorder.clone());
+
+        let tools = worker_tools_with(reg.clone());
+        let spawn = tool_by_name(&tools, "spawn_worker");
+        let out = spawn
+            .execute(json!({
+                "wid": "W235T",
+                "brief": "mechanical receipt",
+                "title": "receipt-ok",
+                "report_to": "cli-main"
+            }))
+            .await
+            .unwrap();
+        assert_eq!(out["ok"], json!(true));
+        assert_eq!(out["driven"], json!(true));
+        let sid = out["sessionId"].as_str().unwrap().to_string();
+
+        // brief turn 结束 → 机械回执入 cli-main 队列（from=本 worker sid）。
+        wait_until(|| reg.mailbox().pending("cli-main") == 1, 3000).await;
+        let msgs = reg.mailbox().poll("cli-main");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].from_label, sid, "receipt must come from the worker session");
+        assert!(msgs[0].content.starts_with("WORKER_W235T_DONE"), "receipt: {}", msgs[0].content);
+        assert!(msgs[0].content.contains("报告 results/W235T-receipt-ok.md"), "receipt: {}", msgs[0].content);
+
+        // 报告文件存在且含 status/title/简报摘要/会话尾记录。
+        let report = results.join("W235T-receipt-ok.md");
+        assert!(report.exists(), "report file must exist at {report:?}");
+        let text = std::fs::read_to_string(&report).unwrap();
+        assert!(text.contains("# Worker W235T 完成报告"), "report: {text}");
+        assert!(text.contains("title: receipt-ok"), "report: {text}");
+        assert!(text.contains("status: OK"), "report: {text}");
+        assert!(text.contains("mechanical receipt"), "report brief summary: {text}");
+        assert!(text.contains("## 会话尾记录"), "report: {text}");
+        assert!(text.contains("- user: mechanical receipt"), "report tail: {text}");
+
+        // 协议只执行一次：mailbox 消息驱动的轮次不重复回执。
+        reg.mailbox().send(&sid, "follow-up", "coordinator");
+        wait_until(|| recorder.inputs().iter().any(|i| i == "follow-up"), 3000).await;
+        assert_eq!(reg.mailbox().pending("cli-main"), 0, "mailbox turn must not re-run the receipt protocol");
+
+        cleanup(&reg, &sid, &results);
+    }
+
+    #[tokio::test]
+    async fn receipt_protocol_reports_failure_on_brief_turn_err() {
+        let reg = Arc::new(WorkerRegistry::new(temp_tsv("w235-receipt-err")));
+        let results = temp_results("w235-receipt-err");
+        let _ = std::fs::remove_dir_all(&results);
+        reg.set_results_dir(results.clone());
+
+        let recorder = Arc::new(RecordingLoop::failing(false));
+        attach_recording(&reg, recorder.clone());
+
+        let tools = worker_tools_with(reg.clone());
+        let spawn = tool_by_name(&tools, "spawn_worker");
+        let out = spawn
+            .execute(json!({
+                "wid": "W235E",
+                "brief": "will fail",
+                "title": "fail-case",
+                "report_to": "cli-main"
+            }))
+            .await
+            .unwrap();
+        assert_eq!(out["ok"], json!(true));
+        let sid = out["sessionId"].as_str().unwrap().to_string();
+
+        // brief turn Err → 机械回执 FAILED（带错误摘要 + 报告路径）。
+        wait_until(|| reg.mailbox().pending("cli-main") == 1, 3000).await;
+        let msgs = reg.mailbox().poll("cli-main");
+        assert_eq!(msgs.len(), 1);
+        assert!(msgs[0].content.starts_with("WORKER_W235E_FAILED"), "receipt: {}", msgs[0].content);
+        assert!(
+            msgs[0].content.contains("W235 test: brief turn failed"),
+            "receipt must carry the error: {}",
+            msgs[0].content
+        );
+        assert!(msgs[0].content.contains("报告 results/W235E-fail-case.md"), "receipt: {}", msgs[0].content);
+
+        // 报告文件写失败状态。
+        let report = results.join("W235E-fail-case.md");
+        assert!(report.exists(), "report file must exist at {report:?}");
+        let text = std::fs::read_to_string(&report).unwrap();
+        assert!(text.contains("status: ERR"), "report must record failure: {text}");
+        assert!(text.contains("W235 test: brief turn failed"), "report: {text}");
+
+        cleanup(&reg, &sid, &results);
+    }
+
+    #[tokio::test]
+    async fn no_report_to_means_no_file_no_receipt() {
+        let reg = Arc::new(WorkerRegistry::new(temp_tsv("w235-noreport")));
+        let results = temp_results("w235-noreport");
+        let _ = std::fs::remove_dir_all(&results);
+        reg.set_results_dir(results.clone());
+
+        let recorder = Arc::new(RecordingLoop::new(false));
+        attach_recording(&reg, recorder.clone());
+
+        let tools = worker_tools_with(reg.clone());
+        let spawn = tool_by_name(&tools, "spawn_worker");
+        let out = spawn
+            .execute(json!({ "wid": "W235N", "brief": "quiet task", "title": "no-receipt" }))
+            .await
+            .unwrap();
+        assert_eq!(out["ok"], json!(true));
+        let sid = out["sessionId"].as_str().unwrap().to_string();
+
+        // brief turn 结束（idle 标注出现）后：无报告文件、无任何回执。
+        wait_until(|| reg.get_entry("W235N").and_then(|e| e.state()) == Some("idle".to_string()), 3000).await;
+        assert!(!results.join("W235N-no-receipt.md").exists(), "no report file without report_to");
+        assert!(!results.exists(), "results dir must not even be created without report_to");
+        assert_eq!(reg.mailbox().pending_total(), 0, "no receipt without report_to");
+
+        cleanup(&reg, &sid, &results);
     }
 
 }

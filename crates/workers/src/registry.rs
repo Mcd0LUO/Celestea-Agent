@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use celestea_core::{
-    AgentLoop, AgentLoopService, Context, LlmService, SessionService, ToolRegistryService,
+    AgentError, AgentLoop, AgentLoopService, Context, LlmService, SessionEvent, SessionLog,
+    SessionService, ToolRegistryService,
 };
 use celestea_session::{SessionMailbox, SessionRegistry};
 use serde_json::{json, Value};
@@ -41,6 +42,10 @@ pub struct WorkerRegistry {
     /// 看门狗的整表重写并发时，各自写各自唯一的 tmp 文件再 rename，
     /// 避免同 pid 下共享 tmp 路径的写交织（tmp+rename 原子替换语义不变）。
     write_seq: AtomicU64,
+    /// W235: 回执协议的报告文件基目录（相对路径时相对进程 CWD 解析）。
+    /// 缺省 "results"；测试可经 set_results_dir 注入 tempdir，避免污染
+    /// 测试进程 CWD 下的 results/。
+    results_dir: RwLock<PathBuf>,
     /// W234: 本进程 pid —— 构造时记下，upsert 写行时随 extra 的 proc token
     /// 落盘。/tmp registry.tsv 跨进程共享（残留旧行 sess 会因 SessionRegistry
     /// next_id 归零而撞车），行归属以 proc 标记区分；旧行无 proc 视为他进程。
@@ -65,6 +70,7 @@ impl WorkerRegistry {
             background: Mutex::new(JoinSet::new()),
             stops: Mutex::new(HashMap::new()),
             write_seq: AtomicU64::new(0),
+            results_dir: RwLock::new(PathBuf::from("results")),
             pid: std::process::id(),
         }
     }
@@ -105,6 +111,21 @@ impl WorkerRegistry {
     pub fn set_source_label(&self, label: impl Into<String>) {
         if let Ok(mut g) = self.source_label.write() {
             *g = label.into();
+        }
+    }
+
+    /// W235: 回执报告文件的基目录（缺省 "results"，相对进程 CWD）。
+    pub fn results_dir(&self) -> PathBuf {
+        self.results_dir
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| PathBuf::from("results"))
+    }
+
+    /// W235: 覆盖报告文件基目录（测试注入 tempdir 用，隔离 CWD 副作用）。
+    pub fn set_results_dir(&self, dir: impl Into<PathBuf>) {
+        if let Ok(mut g) = self.results_dir.write() {
+            *g = dir.into();
         }
     }
 
@@ -306,9 +327,14 @@ impl WorkerRegistry {
 
         // 第一轮：简报 brief turn（原行为），状态标注 in-turn。
         self.set_worker_state(sid, "in-turn").await;
-        if let Err(e) = loop_.run_turn(ctx, brief).await {
+        let brief_result = loop_.run_turn(ctx, brief).await;
+        if let Err(e) = &brief_result {
             eprintln!("[celestea-workers] {sid} background turn failed: {e}");
         }
+        // W235: brief turn 结束后机械执行回执协议（Ok/Err 都执行，不依赖模型
+        // 遵从）。协议只在 brief turn 后跑这一次——mailbox 消息驱动的轮次
+        // 不重复执行（任务为 brief 驱动型）。
+        self.execute_report_receipt(sid, brief, &brief_result);
 
         // 进入 mailbox 事件循环：每条消息一个串行 turn。
         loop {
@@ -333,6 +359,72 @@ impl WorkerRegistry {
         }
         // 退出清理：移除本会话的 stop 表项（同时唤醒同 sid 的其他等待者——不存在）。
         self.stop_driver(sid);
+    }
+
+    /// W235 回执协议：brief turn 结束后机械执行（Ok/Err 均执行，不依赖模型
+    /// 遵从）。仅当本进程 tsv 行 extra 带非空 report_to token 时生效，否则
+    /// 直接返回（不写文件不回执）。协议 = 写 Markdown 报告（<results 基目录>/
+    /// <wid>-<short>.md；目录不存在则创建；写失败不 panic，回执带 warn）+
+    /// mailbox 回执（content 一行 WORKER_<wid>_DONE/FAILED，from=本 worker
+    /// sid）。本方法只在 brief turn 后被调用一次，mailbox 消息驱动的轮次
+    /// 不重复执行（任务为 brief 驱动型）。
+    fn execute_report_receipt(
+        &self,
+        sid: &str,
+        brief: &str,
+        turn_result: &Result<(), AgentError>,
+    ) {
+        // 按 sess 反查本进程行；查不到（如测试直连会话不经 tsv）→ 静默跳过。
+        let Some(wid) = self.find_wid_for_sess(sid) else { return };
+        let Some(entry) = self.get_entry(&wid) else { return };
+        let Some(report_to) = entry.get_extra("report_to").filter(|v| !v.is_empty()) else { return };
+        // <short> 取本行 extra 的 title token；缺失退回 wid。
+        let short = entry
+            .get_extra("title")
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| wid.clone());
+
+        // 文件名消毒：wid/short 中 [A-Za-z0-9._-] 之外的字符一律替换为 '_'
+        //（复用/仿照 crates/session::persistent::file_name_for 的消毒语义），
+        // 防路径穿越；回执里的报告路径用消毒后的 stem，与实际落盘文件一致。
+        let stem = format!("{}-{}", sanitize_file_stem(&wid), sanitize_file_stem(&short));
+        let rel = format!("results/{stem}.md");
+        let base = self.results_dir();
+        let abs = base.join(format!("{stem}.md"));
+
+        let (ok, err_summary) = match turn_result {
+            Ok(()) => (true, String::new()),
+            Err(e) => (false, e.to_string()),
+        };
+        let status = if ok { "OK".to_string() } else { format!("ERR: {err_summary}") };
+        let body = render_worker_report(
+            &wid,
+            &short,
+            &status,
+            &entry.started_at,
+            brief,
+            &rel,
+            self.sessions.get(sid).map(|s| s.log.clone() as Arc<dyn SessionLog>),
+        );
+
+        // 写报告文件：目录不存在则创建；失败不 panic，回执里带 warn。
+        let mut warn = String::new();
+        let write_result = (|| -> std::io::Result<()> {
+            std::fs::create_dir_all(&base)?;
+            std::fs::write(&abs, &body)
+        })();
+        if let Err(e) = write_result {
+            warn = format!(" warn: {e}");
+        }
+
+        // 回执：一行，宿主侧按 WORKER_<wid>_DONE / WORKER_<wid>_FAILED 前缀解析；
+        // report_to 指向的会话由 mailbox 排队（宿主 run_turn drain 已由 W232 实现）。
+        let content = if ok {
+            format!("WORKER_{wid}_DONE OK 报告 {rel}（完成）{warn}")
+        } else {
+            format!("WORKER_{wid}_FAILED ERR {err_summary} 报告 {rel}（失败：{err_summary}）{warn}")
+        };
+        self.mailbox.send(report_to, content, sid.to_string());
     }
 
     /// 取（或惰性创建）会话 sid 的停止信号，供事件循环 select 退出。
@@ -410,6 +502,76 @@ impl WorkerRegistry {
         let mut guard = self.background.lock().unwrap_or_else(|p| p.into_inner());
         guard.abort_all();
         while guard.join_next().await.is_some() {}
+    }
+}
+
+/// W235: 文件名 stem 消毒 —— [A-Za-z0-9._-] 之外的字符一律替换为 '_'
+///（复用 crates/session::persistent::file_name_for 的消毒语义，但不加
+/// .jsonl 后缀），防路径穿越；空结果退回 "worker"，保证文件名永不为空。
+pub(crate) fn sanitize_file_stem(s: &str) -> String {
+    let name: String = s
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
+        .collect();
+    if name.is_empty() { "worker".to_string() } else { name }
+}
+
+/// W235: 渲染 worker 完成报告（Markdown）：wid / title / status / started_at /
+/// 报告路径 / 简报摘要（前 200 字符）/ 会话尾记录（最近 20 条事件渲染成
+/// `- role: text` 列表）。
+fn render_worker_report(
+    wid: &str,
+    short: &str,
+    status: &str,
+    started_at: &str,
+    brief: &str,
+    report_path: &str,
+    log: Option<Arc<dyn SessionLog>>,
+) -> String {
+    let brief_summary: String = brief.trim().chars().take(200).collect();
+    let mut out = format!(
+        "# Worker {wid} 完成报告\n\n- wid: {wid}\n- title: {short}\n- status: {status}\n- started_at: {started_at}\n- report: {report_path}\n\n## 简报摘要\n\n{brief_summary}\n\n## 会话尾记录\n\n"
+    );
+    match log {
+        Some(log) => {
+            const TAIL: usize = 20;
+            let events = log.events();
+            let skip = events.len().saturating_sub(TAIL);
+            let mut any = false;
+            for e in events.iter().skip(skip) {
+                if let Some(line) = render_event_line(e) {
+                    out.push_str(&line);
+                    out.push('\n');
+                    any = true;
+                }
+            }
+            if !any {
+                out.push_str("（无记录）\n");
+            }
+        }
+        None => out.push_str("（无记录）\n"),
+    }
+    out
+}
+
+/// W235: SessionEvent → `- role: text` 一行（报告会话尾记录用）。
+/// 映射参照 tools.rs 既有事件映射的简单分类：UserMessage / AssistantMessage /
+/// ToolCall / ToolResult；TurnStart/TurnEnd 渲染为 turn 标记行。
+fn render_event_line(e: &SessionEvent) -> Option<String> {
+    let one_line = |s: &str| s.chars().take(200).collect::<String>().replace('\n', " ");
+    match e {
+        SessionEvent::UserMessage { text } => Some(format!("- user: {}", one_line(text))),
+        SessionEvent::AssistantMessage { text } => Some(format!("- assistant: {}", one_line(text))),
+        SessionEvent::ToolCall { name, args, .. } => {
+            Some(format!("- tool_call {name}: {}", one_line(&args.to_string())))
+        }
+        SessionEvent::ToolResult { id, value, error } => Some(match (value, error) {
+            (Some(v), _) => format!("- tool_result {id}: {}", one_line(&v.to_string())),
+            (_, Some(err)) => format!("- tool_result {id}: error {}", one_line(err)),
+            _ => format!("- tool_result {id}"),
+        }),
+        SessionEvent::TurnStart { id } => Some(format!("- turn: start {id}")),
+        SessionEvent::TurnEnd { id } => Some(format!("- turn: end {id}")),
     }
 }
 
