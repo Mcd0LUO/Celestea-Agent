@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use celestea_core::ToolRegistry;
-use celestea_tools::{builtin_tools_with, ProcessRegistry, ToolRegistryImpl};
+use celestea_tools::{builtin_tools_with, mount_production_guards, ProcessRegistry, ToolRegistryImpl};
 use celestea_workers::{worker_tools_with, WorkerRegistry};
 
 /// Register every tool the runtime surfaces into a registry: the builtin file
@@ -24,5 +24,9 @@ pub fn register_all_tools(
     for tool in worker_tools_with(workers) {
         registry.register(tool);
     }
+    // W249 P0-3: mount the production guard chain (path whitelist) at Runtime
+    // assembly so the file tools can no longer reach the host filesystem
+    // unmediated (roadmap R3 / P0-C). CELESTEA_TOOL_GUARD=0 skips mounting.
+    mount_production_guards(registry);
 }
 

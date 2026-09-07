@@ -156,6 +156,8 @@ pub(crate) fn run_shell_tool_with(config: SandboxConfig, processes: Arc<ProcessR
                     "background": true,
                     "handle": h.handle,
                     "pid": h.pid,
+                    // W249 P0-3: the effective sandbox mode is visible, never inferred.
+                    "sandbox": spawned.sandbox.as_json(),
                 }));
             }
 
@@ -169,6 +171,8 @@ pub(crate) fn run_shell_tool_with(config: SandboxConfig, processes: Arc<ProcessR
                 "exit_code": out.exit_code,
                 "stdout_truncated": out.stdout_truncated,
                 "stderr_truncated": out.stderr_truncated,
+                // W249 P0-3: the effective sandbox mode is visible, never inferred.
+                "sandbox": out.sandbox.as_json(),
             }))
         })
     })
@@ -225,7 +229,7 @@ fn list_dir_spec() -> ToolSpec {
 pub(crate) fn run_shell_spec() -> ToolSpec {
     ToolSpec {
         name: "run_shell".into(),
-        description: "Run a shell command inside the sandbox (v2 OS isolation when available: namespaces + read-only root + resource limits, else the v1 userspace path; fixed workdir, sanitized env, bounded timeout and output) and return stdout, stderr, and exit code. With background:true the command is spawned detached (no call-level timeout; resource limits still apply) and returns {background, handle, pid} immediately — control it with the process_control tool (poll / stdin / kill); background processes live in the session process registry and survive across turns. Default timeout is 30s; raise it with timeout_ms up to the cap configured by CELESTEA_SHELL_MAX_TIMEOUT_MS (default 300000ms).".into(),
+        description: "Run a shell command inside the sandbox (v2 OS isolation when available: namespaces + read-only root + resource limits, else the v1 userspace path; fixed workdir, sanitized env, bounded timeout and output) and return stdout, stderr, exit code, and a `sandbox` object {provider: bwrap|raw|userspace, net_isolated, tmp_private, seccomp} reporting the effective isolation (W249: network isolated and /tmp a private tmpfs by default; CELESTEA_SANDBOX_NET=1 / CELESTEA_SANDBOX_SHARE_TMP=1 restore the shared host net/tmp; CELESTEA_SANDBOX_SECCOMP=1 enables the seccomp whitelist). With background:true the command is spawned detached (no call-level timeout; resource limits still apply) and returns {background, handle, pid} immediately — control it with the process_control tool (poll / stdin / kill); background processes live in the session process registry and survive across turns. Default timeout is 30s; raise it with timeout_ms up to the cap configured by CELESTEA_SHELL_MAX_TIMEOUT_MS (default 300000ms).".into(),
         parameters: json!({
             "type": "object",
             "properties": {

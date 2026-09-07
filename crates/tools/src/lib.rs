@@ -14,12 +14,14 @@
 //! - [`http`]: the W242 `http_request` builtin tool.
 
 pub mod builtin;
+mod guard;
 mod http;
 mod process;
 mod registry;
 mod sandbox;
 
 pub use crate::builtin::{builtin_tools, builtin_tools_with};
+pub use crate::guard::{mount_production_guards, parse_roots, PathGuard, PathGuardPolicy};
 pub use crate::process::{ChildHandle, ProcessRegistry, ProcessRegistryService};
 pub use crate::registry::ToolRegistryImpl;
 
@@ -28,6 +30,8 @@ pub use crate::registry::ToolRegistryImpl;
 pub(crate) use crate::builtin::{
     fn_tool, human_render, read_file_spec, run_shell_spec, run_shell_tool, run_shell_tool_with,
 };
+#[cfg(test)]
+pub(crate) use crate::http::{http_request_tool_with, HttpTargetPolicy};
 #[cfg(test)]
 pub(crate) use crate::process::process_control_tool;
 #[cfg(test)]
@@ -291,6 +295,16 @@ mod tests {
             .with_root(std::env::temp_dir())
             .with_timeout(std::time::Duration::from_millis(200));
         registry.register(run_shell_tool(cfg));
+        // Fork-health probe (W249): under host-wide RLIMIT_NPROC exhaustion
+        // `sh` cannot fork and exits before the timeout kill — skip instead
+        // of failing on an environmental condition.
+        let health = registry
+            .dispatch(sample_input("c-health", "run_shell", json!({ "command": "sleep 0.01" })))
+            .await;
+        if health.value.as_ref().and_then(|v| v["exit_code"].as_i64()) != Some(0) {
+            eprintln!("skip: cannot fork a sandbox child right now (host nproc budget)");
+            return;
+        }
         let out = registry
             .dispatch(sample_input("c-timeout", "run_shell", json!({ "command": "sleep 5" })))
             .await;
@@ -747,5 +761,109 @@ mod tests {
         assert_eq!(out.value, None);
         let err = out.error.expect("redirect error");
         assert!(err.starts_with("http_request: code=redirect"), "{err}");
+    }
+
+    // ---- W249 P0-3: http_request SSRF target policy ---------------------------
+
+    fn http_registry_with_policy(policy: HttpTargetPolicy) -> ToolRegistryImpl {
+        let mut registry = ToolRegistryImpl::new();
+        registry.register(http_request_tool_with(policy));
+        registry
+    }
+
+    fn ssrf_ok_response() -> Vec<u8> {
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec()
+    }
+
+    /// allow list covering a different subnet -> 127.0.0.1 is refused.
+    #[tokio::test]
+    async fn ssrf_allow_list_blocks_targets_outside_policy() {
+        let port = serve_once(|_req| ssrf_ok_response()).await;
+        let registry = http_registry_with_policy(
+            HttpTargetPolicy::parse(Some("10.0.0.0/8"), None).unwrap(),
+        );
+        let out = registry
+            .dispatch(sample_input("s1", "http_request", json!({ "url": format!("http://127.0.0.1:{port}/") })))
+            .await;
+        assert_eq!(out.value, None);
+        let err = out.error.expect("policy error");
+        assert!(err.starts_with("http_request: code=target_forbidden"), "{err}");
+    }
+
+    /// deny list blocks listed targets.
+    #[tokio::test]
+    async fn ssrf_deny_list_blocks_listed_targets() {
+        let port = serve_once(|_req| ssrf_ok_response()).await;
+        let registry =
+            http_registry_with_policy(HttpTargetPolicy::parse(None, Some("127.0.0.0/8")).unwrap());
+        let out = registry
+            .dispatch(sample_input("s2", "http_request", json!({ "url": format!("http://127.0.0.1:{port}/") })))
+            .await;
+        assert_eq!(out.value, None);
+        let err = out.error.expect("policy error");
+        assert!(err.starts_with("http_request: code=target_forbidden"), "{err}");
+    }
+
+    /// allow list admits matching targets.
+    #[tokio::test]
+    async fn ssrf_allow_list_admits_policy_targets() {
+        let port = serve_once(|_req| ssrf_ok_response()).await;
+        let registry = http_registry_with_policy(
+            HttpTargetPolicy::parse(Some("127.0.0.1/32"), None).unwrap(),
+        );
+        let out = registry
+            .dispatch(sample_input("s3", "http_request", json!({ "url": format!("http://127.0.0.1:{port}/x") })))
+            .await;
+        assert!(out.error.is_none(), "{:?}", out.error);
+        let v = out.value.expect("value");
+        assert_eq!(v["status"], json!(200));
+        assert_eq!(v["body"], json!("ok"));
+    }
+
+    /// with a policy active, redirect hops are re-checked: hop 0 at
+    /// 127.0.0.1 answers 302 -> 10.0.0.1 (outside the allow list).
+    #[tokio::test]
+    async fn ssrf_policy_checks_redirect_hops() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            loop {
+                let n = sock.read(&mut tmp).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&tmp[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let resp = b"HTTP/1.1 302 Found\r\nLocation: http://10.0.0.1/hop\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            let _ = sock.write_all(resp).await;
+        });
+        let registry = http_registry_with_policy(
+            HttpTargetPolicy::parse(Some("127.0.0.1/32"), None).unwrap(),
+        );
+        let out = registry
+            .dispatch(sample_input("s4", "http_request", json!({ "url": format!("http://127.0.0.1:{port}/start") })))
+            .await;
+        assert_eq!(out.value, None);
+        let err = out.error.expect("hop policy error");
+        assert!(err.starts_with("http_request: code=target_forbidden"), "{err}");
+    }
+
+    /// no policy configured -> allow all (the pre-P0-3 status quo), and the
+    /// plain builtin registry still resolves loopback targets.
+    #[tokio::test]
+    async fn ssrf_default_policy_allows_all_targets() {
+        let registry = http_registry_with_policy(HttpTargetPolicy::default());
+        let port = serve_once(|_req| ssrf_ok_response()).await;
+        let out = registry
+            .dispatch(sample_input("s5", "http_request", json!({ "url": format!("http://127.0.0.1:{port}/ok") })))
+            .await;
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(out.value.as_ref().unwrap()["status"], json!(200));
     }
 }

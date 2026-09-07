@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use celestea_core::{AgentLoopService, Context, LlmService, Plugin, ToolRegistry, ToolRegistryService};
-use celestea_tools::{builtin_tools, ToolRegistryImpl};
+use celestea_tools::{builtin_tools, mount_production_guards, ToolRegistryImpl};
 
 use crate::registry::{WorkerRegistryService, WorkerRegistry};
 use crate::tools::worker_tools_with;
@@ -69,6 +69,10 @@ impl Plugin for WorkersPlugin {
         for tool in worker_tools_with(self.reg.clone()) {
             combined.register(tool);
         }
+        // W249 P0-3（W248 follow-up）：插件/Studio 实际生产路径的组合注册表
+        // 同样挂生产 guard 链（路径白名单；CELESTEA_TOOL_GUARD=0 时按配置
+        // 显式跳过，日志可见）。与 runtime/tools.rs 的 register_all_tools 一致。
+        mount_production_guards(&mut combined);
         ctx.provide(ToolRegistryService(Arc::new(combined)));
     }
 }
