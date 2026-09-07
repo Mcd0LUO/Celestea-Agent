@@ -14,7 +14,9 @@
 //! - W235 回执协议：spawn(report_to=…) 时注入中性提示（不再强制模型调工具）；
 //!   brief turn 结束后由驱动循环机械执行——写 results/<wid>-<short>.md 报告 +
 //!   mailbox 回执 WORKER_<wid>_DONE/FAILED（from=worker sid），Ok/Err 都执行，
-//!   只在 brief turn 后执行一次；报告基目录可经
+//!   只在 brief turn 后执行一次；W241 起回执尾部追加 worker 会话日志最后一条
+//!   AssistantMessage 的文本摘要（"答复: " 段，截断 ~200 字符、换行折叠）；
+//!   报告基目录可经
 //!   [WorkerRegistry::set_results_dir] 注入（缺省 "results"，相对进程 CWD）。
 //!
 //! [WorkersPlugin] 在 mount 时 provide 一个含 builtin + 三内置工具的组合
@@ -665,13 +667,47 @@ mod tests {
         gated: bool,
         /// W235: true 时 run_turn 返回 Err（测试 brief turn 失败分支的回执协议）。
         fail: bool,
+        /// W241: run_turn 末尾追加的 AssistantMessage 文本（测回执携带答复摘要）。
+        assistant: Option<String>,
     }
     impl RecordingLoop {
         fn new(gated: bool) -> Self {
-            Self { inputs: Mutex::new(Vec::new()), gate: tokio::sync::Notify::new(), gated, fail: false }
+            Self {
+                inputs: Mutex::new(Vec::new()),
+                gate: tokio::sync::Notify::new(),
+                gated,
+                fail: false,
+                assistant: None,
+            }
         }
         fn failing(gated: bool) -> Self {
-            Self { inputs: Mutex::new(Vec::new()), gate: tokio::sync::Notify::new(), gated, fail: true }
+            Self {
+                inputs: Mutex::new(Vec::new()),
+                gate: tokio::sync::Notify::new(),
+                gated,
+                fail: true,
+                assistant: None,
+            }
+        }
+        /// W241: 每轮 turn 落一条 AssistantMessage（Ok 路径）。
+        fn answering(text: impl Into<String>) -> Self {
+            Self {
+                inputs: Mutex::new(Vec::new()),
+                gate: tokio::sync::Notify::new(),
+                gated: false,
+                fail: false,
+                assistant: Some(text.into()),
+            }
+        }
+        /// W241: 落一条 AssistantMessage 后返回 Err（失败分支回执同样带答复）。
+        fn failing_answering(text: impl Into<String>) -> Self {
+            Self {
+                inputs: Mutex::new(Vec::new()),
+                gate: tokio::sync::Notify::new(),
+                gated: false,
+                fail: true,
+                assistant: Some(text.into()),
+            }
         }
         fn inputs(&self) -> Vec<String> {
             self.inputs.lock().unwrap().clone()
@@ -689,6 +725,11 @@ mod tests {
                 svc.append(SessionEvent::TurnStart { id: id.clone() });
                 svc.append(SessionEvent::UserMessage { text: input.to_string() });
                 svc.append(SessionEvent::TurnEnd { id });
+                // W241: 模拟 loop 的最终答复落进会话日志（fail 分支同理，供
+                // 回执协议取最后一条 AssistantMessage）。
+                if let Some(answer) = &self.assistant {
+                    svc.append(SessionEvent::AssistantMessage { text: answer.clone() });
+                }
             }
             if self.gated {
                 self.gate.notified().await;
@@ -967,7 +1008,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&results);
         reg.set_results_dir(results.clone());
 
-        let recorder = Arc::new(RecordingLoop::new(false));
+        let recorder = Arc::new(RecordingLoop::answering("第一行：任务完成。\n第二行：结论见报告。"));
         attach_recording(&reg, recorder.clone());
 
         let tools = worker_tools_with(reg.clone());
@@ -992,6 +1033,12 @@ mod tests {
         assert_eq!(msgs[0].from_label, sid, "receipt must come from the worker session");
         assert!(msgs[0].content.starts_with("WORKER_W235T_DONE"), "receipt: {}", msgs[0].content);
         assert!(msgs[0].content.contains("报告 results/W235T-receipt-ok.md"), "receipt: {}", msgs[0].content);
+        // W241: 回执尾部携带 worker 最终答复（最后一条 AssistantMessage，换行折叠成空格）。
+        assert!(
+            msgs[0].content.contains("答复: 第一行：任务完成。 第二行：结论见报告。"),
+            "receipt must carry the worker's final assistant reply: {}",
+            msgs[0].content
+        );
 
         // 报告文件存在且含 status/title/简报摘要/会话尾记录。
         let report = results.join("W235T-receipt-ok.md");
@@ -1019,7 +1066,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&results);
         reg.set_results_dir(results.clone());
 
-        let recorder = Arc::new(RecordingLoop::failing(false));
+        let recorder = Arc::new(RecordingLoop::failing_answering("已尽力尝试，卡在 X 上。"));
         attach_recording(&reg, recorder.clone());
 
         let tools = worker_tools_with(reg.clone());
@@ -1047,6 +1094,12 @@ mod tests {
             msgs[0].content
         );
         assert!(msgs[0].content.contains("报告 results/W235E-fail-case.md"), "receipt: {}", msgs[0].content);
+        // W241: 失败分支同理带上最后 assistant 文本（若有）。
+        assert!(
+            msgs[0].content.contains("答复: 已尽力尝试，卡在 X 上。"),
+            "failed receipt must carry the last assistant text: {}",
+            msgs[0].content
+        );
 
         // 报告文件写失败状态。
         let report = results.join("W235E-fail-case.md");
@@ -1086,4 +1139,53 @@ mod tests {
         cleanup(&reg, &sid, &results);
     }
 
+
+    // ---- W241: 回执携带答复摘要 + 工具描述闭环 --------------------------------
+
+    #[test]
+    fn last_assistant_summary_takes_last_folds_and_truncates() {
+        use crate::registry::last_assistant_summary;
+        let long: String = "第一行。\n第二行。".to_string() + &"x".repeat(300);
+        let events = vec![
+            SessionEvent::AssistantMessage { text: "early reply".into() },
+            SessionEvent::UserMessage { text: "ping".into() },
+            SessionEvent::AssistantMessage { text: long.clone() },
+        ];
+        let summary = last_assistant_summary(&events).expect("last assistant text");
+        assert!(!summary.contains('\n'), "newlines folded to spaces: {summary}");
+        assert!(summary.starts_with("第一行。 第二行。"), "summary: {summary}");
+        assert!(summary.chars().count() <= 200, "truncated to ~200 chars: {}", summary.chars().count());
+        assert!(!summary.contains("early reply"), "must take the LAST assistant message: {summary}");
+
+        // 无 assistant 记录 → None（回执不带 "答复: " 段）。
+        assert!(last_assistant_summary(&[]).is_none());
+        assert!(last_assistant_summary(&[SessionEvent::UserMessage { text: "only user".into() }]).is_none());
+    }
+
+    #[test]
+    fn tool_specs_describe_receipt_wakeup_collaboration_loop() {
+        let tools = worker_tools();
+
+        // spawn_worker：主 agent 应知道 "spawn 后等回执 / 查 worker_status" 的协作模式。
+        let spawn = tool_by_name(&tools, "spawn_worker").spec();
+        assert!(spawn.description.contains("回执"), "spawn description must mention the receipt: {}", spawn.description);
+        assert!(spawn.description.contains("唤醒"), "spawn description must mention the wake-up: {}", spawn.description);
+        assert!(spawn.description.contains("worker_status"), "spawn description must mention worker_status: {}", spawn.description);
+        assert!(spawn.description.contains("整合"), "spawn description must mention integrating conclusions: {}", spawn.description);
+        let report_to = spawn.parameters["properties"]["report_to"]["description"]
+            .as_str()
+            .expect("report_to param description");
+        assert!(report_to.contains("唤醒"), "report_to description must mention wake-up: {report_to}");
+        assert!(report_to.contains("读报告"), "report_to description must mention reading the report: {report_to}");
+
+        // session_send_message：投递消息成为目标会话新一轮用户输入（唤醒语义）。
+        let send = tool_by_name(&tools, "session_send_message").spec();
+        assert!(send.description.contains("唤醒"), "send description must mention wake-up: {}", send.description);
+        assert!(
+            send.description.contains("新一轮的用户输入"),
+            "send description must mention new-turn user input: {}",
+            send.description
+        );
+        assert!(send.description.contains("worker 回执"), "send description must mention worker receipt: {}", send.description);
+    }
 }

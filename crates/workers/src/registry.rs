@@ -366,7 +366,9 @@ impl WorkerRegistry {
     /// 直接返回（不写文件不回执）。协议 = 写 Markdown 报告（<results 基目录>/
     /// <wid>-<short>.md；目录不存在则创建；写失败不 panic，回执带 warn）+
     /// mailbox 回执（content 一行 WORKER_<wid>_DONE/FAILED，from=本 worker
-    /// sid）。本方法只在 brief turn 后被调用一次，mailbox 消息驱动的轮次
+    /// sid）。W241：回执尾部追加 worker 会话日志最后一条 AssistantMessage
+    /// 的文本摘要（"答复: " 段，截断 ~200 字符、换行折叠成空格；无则不带）。
+    /// 本方法只在 brief turn 后被调用一次，mailbox 消息驱动的轮次
     /// 不重复执行（任务为 brief 驱动型）。
     fn execute_report_receipt(
         &self,
@@ -419,10 +421,19 @@ impl WorkerRegistry {
 
         // 回执：一行，宿主侧按 WORKER_<wid>_DONE / WORKER_<wid>_FAILED 前缀解析；
         // report_to 指向的会话由 mailbox 排队（宿主 run_turn drain 已由 W232 实现）。
+        // W241：回执尾部追加 worker 最终答复 —— 会话日志最后一条
+        // AssistantMessage 的文本摘要（截断 ~200 字符、换行折叠成空格），
+        // 标注 "答复: "；无 assistant 记录则不带该段（Ok/Err 分支同理）。
+        let answer = self
+            .sessions
+            .get(sid)
+            .and_then(|s| last_assistant_summary(&s.log.events()))
+            .map(|text| format!(" 答复: {text}"))
+            .unwrap_or_default();
         let content = if ok {
-            format!("WORKER_{wid}_DONE OK 报告 {rel}（完成）{warn}")
+            format!("WORKER_{wid}_DONE OK 报告 {rel}（完成）{warn}{answer}")
         } else {
-            format!("WORKER_{wid}_FAILED ERR {err_summary} 报告 {rel}（失败：{err_summary}）{warn}")
+            format!("WORKER_{wid}_FAILED ERR {err_summary} 报告 {rel}（失败：{err_summary}）{warn}{answer}")
         };
         self.mailbox.send(report_to, content, sid.to_string());
     }
@@ -552,6 +563,16 @@ fn render_worker_report(
         None => out.push_str("（无记录）\n"),
     }
     out
+}
+
+/// W241: 会话事件流里最后一条 AssistantMessage 的文本摘要（回执 "答复: " 段）：
+/// 截断 ~200 字符、换行折叠为空格；没有任何 assistant 记录返回 None。
+pub(crate) fn last_assistant_summary(events: &[SessionEvent]) -> Option<String> {
+    let text = events.iter().rev().find_map(|e| match e {
+        SessionEvent::AssistantMessage { text } => Some(text.as_str()),
+        _ => None,
+    })?;
+    Some(text.chars().take(200).collect::<String>().replace('\n', " "))
 }
 
 /// W235: SessionEvent → `- role: text` 一行（报告会话尾记录用）。

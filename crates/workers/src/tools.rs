@@ -53,7 +53,7 @@ fn completion_feedback(_wid: &str, _short: &str, _report_to: &str) -> String {
 fn spawn_worker_spec() -> ToolSpec {
     ToolSpec {
         name: "spawn_worker".into(),
-        description: "在 harness 内拉起一个 worker 会话：创建子会话（可入工作区分组）→ 命名（标题=<wid>·<短名>）→ 指定模型 → 投递自包含简报。worker 由 harness 自己的 agent-loop 驱动；看门狗按 registry 判定存活并自动重派失败项。wid 是 worker 编号（如 W101）；brief 是自包含任务简报文本。返回 {ok, sessionId, title, wid}。".into(),
+        description: "在 harness 内拉起一个 worker 会话：创建子会话（可入工作区分组）→ 命名（标题=<wid>·<短名>）→ 指定模型 → 投递自包含简报。worker 由 harness 自己的 agent-loop 驱动；看门狗按 registry 判定存活并自动重派失败项。wid 是 worker 编号（如 W101）；brief 是自包含任务简报文本。返回 {ok, sessionId, title, wid}。协作闭环：worker 完成后引擎自动写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到 report_to 目标会话；回执到达会唤醒目标会话的新一轮处理（主 agent 读报告整合结论）。spawn 后应等待回执到达或经 worker_status 查询进度，再整合各 worker 结论。".into(),
         parameters: json!({
             "type": "object",
             "properties": {
@@ -64,7 +64,7 @@ fn spawn_worker_spec() -> ToolSpec {
                 "provider":  { "type": "string", "description": "模型 provider（缺省取 harness 默认）" },
                 "model":     { "type": "string", "description": "模型名（缺省取 harness 默认）" },
                 "reasoning_effort": { "type": "string", "description": "推理档位（可选）" },
-                "report_to": { "type": "string", "description": "回报目标会话 id：非空时在简报尾部注入中性回执提示；brief 轮结束后引擎机械写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到该会话 mailbox" }
+                "report_to": { "type": "string", "description": "回报目标会话 id：非空时在简报尾部注入中性回执提示；brief 轮结束后引擎机械写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到该会话 mailbox；回执到达会唤醒该目标会话新一轮处理（主 agent 读报告整合结论）" }
             },
             "required": ["wid", "brief"],
             "additionalProperties": false
@@ -75,7 +75,7 @@ fn spawn_worker_spec() -> ToolSpec {
 fn session_send_message_spec() -> ToolSpec {
     ToolSpec {
         name: "session_send_message".into(),
-        description: "向 harness 内另一个会话发送消息（会话间通讯，用于多 worker 联调、交叉审计、分工协作）。target 可用会话地址（session id）或会话命名（标题/项目/工作区名；按命名指定先解析到唯一地址，命中多个返回候选清单）。content 是发送给目标会话的正文；目标会话会把它当作新一轮用户消息处理。需要对方回复时在 content 里写明要求，并告诉对方用本工具 target=<你的会话地址> 发回。发送者信息自动附带。".into(),
+        description: "向 harness 内另一个会话发送消息（会话间通讯，用于多 worker 联调、交叉审计、分工协作）。target 可用会话地址（session id）或会话命名（标题/项目/工作区名；按命名指定先解析到唯一地址，命中多个返回候选清单）。content 是发送给目标会话的正文；投递的消息会成为目标会话新一轮的用户输入（唤醒语义：引擎会驱动目标会话就这条消息跑新一轮处理），因此也是 worker 回执与跨会话协作的通道。需要对方回复时在 content 里写明要求，并告诉对方用本工具 target=<你的会话地址> 发回。发送者信息自动附带。".into(),
         parameters: json!({
             "type": "object",
             "properties": {
