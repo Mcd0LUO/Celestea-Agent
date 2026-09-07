@@ -220,6 +220,7 @@ dependencies = [
  "async-trait",
  "celestea-core",
  "libc",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

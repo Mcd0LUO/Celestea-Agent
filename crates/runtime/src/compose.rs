@@ -16,7 +16,7 @@ use celestea_core::{
 };
 use celestea_llm::{deepseek_registry, DeepSeekConfig, DeepSeekLlm};
 use celestea_session::{InMemorySessionLog, PersistentSessionLog, Session, SessionMeta};
-use celestea_tools::ToolRegistryImpl;
+use celestea_tools::{ProcessRegistry, ProcessRegistryService, ToolRegistryImpl};
 use celestea_workers::WorkerRegistry;
 
 use crate::config::{
@@ -119,6 +119,11 @@ impl Runtime {
         };
 
         let workers = Arc::new(WorkerRegistry::with_default_path());
+        // W242 A: session-scoped background process registry — mounted into the
+        // Context and shared by run_shell(background) / process_control tools,
+        // so detached sandbox processes survive across turns. Runtime drop kills
+        // whatever is still running (ProcessRegistry::drop).
+        let processes = Arc::new(ProcessRegistry::new());
 
         // W232 会话通讯闭环：把宿主会话（cli-main）登记进共享 SessionRegistry，
         // 使 worker 侧 session_send_message(target="cli-main") 可按 id 解析并把
@@ -134,7 +139,7 @@ impl Runtime {
         })));
 
         let mut registry = ToolRegistryImpl::new();
-        register_all_tools(&mut registry, workers.clone());
+        register_all_tools(&mut registry, workers.clone(), processes.clone());
         let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
 
         let usage = Arc::new(UsageTracker::new());
@@ -174,6 +179,7 @@ impl Runtime {
             ctx.get::<AgentLoopService>().map(|s| s.0.clone()),
         );
         ctx.provide(celestea_workers::WorkerRegistryService(workers.clone()));
+        ctx.provide(ProcessRegistryService(processes));
         Ok(Runtime { ctx, session, registry, config, workers, usage })
     }
 }
@@ -227,34 +233,54 @@ mod tests {
     }
 
     // ---- W206: worker tool surface + driven wiring ---------------------------
-    /// compose() must register the three worker-orchestration tools alongside the
-    /// four builtin file tools, so the real agent tool face has all 7.
+    /// compose() must register the three worker-orchestration tools alongside
+    /// the six builtin tools (W242 adds process_control + http_request), so
+    /// the real agent tool face has all 9.
     #[test]
-    fn compose_tool_surface_has_seven_tools() {
+    fn compose_tool_surface_has_nine_tools() {
         let key_env = "W206_TOOL_SURFACE_KEY";
         std::env::set_var(key_env, "sk-test");
         let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
         let rt = Runtime::compose(&profile).unwrap();
         let names = worker_tool_names(&*rt.registry);
-        assert_eq!(names.len(), 7, "tool surface = {names:?}");
+        assert_eq!(names.len(), 9, "tool surface = {names:?}");
         for want in ["read_file", "write_file", "list_dir", "run_shell",
+                     "process_control", "http_request",
                      "spawn_worker", "session_send_message", "worker_status"] {
             assert!(names.iter().any(|n| n == want), "missing {want} in {names:?}");
         }
         std::env::remove_var(key_env);
     }
 
-    /// The tool-surface registration helper must surface all 7 too.
+    /// The tool-surface registration helper must surface all 9 too.
     #[test]
-    fn tools_registration_surfaces_all_seven() {
+    fn tools_registration_surfaces_all_nine() {
         let mut registry = ToolRegistryImpl::new();
-        register_all_tools(&mut registry, Arc::new(WorkerRegistry::with_default_path()));
+        register_all_tools(
+            &mut registry,
+            Arc::new(WorkerRegistry::with_default_path()),
+            Arc::new(ProcessRegistry::new()),
+        );
         let names = worker_tool_names(&registry);
-        assert_eq!(names.len(), 7, "tool list = {names:?}");
+        assert_eq!(names.len(), 9, "tool list = {names:?}");
         for want in ["read_file", "write_file", "list_dir", "run_shell",
+                     "process_control", "http_request",
                      "spawn_worker", "session_send_message", "worker_status"] {
             assert!(names.iter().any(|n| n == want), "missing {want} in {names:?}");
         }
+    }
+
+    /// compose() must provide the session-scoped ProcessRegistry as a Context
+    /// service (W242 A) so run_shell(background) / process_control share it.
+    #[test]
+    fn compose_provides_process_registry_service() {
+        let key_env = "W242_PROC_KEY";
+        std::env::set_var(key_env, "sk-test");
+        let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
+        let rt = Runtime::compose(&profile).unwrap();
+        let pr = rt.ctx.get::<ProcessRegistryService>().expect("ProcessRegistryService provided");
+        assert_eq!(pr.0.len(), 0);
+        std::env::remove_var(key_env);
     }
 
     // ---- W232: 宿主会话登记（worker 回执可寻址） --------------------------------

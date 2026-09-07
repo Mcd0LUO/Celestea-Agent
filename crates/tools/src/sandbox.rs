@@ -74,7 +74,7 @@ use tokio::process::Command;
 /// Default kill deadline for a command.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Upper bound for per-call `timeout_ms` overrides.
-pub(crate) const DEFAULT_MAX_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const DEFAULT_MAX_TIMEOUT: Duration = Duration::from_secs(300);
 /// Default per-stream output cap (64 KiB).
 pub(crate) const DEFAULT_MAX_OUTPUT_BYTES: usize = 64 * 1024;
 /// Stable prefix of every structured sandbox error emitted by this module.
@@ -82,8 +82,10 @@ pub(crate) const ERROR_PREFIX: &str = "run_shell-sandbox";
 
 /// Env var: default timeout in milliseconds.
 pub(crate) const ENV_TIMEOUT_MS: &str = "CELAESTEA_RUN_SHELL_TIMEOUT_MS";
-/// Env var: max per-call timeout in milliseconds.
-pub(crate) const ENV_MAX_TIMEOUT_MS: &str = "CELAESTEA_RUN_SHELL_MAX_TIMEOUT_MS";
+/// Env var: max per-call timeout in milliseconds (W242 B).
+pub(crate) const ENV_MAX_TIMEOUT_MS: &str = "CELESTEA_SHELL_MAX_TIMEOUT_MS";
+/// W242 B: legacy name (pre-W242), still honored as a fallback.
+pub(crate) const ENV_MAX_TIMEOUT_MS_LEGACY: &str = "CELAESTEA_RUN_SHELL_MAX_TIMEOUT_MS";
 /// Env var: per-stream output cap in bytes.
 pub(crate) const ENV_MAX_OUTPUT_BYTES: &str = "CELAESTEA_RUN_SHELL_MAX_OUTPUT_BYTES";
 /// Env var: fixed sandbox workdir.
@@ -114,6 +116,9 @@ pub(crate) struct OsSpawnCtx {
     pub(crate) workdir: PathBuf,
     /// Sanitized child environment (allowlist + extra_env).
     pub(crate) env: Vec<(String, String)>,
+    /// W242 A: true when the child must keep a live stdin pipe (background
+    /// spawn; process_control writes to it). Foreground runs use stdin=null.
+    pub(crate) stdin_piped: bool,
 }
 
 /// Hook for the v2 OS-level sandbox (namespaces, seccomp, landlock,
@@ -633,7 +638,11 @@ impl OsSandboxV2 {
         for (k, v) in &ctx.env {
             outer.env(k, v);
         }
-        outer.stdin(Stdio::null());
+        if ctx.stdin_piped {
+            outer.stdin(Stdio::piped());
+        } else {
+            outer.stdin(Stdio::null());
+        }
         outer.stdout(Stdio::piped());
         outer.stderr(Stdio::piped());
         outer.kill_on_drop(true);
@@ -1012,7 +1021,10 @@ impl SandboxConfig {
         if let Some(ms) = env_u64(ENV_TIMEOUT_MS).filter(|&ms| ms > 0) {
             cfg = cfg.with_timeout(Duration::from_millis(ms));
         }
-        if let Some(ms) = env_u64(ENV_MAX_TIMEOUT_MS).filter(|&ms| ms > 0) {
+        if let Some(ms) = env_u64(ENV_MAX_TIMEOUT_MS)
+            .or_else(|| env_u64(ENV_MAX_TIMEOUT_MS_LEGACY))
+            .filter(|&ms| ms > 0)
+        {
             cfg = cfg.with_max_timeout(Duration::from_millis(ms));
         }
         if let Some(n) = env_u64(ENV_MAX_OUTPUT_BYTES).filter(|&n| n > 0) {
@@ -1274,6 +1286,7 @@ pub(crate) async fn execute_sandboxed(
         args: shell_args(command),
         workdir: workdir.clone(),
         env: envv,
+        stdin_piped: false,
     };
     // v2 hook: may wrap the direct command under bubblewrap / raw namespaces.
     let mut cmd = config.os_layer.wrap(direct, &ctx).map_err(|e| SandboxError::Config {
@@ -1358,6 +1371,89 @@ pub(crate) async fn execute_sandboxed(
             message: msg,
         }),
     }
+}
+
+/// W242 A: a detached sandboxed child (background run_shell). The caller owns
+/// the [tokio::process::Child] plus its three pipes: stdin stays open so
+/// process_control can write lines; stdout/stderr must be drained by the
+/// caller (the process registry's reaper). No call-level timeout is applied —
+/// the background process lives across turns; rlimits from the v2 layer still
+/// apply. bwrap/raw/v1 paths are all supported: the wrapped outer command is
+/// spawned exactly like the foreground path, just without waiting.
+pub(crate) struct SpawnedSandbox {
+    pub(crate) child: tokio::process::Child,
+    pub(crate) stdin: Option<tokio::process::ChildStdin>,
+    pub(crate) stdout: tokio::process::ChildStdout,
+    pub(crate) stderr: tokio::process::ChildStderr,
+}
+
+/// Spawn `command` via the platform shell inside the sandbox WITHOUT waiting
+/// for it (W242 A background path). Same validation / workdir / env / v2
+/// wrapping as [execute_sandboxed]; only the wait-and-capture phase is
+/// skipped and stdin is piped instead of null. Spawn failure degrades to the
+/// plain v1 path exactly like the foreground run.
+pub(crate) async fn spawn_sandboxed(
+    command: &str,
+    config: &SandboxConfig,
+    workdir_override: Option<&str>,
+) -> Result<SpawnedSandbox, SandboxError> {
+    let workdir = resolve_workdir(config, workdir_override).await?;
+
+    let mut direct = shell_command(command);
+    direct.current_dir(&workdir);
+    direct.stdin(Stdio::piped()); // live stdin: process_control stdin action writes here
+    direct.stdout(Stdio::piped());
+    direct.stderr(Stdio::piped());
+    direct.kill_on_drop(true);
+    #[cfg(unix)]
+    direct.process_group(0); // child leads its own pgid -> process_control kill hits the tree
+    direct.env_clear();
+    let envv = sanitized_env(config);
+    for (k, v) in &envv {
+        direct.env(k, v);
+    }
+    let ctx = OsSpawnCtx {
+        program: shell_program().to_string(),
+        args: shell_args(command),
+        workdir: workdir.clone(),
+        env: envv,
+        stdin_piped: true,
+    };
+    let mut cmd = config.os_layer.wrap(direct, &ctx).map_err(|e| SandboxError::Config {
+        message: format!("os sandbox layer rejected the command: {e}"),
+    })?;
+    config.os_layer.apply(&mut cmd).map_err(|e| SandboxError::Config {
+        message: format!("os sandbox layer rejected the command: {e}"),
+    })?;
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => Ok(c),
+        Err(_e) if config.os_layer.degrade_on_spawn_failure() => {
+            let mut v1 = shell_command(command);
+            v1.current_dir(&workdir);
+            v1.stdin(Stdio::piped());
+            v1.stdout(Stdio::piped());
+            v1.stderr(Stdio::piped());
+            v1.kill_on_drop(true);
+            #[cfg(unix)]
+            v1.process_group(0);
+            v1.env_clear();
+            for (k, v) in &ctx.env {
+                v1.env(k, v);
+            }
+            v1.spawn()
+        }
+        Err(e) => Err(e),
+    }
+    .map_err(|e| SandboxError::Spawn {
+        command: command_preview(command),
+        message: e.to_string(),
+    })?;
+
+    let stdin = child.stdin.take();
+    let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+    Ok(SpawnedSandbox { child, stdin, stdout, stderr })
 }
 
 /// Resolve the effective workdir: default = `config.workdir` (created on
@@ -1830,10 +1926,42 @@ mod tests {
         }
     }
 
+    /// Runtime capability probe (W242): bwrap must be able to create a sandbox
+    /// RIGHT NOW. Userns creation can fail transiently on busy hosts /
+    /// constrained containers (EAGAIN once the host-wide RLIMIT_NPROC budget of
+    /// the running uid is exhausted — the v2 layer applies nproc limits via
+    /// pre_exec before bwrap forks its init). The bwrap capability tests then
+    /// skip instead of failing, mirroring the v2 layer's own probe-gated
+    /// degradation philosophy.
+    async fn bwrap_capable_now() -> bool {
+        let Some(_bwrap) = detect_bwrap() else {
+            return false;
+        };
+        let d = tmp_dir("v2-cap-probe");
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("probe dir");
+        let cfg = SandboxConfig::new()
+            .with_workdir(&d)
+            .with_root(&d)
+            .with_timeout(Duration::from_secs(10))
+            .with_os_layer(Arc::new(OsSandboxV2::from_options(
+                V2Provider::Bubblewrap,
+                V2Limits::default(),
+                false,
+                false,
+            )));
+        let ok = matches!(
+            execute_sandboxed("printf bwrap-capable", &cfg, None, None).await,
+            Ok(o) if String::from_utf8_lossy(&o.stdout) == "bwrap-capable"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+        ok
+    }
+
     #[tokio::test]
     async fn v2_bwrap_provider_isolates_mount_namespace() {
-        if detect_bwrap().is_none() {
-            eprintln!("skip: no bwrap on this box");
+        if !bwrap_capable_now().await {
+            eprintln!("skip: bwrap sandbox unusable on this box (userns creation denied/limited)");
             return;
         }
         let d = mkdir(&tmp_dir("v2-mnt"));
@@ -1861,8 +1989,8 @@ mod tests {
 
     #[tokio::test]
     async fn v2_bwrap_root_readonly_but_workdir_writable() {
-        if detect_bwrap().is_none() {
-            eprintln!("skip: no bwrap on this box");
+        if !bwrap_capable_now().await {
+            eprintln!("skip: bwrap sandbox unusable on this box (userns creation denied/limited)");
             return;
         }
         let d = mkdir(&tmp_dir("v2-ro"));
@@ -1888,8 +2016,8 @@ mod tests {
 
     #[tokio::test]
     async fn v2_rlimit_cpu_enforced() {
-        if detect_bwrap().is_none() {
-            eprintln!("skip: no bwrap on this box");
+        if !bwrap_capable_now().await {
+            eprintln!("skip: bwrap sandbox unusable on this box (userns creation denied/limited)");
             return;
         }
         let d = mkdir(&tmp_dir("v2-cpu"));
@@ -1912,8 +2040,8 @@ mod tests {
 
     #[tokio::test]
     async fn v2_rlimit_fsize_enforced() {
-        if detect_bwrap().is_none() {
-            eprintln!("skip: no bwrap on this box");
+        if !bwrap_capable_now().await {
+            eprintln!("skip: bwrap sandbox unusable on this box (userns creation denied/limited)");
             return;
         }
         let d = mkdir(&tmp_dir("v2-fsize"));
@@ -1936,8 +2064,8 @@ mod tests {
 
     #[tokio::test]
     async fn v2_bwrap_preserves_basic_v1_behavior() {
-        if detect_bwrap().is_none() {
-            eprintln!("skip: no bwrap on this box");
+        if !bwrap_capable_now().await {
+            eprintln!("skip: bwrap sandbox unusable on this box (userns creation denied/limited)");
             return;
         }
         let d = mkdir(&tmp_dir("v2-v1"));

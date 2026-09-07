@@ -4,22 +4,32 @@
 //! (W103). Implements `celestea_core::ToolRegistry` over a name-keyed map of
 //! `Arc<dyn Tool>` and an ordered list of `Arc<dyn ToolGuard>`.
 //!
-//! Split into three modules by responsibility:
+//! Split into five modules by responsibility:
 //! - [`registry`]: `ToolRegistryImpl` + the `ToolRegistry` impl;
 //! - [`builtin`]: `builtin_tools`, the `FnTool` seam, the hand-written JSON
 //!   schemas and the `run_shell` tool wired to the v1 sandbox;
-//! - [`sandbox`]: the userspace v1 execution sandbox for `run_shell` (W209).
+//! - [`sandbox`]: the userspace v1 execution sandbox for `run_shell` (W209);
+//! - [`process`]: the W242 session-scoped background process registry +
+//!   `process_control` tool;
+//! - [`http`]: the W242 `http_request` builtin tool.
 
 pub mod builtin;
+mod http;
+mod process;
 mod registry;
 mod sandbox;
 
-pub use crate::builtin::builtin_tools;
+pub use crate::builtin::{builtin_tools, builtin_tools_with};
+pub use crate::process::{ChildHandle, ProcessRegistry, ProcessRegistryService};
 pub use crate::registry::ToolRegistryImpl;
 
 // Internal re-exports consumed by `mod tests` (super::*) within this crate.
 #[cfg(test)]
-pub(crate) use crate::builtin::{fn_tool, human_render, read_file_spec, run_shell_tool};
+pub(crate) use crate::builtin::{
+    fn_tool, human_render, read_file_spec, run_shell_spec, run_shell_tool, run_shell_tool_with,
+};
+#[cfg(test)]
+pub(crate) use crate::process::process_control_tool;
 #[cfg(test)]
 pub(crate) use crate::sandbox::SandboxConfig;
 
@@ -30,6 +40,8 @@ use async_trait::async_trait;
 use celestea_core::{ToolDecision, ToolGuard, ToolInput, ToolRegistry};
 #[cfg(test)]
 use serde_json::{json, Value};
+#[cfg(test)]
+use std::sync::Arc;
 
 #[cfg(test)]
 mod tests {
@@ -226,7 +238,17 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
-        assert_eq!(names, vec!["list_dir", "read_file", "run_shell", "write_file"]);
+        assert_eq!(
+            names,
+            vec![
+                "http_request",
+                "list_dir",
+                "process_control",
+                "read_file",
+                "run_shell",
+                "write_file"
+            ]
+        );
     }
 
     // ---- W188: dispatch 基准 (std::time::Instant, 输出到测试日志) ----------
@@ -325,5 +347,405 @@ mod tests {
         assert_eq!(value["stdout_truncated"], json!(false));
         assert_eq!(value["stderr_truncated"], json!(false));
         assert_eq!(out.error, None);
+    }
+
+    // ---- W242: background processes + process_control + http_request --------------
+
+    async fn wait_until_async<F: FnMut() -> bool>(mut cond: F, max_ms: u64) {
+        for _ in 0..(max_ms / 10) {
+            if cond() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("condition not met within {max_ms} ms");
+    }
+
+    fn bg_registry(dir: &std::path::Path) -> (ToolRegistryImpl, Arc<ProcessRegistry>) {
+        let processes = Arc::new(ProcessRegistry::new());
+        let cfg = SandboxConfig::new()
+            .with_workdir(dir)
+            .with_root(dir)
+            .with_timeout(std::time::Duration::from_secs(5));
+        let mut registry = ToolRegistryImpl::new();
+        registry.register(run_shell_tool_with(cfg, processes.clone()));
+        registry.register(process_control_tool(processes.clone()));
+        (registry, processes)
+    }
+
+    /// A: background spawn -> poll running -> stdin line -> kill -> self-removal.
+    #[tokio::test]
+    async fn run_shell_background_spawn_poll_stdin_kill() {
+        let dir = std::env::temp_dir().join(format!("celestea-bg-flow-{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let (registry, processes) = bg_registry(&dir);
+
+        let out = registry
+            .dispatch(sample_input("bg1", "run_shell", json!({
+                "command": "while IFS= read -r l; do echo \"got:$l\"; done",
+                "background": true
+            })))
+            .await;
+        assert!(out.error.is_none(), "background spawn error: {:?}", out.error);
+        let value = out.value.expect("background spawn value");
+        assert_eq!(value["background"], json!(true));
+        let handle = value["handle"].as_str().expect("handle").to_string();
+        assert!(value["pid"].as_u64().unwrap_or(0) > 0, "pid must be positive: {value}");
+
+        // poll -> running
+        let poll = registry
+            .dispatch(sample_input("bg2", "process_control", json!({ "handle": handle, "action": "poll" })))
+            .await;
+        assert!(poll.error.is_none(), "poll error: {:?}", poll.error);
+        let poll_v = poll.value.as_ref().unwrap();
+        assert_eq!(poll_v["running"], json!(true), "poll: {poll_v}");
+
+        // stdin -> one line + newline
+        let w = registry
+            .dispatch(sample_input("bg3", "process_control", json!({ "handle": handle, "action": "stdin", "content": "hello" })))
+            .await;
+        assert!(w.error.is_none(), "stdin error: {:?}", w.error);
+        let wv = w.value.as_ref().unwrap();
+        assert!(wv["written"].as_u64().unwrap_or(0) >= 6, "stdin write: {wv}");
+
+        // poll until the echoed line lands in stdout_tail
+        let mut tail = String::new();
+        for _ in 0..300 {
+            let p = registry
+                .dispatch(sample_input("bg4", "process_control", json!({ "handle": handle, "action": "poll" })))
+                .await;
+            tail = p.value.as_ref().unwrap()["stdout_tail"].as_str().unwrap_or("").to_string();
+            if tail.contains("got:hello") {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(tail.contains("got:hello"), "stdout_tail must contain the echoed line: {tail}");
+
+        // kill -> killed:true
+        let k = registry
+            .dispatch(sample_input("bg5", "process_control", json!({ "handle": handle, "action": "kill" })))
+            .await;
+        assert!(k.error.is_none(), "kill error: {:?}", k.error);
+        assert_eq!(k.value.as_ref().unwrap()["killed"], json!(true), "kill: {}", k.value.as_ref().unwrap());
+
+        // exited process self-removes from the registry
+        wait_until_async(|| processes.len() == 0, 5000).await;
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    /// A: a finished background process is reaped and removed automatically.
+    #[tokio::test]
+    async fn background_process_self_removes_on_exit() {
+        let dir = std::env::temp_dir().join(format!("celestea-bg-exit-{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let (registry, processes) = bg_registry(&dir);
+
+        let out = registry
+            .dispatch(sample_input("bx1", "run_shell", json!({ "command": "sleep 0.2; exit 7", "background": true })))
+            .await;
+        assert!(out.error.is_none(), "spawn error: {:?}", out.error);
+        let value = out.value.expect("value");
+        let handle = value["handle"].as_str().expect("handle").to_string();
+
+        // reaper removes the entry as soon as the process exits
+        wait_until_async(|| processes.len() == 0, 5000).await;
+
+        // poll on a removed handle -> unknown handle contract error
+        let poll = registry
+            .dispatch(sample_input("bx2", "process_control", json!({ "handle": handle, "action": "poll" })))
+            .await;
+        assert!(poll.error.is_none(), "contract errors are values, not tool errors: {:?}", poll.error);
+        let v = poll.value.expect("contract value");
+        assert_eq!(v["ok"], json!(false));
+        assert!(v["error"].as_str().unwrap().contains("unknown handle"), "{v}");
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    /// A: process_control contract errors are structured {ok:false} values.
+    #[tokio::test]
+    async fn process_control_validates_handle_and_action() {
+        let mut registry = ToolRegistryImpl::new();
+        for tool in builtin_tools() {
+            registry.register(tool);
+        }
+        let out = registry
+            .dispatch(sample_input("pc1", "process_control", json!({ "handle": "nope", "action": "poll" })))
+            .await;
+        let v = out.value.expect("contract value");
+        assert_eq!(v["ok"], json!(false));
+        assert!(v["error"].as_str().unwrap().contains("unknown handle"), "{v}");
+
+        let out = registry
+            .dispatch(sample_input("pc2", "process_control", json!({ "handle": "nope", "action": "dance" })))
+            .await;
+        let v = out.value.expect("contract value");
+        assert_eq!(v["ok"], json!(false));
+        assert!(v["error"].as_str().unwrap().contains("unknown action"), "{v}");
+
+        let out = registry
+            .dispatch(sample_input("pc3", "process_control", json!({ "action": "poll" })))
+            .await;
+        let v = out.value.expect("contract value");
+        assert_eq!(v["ok"], json!(false));
+    }
+
+    // ---- B: run_shell spec documents the timeout cap + background mode ------------
+
+    #[test]
+    fn run_shell_spec_documents_timeout_cap_and_background() {
+        let spec = run_shell_spec();
+        let desc = &spec.description;
+        assert!(desc.contains("CELESTEA_SHELL_MAX_TIMEOUT_MS"), "{desc}");
+        assert!(desc.contains("process_control"), "{desc}");
+        assert!(desc.contains("background"), "{desc}");
+
+        let props = &spec.parameters["properties"];
+        let t = props["timeout_ms"]["description"].as_str().expect("timeout_ms description");
+        assert!(t.contains("CELESTEA_SHELL_MAX_TIMEOUT_MS"), "{t}");
+        assert!(t.contains("30000"), "{t}");
+        assert!(t.contains("300000"), "{t}");
+
+        let bg = props["background"]["description"].as_str().expect("background param");
+        assert!(bg.contains("process_control"), "{bg}");
+        assert!(bg.contains("timeout"), "{bg}"); // documents: no call-level timeout
+        assert_eq!(props["background"]["type"], json!("boolean"));
+        assert_eq!(spec.parameters["required"], json!(["command"]));
+    }
+
+    // ---- C: http_request guard / truncation / categorization ----------------------
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// One-shot raw HTTP server: reads the request head, replies with `respond`.
+    async fn serve_once<F>(respond: F) -> u16
+    where
+        F: FnOnce(&[u8]) -> Vec<u8> + Send + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            loop {
+                let n = sock.read(&mut tmp).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&tmp[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let _ = sock.write_all(&respond(&buf)).await;
+        });
+        port
+    }
+
+    /// Server that accepts the request but never responds (timeout test).
+    async fn serve_hang() -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            loop {
+                let n = sock.read(&mut tmp).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&tmp[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await; // never respond
+        });
+        port
+    }
+
+    /// Server answering `count` sequential connections with 302 hops.
+    async fn serve_redirects(count: u32) -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            for i in 0..count {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 1024];
+                loop {
+                    let n = sock.read(&mut tmp).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&tmp[..n]);
+                    if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 302 Found\r\nLocation: /hop/{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    i + 1
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+        port
+    }
+
+    /// Server streaming `total` bytes of 'a' after a 200 head.
+    async fn serve_big_body(total: usize) -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            loop {
+                let n = sock.read(&mut tmp).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&tmp[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+            );
+            let _ = sock.write_all(head.as_bytes()).await;
+            let chunk = vec![b'a'; 65536];
+            let mut sent = 0;
+            while sent < total {
+                let take = (total - sent).min(chunk.len());
+                let _ = sock.write_all(&chunk[..take]).await;
+                sent += take;
+            }
+        });
+        port
+    }
+
+    fn http_registry() -> ToolRegistryImpl {
+        let mut registry = ToolRegistryImpl::new();
+        for tool in builtin_tools() {
+            registry.register(tool);
+        }
+        registry
+    }
+
+    /// C guard: file:// and friends are rejected before any request goes out.
+    #[tokio::test]
+    async fn http_request_rejects_non_http_schemes() {
+        let registry = http_registry();
+        for (i, url) in ["file:///etc/passwd", "ftp://example.com/x", "gopher://x"].iter().enumerate() {
+            let out = registry
+                .dispatch(sample_input(&format!("h{i}"), "http_request", json!({ "url": url })))
+                .await;
+            assert_eq!(out.value, None);
+            let err = out.error.expect("guard error");
+            assert!(err.starts_with("http_request: code=invalid_url"), "url {url}: {err}");
+        }
+        let out = registry
+            .dispatch(sample_input("hrel", "http_request", json!({ "url": "not a url" })))
+            .await;
+        assert!(out.error.unwrap().starts_with("http_request: code=invalid_url"));
+
+        let out = registry
+            .dispatch(sample_input("hm", "http_request", json!({ "url": "http://127.0.0.1:1/", "method": "BREW" })))
+            .await;
+        assert!(out.error.unwrap().contains("code=invalid_arg"));
+
+        let out = registry
+            .dispatch(sample_input("ht", "http_request", json!({ "url": "http://127.0.0.1:1/", "timeout_ms": 999999 })))
+            .await;
+        assert!(out.error.unwrap().contains("code=invalid_arg"));
+    }
+
+    /// C: HTTP error statuses are preserved (not tool errors) and the body is
+    /// truncated at 1 MiB with truncated:true.
+    #[tokio::test]
+    async fn http_request_preserves_status_and_truncates_large_body() {
+        let registry = http_registry();
+        let port = serve_big_body(1_100_000).await;
+        let out = registry
+            .dispatch(sample_input("hbig", "http_request", json!({
+                "url": format!("http://127.0.0.1:{port}/big"),
+                "method": "GET"
+            })))
+            .await;
+        assert!(out.error.is_none(), "http error: {:?}", out.error);
+        let v = out.value.expect("value");
+        assert_eq!(v["status"], json!(200));
+        assert_eq!(v["truncated"], json!(true));
+        assert_eq!(v["body"].as_str().unwrap().len(), 1_048_576, "body capped at 1MB");
+        assert_eq!(v["headers"]["content-type"], json!("text/plain"));
+
+        let port404 = serve_once(|_req| {
+            b"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot found".to_vec()
+        })
+        .await;
+        let out = registry
+            .dispatch(sample_input("h404", "http_request", json!({
+                "url": format!("http://127.0.0.1:{port404}/missing")
+            })))
+            .await;
+        assert!(out.error.is_none(), "404 must not be a tool error: {:?}", out.error);
+        let v = out.value.expect("value");
+        assert_eq!(v["status"], json!(404));
+        assert_eq!(v["truncated"], json!(false));
+        assert_eq!(v["body"], json!("not found"));
+    }
+
+    /// C: a stalled server surfaces as a categorized timeout.
+    #[tokio::test]
+    async fn http_request_categorizes_timeout() {
+        let registry = http_registry();
+        let port = serve_hang().await;
+        let out = registry
+            .dispatch(sample_input("hto", "http_request", json!({
+                "url": format!("http://127.0.0.1:{port}/slow"),
+                "timeout_ms": 500
+            })))
+            .await;
+        assert_eq!(out.value, None);
+        let err = out.error.expect("timeout error");
+        assert!(err.starts_with("http_request: code=timeout"), "{err}");
+    }
+
+    /// C: an unresolvable hostname surfaces as a categorized dns failure.
+    #[tokio::test]
+    async fn http_request_categorizes_dns_failure() {
+        let registry = http_registry();
+        let out = registry
+            .dispatch(sample_input("hdns", "http_request", json!({
+                "url": "http://no-such-host-celestea.invalid/",
+                "timeout_ms": 5000
+            })))
+            .await;
+        assert_eq!(out.value, None);
+        let err = out.error.expect("dns error");
+        assert!(err.starts_with("http_request: code=dns"), "{err}");
+    }
+
+    /// C: redirects are capped at 5 hops -> the 6th hop is a categorized
+    /// redirect failure.
+    #[tokio::test]
+    async fn http_request_caps_redirects_at_five() {
+        let registry = http_registry();
+        let port = serve_redirects(7).await;
+        let out = registry
+            .dispatch(sample_input("hredir", "http_request", json!({
+                "url": format!("http://127.0.0.1:{port}/hop/0"),
+                "timeout_ms": 10000
+            })))
+            .await;
+        assert_eq!(out.value, None);
+        let err = out.error.expect("redirect error");
+        assert!(err.starts_with("http_request: code=redirect"), "{err}");
     }
 }

@@ -4,16 +4,21 @@
 use std::sync::Arc;
 
 use celestea_core::ToolRegistry;
-use celestea_tools::{builtin_tools, ToolRegistryImpl};
+use celestea_tools::{builtin_tools_with, ProcessRegistry, ToolRegistryImpl};
 use celestea_workers::{worker_tools_with, WorkerRegistry};
 
 /// Register every tool the runtime surfaces into a registry: the builtin file
-/// tools plus the worker-orchestration tools, all bound to the shared
-/// [WorkerRegistry]. Used by both [crate::Runtime::compose] (the real agent
-/// tool face) and any frontend listing the tool surface, so the two can never
-/// drift.
-pub fn register_all_tools(registry: &mut ToolRegistryImpl, workers: Arc<WorkerRegistry>) {
-    for tool in builtin_tools() {
+/// tools (incl. process_control / http_request, W242) plus the
+/// worker-orchestration tools, all bound to the shared [WorkerRegistry] and
+/// the shared session-scoped [ProcessRegistry]. Used by both
+/// [crate::Runtime::compose] (the real agent tool face) and any frontend
+/// listing the tool surface, so the two can never drift.
+pub fn register_all_tools(
+    registry: &mut ToolRegistryImpl,
+    workers: Arc<WorkerRegistry>,
+    processes: Arc<ProcessRegistry>,
+) {
+    for tool in builtin_tools_with(processes) {
         registry.register(tool);
     }
     for tool in worker_tools_with(workers) {
