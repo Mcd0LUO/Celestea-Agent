@@ -498,11 +498,12 @@ impl WorkerRegistry {
         while guard.try_join_next().is_some() {}
     }
 
-    /// Abort every tracked background driver task and clear the set
-    /// (shutdown / cancel path). Already-finished results are dropped.
-    /// W232: 先通知所有会话的停止信号（让阻塞在 mailbox.recv 的循环退出），
-    /// 再 abort + join 兜底收割。
-    pub async fn abort_all(&self) {
+    /// W248 shutdown path, sync half: notify every session stop signal (so
+    /// driver loops blocked in mailbox.recv exit at their next select) and
+    /// abort every tracked background driver task. Skips the async join — used
+    /// by Runtime::drop, which cannot await; tokio drops the aborted task
+    /// futures (and their captured Arcs) promptly on cancellation.
+    pub fn abort_all_now(&self) {
         let notified: Vec<Arc<Notify>> = {
             let mut guard = self.stops.lock().unwrap_or_else(|p| p.into_inner());
             guard.drain().map(|(_, n)| n).collect()
@@ -512,7 +513,24 @@ impl WorkerRegistry {
         }
         let mut guard = self.background.lock().unwrap_or_else(|p| p.into_inner());
         guard.abort_all();
+    }
+
+    /// Wait for every aborted driver task to finish unwinding (join). Only
+    /// meaningful after [WorkerRegistry::abort_all_now]; used by Runtime::shutdown
+    /// so it can guarantee the driver set is fully reaped before returning.
+    pub async fn join_drivers(&self) {
+        let mut guard = self.background.lock().unwrap_or_else(|p| p.into_inner());
         while guard.join_next().await.is_some() {}
+    }
+
+    /// Abort every tracked background driver task and clear the set
+    /// (shutdown / cancel path). Already-finished results are dropped.
+    /// W232: 先通知所有会话的停止信号（让阻塞在 mailbox.recv 的循环退出），
+    /// 再 abort + join 兜底收割。W248: sync 半部分在 abort_all_now，join 在
+    /// join_drivers（Runtime::shutdown 复用；Drop 只跑 sync 半部分）。
+    pub async fn abort_all(&self) {
+        self.abort_all_now();
+        self.join_drivers().await;
     }
 }
 
@@ -592,7 +610,7 @@ fn render_event_line(e: &SessionEvent) -> Option<String> {
             _ => format!("- tool_result {id}"),
         }),
         SessionEvent::TurnStart { id } => Some(format!("- turn: start {id}")),
-        SessionEvent::TurnEnd { id } => Some(format!("- turn: end {id}")),
+        SessionEvent::TurnEnd { id, .. } => Some(format!("- turn: end {id}")),
     }
 }
 

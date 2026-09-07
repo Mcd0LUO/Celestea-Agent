@@ -198,6 +198,11 @@ impl Llm for DeepSeekLlm {
 /// unparseable payloads are skipped — a provider that does not emit
 /// reasoning_content simply yields content chunks (silent degradation, no
 /// error).
+///
+/// P0-A real terminal states: a mid-stream decode/transport error yields
+/// `Err(RawChunkError::Failed)` and an upstream that ends without the [DONE]
+/// sentinel yields `Err(RawChunkError::Interrupted)` — either way the caller
+/// reports a terminal state instead of a fake successful Done.
 fn raw_chunk_stream<S, B, E>(byte_stream: S) -> RawChunkStream
 where
     S: Stream<Item = Result<B, E>> + Send + 'static,
@@ -206,17 +211,21 @@ where
 {
     let mut events = Box::pin(EventStream::new(byte_stream));
     Box::pin(stream! {
+        let mut saw_done = false;
+        let mut failed = false;
         while let Some(ev) = events.next().await {
             let event = match ev {
                 Ok(e) => e,
                 Err(e) => {
-                    // Decode/transport error: stop; the caller emits a Done
-                    // with whatever was accumulated (truncated turn).
-                    yield Err(format!("sse decode error: {e}"));
+                    // Decode/transport error: terminal failure, never a fake
+                    // Done (R1: 流式中断仍发 Done).
+                    yield Err(RawChunkError::Failed(format!("sse decode error: {e}")));
+                    failed = true;
                     break;
                 }
             };
             if event.data == "[DONE]" {
+                saw_done = true;
                 break;
             }
             if event.event == "keepalive" {
@@ -228,6 +237,10 @@ where
                 yield Ok(chunk);
             }
         }
+        if !saw_done && !failed {
+            // The upstream ended before the [DONE] sentinel: torn stream.
+            yield Err(RawChunkError::Interrupted);
+        }
     })
 }
 
@@ -235,10 +248,12 @@ where
 ///
 /// Reasoning deltas become StreamEvent::Thinking immediately (real-time CoT),
 /// text deltas become StreamEvent::Text, tool calls accumulate per index, and
-/// the turn ends with one authoritative StreamEvent::Done. Chunks without any
-/// reasoning content pass through untouched (pure text stream). A mid-stream
-/// transport error yields a truncated turn: final Done with whatever was
-/// accumulated (the stream item type cannot carry an error).
+/// a clean turn ends with one authoritative StreamEvent::Done. Chunks without
+/// any reasoning content pass through untouched (pure text stream).
+///
+/// P0-A real terminal states: a mid-stream failure yields
+/// StreamEvent::Failed (kind "stream" + detail) and a torn stream yields
+/// StreamEvent::Interrupted — never a fake Done (R1).
 fn stream_events(mut upstream: RawChunkStream) -> LlmStream {
     let s = stream! {
         let mut text = String::new();
@@ -248,11 +263,16 @@ fn stream_events(mut upstream: RawChunkStream) -> LlmStream {
         // Tool-call deltas arrive in fragments keyed by index; accumulate
         // id / name / arguments per index and reconstruct in order.
         let mut acc: BTreeMap<u32, ToolCallAcc> = BTreeMap::new();
+        // The raw-stream terminal state (None = clean end).
+        let mut failure: Option<RawChunkError> = None;
 
         while let Some(chunk) = upstream.next().await {
             let chunk = match chunk {
                 Ok(c) => c,
-                Err(_) => break,
+                Err(e) => {
+                    failure = Some(e);
+                    break;
+                }
             };
 
             // Real-time chain-of-thought: emit each reasoning delta as it
@@ -291,28 +311,40 @@ fn stream_events(mut upstream: RawChunkStream) -> LlmStream {
             }
         }
 
-        let mut content = Vec::new();
-        if !text.is_empty() {
-            content.push(Content::Text(text));
-        }
-        for acc in acc.into_values() {
-            content.push(Content::ToolCall(ToolCall {
-                id: acc.id,
-                name: acc.name,
-                args: parse_arguments(&acc.arguments),
-            }));
-        }
-
-        // Usage rides just before the authoritative Done so consumers that
-        // treat Done as the terminal event still observe it (stream end).
+        // Usage rides just before the terminal event so consumers that treat
+        // the terminal event as the end of the stream still observe it.
         if let Some(u) = usage {
             yield StreamEvent::Usage(u);
         }
-        yield StreamEvent::Done(Message {
-            role: Role::Assistant,
-            content,
-            tool_call_id: None,
-        });
+
+        match failure {
+            Some(RawChunkError::Failed(msg)) => {
+                // Truncated turn: terminal failure with the partial state,
+                // never a fake successful Done (R1).
+                yield StreamEvent::Failed { kind: "stream".into(), message: msg };
+            }
+            Some(RawChunkError::Interrupted) => {
+                yield StreamEvent::Interrupted;
+            }
+            None => {
+                let mut content = Vec::new();
+                if !text.is_empty() {
+                    content.push(Content::Text(text));
+                }
+                for acc in acc.into_values() {
+                    content.push(Content::ToolCall(ToolCall {
+                        id: acc.id,
+                        name: acc.name,
+                        args: parse_arguments(&acc.arguments),
+                    }));
+                }
+                yield StreamEvent::Done(Message {
+                    role: Role::Assistant,
+                    content,
+                    tool_call_id: None,
+                });
+            }
+        }
     };
     Box::pin(s)
 }
@@ -346,7 +378,16 @@ struct RawToolCallDelta {
     arguments: Option<String>,
 }
 
-type RawChunkStream = Pin<Box<dyn Stream<Item = Result<RawChunk, String>> + Send>>;
+/// Why the raw chunk stream ended without a clean [DONE] (P0-A).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RawChunkError {
+    /// Decode/transport error mid-stream (message carries the detail).
+    Failed(String),
+    /// The upstream ended before the [DONE] sentinel (torn stream).
+    Interrupted,
+}
+
+type RawChunkStream = Pin<Box<dyn Stream<Item = Result<RawChunk, RawChunkError>> + Send>>;
 
 /// Parse one SSE data payload (a raw chat-completions chunk) into the delta
 /// view used by the live loop. Returns None when the payload is not a JSON
@@ -976,7 +1017,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_events_emits_thinking_in_real_time_before_final_answer() {
-        let chunks: Vec<Result<RawChunk, String>> = vec![
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
             Ok(RawChunk { reasoning: Some("Let me".into()), choices: vec![], usage: None, }),
             Ok(RawChunk { reasoning: Some(" think".into()), choices: vec![], usage: None, }),
             Ok(RawChunk {
@@ -1007,7 +1048,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_events_without_reasoning_degrades_to_pure_text() {
-        let chunks: Vec<Result<RawChunk, String>> = vec![
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
             Ok(RawChunk {
                 reasoning: None,
                 choices: vec![RawChoiceDelta { text: Some("a".into()), tool_calls: vec![] }],
@@ -1036,7 +1077,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_events_accumulates_tool_calls_alongside_reasoning() {
-        let chunks: Vec<Result<RawChunk, String>> = vec![
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
             Ok(RawChunk { reasoning: Some("r1".into()), choices: vec![], usage: None, }),
             Ok(RawChunk {
                 reasoning: Some("r2".into()),
@@ -1123,7 +1164,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_events_skips_blank_reasoning_deltas() {
-        let chunks: Vec<Result<RawChunk, String>> = vec![
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
             Ok(RawChunk { reasoning: Some("   ".into()), choices: vec![], usage: None, }),
             Ok(RawChunk { reasoning: Some("ok".into()), choices: vec![], usage: None, }),
         ];
@@ -1210,7 +1251,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_events_emits_usage_before_done() {
-        let chunks: Vec<Result<RawChunk, String>> = vec![
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
             Ok(RawChunk { reasoning: None, choices: vec![], usage: Some(Usage {
                 prompt_tokens: 9,
                 completion_tokens: 4,
@@ -1238,7 +1279,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_events_usage_rides_between_text_and_done() {
-        let chunks: Vec<Result<RawChunk, String>> = vec![
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
             Ok(RawChunk { reasoning: None, choices: vec![RawChoiceDelta {
                 text: Some("Hi".into()), tool_calls: vec![],
             }], usage: None }),
@@ -1287,5 +1328,97 @@ mod tests {
             other => panic!("expected Usage, got {other:?}"),
         }
         assert!(matches!(&events[2], StreamEvent::Done(_)));
+    }
+
+    // ---- P0-A: 流失败/中断不再发假 Done -------------------------------
+
+    #[tokio::test]
+    async fn stream_events_emits_failed_not_done_on_midstream_error() {
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
+            Ok(RawChunk {
+                reasoning: None,
+                choices: vec![RawChoiceDelta { text: Some("partial".into()), tool_calls: vec![] }],
+                usage: None,
+            }),
+            Err(RawChunkError::Failed("sse decode error: torn".into())),
+        ];
+        let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
+        let mut events: Vec<StreamEvent> = Vec::new();
+        while let Some(ev) = stream.next().await {
+            events.push(ev);
+        }
+        assert_eq!(events.len(), 2, "Text + Failed, no fake Done");
+        assert!(matches!(&events[0], StreamEvent::Text(t) if t == "partial"));
+        match &events[1] {
+            StreamEvent::Failed { kind, message } => {
+                assert_eq!(kind, "stream");
+                assert_eq!(message, "sse decode error: torn");
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        assert!(!events.iter().any(|e| matches!(e, StreamEvent::Done(_))));
+    }
+
+    #[tokio::test]
+    async fn stream_events_emits_interrupted_on_torn_stream() {
+        let chunks: Vec<Result<RawChunk, RawChunkError>> = vec![
+            Ok(RawChunk {
+                reasoning: None,
+                choices: vec![RawChoiceDelta { text: Some("abc".into()), tool_calls: vec![] }],
+                usage: None,
+            }),
+            Err(RawChunkError::Interrupted),
+        ];
+        let mut stream = stream_events(Box::pin(futures_util::stream::iter(chunks)));
+        let mut events: Vec<StreamEvent> = Vec::new();
+        while let Some(ev) = stream.next().await {
+            events.push(ev);
+        }
+        assert_eq!(events.len(), 2, "Text + Interrupted, no fake Done");
+        assert!(matches!(&events[1], StreamEvent::Interrupted));
+        assert!(!events.iter().any(|e| matches!(e, StreamEvent::Done(_))));
+    }
+
+    #[tokio::test]
+    async fn raw_chunk_stream_marks_interrupted_when_done_sentinel_missing() {
+        // An SSE body that ends without [DONE] is a torn stream: the chunk
+        // decoder reports it instead of silently pretending success.
+        let sse = concat!(
+            r#"data: {"choices":[{"delta":{"content":"hi"}}]}"#,
+            "\n\n",
+        );
+        let byte_stream = futures_util::stream::iter(vec![
+            Ok::<Vec<u8>, io::Error>(sse.as_bytes().to_vec()),
+        ]);
+        let mut chunks = raw_chunk_stream(byte_stream);
+        let first = chunks.next().await.expect("first chunk").expect("text chunk");
+        assert_eq!(first.choices[0].text.as_deref(), Some("hi"));
+        let second = chunks.next().await.expect("terminal marker").expect_err("torn stream");
+        assert_eq!(second, RawChunkError::Interrupted);
+    }
+
+    #[tokio::test]
+    async fn sse_pipeline_emits_failed_event_end_to_end_on_transport_error() {
+        // Bytes-level: a valid frame, then a transport error mid-stream →
+        // Failed terminal event (no fake Done).
+        let sse = r#"data: {"choices":[{"delta":{"content":"ok"}}]}"#;
+        let byte_stream = futures_util::stream::iter(vec![
+            Ok::<Vec<u8>, io::Error>(format!("{sse}\n\n").into_bytes()),
+            Err::<Vec<u8>, io::Error>(io::Error::new(io::ErrorKind::ConnectionAborted, "aborted")),
+        ]);
+        let mut stream = stream_events(raw_chunk_stream(byte_stream));
+        let mut events: Vec<StreamEvent> = Vec::new();
+        while let Some(ev) = stream.next().await {
+            events.push(ev);
+        }
+        assert!(matches!(&events[0], StreamEvent::Text(t) if t == "ok"));
+        match &events[1] {
+            StreamEvent::Failed { kind, message } => {
+                assert_eq!(kind, "stream");
+                assert!(message.contains("sse decode error"), "message: {message}");
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        assert!(!events.iter().any(|e| matches!(e, StreamEvent::Done(_))));
     }
 }

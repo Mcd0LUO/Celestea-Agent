@@ -35,7 +35,7 @@ mod tests {
     use futures_util::StreamExt;
     use celestea_core::{
         AgentConfig, AgentError, AgentLoop, Content, Context, LlmService, ModelRequest,
-        SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, Usage,
+        SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, TurnOutcome, Usage,
         ToolRegistryService, Llm, LlmError, LlmStream, Message, Role, SessionLog,
         Tool, ToolGuard, ToolDecision, ToolOutput, ToolRegistry, ToolSpec,
     };
@@ -50,6 +50,9 @@ mod tests {
         /// Pre-baked derive_messages projection (W220 tests). Empty by
         /// default, so existing tests keep the old "no history" behavior.
         derived: Mutex<Vec<Message>>,
+        /// Monotonic turn id counter (P0-A): ids stay unique across loop
+        /// instances, mirroring the real InMemory/Persistent logs.
+        turn_counter: AtomicUsize,
     }
 
     impl FakeSession {
@@ -71,6 +74,10 @@ mod tests {
         }
         fn clear(&self) {
             self.events.lock().unwrap().clear();
+        }
+        fn next_turn_id(&self) -> String {
+            let n = self.turn_counter.fetch_add(1, Ordering::Relaxed);
+            format!("turn-{n}")
         }
     }
 
@@ -300,9 +307,10 @@ mod tests {
             LoopEvent::Thinking(_) => "thinking",
             LoopEvent::Text(_) => "text",
             LoopEvent::Done(_) => "done",
+            LoopEvent::TurnEnd(_) => "turnend",
             _ => "other",
         }).collect();
-        assert_eq!(kinds, vec!["thinking", "text", "done"]);
+        assert_eq!(kinds, vec!["thinking", "text", "done", "turnend"]);
     }
 
     #[test]
@@ -420,6 +428,179 @@ mod tests {
         assert!(!cancel_set(&rx));
         tx.send(true).unwrap();
         assert!(cancel_set(&rx));
+    }
+
+    // ---- P0-A: 真实终态（每路径一测）+ 唯一 turn 身份 ------------------------
+
+    /// The last TurnEnd event in a session (terminal state of the turn).
+    fn last_turn_end(session: &FakeSession) -> (String, TurnOutcome) {
+        let evs = session.all();
+        match evs.iter().rev().find(|e| matches!(e, SessionEvent::TurnEnd { .. })) {
+            Some(SessionEvent::TurnEnd { id, outcome }) => (id.clone(), outcome.clone()),
+            other => panic!("expected a TurnEnd, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn completed_turn_marks_completed_and_emits_terminal_event() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let collected = Arc::new(Mutex::new(Vec::new()));
+        let sink: EventSink = {
+            let c = collected.clone();
+            Arc::new(move |ev| c.lock().unwrap().push(ev))
+        };
+        let events = vec![StreamEvent::Done(Message::assistant_text("done"))];
+        let res = run_with(&session, &registry, events, None, Some(sink));
+        assert!(res.is_ok());
+        let (id, outcome) = last_turn_end(&session);
+        assert_eq!(id, "turn-0");
+        assert_eq!(outcome, TurnOutcome::Completed);
+        // Exactly one terminal event, as the last sink event, with Completed.
+        let evs = collected.lock().unwrap().clone();
+        match evs.last() {
+            Some(LoopEvent::TurnEnd(o)) => assert_eq!(o, &TurnOutcome::Completed),
+            other => panic!("expected terminal TurnEnd(Completed), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cancelled_turn_marks_cancelled_in_log_and_sink() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let (tx, rx) = watch::channel(false);
+        tx.send(true).unwrap();
+        let collected = Arc::new(Mutex::new(Vec::new()));
+        let sink: EventSink = {
+            let c = collected.clone();
+            Arc::new(move |ev| c.lock().unwrap().push(ev))
+        };
+        let events = vec![StreamEvent::Done(Message::assistant_text("unused"))];
+        let res = run_with(&session, &registry, events, Some(rx), Some(sink));
+        assert!(res.is_ok());
+        let (_, outcome) = last_turn_end(&session);
+        assert_eq!(outcome, TurnOutcome::Cancelled);
+        let evs = collected.lock().unwrap().clone();
+        // No assistant reply was produced, but the terminal verdict arrives.
+        assert!(!evs.iter().any(|e| matches!(e, LoopEvent::Done(_))));
+        match evs.last() {
+            Some(LoopEvent::TurnEnd(o)) => assert_eq!(o, &TurnOutcome::Cancelled),
+            other => panic!("expected terminal TurnEnd(Cancelled), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn generate_failure_marks_error_outcome_with_turn_end() {
+        // R1: llm.generate Err used to return without TurnEnd; now it is a
+        // terminal Error state and the turn still gets its TurnEnd.
+        struct FailLlm;
+        #[async_trait]
+        impl Llm for FailLlm {
+            async fn generate(&self, _req: ModelRequest) -> Result<LlmStream, LlmError> {
+                Err(LlmError("provider timeout".into()))
+            }
+        }
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(LlmService(Arc::new(FailLlm)));
+        let config = AgentConfig { model: "deepseek-chat".into(), ..AgentConfig::default() };
+        let loop_ = DefaultAgentLoop::new(config);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let res = rt.block_on(loop_.run_turn(&ctx, "hi"));
+        assert!(res.is_ok(), "terminal state rides the log, not an Err: {res:?}");
+        let (_, outcome) = last_turn_end(&session);
+        assert_eq!(
+            outcome,
+            TurnOutcome::Error { kind: "generate".into(), message: "provider timeout".into() }
+        );
+        assert!(!session.all().iter().any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
+    }
+
+    #[test]
+    fn stream_failure_marks_error_outcome() {
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let events = vec![
+            StreamEvent::Text("partial".to_string()),
+            StreamEvent::Failed { kind: "stream".into(), message: "sse decode error: torn".into() },
+        ];
+        let res = run_with(&session, &registry, events, None, None);
+        assert!(res.is_ok());
+        let (_, outcome) = last_turn_end(&session);
+        assert_eq!(
+            outcome,
+            TurnOutcome::Error { kind: "stream".into(), message: "sse decode error: torn".into() }
+        );
+        // The truncated partial answer is NOT flushed as a completed reply.
+        assert!(!session.all().iter().any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
+    }
+
+    #[test]
+    fn interrupted_stream_marks_interrupted_outcome() {
+        // The stream ends without Done/Failed (截流): a real terminal state,
+        // never a fake Completed with empty text.
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let events = vec![StreamEvent::Text("trunc".to_string())];
+        let res = run_with(&session, &registry, events, None, None);
+        assert!(res.is_ok());
+        let (_, outcome) = last_turn_end(&session);
+        assert_eq!(outcome, TurnOutcome::Interrupted);
+        assert!(!session.all().iter().any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
+    }
+
+    #[test]
+    fn step_limit_marks_step_limit_outcome_not_completed() {
+        // R1: 步数耗尽仍标 Completed — the budget-exhausted turn must end as
+        // StepLimit. max_steps=2 with an endless tool-call model.
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let llm = LlmService(Arc::new(FakeLlm::new(vec![
+            tool_call_message(&["c1"]),
+            tool_call_message(&["c2"]),
+            tool_call_message(&["c3"]),
+            Message::assistant_text("never reached"),
+        ])));
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(llm);
+        let config = AgentConfig { max_steps: 2, ..AgentConfig::default() };
+        let loop_ = DefaultAgentLoop::new(config);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(loop_.run_turn(&ctx, "hello")).unwrap();
+        let (_, outcome) = last_turn_end(&session);
+        assert_eq!(outcome, TurnOutcome::StepLimit);
+        // Only the first two steps ran; no final answer was logged.
+        assert_eq!(registry.dispatch_order(), vec!["c1", "c2"]);
+        assert!(!session.all().iter().any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
+    }
+
+    #[test]
+    fn turn_ids_are_unique_across_loop_instances() {
+        // R1: make_loop rebuilt the counter per turn, so the host log repeated
+        // turn-0. The log now owns the counter: two loops, one session,
+        // unique ids.
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        run_with(&session, &registry, vec![StreamEvent::Done(Message::assistant_text("a"))], None, None).unwrap();
+        run_with(&session, &registry, vec![StreamEvent::Done(Message::assistant_text("b"))], None, None).unwrap();
+        let ids: Vec<String> = session
+            .all()
+            .iter()
+            .filter_map(|e| match e {
+                SessionEvent::TurnStart { id } => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, vec!["turn-0".to_string(), "turn-1".to_string()]);
     }
 
     /// Fake ToolRegistry that records the dispatch order and the maximum

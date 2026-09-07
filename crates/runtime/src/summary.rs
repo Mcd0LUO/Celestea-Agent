@@ -2,14 +2,17 @@
 //! the machine-readable turn document a frontend (web client / server) may
 //! emit after a run, derived from the session log.
 
-use celestea_core::SessionEvent;
+use celestea_core::{SessionEvent, TurnOutcome};
 use serde_json::Value;
 
 /// Structured summary of one turn, ready to serialize (the CLI --json shape):
-/// {turn, assistant_text, tool_calls, results, error?}.
+/// {turn, outcome, assistant_text, tool_calls, results, error?}.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TurnSummary {
     pub turn: String,
+    /// Terminal state of the turn, read from its TurnEnd (P0-A). Legacy logs
+    /// (TurnEnd without an outcome) summarize as Completed.
+    pub outcome: TurnOutcome,
     pub assistant_text: String,
     pub tool_calls: Vec<ToolCallRec>,
     pub results: Vec<ToolResultRec>,
@@ -30,11 +33,15 @@ pub struct ToolResultRec {
 }
 
 impl TurnSummary {
-    /// Render as the JSON document: {turn, assistant_text, tool_calls,
-    /// results, error?}.
+    /// Render as the JSON document: {turn, outcome, assistant_text,
+    /// tool_calls, results, error?}.
     pub fn to_json(&self, error: Option<&str>) -> Value {
         let mut out = serde_json::Map::new();
         out.insert("turn".to_string(), Value::String(self.turn.clone()));
+        out.insert(
+            "outcome".to_string(),
+            serde_json::to_value(&self.outcome).unwrap_or(Value::Null),
+        );
         out.insert("assistant_text".to_string(), Value::String(self.assistant_text.clone()));
         out.insert(
             "tool_calls".to_string(),
@@ -95,6 +102,10 @@ pub fn summarize_turn(events: &[SessionEvent]) -> TurnSummary {
     let mut summary = TurnSummary { turn, ..TurnSummary::default() };
     for e in &events[start..] {
         match e {
+            SessionEvent::TurnEnd { outcome, .. } => {
+                // The turn's terminal state rides its TurnEnd (P0-A).
+                summary.outcome = outcome.clone();
+            }
             SessionEvent::AssistantMessage { text } => {
                 if !summary.assistant_text.is_empty() {
                     summary.assistant_text.push('\n');
@@ -141,7 +152,7 @@ mod tests {
                 error: None,
             },
             SessionEvent::AssistantMessage { text: "done".into() },
-            SessionEvent::TurnEnd { id: "turn-7".into() },
+            SessionEvent::TurnEnd { id: "turn-7".into(), outcome: TurnOutcome::Completed },
         ]
     }
 
@@ -149,6 +160,7 @@ mod tests {
     fn summarize_turn_extracts_text_calls_results() {
         let s = summarize_turn(&events());
         assert_eq!(s.turn, "turn-7");
+        assert_eq!(s.outcome, TurnOutcome::Completed);
         assert_eq!(s.assistant_text, "done");
         assert_eq!(s.tool_calls.len(), 1);
         assert_eq!(s.tool_calls[0].name, "list_dir");
@@ -173,15 +185,39 @@ mod tests {
     fn summarize_turn_empty_events_is_empty() {
         let s = summarize_turn(&[]);
         assert_eq!(s.turn, "");
+        assert_eq!(s.outcome, TurnOutcome::Completed);
         assert_eq!(s.assistant_text, "");
         assert!(s.tool_calls.is_empty());
         assert!(s.results.is_empty());
     }
 
     #[test]
+    fn summarize_turn_reads_terminal_outcome_from_turn_end() {
+        // A failed turn still summarizes with its real terminal state.
+        let mut evs = events();
+        if let Some(last) = evs.last_mut() {
+            *last = SessionEvent::TurnEnd {
+                id: "turn-7".into(),
+                outcome: TurnOutcome::Error { kind: "generate".into(), message: "boom".into() },
+            };
+        }
+        let s = summarize_turn(&evs);
+        assert_eq!(
+            s.outcome,
+            TurnOutcome::Error { kind: "generate".into(), message: "boom".into() }
+        );
+        let v = s.to_json(None);
+        assert_eq!(
+            v["outcome"],
+            json!({"error": {"kind": "generate", "message": "boom"}})
+        );
+    }
+
+    #[test]
     fn turn_summary_json_shape() {
         let s = TurnSummary {
             turn: "turn-1".into(),
+            outcome: TurnOutcome::Completed,
             assistant_text: "hi".into(),
             tool_calls: vec![ToolCallRec { id: "c1".into(), name: "t".into(), args: json!({"x": 1}) }],
             results: vec![ToolResultRec {
@@ -192,6 +228,7 @@ mod tests {
         };
         let v = s.to_json(None);
         assert_eq!(v["turn"], "turn-1");
+        assert_eq!(v["outcome"], "completed");
         assert_eq!(v["assistant_text"], "hi");
         assert_eq!(v["tool_calls"][0]["name"], "t");
         assert_eq!(v["tool_calls"][0]["args"], json!({"x": 1}));

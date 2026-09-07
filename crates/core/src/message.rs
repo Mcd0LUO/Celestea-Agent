@@ -122,14 +122,22 @@ impl std::ops::AddAssign for Usage {
 ///   event so consumers can distinguish it from the final answer (W191).
 /// - StreamEvent::Usage — provider-reported token usage for this response,
 ///   emitted when the provider reports it (stream-end usage frame or final
-///   chunk), just before the authoritative Done (W220).
+///   chunk), just before the authoritative terminal event (W220).
 /// - StreamEvent::Done — the single authoritative final message.
+/// - StreamEvent::Failed — the stream/generation broke mid-flight; `kind`
+///   classifies the failure and `message` carries the provider detail.
+///   Terminal: no Done follows (P0-A real terminal states).
+/// - StreamEvent::Interrupted — the stream was torn before any terminal
+///   frame (e.g. upstream EOF without the [DONE] sentinel). Terminal: no
+///   Done follows.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     Text(String),
     Thinking(String),
     Usage(Usage),
     Done(Message),
+    Failed { kind: String, message: String },
+    Interrupted,
 }
 
 pub type LlmStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;

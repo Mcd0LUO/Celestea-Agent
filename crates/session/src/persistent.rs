@@ -100,6 +100,10 @@ pub struct PersistentSessionLog {
     path: PathBuf,
     opts: PersistentOptions,
     write_errors: AtomicU64,
+    /// Monotonic turn id counter (P0-A unique turn identity), restored on
+    /// open from the max "turn-<n>" id replayed out of the file (max + 1),
+    /// so a restarted log never reuses an id already on disk.
+    turn_counter: AtomicU64,
 }
 
 impl PersistentSessionLog {
@@ -137,12 +141,16 @@ impl PersistentSessionLog {
             // O_APPEND writes at EOF regardless of the cursor position.
             file.write_all(b"\n")?;
         }
+        // P0-A: restore the turn id counter from the replayed file before the
+        // events move into the log (max id on disk + 1).
+        let next_turn = next_turn_number(&events);
         Ok(Self {
             events: RwLock::new(events),
             writer: RwLock::new(Some(BufWriter::new(file))),
             path,
             opts,
             write_errors: AtomicU64::new(0),
+            turn_counter: AtomicU64::new(next_turn),
         })
     }
 
@@ -233,6 +241,11 @@ impl SessionLog for PersistentSessionLog {
         derive_messages_from(&self.events())
     }
 
+    fn next_turn_id(&self) -> String {
+        let n = self.turn_counter.fetch_add(1, Ordering::Relaxed);
+        format!("turn-{n}")
+    }
+
     fn clear(&self) {
         let mut events_guard = self.events.write().unwrap_or_else(|p| p.into_inner());
         let mut writer_guard = self.writer.write().unwrap_or_else(|p| p.into_inner());
@@ -248,6 +261,9 @@ impl SessionLog for PersistentSessionLog {
             }
         }
         events_guard.clear();
+        // The emptied file replays to counter 0; keep the live counter in
+        // sync so ids and the file stay consistent.
+        self.turn_counter.store(0, Ordering::Relaxed);
     }
 }
 
@@ -363,11 +379,33 @@ fn trim_line_end(line: &[u8]) -> &[u8] {
     &line[..end]
 }
 
+/// P0-A: the numeric part of a "turn-<n>" id, when present.
+fn parse_turn_number(id: &str) -> Option<u64> {
+    id.strip_prefix("turn-")?.parse().ok()
+}
+
+/// P0-A: the first turn number to allocate after a replay — max of every
+/// "turn-<n>" id already in the file, plus one; 0 for a file without any
+/// such id. Legacy ids (e.g. "t1") are ignored, so a replayed counter never
+/// collides with an id that is already on disk.
+fn next_turn_number(events: &[SessionEvent]) -> u64 {
+    let max = events.iter().filter_map(|e| match e {
+        SessionEvent::TurnStart { id } | SessionEvent::TurnEnd { id, .. } => {
+            parse_turn_number(id)
+        }
+        _ => None,
+    }).max();
+    match max {
+        Some(m) => m + 1,
+        None => 0,
+    }
+}
+
 #[cfg(test)]
 mod persistent_tests {
     use super::*;
     use crate::log::InMemorySessionLog;
-    use celestea_core::{Message, Role};
+    use celestea_core::{Message, Role, TurnOutcome};
     use serde_json::json;
     use std::sync::atomic::{AtomicU64, Ordering as AtomOrdering};
     use std::sync::Arc;
@@ -418,7 +456,7 @@ mod persistent_tests {
             SessionEvent::ToolCall { id: "c2".into(), name: "write_file".into(), args: json!({ "path": "/tmp/y", "content": "z" }) },
             SessionEvent::ToolResult { id: "c1".into(), value: Some(json!({ "ok": true })), error: None },
             SessionEvent::ToolResult { id: "c2".into(), value: None, error: Some("boom".into()) },
-            SessionEvent::TurnEnd { id: "t1".into() },
+            SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed },
         ]
     }
 
@@ -669,6 +707,72 @@ mod persistent_tests {
         let log2 = PersistentSessionLog::open(dir.0.as_path(), "s1").expect("reopen");
         assert_eq!(log2.events().len(), 400, "all 400 records survive a reload");
         assert_eq!(serde_json::to_string(&log2.events()).unwrap(), before);
+    }
+
+    // ---- P0-A: unique turn identity + legacy jsonl compatibility -------------
+
+    #[test]
+    fn persistent_replay_restores_turn_counter_from_max_id() {
+        let dir = TempDir::new("turnids");
+        {
+            let log = PersistentSessionLog::open(dir.0.as_path(), "s1").expect("open");
+            assert_eq!(log.next_turn_id(), "turn-0");
+            assert_eq!(log.next_turn_id(), "turn-1");
+            log.append(SessionEvent::TurnStart { id: "turn-0".into() });
+            log.append(SessionEvent::TurnEnd { id: "turn-0".into(), outcome: TurnOutcome::Completed });
+            log.append(SessionEvent::TurnStart { id: "turn-1".into() });
+            log.append(SessionEvent::TurnEnd { id: "turn-1".into(), outcome: TurnOutcome::StepLimit });
+        }
+        // Replay: counter = max id on disk + 1 — never a collision with
+        // ids already persisted in the file.
+        let log = PersistentSessionLog::open(dir.0.as_path(), "s1").expect("reopen");
+        assert_eq!(log.next_turn_id(), "turn-2");
+
+        // Legacy ids without the "turn-" prefix do not drive the counter.
+        let dir2 = TempDir::new("legacyids");
+        {
+            let log = PersistentSessionLog::open(dir2.0.as_path(), "s2").expect("open");
+            log.append(SessionEvent::TurnStart { id: "t1".into() });
+            log.append(SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed });
+        }
+        let log = PersistentSessionLog::open(dir2.0.as_path(), "s2").expect("reopen");
+        assert_eq!(log.next_turn_id(), "turn-0");
+    }
+
+    #[test]
+    fn persistent_legacy_turn_end_without_outcome_reads_as_completed() {
+        // Old jsonl rows predate the outcome field (R1-era logs): the missing
+        // terminal state deserializes as Completed and the counter still
+        // restores from the id.
+        let dir = TempDir::new("legacyrow");
+        let path = file_path(dir.0.as_path(), "s1");
+        {
+            let mut f = fs::File::create(&path).expect("create");
+            f.write_all(br#"{"type":"turn_start","id":"turn-0"}"#).unwrap();
+            f.write_all(b"\n").unwrap();
+            f.write_all(br#"{"type":"user_message","text":"hi"}"#).unwrap();
+            f.write_all(b"\n").unwrap();
+            f.write_all(br#"{"type":"turn_end","id":"turn-0"}"#).unwrap();
+            f.write_all(b"\n").unwrap();
+            f.sync_all().unwrap();
+        }
+        let log = PersistentSessionLog::open(dir.0.as_path(), "s1").expect("open");
+        let events = log.events();
+        assert_eq!(events.len(), 3, "all three legacy rows replay");
+        match &events[2] {
+            SessionEvent::TurnEnd { id, outcome } => {
+                assert_eq!(id, "turn-0");
+                assert_eq!(*outcome, TurnOutcome::Completed, "legacy TurnEnd reads as completed");
+            }
+            other => panic!("expected TurnEnd, got {other:?}"),
+        }
+        // The replayed counter continues after the (old) turn id.
+        assert_eq!(log.next_turn_id(), "turn-1");
+        // Appending keeps working and persists the new-shape TurnEnd.
+        log.append(SessionEvent::TurnEnd { id: "turn-1".into(), outcome: TurnOutcome::Interrupted });
+        drop(log);
+        let text = fs::read_to_string(&path).expect("read back");
+        assert!(text.contains("\"outcome\":\"interrupted\""), "new rows carry the outcome: {text}");
     }
 
     #[test]

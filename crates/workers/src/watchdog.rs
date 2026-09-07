@@ -458,6 +458,7 @@ impl Default for WatchdogConfig {
 mod tests {
     use super::*;
     use crate::WorkerEntry;
+    use celestea_core::TurnOutcome;
     use celestea_session::SessionSpec;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -479,7 +480,7 @@ mod tests {
         let sid = reg.sessions().create(SessionSpec { title: format!("{wid}·t"), workspace: None, model: None });
         let s = reg.sessions().get(&sid).unwrap();
         s.log.append(SessionEvent::TurnStart { id: "t1".into() });
-        s.log.append(SessionEvent::TurnEnd { id: "t1".into() });
+        s.log.append(SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed });
         reg.upsert(WorkerEntry {
             wid: wid.into(),
             started_at: crate::format_utc(started),
@@ -638,7 +639,7 @@ mod tests {
         let sid = reg.sessions().create(SessionSpec { title: "W11·t".into(), workspace: None, model: None });
         let s = reg.sessions().get(&sid).unwrap();
         s.log.append(SessionEvent::TurnStart { id: "t1".into() });
-        s.log.append(SessionEvent::TurnEnd { id: "t1".into() });
+        s.log.append(SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed });
         reg.mailbox().send(&sid, "follow-up", "coordinator");
         assert_eq!(reg.mailbox().pending(&sid), 1);
         assert!(

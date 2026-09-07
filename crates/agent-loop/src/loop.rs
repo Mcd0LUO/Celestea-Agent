@@ -7,14 +7,13 @@
 //! from the shared celestea_core::Context at turn start.
 
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use tokio::sync::watch;
 use celestea_core::{
     AgentConfig, AgentError, AgentLoop, Content, Context, LlmService, ModelRequest,
-    SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, Usage,
+    SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, TurnOutcome, Usage,
     ToolRegistryService,
 };
 use futures_util::StreamExt;
@@ -22,9 +21,10 @@ use futures_util::StreamExt;
 use crate::context::{estimate_tokens, trim_context};
 use crate::events::{EventSink, LoopEvent};
 
-/// The default agent loop: a stateless (modulo a turn counter) driver, with
-/// an optional cooperative cancellation signal (W191) and an optional event
-/// sink (P1, output decoupling).
+/// The default agent loop: a stateless driver (the session log owns the
+/// monotonic turn id counter — P0-A), with an optional cooperative
+/// cancellation signal (W191) and an optional event sink (P1, output
+/// decoupling).
 ///
 /// Cancellation is injected via DefaultAgentLoop::with_cancel as a
 /// tokio::sync::watch::Receiver<bool>; when the watch value becomes true the
@@ -38,9 +38,6 @@ use crate::events::{EventSink, LoopEvent};
 /// behavior, so existing callers (and the CLI --json path) are unchanged.
 pub struct DefaultAgentLoop {
     config: AgentConfig,
-    /// Monotonic turn id counter; keeps the loop Send + Sync while producing
-    /// unique turn ids without any extra dependency.
-    turn_id: AtomicU64,
     /// Cooperative cancel signal. None = never cancelled (back-compat).
     cancel: Option<watch::Receiver<bool>>,
     /// Event sink. None = legacy stdout printing (back-compat).
@@ -130,13 +127,7 @@ impl DefaultAgentLoop {
         sink: Option<EventSink>,
         usage: Option<Arc<UsageTracker>>,
     ) -> Self {
-        Self { config, turn_id: AtomicU64::new(0), cancel, sink, usage }
-    }
-
-    /// Allocate the next unique turn id.
-    fn next_turn_id(&self) -> String {
-        let n = self.turn_id.fetch_add(1, Ordering::Relaxed);
-        format!("turn-{}", n)
+        Self { config, cancel, sink, usage }
     }
 
     /// Route one LoopEvent to the injected sink, or fall back to the legacy
@@ -199,8 +190,10 @@ impl AgentLoop for DefaultAgentLoop {
             .get::<ToolRegistryService>()
             .ok_or_else(|| AgentError("missing ToolRegistryService in context".into()))?;
 
-        // Turn bookkeeping: the session log is the single source of truth.
-        let turn_id = self.next_turn_id();
+        // Turn bookkeeping: the session log is the single source of truth, and
+        // it owns the monotonic turn id counter, so ids stay unique across
+        // loop instances (the runtime rebuilds a loop per turn) and restarts.
+        let turn_id = session.next_turn_id();
         session.append(SessionEvent::TurnStart { id: turn_id.clone() });
         session.append(SessionEvent::UserMessage { text: user_input.to_string() });
 
@@ -215,8 +208,13 @@ impl AgentLoop for DefaultAgentLoop {
         // is enforced exactly as before. The loop still ends on cancellation
         // or when the model answers without tool calls.
         let mut steps_done: usize = 0;
+        // P0-A real terminal states: the outcome is decided here, written to
+        // TurnEnd below, and never defaults to a fake success.
+        let mut outcome = TurnOutcome::Completed;
         loop {
             if self.config.max_steps > 0 && steps_done >= self.config.max_steps {
+                // Budget exhausted without a final answer: NOT completed (R1).
+                outcome = TurnOutcome::StepLimit;
                 break;
             }
             steps_done += 1;
@@ -225,6 +223,7 @@ impl AgentLoop for DefaultAgentLoop {
             if let Some(rx) = cancel_rx.as_ref() {
                 if cancel_set(rx) {
                     // Cancelled before this step: stop (TurnEnd appended below).
+                    outcome = TurnOutcome::Cancelled;
                     break;
                 }
             }
@@ -255,32 +254,50 @@ impl AgentLoop for DefaultAgentLoop {
 
             // Generate, then consume the stream: Text deltas go to stdout, the
             // final Done(message) is the authoritative assistant reply. A slow
-            // generate()/stream stays interruptible through select!.
+            // generate()/stream stays interruptible through select!. A
+            // generation failure is a terminal ERROR state with TurnEnd, not
+            // a silent return (R1: 生成失败缺 TurnEnd).
             let mut stream = match cancel_rx.as_mut() {
                 Some(rx) => {
                     tokio::select! {
                         r = llm.generate(request) => match r {
                             Ok(s) => s,
-                            Err(e) => return Err(AgentError(format!("llm.generate failed: {}", e))),
+                            Err(e) => {
+                                outcome = TurnOutcome::Error {
+                                    kind: "generate".into(),
+                                    message: e.0,
+                                };
+                                break;
+                            }
                         },
                         _ = wait_cancel(rx) => {
                             // Cancelled before/during the model's first response:
                             // break out of the step loop (TurnEnd appended below).
+                            outcome = TurnOutcome::Cancelled;
                             break;
                         }
                     }
                 }
-                None => llm
-                    .generate(request)
-                    .await
-                    .map_err(|e| AgentError(format!("llm.generate failed: {}", e)))?,
+                None => match llm.generate(request).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        outcome = TurnOutcome::Error {
+                            kind: "generate".into(),
+                            message: e.0,
+                        };
+                        break;
+                    }
+                },
             };
 
             let mut assistant_text = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
+            let mut saw_done = false;
 
             // Stream consumption loop. A cancel mid-stream drops the partial
-            // turn (no incomplete AssistantMessage is flushed).
+            // turn (no incomplete AssistantMessage is flushed); a stream that
+            // fails or ends without a terminal frame sets the matching
+            // terminal state instead of pretending success.
             loop {
                 let next = match cancel_rx.as_mut() {
                     Some(rx) => {
@@ -308,6 +325,7 @@ impl AgentLoop for DefaultAgentLoop {
                         }
                     }
                     StreamEvent::Done(message) => {
+                        saw_done = true;
                         self.emit(LoopEvent::Done(message.clone()));
                         for content in message.content {
                             match content {
@@ -316,10 +334,33 @@ impl AgentLoop for DefaultAgentLoop {
                             }
                         }
                     }
+                    StreamEvent::Failed { kind, message } => {
+                        // Stream-level failure (truncated turn): terminal error.
+                        outcome = TurnOutcome::Error { kind, message };
+                        break;
+                    }
+                    StreamEvent::Interrupted => {
+                        // The stream was torn without a terminal frame.
+                        outcome = TurnOutcome::Interrupted;
+                        break;
+                    }
                 }
             }
 
             if cancel_requested {
+                outcome = TurnOutcome::Cancelled;
+                break;
+            }
+
+            if !saw_done {
+                // The stream ended before a terminal frame: interrupted
+                // upstream / EOF without Done — a real terminal state, never
+                // a fake Completed (and no empty AssistantMessage is
+                // flushed). A Failed / Interrupted stream event has already
+                // decided the outcome.
+                if outcome == TurnOutcome::Completed {
+                    outcome = TurnOutcome::Interrupted;
+                }
                 break;
             }
 
@@ -384,11 +425,17 @@ impl AgentLoop for DefaultAgentLoop {
                 }
             }
             if cancel_requested {
+                outcome = TurnOutcome::Cancelled;
                 break;
             }
         }
 
-        session.append(SessionEvent::TurnEnd { id: turn_id });
+        // P0-A: every started turn ends with exactly one TurnEnd carrying the
+        // real terminal state (completed / cancelled / error / step_limit /
+        // interrupted) — and the sink receives exactly one terminal TurnEnd
+        // event, which consumers map onto their "done" envelope.
+        session.append(SessionEvent::TurnEnd { id: turn_id, outcome: outcome.clone() });
+        self.emit(LoopEvent::TurnEnd(outcome));
         Ok(())
     }
 }

@@ -191,14 +191,15 @@ impl ProcessRegistry {
         }
         json!({ "ok": true, "handle": h.handle, "written": written })
     }
-}
 
-/// Runtime drop: kill every still-registered child (SIGKILL the whole group on
-/// unix; start_kill via the reaper flag elsewhere). Best effort — the reaper
-/// tasks finish on their own once the children are dead.
-impl Drop for ProcessRegistry {
-    fn drop(&mut self) {
-        let map = self.map.get_mut().unwrap_or_else(|p| p.into_inner());
+    /// W248 shutdown path: kill every still-registered child (SIGKILL the whole
+    /// group on unix; start_kill via the reaper flag elsewhere) and drain the map.
+    /// This is the exact path [Drop] uses — surfaced as a public method so
+    /// Runtime::shutdown can guarantee cleanup while the registry is still shared.
+    /// Idempotent: a second call finds an empty map. Best effort — the reaper
+    /// tasks finish on their own once the children are dead.
+    pub fn kill_all(&self) {
+        let mut map = self.map.lock().unwrap_or_else(|p| p.into_inner());
         for (_k, h) in map.drain() {
             let mut st = h.state.lock().unwrap_or_else(|p| p.into_inner());
             st.stdin.take();
@@ -206,6 +207,15 @@ impl Drop for ProcessRegistry {
             drop(st);
             signal(&h, Signal::Kill);
         }
+    }
+}
+
+/// Runtime drop: kill every still-registered child via [ProcessRegistry::kill_all]
+/// (W248: explicit shutdown calls the same path; Drop stays the last-resort
+/// guarantee when a Runtime is dropped without shutdown).
+impl Drop for ProcessRegistry {
+    fn drop(&mut self) {
+        self.kill_all();
     }
 }
 
@@ -390,4 +400,37 @@ pub(crate) fn process_control_tool(reg: Arc<ProcessRegistry>) -> Box<dyn Tool> {
             }
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::process::Stdio;
+    use tokio::process::Command;
+
+    /// W248: kill_all 必须杀掉仍在运行的子进程并排空 map（Drop 同一路径），
+    /// 重复调用幂等。
+    #[tokio::test]
+    async fn kill_all_kills_registered_children_and_drains_map() {
+        let reg = Arc::new(ProcessRegistry::new());
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sleep");
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("child stdout");
+        let stderr = child.stderr.take().expect("child stderr");
+        reg.insert(child, stdin, stdout, stderr);
+        assert_eq!(reg.len(), 1, "child registered");
+
+        reg.kill_all();
+        assert_eq!(reg.len(), 0, "map drained by kill_all");
+        reg.kill_all(); // idempotent: empty map no-op
+        assert!(reg.is_empty());
+    }
 }

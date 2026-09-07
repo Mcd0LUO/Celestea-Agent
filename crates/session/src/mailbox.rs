@@ -134,6 +134,15 @@ impl SessionMailbox {
         guard.remove(session_id);
     }
 
+    /// W248 shutdown path: drop every queue entry across all sessions,
+    /// discarding all still-queued messages and the keys themselves. Used by
+    /// Runtime::shutdown so a retired gen's mailbox (incl. undelivered
+    /// receipts) is fully purged instead of leaking. Idempotent.
+    pub fn purge_all(&self) {
+        let mut guard = self.inner.queues.write().unwrap_or_else(|p| p.into_inner());
+        guard.clear();
+    }
+
     /// Number of messages currently queued for session_id.
     pub fn pending(&self, session_id: &str) -> usize {
         let guard = self.inner.queues.read().unwrap_or_else(|p| p.into_inner());

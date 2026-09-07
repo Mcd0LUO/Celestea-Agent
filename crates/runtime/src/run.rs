@@ -16,15 +16,11 @@ use tokio::sync::watch;
 use crate::compose::Runtime;
 use crate::summary::{summarize_turn, TurnSummary};
 
-/// What happened to a streamed turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurnOutcome {
-    /// The turn completed on its own.
-    Completed,
-    /// The cooperative cancel signal fired and the turn stopped gracefully
-    /// (partial output/tool results are kept in the session log).
-    Cancelled,
-}
+// P0-A: the terminal states live in core (the SessionEvent::TurnEnd payload
+// and the agent-loop sink both need them); the runtime re-exports the same
+// type so the engine surface stays a single import path (back-compat with the
+// old runtime-local enum: Completed/Cancelled keep their names).
+pub use celestea_core::TurnOutcome;
 
 impl Runtime {
     /// Build a per-turn DefaultAgentLoop from the runtime config, an optional
@@ -51,9 +47,11 @@ impl Runtime {
     /// - sink: when Some, every LoopEvent the turn produces is delivered to
     ///   it instead of being printed (Text/Thinking/ToolCall/ToolResult/Done).
     ///
-    /// Returns the turn outcome; AgentError only for hard failures (e.g. a
-    /// missing service in the context). A cancelled turn is Ok(Cancelled),
-    /// never an error — the CLI's Ctrl-C path maps here.
+    /// Returns the turn outcome; AgentError only for hard failures before the
+    /// turn starts (e.g. a missing service in the context). Every other exit
+    /// is a structured outcome read from the turn's TurnEnd in the session log
+    /// (the single source of truth — P0-A): Completed / Cancelled /
+    /// Error{kind,message} / StepLimit / Interrupted.
     pub async fn run_turn(
         &self,
         input: &str,
@@ -73,12 +71,18 @@ impl Runtime {
             self.session.append(SessionEvent::UserMessage { text });
         }
         let agent = self.make_loop(cancel.clone(), sink.clone());
+        // Err here means the turn never started (no TurnStart), so the error
+        // propagates; every started turn ends with exactly one TurnEnd.
         agent.run_turn(&self.ctx, input).await?;
-        let cancelled = cancel.as_ref().map(|rx| *rx.borrow()).unwrap_or(false);
-        Ok(if cancelled {
-            TurnOutcome::Cancelled
-        } else {
-            TurnOutcome::Completed
+        Ok(Self::last_turn_outcome(&self.session.events()).unwrap_or(TurnOutcome::Completed))
+    }
+
+    /// The terminal state of the most recent turn in the session log, read
+    /// from its TurnEnd (P0-A). None when no turn has ended yet.
+    fn last_turn_outcome(events: &[SessionEvent]) -> Option<TurnOutcome> {
+        events.iter().rev().find_map(|e| match e {
+            SessionEvent::TurnEnd { outcome, .. } => Some(outcome.clone()),
+            _ => None,
         })
     }
 
@@ -287,6 +291,102 @@ mod tests {
         assert!(events.iter().any(|e| matches!(e, SessionEvent::TurnEnd { .. })));
         assert!(!events.iter().any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
     }
+    // ---- P0-A: 真实终态从日志回流 runtime（error / interrupted / 唯一 id） -----
+
+    /// Build a Runtime around an arbitrary Llm (the queue-based test_runtime
+    /// cannot fail or truncate).
+    fn runtime_with_llm(llm: Arc<dyn celestea_core::Llm>) -> (Runtime, Arc<FakeRegistry>) {
+        let session = Arc::new(InMemorySessionLog::new());
+        let registry = Arc::new(FakeRegistry::default());
+        let mut ctx = Context::new();
+        ctx.provide(LlmService(llm));
+        ctx.provide(SessionService(session.clone()));
+        ctx.provide(ToolRegistryService(registry.clone()));
+        let config = celestea_core::AgentConfig::default();
+        let workers = Arc::new(WorkerRegistry::new(
+            std::env::temp_dir().join(format!(
+                "celestea-rt-outcome-{}-{}.tsv",
+                std::process::id(),
+                rand_tag()
+            )),
+        ));
+        (
+            Runtime {
+                ctx,
+                session,
+                registry: registry.clone(),
+                config,
+                workers,
+                usage: Arc::new(UsageTracker::new()),
+            },
+            registry,
+        )
+    }
+
+    #[tokio::test]
+    async fn run_turn_returns_error_outcome_for_generate_failure() {
+        struct FailLlm;
+        #[async_trait]
+        impl Llm for FailLlm {
+            async fn generate(&self, _req: ModelRequest) -> Result<LlmStream, LlmError> {
+                Err(LlmError("provider timeout".into()))
+            }
+        }
+        let (rt, _reg) = runtime_with_llm(Arc::new(FailLlm));
+        let outcome = rt.run_turn("hi", None, None).await.unwrap();
+        assert_eq!(
+            outcome,
+            TurnOutcome::Error { kind: "generate".into(), message: "provider timeout".into() }
+        );
+        // The log carries the same terminal state (source of truth).
+        match rt.session.events().iter().rev().find(|e| matches!(e, SessionEvent::TurnEnd { .. })) {
+            Some(SessionEvent::TurnEnd { outcome: o, .. }) => {
+                assert_eq!(*o, TurnOutcome::Error { kind: "generate".into(), message: "provider timeout".into() });
+            }
+            other => panic!("expected TurnEnd, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_turn_returns_interrupted_outcome_for_torn_stream() {
+        struct TornLlm;
+        #[async_trait]
+        impl Llm for TornLlm {
+            async fn generate(&self, _req: ModelRequest) -> Result<LlmStream, LlmError> {
+                Ok(stream::iter(vec![StreamEvent::Text("trunc".to_string())]).boxed())
+            }
+        }
+        let (rt, _reg) = runtime_with_llm(Arc::new(TornLlm));
+        let outcome = rt.run_turn("hi", None, None).await.unwrap();
+        assert_eq!(outcome, TurnOutcome::Interrupted);
+    }
+
+    #[tokio::test]
+    async fn run_turn_turn_ids_are_unique_across_turns() {
+        // The runtime rebuilds a DefaultAgentLoop per turn (make_loop); the
+        // session log owns the counter, so the host log never repeats turn-0.
+        let (rt, _reg) = test_runtime(vec![
+            Message::assistant_text("first"),
+            Message::assistant_text("second"),
+        ]);
+        assert_eq!(rt.run_turn("one", None, None).await.unwrap(), TurnOutcome::Completed);
+        assert_eq!(rt.run_turn("two", None, None).await.unwrap(), TurnOutcome::Completed);
+        let ids: Vec<String> = rt
+            .session
+            .events()
+            .iter()
+            .filter_map(|e| match e {
+                SessionEvent::TurnStart { id } => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, vec!["turn-0".to_string(), "turn-1".to_string()]);
+        // The summary exposes the last turn's id + terminal state.
+        let s = rt.summarize_turn();
+        assert_eq!(s.turn, "turn-1");
+        assert_eq!(s.outcome, TurnOutcome::Completed);
+    }
+
     // ---- W232: 宿主消费 mailbox（worker 回执在宿主下一轮真实可见） -------------
 
     #[tokio::test]

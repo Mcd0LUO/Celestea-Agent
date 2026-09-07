@@ -7,8 +7,9 @@
 //! The private helpers flush_tool_calls and project implement the
 //! event -> message projection used by derive_messages.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
-use celestea_core::{Content, Message, Role, SessionEvent, SessionLog, ToolCall};
+use celestea_core::{Content, Message, Role, SessionEvent, SessionLog, ToolCall, TurnOutcome};
 
 /// An in-memory, append-only session log.
 ///
@@ -19,12 +20,16 @@ use celestea_core::{Content, Message, Role, SessionEvent, SessionLog, ToolCall};
 #[derive(Debug, Default)]
 pub struct InMemorySessionLog {
     events: RwLock<Vec<SessionEvent>>,
+    /// Monotonic turn id counter (P0-A unique turn identity). Owned by the
+    /// log — not the agent loop — so ids never repeat across loop instances
+    /// (the runtime rebuilds a loop per turn). Never resets, even on clear.
+    turn_counter: AtomicU64,
 }
 
 impl InMemorySessionLog {
     /// Create an empty session log.
     pub fn new() -> Self {
-        Self { events: RwLock::new(Vec::new()) }
+        Self { events: RwLock::new(Vec::new()), turn_counter: AtomicU64::new(0) }
     }
 }
 
@@ -50,6 +55,11 @@ impl SessionLog for InMemorySessionLog {
         if let Ok(mut events) = self.events.write() {
             events.clear();
         }
+    }
+
+    fn next_turn_id(&self) -> String {
+        let n = self.turn_counter.fetch_add(1, Ordering::Relaxed);
+        format!("turn-{n}")
     }
 }
 
@@ -191,7 +201,7 @@ mod tests {
             value: None,
             error: Some("boom".into()),
         });
-        log.append(SessionEvent::TurnEnd { id: "t1".into() });
+        log.append(SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed });
 
         let msgs = log.derive_messages();
 
@@ -323,5 +333,17 @@ mod tests {
     fn log_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<InMemorySessionLog>();
+    }
+
+    #[test]
+    fn next_turn_id_is_monotonic_and_survives_clear() {
+        let log = InMemorySessionLog::new();
+        assert_eq!(log.next_turn_id(), "turn-0");
+        assert_eq!(log.next_turn_id(), "turn-1");
+        // The counter is log state, not event state: clear() wipes events but
+        // ids already handed out are never reused (P0-A 唯一身份).
+        log.append(SessionEvent::UserMessage { text: "x".into() });
+        log.clear();
+        assert_eq!(log.next_turn_id(), "turn-2");
     }
 }

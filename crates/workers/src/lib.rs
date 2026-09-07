@@ -51,7 +51,7 @@ mod tests {
     use celestea_core::{
         AgentConfig, AgentError, Context, Llm, LlmError, LlmStream, Message, ModelRequest, LlmService,
         SessionEvent, SessionLog, SessionService, StreamEvent, ToolGuard, ToolInput, ToolOutput, ToolRegistry,
-        ToolRegistryService, ToolSpec, AgentLoop, Tool,
+        ToolRegistryService, ToolSpec, AgentLoop, Tool, TurnOutcome,
     };
     use futures_util::stream;
     use async_trait::async_trait;
@@ -95,6 +95,33 @@ mod tests {
         let status = tool_by_name(&tools, "worker_status").spec();
         assert_eq!(status.parameters["required"], json!([]));
         assert_eq!(status.parameters["additionalProperties"], json!(false));
+    }
+
+    // ---- W248: 工具持 Weak（registry → tools → registry 强环解除） --------------
+
+    #[tokio::test]
+    async fn worker_tools_hold_weak_registry_reference() {
+        let path = temp_tsv("w248-weak");
+        let reg = Arc::new(WorkerRegistry::new(&path));
+        let weak = Arc::downgrade(&reg);
+        assert_eq!(weak.strong_count(), 1);
+
+        // 工具构造不得增加 registry 的强计数（解环前这里会是 1 + 3 工具 = 4）。
+        let tools = worker_tools_with(reg.clone());
+        assert_eq!(weak.strong_count(), 1, "tools must hold Weak, not Arc");
+
+        // 存活期间工具正常执行（worker_status 不需要驱动 seam）。
+        let status = tool_by_name(&tools, "worker_status");
+        let out = status.execute(json!({})).await.unwrap();
+        assert_eq!(out["ok"], json!(true));
+
+        // 最后一个强引用释放 → registry 释放 → 工具 fail-closed（不 panic）。
+        drop(reg);
+        assert!(weak.upgrade().is_none(), "registry freed after last strong ref drops");
+        let out = status.execute(json!({})).await.unwrap();
+        assert_eq!(out["ok"], json!(false));
+        assert_eq!(out["step"], "registry");
+        assert_eq!(out["error"], "registry released");
     }
 
     // ---- spawn_worker -------------------------------------------------------
@@ -724,7 +751,7 @@ mod tests {
                 let id = format!("rec-{}", self.inputs.lock().unwrap().len());
                 svc.append(SessionEvent::TurnStart { id: id.clone() });
                 svc.append(SessionEvent::UserMessage { text: input.to_string() });
-                svc.append(SessionEvent::TurnEnd { id });
+                svc.append(SessionEvent::TurnEnd { id, outcome: TurnOutcome::Completed });
                 // W241: 模拟 loop 的最终答复落进会话日志（fail 分支同理，供
                 // 回执协议取最后一条 AssistantMessage）。
                 if let Some(answer) = &self.assistant {

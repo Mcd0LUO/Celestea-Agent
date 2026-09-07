@@ -182,6 +182,52 @@ impl Runtime {
         ctx.provide(ProcessRegistryService(processes));
         Ok(Runtime { ctx, session, registry, config, workers, usage })
     }
+
+    // ========================================================================
+    // W248 换代 shutdown（显式、幂等）+ Drop 自动兜底。Studio 换代必须：
+    // 旧 gen shutdown → 新 gen compose（调用序与忙期语义见 P0-2 报告）。
+    // ========================================================================
+
+    /// W248 显式 shutdown（幂等，可重复调用；Drop 已执行过也安全）。按序：
+    /// 1. stop 全部 worker 驱动 —— abort_all_now（notify 全部 stop 信号，让
+    ///    阻塞在 mailbox.recv 的驱动循环退出）→ join_drivers 收割到归零；
+    /// 2. ProcessRegistry 全杀 —— kill_all（与 Drop 同一路径，进程组 SIGKILL）；
+    /// 3. mailbox purge —— purge_all（丢弃所有未消费消息，含旧代回执）；
+    /// 4. SessionRegistry 清空 —— clear（cli-main 由下一次 compose 重新登记）。
+    /// 全程不 panic（锁毒化走 into_inner；缺服务跳过）。结束后旧 gen 不再
+    /// 产生/消费任何消息，也不保留任何强引用（工具持 Weak，环已解）。
+    pub async fn shutdown(&self) {
+        self.shutdown_now();
+        // abort 后的 join 需要 executor，只能在 async 路径做；Drop 只能跑
+        // 同步部分（见下）。
+        self.workers.join_drivers().await;
+    }
+
+    /// shutdown 的同步部分，Drop 自动执行同一路径（不 join：被 abort 的任务
+    /// 由 tokio 在取消时释放捕获的 Arc）。幂等：每步对空状态都是 no-op。
+    fn shutdown_now(&self) {
+        // 1. 停全部 worker 驱动（stop 信号 + abort，不 join）。
+        self.workers.abort_all_now();
+        // 2. 进程全杀：经 ctx 取回 compose 提供的共享 ProcessRegistry；测试直构
+        //    Runtime 缺该服务则跳过（ProcessRegistry 自身 Drop 仍是兜底）。
+        if let Some(proc_svc) = self.ctx.get::<ProcessRegistryService>() {
+            proc_svc.kill_all();
+        }
+        // 3. mailbox purge：旧代队列（含旧回执）全部丢弃。
+        self.workers.mailbox().purge_all();
+        // 4. SessionRegistry 清空：释放全部会话与日志。
+        self.workers.sessions().clear();
+    }
+}
+
+/// W248：Runtime Drop 自动执行 shutdown（不 panic）。驱动 join 无法在 Drop 里
+/// await，故只跑同步部分（stop 信号 + abort、进程全杀、mailbox purge、会话
+/// 清空）——资源即时释放；被 abort 的任务随取消释放 Arc。环已由 WorkerTool 的
+/// Weak 解开：Drop 之后旧 gen 不再被任何强引用钉住（Weak::upgrade 为 None）。
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.shutdown_now();
+    }
 }
 
 
@@ -316,6 +362,102 @@ mod tests {
         let wr = rt.ctx.get::<WorkerRegistryService>().expect("WorkerRegistryService provided");
         // All three driver seams attached => spawn_worker would be driven:true.
         assert!(wr.0.can_drive(), "worker registry must be driver-attached");
+        std::env::remove_var(key_env);
+    }
+
+    // ---- W248: 强引用环解除 + 换代 shutdown -------------------------------------
+
+    /// 换代验收核心断言：完整 compose 出的 Runtime drop 后，WorkerRegistry 必须
+    /// 可释放。worker 三工具只持 Weak——解环前 registry → ToolRegistryService →
+    /// WorkerTool → registry 的强环会让本断言失败（upgrade 仍 Some）。用
+    /// Weak::strong_count 直接观察：compose 后只有 Runtime.workers 字段与 ctx 里
+    /// 的 WorkerRegistryService 两个强引用（工具注册表不增加任何强计数）。
+    #[test]
+    fn drop_runtime_releases_worker_registry_no_strong_cycle() {
+        let key_env = "W248_CYCLE_KEY";
+        std::env::set_var(key_env, "sk-test");
+        let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
+        let rt = Runtime::compose(&profile).unwrap();
+
+        let weak = Arc::downgrade(&rt.workers);
+        assert_eq!(
+            weak.strong_count(),
+            2,
+            "only Runtime.workers + ctx WorkerRegistryService may hold strong refs (tools must be Weak)"
+        );
+        drop(rt);
+        assert!(
+            weak.upgrade().is_none(),
+            "WorkerRegistry leaked via a strong cycle after Runtime drop"
+        );
+        std::env::remove_var(key_env);
+    }
+
+    /// W248 shutdown 验收：幂等 + 驱动全部退出 + 进程全杀 + mailbox 清空 +
+    /// SessionRegistry 清空。驱动 seam 换成 no-op AgentLoop（不触网）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shutdown_stops_drivers_kills_processes_and_purges() {
+        struct NoopLoop;
+        #[async_trait::async_trait]
+        impl celestea_core::AgentLoop for NoopLoop {
+            async fn run_turn(
+                &self,
+                _ctx: &celestea_core::Context,
+                _input: &str,
+            ) -> Result<(), celestea_core::AgentError> {
+                Ok(())
+            }
+        }
+
+        let key_env = "W248_SHUTDOWN_KEY";
+        std::env::set_var(key_env, "sk-test");
+        let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
+        let rt = Runtime::compose(&profile).unwrap();
+
+        // 驱动 seam 换成 no-op loop：compose 注入的是真实 DeepSeek seam，测试不触网。
+        rt.workers.attach_drivers(
+            rt.ctx.get::<LlmService>(),
+            rt.ctx.get::<celestea_core::ToolRegistryService>(),
+            Some(Arc::new(NoopLoop)),
+        );
+
+        // 一个活 driver：brief turn 后阻塞在 mailbox.recv，直到 shutdown 通知停止。
+        let sid = rt.workers.sessions().create(celestea_session::SessionSpec {
+            title: "w248-drv".into(),
+            ..Default::default()
+        });
+        assert!(rt.workers.drive_if_possible(&sid, "task").await, "driver must start");
+        rt.workers.mailbox().send(&sid, "queued for driver", "coordinator");
+        // 旧代回执（host 队列，无消费者，直到 shutdown 才被 purge）。
+        rt.workers.mailbox().send(crate::compose::HOST_SID, "stale receipt", "W9");
+        assert!(rt.workers.background_len() >= 1, "driver task tracked");
+        assert_eq!(rt.workers.mailbox().pending(crate::compose::HOST_SID), 1, "stale receipt queued");
+
+        // 一个后台 sleep 进程：shutdown 后应被 kill_all 杀死并从 registry 移除。
+        let proc_svc =
+            rt.ctx.get::<ProcessRegistryService>().expect("ProcessRegistryService provided");
+        let mut child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn sleep");
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("child stdout");
+        let stderr = child.stderr.take().expect("child stderr");
+        proc_svc.0.insert(child, stdin, stdout, stderr);
+        assert_eq!(proc_svc.len(), 1, "sleep process registered");
+
+        // 显式 shutdown；再跑一次验证幂等（第二步全为 no-op，不 panic）。
+        rt.shutdown().await;
+        rt.shutdown().await;
+
+        assert_eq!(rt.workers.background_len(), 0, "all drivers stopped and joined");
+        assert_eq!(rt.workers.mailbox().pending_total(), 0, "mailbox fully purged");
+        assert_eq!(rt.workers.sessions().len(), 0, "SessionRegistry cleared");
+        assert_eq!(proc_svc.len(), 0, "background processes killed");
         std::env::remove_var(key_env);
     }
 

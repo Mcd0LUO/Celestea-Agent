@@ -138,6 +138,16 @@ impl SessionRegistry {
         guard.remove(id).is_some()
     }
 
+    /// W248 shutdown path: remove every registered session, dropping the
+    /// registry's strong handles so each session and its log is freed once
+    /// external aliases (e.g. driver tasks, tools) drop theirs. Idempotent —
+    /// repeated calls are no-ops. Used by Runtime::shutdown when retiring a
+    /// gen; the host session (cli-main) is re-registered by the next compose.
+    pub fn clear(&self) {
+        let mut guard = self.sessions.write().unwrap_or_else(|p| p.into_inner());
+        guard.clear();
+    }
+
     /// Number of registered sessions.
     pub fn len(&self) -> usize {
         let guard = self.sessions.read().unwrap_or_else(|p| p.into_inner());
@@ -298,6 +308,39 @@ mod multi_session_tests {
         assert_eq!(metas.len(), 2);
         assert!(metas.iter().any(|m| m.title == "a"));
         assert!(metas.iter().any(|m| m.title == "b"));
+    }
+
+    // --- W248: 换代 shutdown 支撑（clear / purge_all） ---
+
+    #[test]
+    fn registry_clear_removes_all_sessions() {
+        let reg = SessionRegistry::new();
+        reg.create(SessionSpec { title: "a".into(), ..Default::default() });
+        reg.create(SessionSpec { title: "b".into(), ..Default::default() });
+        assert_eq!(reg.len(), 2);
+        reg.clear();
+        assert!(reg.is_empty());
+        reg.clear(); // 幂等：对空表也是 no-op
+        assert_eq!(reg.len(), 0);
+        // clear 不回退 next_id：新会话 id 不与已清会话撞车（旧引用不会错指）。
+        let id = reg.create(SessionSpec { title: "c".into(), ..Default::default() });
+        assert_eq!(id, "session-2");
+    }
+
+    #[test]
+    fn mailbox_purge_all_clears_every_queue() {
+        let mb = SessionMailbox::new();
+        mb.send("s1", "a", "x");
+        mb.send("s2", "b", "y");
+        assert_eq!(mb.pending_total(), 2);
+        mb.purge_all();
+        assert_eq!(mb.pending_total(), 0);
+        assert_eq!(mb.pending("s1"), 0);
+        assert_eq!(mb.pending("s2"), 0);
+        mb.purge_all(); // 幂等
+        // purge 后重新 send 从空队列开始，可正常消费。
+        mb.send("s1", "again", "x");
+        assert_eq!(mb.try_recv("s1").expect("fresh").content, "again");
     }
 
     // --- SessionMailbox ---

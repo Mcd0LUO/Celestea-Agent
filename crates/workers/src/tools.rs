@@ -2,7 +2,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use celestea_core::{Tool, ToolSpec};
@@ -107,7 +107,12 @@ fn worker_status_spec() -> ToolSpec {
 
 struct WorkerTool {
     spec: ToolSpec,
-    reg: Arc<WorkerRegistry>,
+    /// W248 解环：对 [WorkerRegistry] 只持 [Weak]（无强引用）——runtime 装配会把
+    /// 本工具注册表以 ToolRegistryService 存回 WorkerRegistry（attach_drivers），
+    /// 若这里持 Arc 即构成 registry → tools → registry 的强引用环，换代后旧
+    /// Runtime 永远无法释放。registry 的生命周期由构造它的 Runtime/插件持有，
+    /// 工具只借用：execute 时 upgrade，取不到则 fail-closed（registry released）。
+    reg: Weak<WorkerRegistry>,
     exec: fn(Arc<WorkerRegistry>, Value) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send>>,
 }
 
@@ -116,7 +121,7 @@ fn worker_tool(
     reg: Arc<WorkerRegistry>,
     exec: fn(Arc<WorkerRegistry>, Value) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send>>,
 ) -> Box<dyn Tool> {
-    Box::new(WorkerTool { spec, reg, exec })
+    Box::new(WorkerTool { spec, reg: Arc::downgrade(&reg), exec })
 }
 
 #[async_trait]
@@ -126,13 +131,21 @@ impl Tool for WorkerTool {
     }
 
     async fn execute(&self, args: Value) -> Result<Value, String> {
-        (self.exec)(self.reg.clone(), args).await
+        // W248 解环：调用时 upgrade。registry 已被释放（宿主 Runtime 换代/
+        // shutdown 后）→ fail-closed，不 panic、不复活旧 gen 状态。
+        let Some(reg) = self.reg.upgrade() else {
+            return Ok(contract_err("registry", "registry released"));
+        };
+        (self.exec)(reg, args).await
     }
 }
 
 /// 三个内置工具：spawn_worker / session_send_message / worker_status。
-/// 每次调用构建一组自包含状态（默认 /tmp registry 路径），适合独立/测试场景；
-/// 插件挂载请用 [worker_tools_with] 共享同一个 [WorkerRegistry]。
+///
+/// W248 解环后工具只持 [Weak]：本函数内部创建的 [WorkerRegistry] 在返回时即
+/// 释放，execute 一律返回 contract_err("registry released")。因此本函数仅供
+/// spec/形状检查类用途；需要可执行的工具请用 [worker_tools_with] 共享同一个
+/// 由调用方持有（Runtime / WorkersPlugin）的 [WorkerRegistry]。
 pub fn worker_tools() -> Vec<Box<dyn celestea_core::Tool>> {
     worker_tools_with(Arc::new(WorkerRegistry::with_default_path()))
 }
