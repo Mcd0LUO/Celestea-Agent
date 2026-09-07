@@ -48,7 +48,7 @@ impl Default for Profile {
                 .into(),
             max_steps: 16,
             max_parallel_tool_calls: 4,
-            context_window_tokens: 65_536,
+            context_window_tokens: 1_000_000,
             context_trim_threshold: 0.8,
             context_keep_recent: 10,
             base_url: None,
@@ -934,7 +934,7 @@ bogus = 1
     #[test]
     fn context_keys_defaults() {
         let p = Profile::default();
-        assert_eq!(p.context_window_tokens, 65_536);
+        assert_eq!(p.context_window_tokens, 1_000_000);
         assert_eq!(p.context_trim_threshold, 0.8);
         assert_eq!(p.context_keep_recent, 10);
     }
