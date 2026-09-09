@@ -93,8 +93,6 @@ pub(crate) const ERROR_PREFIX: &str = "run_shell-sandbox";
 pub(crate) const ENV_TIMEOUT_MS: &str = "CELAESTEA_RUN_SHELL_TIMEOUT_MS";
 /// Env var: max per-call timeout in milliseconds (W242 B).
 pub(crate) const ENV_MAX_TIMEOUT_MS: &str = "CELESTEA_SHELL_MAX_TIMEOUT_MS";
-/// W242 B: legacy name (pre-W242), still honored as a fallback.
-pub(crate) const ENV_MAX_TIMEOUT_MS_LEGACY: &str = "CELAESTEA_RUN_SHELL_MAX_TIMEOUT_MS";
 /// Env var: per-stream output cap in bytes.
 pub(crate) const ENV_MAX_OUTPUT_BYTES: &str = "CELAESTEA_RUN_SHELL_MAX_OUTPUT_BYTES";
 /// Env var: fixed sandbox workdir.
@@ -1156,7 +1154,7 @@ impl SandboxConfig {
             cfg = cfg.with_timeout(Duration::from_millis(ms));
         }
         if let Some(ms) = env_u64(ENV_MAX_TIMEOUT_MS)
-            .or_else(|| env_u64(ENV_MAX_TIMEOUT_MS_LEGACY))
+
             .filter(|&ms| ms > 0)
         {
             cfg = cfg.with_max_timeout(Duration::from_millis(ms));
