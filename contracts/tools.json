@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Celestea engine tool specs (10 tools)",
+  "generatedAt": "2026-09-10T01:20:00Z",
+  "source": {
+    "liveEndpoint": "http://127.0.0.1:3777/api/tools (descriptions taken verbatim from the running engine)",
+    "schemas": "/src/celestea_harness/crates/tools/src/*.rs + crates/workers/src/tools.rs (hand-written ToolSpec.parameters, transcribed 1:1)",
+    "liveProbe": {
+      "checked": true,
+      "toolCount": 10,
+      "names": [
+        "http_request",
+        "list_dir",
+        "process_control",
+        "read_file",
+        "run_code",
+        "run_shell",
+        "session_send_message",
+        "spawn_worker",
+        "worker_status",
+        "write_file"
+      ]
+    }
+  },
+  "count": 10,
+  "tools": [
+    {
+      "name": "http_request",
+      "description": "Send an HTTP(S) request and return {status, headers(subset), body, truncated}. Only http/https URLs are allowed (file:// etc. rejected); redirects are followed up to 5 hops; the response body is truncated at 1MB (truncated:true beyond). HTTP error statuses are preserved in `status` — not tool errors; transport failures are categorized as timeout | dns | connect | redirect | invalid_url | invalid_arg | target_forbidden. SSRF policy: when CELESTEA_HTTP_ALLOW / CELESTEA_HTTP_DENY (comma-separated IP/CIDR) are set, every resolved target IP — and every redirect hop — must pass them; default (unset) allows all hosts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "description": "HTTP method (default GET).",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "DELETE",
+              "PATCH",
+              "HEAD"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "Target URL; only http/https schemes are allowed."
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Optional request headers as {name: value}."
+          },
+          "body": {
+            "type": "string",
+            "description": "Optional request body string."
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "description": "Optional timeout in milliseconds (default 15000, maximum 60000).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/tools/src/http.rs:238-254"
+    },
+    {
+      "name": "list_dir",
+      "description": "List the entry names in a directory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory path to list."
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/tools/src/builtin.rs:217-230"
+    },
+    {
+      "name": "process_control",
+      "description": "Control a background process started by run_shell(background=true). Handles live in the session-scoped process registry and survive across turns; a process that exits is removed from the registry automatically. action=poll returns {running, stdout_tail(<=4KB), stderr_tail, exit_code?}; action=kill sends SIGTERM, waits a grace period, then SIGKILL and returns {killed:true}; action=stdin writes one line (content + newline) to the process stdin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Process handle returned by run_shell(background=true)."
+          },
+          "action": {
+            "type": "string",
+            "description": "poll | kill | stdin (see tool description).",
+            "enum": [
+              "poll",
+              "kill",
+              "stdin"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "description": "Line to write to the process stdin (action=stdin only)."
+          }
+        },
+        "required": [
+          "handle",
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/tools/src/process.rs:462-479"
+    },
+    {
+      "name": "read_file",
+      "description": "Read a UTF-8 text file and return its contents as a string.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Filesystem path of the file to read."
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/tools/src/builtin.rs:186-199"
+    },
+    {
+      "name": "run_code",
+      "description": "Execute a Python program in the sandbox and get its final value in ONE round trip (Python parent-broker, W255). Write the program as an `async def main():` function body, or a complete script defining main; main()'s return value (lossless JSON) is the final result. Inside the program the SDK exposes four synchronous bridges dispatched through the normal guarded tool pipeline: tools.read_file(path=...) / tools.write_file(path=..., content=...) / tools.list_dir(path=...) / tools.run_shell(command=...); a denied or failed sub-call raises ToolCallError (catch it and continue). Only print() what the model needs: stdout lines become logs (≤65536 bytes, UI render only); intermediate sub-call results are recorded in the session log but context-retained (the model sees only the final value). Hard limits: ≤20 sub-calls (the next one errors), wall clock ≤120000ms (timeout_ms, default 120000), sub-call output ledger ≤262144 bytes (truncated with a warning). No network; the same sandbox as run_shell (bwrap/raw/userspace + rlimits).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Python source: an `async def main():` function body, or a complete script that defines main. The engine injects the SDK preamble (tools bridge + protocol)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional short summary (5-10 words) of what the program does; used as the run's card title."
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "description": "Optional whole-run wall clock in ms. Default 120000; hard cap 120000 (CELAESTEA_RUN_CODE_TIMEOUT_MS tunes the default, never the cap).",
+            "minimum": 1,
+            "maximum": 120000
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/tools/src/run_code.rs:984-1022"
+    },
+    {
+      "name": "run_shell",
+      "description": "Run a shell command inside the sandbox (v2 OS isolation when available: namespaces + read-only root + resource limits, else the v1 userspace path; fixed workdir, sanitized env, bounded timeout and output) and return stdout, stderr, exit code, and a `sandbox` object {provider: bwrap|raw|userspace, net_isolated, tmp_private, seccomp} reporting the effective isolation (W249: network isolated and /tmp a private tmpfs by default; CELESTEA_SANDBOX_NET=1 / CELESTEA_SANDBOX_SHARE_TMP=1 restore the shared host net/tmp; CELESTEA_SANDBOX_SECCOMP=1 enables the seccomp whitelist). With background:true the command is spawned detached (no call-level timeout; resource limits still apply) and returns {background, handle, pid} immediately — control it with the process_control tool (poll / stdin / kill); background processes live in the session process registry and survive across turns. Default timeout is 30s; raise it with timeout_ms up to the cap configured by CELESTEA_SHELL_MAX_TIMEOUT_MS (default 300000ms).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The command line to execute."
+          },
+          "workdir": {
+            "type": "string",
+            "description": "Optional working directory. Must already exist inside the sandbox root; relative paths resolve against the sandbox workdir."
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "description": "Optional per-call timeout in milliseconds. Default 30000; can be raised up to the cap from CELESTEA_SHELL_MAX_TIMEOUT_MS (default 300000). Ignored when background:true.",
+            "minimum": 1
+          },
+          "background": {
+            "type": "boolean",
+            "description": "Optional, default false. When true, spawn the command detached (no call-level timeout; rlimits still apply) and return {background:true, handle, pid} immediately; control the process with process_control (poll / stdin / kill). On natural exit the system pushes a completion message into the session mailbox (notify:false turns that off)."
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "Optional, default true. When background:true and the process exits naturally, the system posts a '[process] <handle> exited code=<n>' completion message (with stdout/stderr tails) to the session mailbox so the agent is re-engaged automatically; set false to suppress that message (poll via process_control instead)."
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/tools/src/builtin.rs:232-258"
+    },
+    {
+      "name": "session_send_message",
+      "description": "向 harness 内另一个会话发送消息（会话间通讯，用于多 worker 联调、交叉审计、分工协作）。target 可用会话地址（session id）或会话命名（标题/项目/工作区名；按命名指定先解析到唯一地址，命中多个返回候选清单）。content 是发送给目标会话的正文；投递的消息会成为目标会话新一轮的用户输入（唤醒语义：引擎会驱动目标会话就这条消息跑新一轮处理），因此也是 worker 回执与跨会话协作的通道。需要对方回复时在 content 里写明要求，并告诉对方用本工具 target=<你的会话地址> 发回。发送者信息自动附带。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "目标会话地址（session id）或会话命名（标题/项目名）"
+          },
+          "content": {
+            "type": "string",
+            "description": "发送给目标会话的消息正文"
+          }
+        },
+        "required": [
+          "target",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/workers/src/tools.rs:75-90"
+    },
+    {
+      "name": "spawn_worker",
+      "description": "在 harness 内拉起一个 worker 会话：创建子会话（可入工作区分组）→ 命名（标题=<wid>·<短名>）→ 指定模型 → 投递自包含简报。worker 由 harness 自己的 agent-loop 驱动；看门狗按 registry 判定存活并自动重派失败项。wid 是 worker 编号（如 W101）；brief 是自包含任务简报文本。返回 {ok, sessionId, title, wid}。协作闭环：worker 完成后引擎自动写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到 report_to 目标会话；回执到达会唤醒目标会话的新一轮处理（主 agent 读报告整合结论）。spawn 后应等待回执到达或经 worker_status 查询进度，再整合各 worker 结论。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "wid": {
+            "type": "string",
+            "description": "worker 编号（如 W101）"
+          },
+          "brief": {
+            "type": "string",
+            "description": "自包含任务简报文本"
+          },
+          "title": {
+            "type": "string",
+            "description": "会话标题短名（不含 wid· 前缀，≤20 字；缺省取简报首行/文件名）"
+          },
+          "workspace": {
+            "type": "string",
+            "description": "工作区/项目根目录（cwd 分组；缺省 harness 工作区）"
+          },
+          "provider": {
+            "type": "string",
+            "description": "模型 provider（缺省取 harness 默认）"
+          },
+          "model": {
+            "type": "string",
+            "description": "模型名（缺省取 harness 默认）"
+          },
+          "reasoning_effort": {
+            "type": "string",
+            "description": "推理档位（可选）"
+          },
+          "report_to": {
+            "type": "string",
+            "description": "回报目标会话 id：非空时在简报尾部注入中性回执提示；brief 轮结束后引擎机械写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到该会话 mailbox；回执到达会唤醒该目标会话新一轮处理（主 agent 读报告整合结论）"
+          }
+        },
+        "required": [
+          "wid",
+          "brief"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/workers/src/tools.rs:53-74"
+    },
+    {
+      "name": "worker_status",
+      "description": "查询 harness 侧 worker registry（registry.tsv）：返回 RUNNING/DONE/FAILED 汇总（RUNNING 行再按 state 标注细分 in-turn=正在跑 turn / idle=等待 mailbox 消息）；可选按 wid 过滤查看单个 worker 的会话与状态。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "wid": {
+            "type": "string",
+            "description": "worker 编号（如 W101）；缺省返回全部汇总"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/workers/src/tools.rs:91-104"
+    },
+    {
+      "name": "write_file",
+      "description": "Write text content to a file, creating or overwriting it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Filesystem path of the file to write."
+          },
+          "content": {
+            "type": "string",
+            "description": "Text content to write."
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "crates/tools/src/builtin.rs:201-215"
+    }
+  ]
+}

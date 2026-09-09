@@ -1,0 +1,44 @@
+/**
+ * Route table derived from the frozen contract.
+ *
+ * 39 API endpoints (43 method+path combos minus the 4 static routes).
+ * Rust path params use `{id}`; Hono uses `:id`, so paths are translated here
+ * once and the translation is asserted in tests.
+ */
+
+import { loadEndpoints, type EndpointContract } from "@celestea/core";
+
+export interface RegisteredRoute {
+  id: string;
+  method: "GET" | "POST";
+  /** Contract path, e.g. /api/sessions/{id}/messages */
+  contractPath: string;
+  /** Hono path, e.g. /api/sessions/:id/messages */
+  honoPath: string;
+  endpoint: EndpointContract;
+}
+
+export function toHonoPath(contractPath: string): string {
+  return contractPath.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, ":$1").replace(/\{\*([A-Za-z_][A-Za-z0-9_]*)\}/g, "*");
+}
+
+/** Substitute placeholder values so a route can be exercised in tests. */
+export function concretePath(contractPath: string, sample = "sample-ws%2Fsample-session"): string {
+  return contractPath
+    .replace(/\{\*([A-Za-z_][A-Za-z0-9_]*)\}/g, "sample/asset.js")
+    .replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, name: string) => (name === "id" ? sample : `sample-${name}`));
+}
+
+export function studioRoutes(): RegisteredRoute[] {
+  const c = loadEndpoints();
+  return c.endpoints.map((e) => ({
+    id: e.id,
+    method: e.method,
+    contractPath: e.path,
+    honoPath: toHonoPath(e.path),
+    endpoint: e,
+  }));
+}
+
+export const API_ENDPOINT_COUNT = 39;
+export const STATIC_ROUTE_COUNT = 4;

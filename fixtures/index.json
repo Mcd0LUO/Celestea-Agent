@@ -1,0 +1,307 @@
+{
+  "generatedAt": "2026-09-09T17:28:54.740Z",
+  "studio": "http://127.0.0.1:3777",
+  "studioRepo": "/src/celestea_studio",
+  "mode": "read-only (GET + passive SSE + direct file reads)",
+  "redaction": {
+    "secretsRegistered": 2,
+    "secretsDiscovered": 11,
+    "sources": [
+      "/src/celestea_studio/providers.json (read-only)",
+      "/home/celestea/.npmrc (_authToken)"
+    ],
+    "replacements": 63,
+    "byRule": {
+      "registered-secret": 48,
+      "env-assignment": 6,
+      "cookie-header": 6,
+      "credential-assignment": 3
+    },
+    "policy": "registered provider keys + generic token shapes (sk-*, npm_*, ghp_*, Bearer, Authorization/api_key JSON values, *_API_KEY=..., AKIA*); every written file is re-scanned and the export aborts on a leak"
+  },
+  "sessions": [
+    {
+      "id": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577",
+      "slug": "scratch-cancel-e2e-1788971355.259970577",
+      "roles": [
+        "session-log",
+        "cancelled-outcome"
+      ],
+      "events": 6,
+      "turns": 1,
+      "danglingToolCalls": 0,
+      "subCalls": 0,
+      "expectedMessages": 4,
+      "sseFrames": 6
+    },
+    {
+      "id": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520",
+      "slug": "scratch-timeout-1788962615.856629520",
+      "roles": [
+        "session-log",
+        "error-outcome"
+      ],
+      "events": 3,
+      "turns": 1,
+      "danglingToolCalls": 0,
+      "subCalls": 0,
+      "expectedMessages": 1,
+      "sseFrames": 3
+    },
+    {
+      "id": "CelesteaTeamAPI/test-1788787479.196315272",
+      "slug": "test-1788787479.196315272",
+      "roles": [
+        "session-log",
+        "run_code-parent-id",
+        "normal-multi-turn"
+      ],
+      "events": 53,
+      "turns": 6,
+      "danglingToolCalls": 0,
+      "subCalls": 11,
+      "expectedMessages": 41,
+      "sseFrames": 53
+    },
+    {
+      "id": "celestea_harness/harness架构哥-1788933931.279221103",
+      "slug": "harness架构哥-1788933931.279221103",
+      "roles": [
+        "session-log",
+        "dangling-tool-call",
+        "run_code-parent-id",
+        "cancelled-outcome",
+        "error-outcome"
+      ],
+      "events": 606,
+      "turns": 17,
+      "danglingToolCalls": 3,
+      "subCalls": 11,
+      "expectedMessages": 575,
+      "sseFrames": 603
+    },
+    {
+      "id": "server-center/center-架构师-1788940601.93642104",
+      "slug": "center-架构师-1788940601.93642104",
+      "roles": [
+        "session-log",
+        "normal-multi-turn",
+        "error-outcome"
+      ],
+      "events": 967,
+      "turns": 7,
+      "danglingToolCalls": 0,
+      "subCalls": 0,
+      "expectedMessages": 953,
+      "sseFrames": 967
+    }
+  ],
+  "counts": {
+    "sessions": 5,
+    "sseLiveFrames": 0,
+    "registryRows": 11,
+    "files": 40
+  },
+  "files": [
+    {
+      "path": "sessions/scratch-cancel-e2e-1788971355.259970577/cli-main.jsonl",
+      "bytes": 768,
+      "sha256": "05ea068700917aef542bd239774b5b9136194a08a74c17ce85d9a67700815cda"
+    },
+    {
+      "path": "sessions/scratch-cancel-e2e-1788971355.259970577/messages-expected.json",
+      "bytes": 1166,
+      "sha256": "89c3895e06309c65a7b49cc6d3c3ff950a8a7b77957762b19b8c72a6eaa955b5"
+    },
+    {
+      "path": "sessions/scratch-cancel-e2e-1788971355.259970577/derive-messages-expected.json",
+      "bytes": 737,
+      "sha256": "48e7fafd7547fad63f9305d0a87d4782b85190a54878acca6f12575676f2719b"
+    },
+    {
+      "path": "sessions/scratch-cancel-e2e-1788971355.259970577/sse-transcript-derived.jsonl",
+      "bytes": 987,
+      "sha256": "fc37a034dd8d3507d327452d685450ad3576d3b42e91787ae194844f8033015a"
+    },
+    {
+      "path": "sessions/scratch-cancel-e2e-1788971355.259970577/meta.json",
+      "bytes": 1786,
+      "sha256": "362c6b37090d374d2ab0e69ca63394c5b68cbc39e12d489ebee334db7b8aefb4"
+    },
+    {
+      "path": "sessions/scratch-timeout-1788962615.856629520/cli-main.jsonl",
+      "bytes": 270,
+      "sha256": "b7832af1e3f2ca613c1e724a0527f2d9e147db6548500ec548ab1515bf4a25c8"
+    },
+    {
+      "path": "sessions/scratch-timeout-1788962615.856629520/messages-expected.json",
+      "bytes": 322,
+      "sha256": "2ed28d379b9925ec888b45fa3a91ffc936d9f544fc892bbf76ccaf1069a088f4"
+    },
+    {
+      "path": "sessions/scratch-timeout-1788962615.856629520/derive-messages-expected.json",
+      "bytes": 236,
+      "sha256": "391e55a15c2c403e80ac6099dce5294c7ebc0828e6b2025ca6e1e271c5f6752b"
+    },
+    {
+      "path": "sessions/scratch-timeout-1788962615.856629520/sse-transcript-derived.jsonl",
+      "bytes": 467,
+      "sha256": "e44abdfd4939c3c46dd35e87b167fb8ae5bde6a72b641ab1a930b9fc704fa78c"
+    },
+    {
+      "path": "sessions/scratch-timeout-1788962615.856629520/meta.json",
+      "bytes": 1765,
+      "sha256": "8f4f9c2ff431b5408c92d38b038c079dfdd7a00c494b2eded11da03528cb7c28"
+    },
+    {
+      "path": "sessions/test-1788787479.196315272/cli-main.jsonl",
+      "bytes": 20591,
+      "sha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0"
+    },
+    {
+      "path": "sessions/test-1788787479.196315272/messages-expected.json",
+      "bytes": 24765,
+      "sha256": "423c89813869b8c2acf943cc0298a57fd1b5d6fac88d13e46362c0ab8196a126"
+    },
+    {
+      "path": "sessions/test-1788787479.196315272/derive-messages-expected.json",
+      "bytes": 15914,
+      "sha256": "898979edf22b48924c3721fb663a0e3a1a319d7535ebd63226db8725c0b3f97e"
+    },
+    {
+      "path": "sessions/test-1788787479.196315272/sse-transcript-derived.jsonl",
+      "bytes": 17051,
+      "sha256": "a1b4c8b19059ac679c1f0632148d2a6c7ec67f9852e8fcfa561c701bacc08361"
+    },
+    {
+      "path": "sessions/test-1788787479.196315272/meta.json",
+      "bytes": 1984,
+      "sha256": "f4a31a70e858a5381ad4c8a16bc626889c0332166389ab0265edaf0a305aa324"
+    },
+    {
+      "path": "sessions/harness架构哥-1788933931.279221103/cli-main.jsonl",
+      "bytes": 1041745,
+      "sha256": "eff6eab2ea5816beac444f02e9e963acb21fe3ceb1a958ab59a88e0b917067ad"
+    },
+    {
+      "path": "sessions/harness架构哥-1788933931.279221103/messages-expected.json",
+      "bytes": 1099719,
+      "sha256": "42ab2c1caf72f7f346062210c9caa7899f9775505fe72ca070caad71ef2d28ed"
+    },
+    {
+      "path": "sessions/harness架构哥-1788933931.279221103/derive-messages-expected.json",
+      "bytes": 684915,
+      "sha256": "68c8bc9210c9e2220775be3fa4198f0546baf672ca64e0b631c0914cb684ad01"
+    },
+    {
+      "path": "sessions/harness架构哥-1788933931.279221103/meta.json",
+      "bytes": 2588,
+      "sha256": "738de634fe7d082f89faecc9f65cb14faa8bdb20ebfab4bc51262465a07e0370"
+    },
+    {
+      "path": "sessions/center-架构师-1788940601.93642104/cli-main.jsonl",
+      "bytes": 1748650,
+      "sha256": "84ab09aa53c2852bbb27396d555590333939871aa6243349a3d0eb9fd4f98966"
+    },
+    {
+      "path": "sessions/center-架构师-1788940601.93642104/messages-expected.json",
+      "bytes": 1862090,
+      "sha256": "53853edc6ce9dd76d4e5936f066adde65a07d6926f53391a7fb6eb8f066289d4"
+    },
+    {
+      "path": "sessions/center-架构师-1788940601.93642104/derive-messages-expected.json",
+      "bytes": 924605,
+      "sha256": "24b8f5fe0603a739ad483752d52b5bf98c48b1431c363cf0d74d29ea090e387b"
+    },
+    {
+      "path": "sessions/center-架构师-1788940601.93642104/meta.json",
+      "bytes": 1793,
+      "sha256": "eb142750d25af8af9f5a81550d3abbe314ba63e6550ee3def1ca6a1b848756ec"
+    },
+    {
+      "path": "sse/live-capture.raw.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "sse/live-capture.json",
+      "bytes": 651,
+      "sha256": "ea4dfa8abc77459a77cae9f3e2001339cfe98778a0c89b7cbeb3be870f038408"
+    },
+    {
+      "path": "workers/registry.tsv",
+      "bytes": 5870,
+      "sha256": "589a899bd3b1c023a9c20b091351b9d3657a13dd1a4a44ed531e1b9c18ac303e"
+    },
+    {
+      "path": "workers/registry-parsed.json",
+      "bytes": 14154,
+      "sha256": "4fb04f97d662e8cdfd4c6ff015d98919820b16e6db3a9e70b30fb15bfb437f75"
+    },
+    {
+      "path": "providers/public-view.json",
+      "bytes": 1650,
+      "sha256": "92d5891f4bdc5e6258eafdce3fd14ff4e48d97b773d2ce9af7d0c371b8a39e62"
+    },
+    {
+      "path": "workspaces/registry-view.json",
+      "bytes": 539,
+      "sha256": "bf38a196a0ef48f4760c54868072c902a98ae53f033e78f7d8e3441c86722d68"
+    },
+    {
+      "path": "workspaces/workspaces-file.json",
+      "bytes": 421,
+      "sha256": "0eeb22d8c4bb34731f2b1a75150d94556059283b500a1f382fc57a625e8f0a94"
+    },
+    {
+      "path": "live/health.json",
+      "bytes": 263,
+      "sha256": "1f80ade9c1cb737e2280e2fd998848f379f0de928f4d868cd9c521c8a66d9385"
+    },
+    {
+      "path": "live/status.json",
+      "bytes": 829,
+      "sha256": "981b4f3148afebbb0e62b49ff14bb0aec5873b52ff9adf6d455b2ac96965c792"
+    },
+    {
+      "path": "live/tools.json",
+      "bytes": 5780,
+      "sha256": "ef2e494f31db99b029cf36f61ee2d994aa7e7b291ff1a631188af7d60592f282"
+    },
+    {
+      "path": "live/config.json",
+      "bytes": 5451,
+      "sha256": "f87a03af6c2f861782b4504a07d50538724399555f4e1ceaffb02eba6f63e899"
+    },
+    {
+      "path": "live/sessions.json",
+      "bytes": 1675,
+      "sha256": "b4602662a7aec22979e7143988e63545d495d7ea909c72a144654c8bba8d49fc"
+    },
+    {
+      "path": "live/workspaces.json",
+      "bytes": 536,
+      "sha256": "89ee458ca9144c06ecdb69e0b35eb2b0ade2b76e828dbb37c5694440a422ad0f"
+    },
+    {
+      "path": "live/providers.json",
+      "bytes": 1586,
+      "sha256": "f4a6ae2dd5cbc65dd2f6dd4ca9345709353f4b8b31ccd63e72f1fc8bf38ea3a0"
+    },
+    {
+      "path": "live/prompts.json",
+      "bytes": 4964,
+      "sha256": "3e48ec700df1a22d44c19737ae93ecbd6c28fbca8db059a721bdca4a34419863"
+    },
+    {
+      "path": "live/worker-status.json",
+      "bytes": 310,
+      "sha256": "6a494854aa373fec6bda449e3df36bc0c7f7ee5ed911412a5bada3d879cf9257"
+    },
+    {
+      "path": "live/fs-browse.json",
+      "bytes": 626,
+      "sha256": "6d1a690397749de2e0a750fec45d3630d9a4bd811bde8d117dd44bcb7e994b9b"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "<session-dir>/cli-main.jsonl.precompact (single-copy backup)",
+  "source": {
+    "rust": "src/compact.rs (rewrite_atomic)",
+    "doc": "/src/celestea_studio/docs/data-files.md §4.4"
+  },
+  "notes": [
+    "Single copy, OVERWRITTEN on every /compact. The only manual rollback channel.",
+    "Byte format is identical to cli-main.jsonl (JSONL of SessionEvent).",
+    "Not written unless a compaction actually happens (needs >=9 complete turns)."
+  ],
+  "format": {
+    "type": "jsonl",
+    "eventSchema": {
+      "$ref": "./session-event.schema.json"
+    }
+  },
+  "compaction": {
+    "threshold": 8,
+    "keepTurns": 4,
+    "result": "turn-1 = summary round (user_message '【上下文压缩】<summary<=20000 chars>' + assistant_message '上下文已压缩，以上为历史摘要。' + turn_end completed); turn-2..turn-(K+1) = the last K complete turns verbatim with only turn_start/turn_end ids renumbered",
+    "dropped": "the unclosed tail turn and any events before the first turn_start",
+    "writeGuarantee": "backup -> tmp + sync_all -> rename (fsync'd, unlike the other data files); failure deletes the tmp"
+  },
+  "generatedAt": "2026-09-10T01:20:00Z"
+}

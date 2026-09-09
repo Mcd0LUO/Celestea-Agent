@@ -1,0 +1,3 @@
+{"type":"turn_start","id":"turn-0"}
+{"type":"user_message","text":"说一句 hi"}
+{"type":"turn_end","id":"turn-0","outcome":{"error":{"kind":"generate","message":"llm timeout: response headers not received within 60000ms (http://127.0.0.1:3001/v1/chat/completions)"}}}

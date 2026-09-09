@@ -1,0 +1,71 @@
+{
+  "id": "server-center/center-架构师-1788940601.93642104",
+  "workspace": "server-center",
+  "sessionDir": "center-架构师-1788940601.93642104",
+  "slug": "center-架构师-1788940601.93642104",
+  "roles": [
+    "session-log",
+    "normal-multi-turn",
+    "error-outcome"
+  ],
+  "source": {
+    "logPath": "/server-center/center-架构师-1788940601.93642104/cli-main.jsonl",
+    "sizeBytes": 1749026,
+    "sha256": "098bf73373eedd74552addcc72ea79a64b8477ff65ab953d8c5f0dc4c01f4375",
+    "mtime": "2026-09-09T11:23:11.218Z",
+    "stable": true
+  },
+  "stats": {
+    "physicalLines": 967,
+    "parsedEvents": 967,
+    "blankLines": 0,
+    "tornTail": null,
+    "turnStarts": 7,
+    "turnEnds": 7,
+    "danglingTurns": 0,
+    "toolCalls": 371,
+    "toolResults": 371,
+    "danglingToolCalls": [],
+    "orphanToolResults": [],
+    "subCalls": 0,
+    "subCallParents": [],
+    "thinkingEvents": 198,
+    "userMessages": 7,
+    "assistantMessages": 6,
+    "outcomes": {
+      "completed": 6,
+      "error": 1
+    },
+    "turnIds": {
+      "ids": [
+        "turn-0",
+        "turn-1",
+        "turn-2",
+        "turn-3",
+        "turn-4",
+        "turn-5",
+        "turn-6"
+      ],
+      "nonMonotonic": 0,
+      "duplicates": [],
+      "malformed": []
+    }
+  },
+  "expectedMessages": 953,
+  "derivedMessages": 755,
+  "sseFrames": 967,
+  "files": {
+    "cli-main.jsonl": {
+      "bytes": 1748650,
+      "sha256": "84ab09aa53c2852bbb27396d555590333939871aa6243349a3d0eb9fd4f98966"
+    },
+    "messages-expected.json": {
+      "bytes": 1862090,
+      "sha256": "53853edc6ce9dd76d4e5936f066adde65a07d6926f53391a7fb6eb8f066289d4"
+    },
+    "derive-messages-expected.json": {
+      "bytes": 924605,
+      "sha256": "24b8f5fe0603a739ad483752d52b5bf98c48b1431c363cf0d74d29ea090e387b"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "<session-dir>/session.json (Studio session metadata)",
+  "source": {
+    "rust": "src/workspaces.rs:1001-1014, 1206-1218",
+    "doc": "/src/celestea_studio/docs/data-files.md §1.5"
+  },
+  "path": {
+    "default": "<workspace path>/<session-dir>/session.json (optional)"
+  },
+  "notes": [
+    "The engine NEVER reads this file; cli-main.jsonl is the conversation history.",
+    "Only writer: POST /api/sessions when model and/or prompt is non-empty (both empty -> the file is not created).",
+    "Written with a plain std::fs::write (NOT atomic, no fsync).",
+    "Missing/corrupt -> None (tolerated).",
+    "Copied by branch; follows a rename because the whole directory moves.",
+    "POST /api/config does NOT write it back: the session-level model is decided at creation time."
+  ],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "model": {
+        "type": "string",
+        "description": "model id override; invalid value -> 400 invalid session model: {e} on activate"
+      },
+      "prompt": {
+        "type": "string",
+        "description": "bound prompt id (section_overrides of that prompt are applied last)"
+      }
+    },
+    "additionalProperties": true
+  },
+  "generatedAt": "2026-09-10T01:20:00Z"
+}

@@ -1,0 +1,6 @@
+{"event":"status","data":{"turn":1,"seq":0,"payload":{"phase":"start"}}}
+{"event":"thinking","data":{"turn":1,"seq":1,"payload":{"delta":"The user wants me to run `sleep120` with run_shell and reply \"ok\" after it returns. The default timeout is30s, so I need to set timeout_ms to something above120000. Let me use150000ms. But the cap is CELESTEA_SHELL_MAX_TIMEOUT_MS default300000, so150000 should work.\n\nLet me just run it."}}}
+{"event":"tool","data":{"turn":1,"seq":2,"payload":{"id":"call_00_CQJ5uN8oIYLcRzPuwsHn0525","name":"run_shell","args":{"command":"sleep 120; echo done","timeout_ms":150000}}}}
+{"event":"tool_result","data":{"turn":1,"seq":3,"payload":{"id":"call_00_CQJ5uN8oIYLcRzPuwsHn0525","ok":false,"value":null,"render":null,"error":"cancelled before execution","decision":null}}}
+{"event":"turn_end","data":{"turn":1,"seq":4,"payload":{"outcome":"cancelled","error":null}}}
+{"event":"status","data":{"turn":1,"seq":5,"payload":{"phase":"cancelled","error":null}}}

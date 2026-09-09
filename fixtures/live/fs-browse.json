@@ -1,0 +1,41 @@
+{
+  "endpoint": "GET http://127.0.0.1:3777/api/fs/browse",
+  "status": 200,
+  "body": {
+    "dirs": [
+      "boot",
+      "cache",
+      "cdrom",
+      "dev",
+      "etc",
+      "home",
+      "libraries",
+      "lost+found",
+      "media",
+      "mnt",
+      "opt",
+      "proc",
+      "root",
+      "root,XDG_CACHE_HOME=",
+      "root,http_proxy=http:",
+      "run",
+      "server-center",
+      "snap",
+      "src",
+      "srv",
+      "sys",
+      "tmp",
+      "usr",
+      "var",
+      "versions"
+    ],
+    "parent": "/",
+    "path": "/",
+    "roots": [
+      "/src",
+      "/tmp",
+      "/srv",
+      "/home"
+    ]
+  }
+}

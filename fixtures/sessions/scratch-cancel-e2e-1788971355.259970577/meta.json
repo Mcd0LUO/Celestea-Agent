@@ -1,0 +1,67 @@
+{
+  "id": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577",
+  "workspace": "CelesteaTeamAPI",
+  "sessionDir": "scratch-cancel-e2e-1788971355.259970577",
+  "slug": "scratch-cancel-e2e-1788971355.259970577",
+  "roles": [
+    "session-log",
+    "cancelled-outcome"
+  ],
+  "source": {
+    "logPath": "/src/CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577/cli-main.jsonl",
+    "sizeBytes": 768,
+    "sha256": "05ea068700917aef542bd239774b5b9136194a08a74c17ce85d9a67700815cda",
+    "mtime": "2026-09-09T16:29:22.075Z",
+    "stable": true
+  },
+  "stats": {
+    "physicalLines": 6,
+    "parsedEvents": 6,
+    "blankLines": 0,
+    "tornTail": null,
+    "turnStarts": 1,
+    "turnEnds": 1,
+    "danglingTurns": 0,
+    "toolCalls": 1,
+    "toolResults": 1,
+    "danglingToolCalls": [],
+    "orphanToolResults": [],
+    "subCalls": 0,
+    "subCallParents": [],
+    "thinkingEvents": 1,
+    "userMessages": 1,
+    "assistantMessages": 0,
+    "outcomes": {
+      "cancelled": 1
+    },
+    "turnIds": {
+      "ids": [
+        "turn-0"
+      ],
+      "nonMonotonic": 0,
+      "duplicates": [],
+      "malformed": []
+    }
+  },
+  "expectedMessages": 4,
+  "derivedMessages": 3,
+  "sseFrames": 6,
+  "files": {
+    "cli-main.jsonl": {
+      "bytes": 768,
+      "sha256": "05ea068700917aef542bd239774b5b9136194a08a74c17ce85d9a67700815cda"
+    },
+    "messages-expected.json": {
+      "bytes": 1166,
+      "sha256": "89c3895e06309c65a7b49cc6d3c3ff950a8a7b77957762b19b8c72a6eaa955b5"
+    },
+    "derive-messages-expected.json": {
+      "bytes": 737,
+      "sha256": "48e7fafd7547fad63f9305d0a87d4782b85190a54878acca6f12575676f2719b"
+    },
+    "sse-transcript-derived.jsonl": {
+      "bytes": 987,
+      "sha256": "fc37a034dd8d3507d327452d685450ad3576d3b42e91787ae194844f8033015a"
+    }
+  }
+}

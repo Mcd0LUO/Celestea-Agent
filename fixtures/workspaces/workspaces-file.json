@@ -1,0 +1,20 @@
+{
+  "source": {
+    "path": "/src/celestea_studio/workspaces.json",
+    "note": "raw data file (read-only); no secrets by schema"
+  },
+  "body": {
+    "workspaces": [
+      {
+        "path": "/src/CelesteaTeamAPI"
+      },
+      {
+        "path": "/src/celestea_harness"
+      },
+      {
+        "path": "/server-center"
+      }
+    ],
+    "active_session": "celestea_harness/harness架构哥-1788933931.279221103"
+  }
+}

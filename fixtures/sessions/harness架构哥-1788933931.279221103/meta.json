@@ -1,0 +1,103 @@
+{
+  "id": "celestea_harness/harness架构哥-1788933931.279221103",
+  "workspace": "celestea_harness",
+  "sessionDir": "harness架构哥-1788933931.279221103",
+  "slug": "harness架构哥-1788933931.279221103",
+  "roles": [
+    "session-log",
+    "dangling-tool-call",
+    "run_code-parent-id",
+    "cancelled-outcome",
+    "error-outcome"
+  ],
+  "source": {
+    "logPath": "/src/celestea_harness/harness架构哥-1788933931.279221103/cli-main.jsonl",
+    "sizeBytes": 1041894,
+    "sha256": "13342bd7af305e7cdc9985c6b09ad4c97f1ae1aa52409399ede3e30cc8d62ebb",
+    "mtime": "2026-09-09T16:52:38.271Z",
+    "stable": true
+  },
+  "stats": {
+    "physicalLines": 606,
+    "parsedEvents": 606,
+    "blankLines": 0,
+    "tornTail": null,
+    "turnStarts": 17,
+    "turnEnds": 14,
+    "danglingTurns": 3,
+    "toolCalls": 211,
+    "toolResults": 208,
+    "danglingToolCalls": [
+      {
+        "id": "call_00_ET_9Cq1VVoOPjFdQo0o3uca9445",
+        "name": "run_shell"
+      },
+      {
+        "id": "call_00_aVGn11hoC4rqAC61JMrm3665",
+        "name": "run_shell"
+      },
+      {
+        "id": "call_01_5NAqiBntYGIsMCh4hsiU3792",
+        "name": "worker_status"
+      }
+    ],
+    "orphanToolResults": [],
+    "subCalls": 11,
+    "subCallParents": [
+      "call_00_ET_ILEGhUvgLIdE3wbDfWEG9793",
+      "call_00_MCdtPplBpFeAbKn8uIyo4758",
+      "call_00_NdvZP8jA5DdIcrper3cF8300",
+      "call_00_VngMWOOw3JmdBI8X7ouF4567",
+      "call_00_r95YIZJ6tW67x8fqgZsU3144"
+    ],
+    "thinkingEvents": 134,
+    "userMessages": 17,
+    "assistantMessages": 5,
+    "outcomes": {
+      "completed": 5,
+      "cancelled": 1,
+      "error": 8
+    },
+    "turnIds": {
+      "ids": [
+        "turn-0",
+        "turn-1",
+        "turn-2",
+        "turn-3",
+        "turn-4",
+        "turn-5",
+        "turn-6",
+        "turn-7",
+        "turn-8",
+        "turn-9",
+        "turn-10",
+        "turn-11",
+        "turn-12",
+        "turn-13",
+        "turn-14",
+        "turn-15",
+        "turn-16"
+      ],
+      "nonMonotonic": 0,
+      "duplicates": [],
+      "malformed": []
+    }
+  },
+  "expectedMessages": 575,
+  "derivedMessages": 419,
+  "sseFrames": 603,
+  "files": {
+    "cli-main.jsonl": {
+      "bytes": 1041745,
+      "sha256": "eff6eab2ea5816beac444f02e9e963acb21fe3ceb1a958ab59a88e0b917067ad"
+    },
+    "messages-expected.json": {
+      "bytes": 1099719,
+      "sha256": "42ab2c1caf72f7f346062210c9caa7899f9775505fe72ca070caad71ef2d28ed"
+    },
+    "derive-messages-expected.json": {
+      "bytes": 684915,
+      "sha256": "68c8bc9210c9e2220775be3fa4198f0546baf672ca64e0b631c0914cb684ad01"
+    }
+  }
+}

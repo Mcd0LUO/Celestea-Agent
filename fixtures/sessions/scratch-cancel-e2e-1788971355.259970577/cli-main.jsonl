@@ -1,0 +1,6 @@
+{"type":"turn_start","id":"turn-0"}
+{"type":"user_message","text":"用 run_shell 执行 sleep 120，命令返回后再回复 ok"}
+{"type":"thinking_delta","text":"The user wants me to run `sleep120` with run_shell and reply \"ok\" after it returns. The default timeout is30s, so I need to set timeout_ms to something above120000. Let me use150000ms. But the cap is CELESTEA_SHELL_MAX_TIMEOUT_MS default300000, so150000 should work.\n\nLet me just run it."}
+{"type":"tool_call","id":"call_00_CQJ5uN8oIYLcRzPuwsHn0525","name":"run_shell","args":{"command":"sleep 120; echo done","timeout_ms":150000}}
+{"type":"tool_result","id":"call_00_CQJ5uN8oIYLcRzPuwsHn0525","value":null,"error":"cancelled before execution"}
+{"type":"turn_end","id":"turn-0","outcome":"cancelled"}

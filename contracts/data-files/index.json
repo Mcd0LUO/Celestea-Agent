@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Celestea Studio data-file schemas (format freeze)",
+  "generatedAt": "2026-09-10T01:20:00Z",
+  "doc": "/src/celestea_studio/docs/data-files.md",
+  "freezeRule": "Migration period: NO format changes. Do not add a `version` field (it would let the two implementations diverge).",
+  "files": [
+    {
+      "file": "workspaces.json",
+      "schema": "workspaces.schema.json",
+      "version": "v2 (naming convention; no version field)",
+      "mode": "0644"
+    },
+    {
+      "file": "providers.json",
+      "schema": "providers.schema.json",
+      "version": "none",
+      "mode": "0600",
+      "secret": true
+    },
+    {
+      "file": "prompts.json",
+      "schema": "prompts.schema.json",
+      "version": "none",
+      "mode": "0644"
+    },
+    {
+      "file": "<ws>/.celestea-prompts.json",
+      "schema": "prompts.schema.json",
+      "version": "none",
+      "mode": "0644"
+    },
+    {
+      "file": "session.json",
+      "schema": "session.schema.json",
+      "version": "none",
+      "mode": "0644"
+    },
+    {
+      "file": "cli-main.jsonl",
+      "schema": "cli-main-jsonl.schema.json",
+      "version": "engine v1 SessionEvent",
+      "mode": "0644"
+    },
+    {
+      "file": "cli-main.jsonl.precompact",
+      "schema": "cli-main-jsonl-precompact.schema.json",
+      "version": "engine v1 SessionEvent",
+      "mode": "0644"
+    },
+    {
+      "file": "/tmp/celestea-workers-registry.tsv",
+      "schema": "registry-tsv.schema.json",
+      "version": "4-column TSV",
+      "mode": "0644"
+    }
+  ],
+  "durability": {
+    "workspaces.json": "tmp+rename, no fsync",
+    "providers.json": "tmp+rename+0600, fsync (errors ignored)",
+    "prompts.json": "tmp+rename, no fsync",
+    "cli-main.jsonl (engine)": "engine-owned",
+    "cli-main.jsonl (compact rewrite)": "backup -> tmp+sync_all -> rename",
+    "session.json": "plain write, NOT atomic",
+    "registry.tsv": "tmp+rename"
+  },
+  "roundTripRequirement": "Every file needs a read -> write -> re-read round-trip test; both implementations must agree byte-for-byte on the written form."
+}

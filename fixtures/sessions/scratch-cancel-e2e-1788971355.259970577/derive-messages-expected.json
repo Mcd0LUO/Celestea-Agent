@@ -1,0 +1,28 @@
+{
+  "note": "DERIVED by the TS reference implementation (engine derive_messages has no HTTP surface; P1 validates it against the Rust unit tests)",
+  "messages": [
+    {
+      "role": "user",
+      "content": "用 run_shell 执行 sleep 120，命令返回后再回复 ok"
+    },
+    {
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "id": "call_00_CQJ5uN8oIYLcRzPuwsHn0525",
+          "name": "run_shell",
+          "args": {
+            "command": "sleep 120; echo done",
+            "timeout_ms": 150000
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_00_CQJ5uN8oIYLcRzPuwsHn0525",
+      "tool_value": null,
+      "tool_error": "cancelled before execution"
+    }
+  ]
+}

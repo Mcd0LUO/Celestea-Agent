@@ -1,0 +1,24 @@
+{
+  "endpoint": "GET http://127.0.0.1:3777/api/workspaces",
+  "status": 200,
+  "body": {
+    "active_session": "celestea_harness/harness架构哥-1788933931.279221103",
+    "workspaces": [
+      {
+        "name": "CelesteaTeamAPI",
+        "path": "/src/CelesteaTeamAPI",
+        "sessions": 3
+      },
+      {
+        "name": "celestea_harness",
+        "path": "/src/celestea_harness",
+        "sessions": 1
+      },
+      {
+        "name": "server-center",
+        "path": "/server-center",
+        "sessions": 1
+      }
+    ]
+  }
+}

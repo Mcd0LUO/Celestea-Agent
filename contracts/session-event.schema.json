@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://celestea.top/contracts/session-event.schema.json",
+  "title": "Celestea engine SessionEvent (cli-main.jsonl v1, one JSON object per line)",
+  "generatedAt": "2026-09-10T01:20:00Z",
+  "source": {
+    "rust": "/src/celestea_harness/crates/core/src/session_log.rs:44-85 (serde tag=\"type\", rename_all=snake_case)",
+    "doc": "/src/celestea_studio/docs/data-files.md §4"
+  },
+  "encoding": {
+    "file": "<session-dir>/cli-main.jsonl",
+    "format": "JSONL: one SessionEvent per line, UTF-8, no trailing comma",
+    "parse": "skip blank lines; STOP at the first unparsable line (a torn tail is never treated as content) - src/api.rs:141-153"
+  },
+  "turnId": {
+    "pattern": "^turn-\\d+$",
+    "monotonic": true,
+    "rule": "next_turn_number only recognises the 'turn-<n>' prefix and restores its counter from the max replayed id, so ids never repeat across restarts (session_log.rs:94-98)",
+    "compactRewrites": "/compact renumbers the kept turns as turn-1..turn-(K+1); the next live turn is turn-(K+2)"
+  },
+  "$defs": {
+    "TurnOutcome": {
+      "title": "TurnOutcome (5 terminal states)",
+      "oneOf": [
+        {
+          "const": "completed",
+          "description": "normal end: the model answered without further tool calls"
+        },
+        {
+          "const": "cancelled",
+          "description": "cooperative cancel fired; partial output/tool results stay in the log"
+        },
+        {
+          "type": "object",
+          "required": [
+            "error"
+          ],
+          "properties": {
+            "error": {
+              "type": "object",
+              "required": [
+                "kind",
+                "message"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "generate",
+                    "stream"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "LLM stream or generation failure"
+        },
+        {
+          "const": "step_limit",
+          "description": "max_steps exhausted without a final assistant answer (NOT completion)"
+        },
+        {
+          "const": "interrupted",
+          "description": "the stream ended without a terminal frame"
+        }
+      ],
+      "serdeShape": {
+        "completed": "\"completed\"",
+        "cancelled": "\"cancelled\"",
+        "error": "{\"error\":{\"kind\":\"generate\",\"message\":\"...\"}}",
+        "step_limit": "\"step_limit\"",
+        "interrupted": "\"interrupted\""
+      },
+      "legacyDefault": "a turn_end row WITHOUT an outcome field deserializes as \"completed\" (#[serde(default)])"
+    },
+    "SessionEvent": {
+      "oneOf": [
+        {
+          "title": "turn_start",
+          "type": "object",
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "const": "turn_start"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^turn-\\d+$"
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "title": "turn_end",
+          "type": "object",
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "const": "turn_end"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^turn-\\d+$"
+            },
+            "outcome": {
+              "$ref": "#/$defs/TurnOutcome"
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "title": "user_message",
+          "type": "object",
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "user_message"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "title": "assistant_message",
+          "type": "object",
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "assistant_message"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "title": "thinking_delta",
+          "type": "object",
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "thinking_delta"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "title": "tool_call",
+          "type": "object",
+          "required": [
+            "type",
+            "id",
+            "name",
+            "args"
+          ],
+          "properties": {
+            "type": {
+              "const": "tool_call"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "args": {},
+            "parent_id": {
+              "type": "string",
+              "description": "W255 run_code sub-call: Some(<parent call id>); the row is logged for audit/replay but derive_messages skips it"
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "title": "tool_result",
+          "type": "object",
+          "required": [
+            "type",
+            "id",
+            "value",
+            "error"
+          ],
+          "properties": {
+            "type": {
+              "const": "tool_result"
+            },
+            "id": {
+              "type": "string"
+            },
+            "value": {},
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "parent_id": {
+              "type": "string",
+              "description": "same contract as tool_call.parent_id"
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/0"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/1"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/2"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/3"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/4"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/5"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/6"
+    }
+  ],
+  "projections": {
+    "studioMessages": "GET /api/sessions/{id}/messages -> session_event_to_message (src/api.rs:94-135). Independent per event, NO pairing/dropping.",
+    "studioMapping": {
+      "turn_start": "(omitted)",
+      "turn_end": "(omitted)",
+      "user_message": {
+        "role": "user",
+        "content": "<text>"
+      },
+      "assistant_message": {
+        "role": "assistant",
+        "content": "<text>"
+      },
+      "thinking_delta": {
+        "role": "thinking",
+        "content": "<text>"
+      },
+      "tool_call": {
+        "role": "tool",
+        "kind": "call",
+        "tool_call_id": "<id>",
+        "tool_name": "<name>",
+        "tool_args": "<args>",
+        "tool_parent_id": "<parent_id> (only when present)",
+        "content": "ABSENT"
+      },
+      "tool_result": {
+        "role": "tool",
+        "kind": "result",
+        "tool_call_id": "<id>",
+        "tool_value": "<value>",
+        "tool_error": "<error>",
+        "tool_parent_id": "<parent_id> (only when present)",
+        "content": "ABSENT"
+      }
+    },
+    "engineDeriveMessages": "model-visible history: turn_start/turn_end/thinking_delta are SKIPPED; tool rows carrying parent_id are SKIPPED (run_code sub-calls); everything else is projected in log order.",
+    "orphanRule": "an orphan tool_result (no preceding tool_call) is still emitted by the Studio projection; nothing is paired or filtered."
+  },
+  "serialization": {
+    "fieldOrder": "serde struct order",
+    "parentIdOmitted": "parent_id is omitted (skip_serializing_if=Option::is_none) when absent, so pre-W255 byte shape is unchanged"
+  }
+}

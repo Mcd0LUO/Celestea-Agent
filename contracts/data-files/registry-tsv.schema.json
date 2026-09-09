@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "/tmp/celestea-workers-registry.tsv (worker registry)",
+  "source": {
+    "rust": "/src/celestea_harness/crates/workers/src/types.rs:50-97, registry.rs:158-230",
+    "doc": "docs/DEVELOPMENT.md §2.6"
+  },
+  "path": {
+    "default": "/tmp/celestea-workers-registry.tsv"
+  },
+  "format": {
+    "type": "tsv",
+    "columns": [
+      "wid",
+      "started_at",
+      "status",
+      "extra"
+    ],
+    "separator": "\\t",
+    "lineTerminator": "\\n",
+    "trailingNewline": true,
+    "parse": "split('\\t'); wid/started_at trimmed; empty wid or started_at -> row skipped; unknown status -> row skipped (bad rows never crash)",
+    "statusValues": [
+      "RUNNING",
+      "DONE",
+      "FAILED"
+    ],
+    "extra": "free text; k=v tokens separated by whitespace (extra itself may contain spaces). state=<in-turn|idle> marks a RUNNING row's phase. report_to=<target> drives receipt wakeup. proc=<pid> marks the writing process (W234 row ownership).",
+    "atomicWrite": "tmp file in the same dir (<name>.tmp-<pid>-<seq>) then rename over the target",
+    "viewRule": "summarize() only counts rows written by THIS process (proc match); stale cross-process rows are invisible to by_status/by_state/workers and are not matched by a wid filter"
+  },
+  "columns": {
+    "wid": "worker id (e.g. W101)",
+    "started_at": "UTC timestamp (e.g. 2026-09-06_17:54:53Z)",
+    "status": "RUNNING|DONE|FAILED",
+    "extra": "key=value tokens"
+  },
+  "generatedAt": "2026-09-10T01:20:00Z"
+}

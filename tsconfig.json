@@ -1,0 +1,42 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@celestea/core": [
+        "packages/core/src/index.ts"
+      ],
+      "@celestea/session": [
+        "packages/session/src/index.ts"
+      ],
+      "@celestea/llm": [
+        "packages/llm/src/index.ts"
+      ],
+      "@celestea/tools": [
+        "packages/tools/src/index.ts"
+      ],
+      "@celestea/agent-loop": [
+        "packages/agent-loop/src/index.ts"
+      ],
+      "@celestea/workers": [
+        "packages/workers/src/index.ts"
+      ],
+      "@celestea/runtime": [
+        "packages/runtime/src/index.ts"
+      ],
+      "@celestea/contracts": [
+        "packages/core/src/contracts/index.ts"
+      ],
+      "@celestea/studio": [
+        "apps/studio/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/*/src/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

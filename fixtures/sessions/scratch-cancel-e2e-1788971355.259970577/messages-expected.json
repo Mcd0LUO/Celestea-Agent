@@ -1,0 +1,34 @@
+{
+  "source": {
+    "endpoint": "GET /api/sessions/CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577/messages",
+    "session": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577",
+    "fetchedFrom": "http://127.0.0.1:3777"
+  },
+  "messages": [
+    {
+      "content": "用 run_shell 执行 sleep 120，命令返回后再回复 ok",
+      "role": "user"
+    },
+    {
+      "content": "The user wants me to run `sleep120` with run_shell and reply \"ok\" after it returns. The default timeout is30s, so I need to set timeout_ms to something above120000. Let me use150000ms. But the cap is CELESTEA_SHELL_MAX_TIMEOUT_MS default300000, so150000 should work.\n\nLet me just run it.",
+      "role": "thinking"
+    },
+    {
+      "kind": "call",
+      "role": "tool",
+      "tool_args": {
+        "command": "sleep 120; echo done",
+        "timeout_ms": 150000
+      },
+      "tool_call_id": "call_00_CQJ5uN8oIYLcRzPuwsHn0525",
+      "tool_name": "run_shell"
+    },
+    {
+      "kind": "result",
+      "role": "tool",
+      "tool_call_id": "call_00_CQJ5uN8oIYLcRzPuwsHn0525",
+      "tool_error": "cancelled before execution",
+      "tool_value": null
+    }
+  ]
+}

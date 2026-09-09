@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-09-09T17:28:55.153Z",
+  "policy": "registered secrets + generic token shapes; every written file re-scanned",
+  "secretsRegistered": 2,
+  "secretsDiscovered": 11,
+  "replacements": 63,
+  "byRule": {
+    "registered-secret": 48,
+    "env-assignment": 6,
+    "cookie-header": 6,
+    "credential-assignment": 3
+  },
+  "suspiciousPatterns": [
+    "sk-token",
+    "npm-token",
+    "github-token",
+    "auth-token",
+    "bearer-token",
+    "aws-key",
+    "cookie-value",
+    "token-assignment",
+    "service-auth-token"
+  ],
+  "findings": [],
+  "verdict": "clean"
+}

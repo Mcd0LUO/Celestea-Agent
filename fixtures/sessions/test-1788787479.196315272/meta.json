@@ -1,0 +1,77 @@
+{
+  "id": "CelesteaTeamAPI/test-1788787479.196315272",
+  "workspace": "CelesteaTeamAPI",
+  "sessionDir": "test-1788787479.196315272",
+  "slug": "test-1788787479.196315272",
+  "roles": [
+    "session-log",
+    "run_code-parent-id",
+    "normal-multi-turn"
+  ],
+  "source": {
+    "logPath": "/src/CelesteaTeamAPI/test-1788787479.196315272/cli-main.jsonl",
+    "sizeBytes": 20591,
+    "sha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0",
+    "mtime": "2026-09-09T14:07:11.926Z",
+    "stable": true
+  },
+  "stats": {
+    "physicalLines": 53,
+    "parsedEvents": 53,
+    "blankLines": 0,
+    "tornTail": null,
+    "turnStarts": 6,
+    "turnEnds": 6,
+    "danglingTurns": 0,
+    "toolCalls": 14,
+    "toolResults": 14,
+    "danglingToolCalls": [],
+    "orphanToolResults": [],
+    "subCalls": 11,
+    "subCallParents": [
+      "call_ezrbp7jmzqe995xmvqqr0rkk",
+      "call_qzk1lljrhecszgb7p5v38f3x",
+      "call_sqdon067w9cb6o4x3kcsat57"
+    ],
+    "thinkingEvents": 1,
+    "userMessages": 6,
+    "assistantMessages": 6,
+    "outcomes": {
+      "completed": 6
+    },
+    "turnIds": {
+      "ids": [
+        "turn-1",
+        "turn-2",
+        "turn-3",
+        "turn-4",
+        "turn-5",
+        "turn-6"
+      ],
+      "nonMonotonic": 0,
+      "duplicates": [],
+      "malformed": []
+    }
+  },
+  "expectedMessages": 41,
+  "derivedMessages": 18,
+  "sseFrames": 53,
+  "files": {
+    "cli-main.jsonl": {
+      "bytes": 20591,
+      "sha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0"
+    },
+    "messages-expected.json": {
+      "bytes": 24765,
+      "sha256": "423c89813869b8c2acf943cc0298a57fd1b5d6fac88d13e46362c0ab8196a126"
+    },
+    "derive-messages-expected.json": {
+      "bytes": 15914,
+      "sha256": "898979edf22b48924c3721fb663a0e3a1a319d7535ebd63226db8725c0b3f97e"
+    },
+    "sse-transcript-derived.jsonl": {
+      "bytes": 17051,
+      "sha256": "a1b4c8b19059ac679c1f0632148d2a6c7ec67f9852e8fcfa561c701bacc08361"
+    }
+  }
+}

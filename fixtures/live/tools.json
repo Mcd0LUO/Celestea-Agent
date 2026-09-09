@@ -1,0 +1,48 @@
+{
+  "endpoint": "GET http://127.0.0.1:3777/api/tools",
+  "status": 200,
+  "body": {
+    "tools": [
+      {
+        "description": "Send an HTTP(S) request and return {status, headers(subset), body, truncated}. Only http/https URLs are allowed (file:// etc. rejected); redirects are followed up to 5 hops; the response body is truncated at 1MB (truncated:true beyond). HTTP error statuses are preserved in `status` — not tool errors; transport failures are categorized as timeout | dns | connect | redirect | invalid_url | invalid_arg | target_forbidden. SSRF policy: when CELESTEA_HTTP_ALLOW / CELESTEA_HTTP_DENY (comma-separated IP/CIDR) are set, every resolved target IP — and every redirect hop — must pass them; default (unset) allows all hosts.",
+        "name": "http_request"
+      },
+      {
+        "description": "List the entry names in a directory.",
+        "name": "list_dir"
+      },
+      {
+        "description": "Control a background process started by run_shell(background=true). Handles live in the session-scoped process registry and survive across turns; a process that exits is removed from the registry automatically. action=poll returns {running, stdout_tail(<=4KB), stderr_tail, exit_code?}; action=kill sends SIGTERM, waits a grace period, then SIGKILL and returns {killed:true}; action=stdin writes one line (content + newline) to the process stdin.",
+        "name": "process_control"
+      },
+      {
+        "description": "Read a UTF-8 text file and return its contents as a string.",
+        "name": "read_file"
+      },
+      {
+        "description": "Execute a Python program in the sandbox and get its final value in ONE round trip (Python parent-broker, W255). Write the program as an `async def main():` function body, or a complete script defining main; main()'s return value (lossless JSON) is the final result. Inside the program the SDK exposes four synchronous bridges dispatched through the normal guarded tool pipeline: tools.read_file(path=...) / tools.write_file(path=..., content=...) / tools.list_dir(path=...) / tools.run_shell(command=...); a denied or failed sub-call raises ToolCallError (catch it and continue). Only print() what the model needs: stdout lines become logs (≤65536 bytes, UI render only); intermediate sub-call results are recorded in the session log but context-retained (the model sees only the final value). Hard limits: ≤20 sub-calls (the next one errors), wall clock ≤120000ms (timeout_ms, default 120000), sub-call output ledger ≤262144 bytes (truncated with a warning). No network; the same sandbox as run_shell (bwrap/raw/userspace + rlimits).",
+        "name": "run_code"
+      },
+      {
+        "description": "Run a shell command inside the sandbox (v2 OS isolation when available: namespaces + read-only root + resource limits, else the v1 userspace path; fixed workdir, sanitized env, bounded timeout and output) and return stdout, stderr, exit code, and a `sandbox` object {provider: bwrap|raw|userspace, net_isolated, tmp_private, seccomp} reporting the effective isolation (W249: network isolated and /tmp a private tmpfs by default; CELESTEA_SANDBOX_NET=1 / CELESTEA_SANDBOX_SHARE_TMP=1 restore the shared host net/tmp; CELESTEA_SANDBOX_SECCOMP=1 enables the seccomp whitelist). With background:true the command is spawned detached (no call-level timeout; resource limits still apply) and returns {background, handle, pid} immediately — control it with the process_control tool (poll / stdin / kill); background processes live in the session process registry and survive across turns. Default timeout is 30s; raise it with timeout_ms up to the cap configured by CELESTEA_SHELL_MAX_TIMEOUT_MS (default 300000ms).",
+        "name": "run_shell"
+      },
+      {
+        "description": "向 harness 内另一个会话发送消息（会话间通讯，用于多 worker 联调、交叉审计、分工协作）。target 可用会话地址（session id）或会话命名（标题/项目/工作区名；按命名指定先解析到唯一地址，命中多个返回候选清单）。content 是发送给目标会话的正文；投递的消息会成为目标会话新一轮的用户输入（唤醒语义：引擎会驱动目标会话就这条消息跑新一轮处理），因此也是 worker 回执与跨会话协作的通道。需要对方回复时在 content 里写明要求，并告诉对方用本工具 target=<你的会话地址> 发回。发送者信息自动附带。",
+        "name": "session_send_message"
+      },
+      {
+        "description": "在 harness 内拉起一个 worker 会话：创建子会话（可入工作区分组）→ 命名（标题=<wid>·<短名>）→ 指定模型 → 投递自包含简报。worker 由 harness 自己的 agent-loop 驱动；看门狗按 registry 判定存活并自动重派失败项。wid 是 worker 编号（如 W101）；brief 是自包含任务简报文本。返回 {ok, sessionId, title, wid}。协作闭环：worker 完成后引擎自动写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到 report_to 目标会话；回执到达会唤醒目标会话的新一轮处理（主 agent 读报告整合结论）。spawn 后应等待回执到达或经 worker_status 查询进度，再整合各 worker 结论。",
+        "name": "spawn_worker"
+      },
+      {
+        "description": "查询 harness 侧 worker registry（registry.tsv）：返回 RUNNING/DONE/FAILED 汇总（RUNNING 行再按 state 标注细分 in-turn=正在跑 turn / idle=等待 mailbox 消息）；可选按 wid 过滤查看单个 worker 的会话与状态。",
+        "name": "worker_status"
+      },
+      {
+        "description": "Write text content to a file, creating or overwriting it.",
+        "name": "write_file"
+      }
+    ]
+  }
+}
