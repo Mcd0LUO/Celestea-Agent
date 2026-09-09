@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use tokio::sync::watch;
 use celestea_core::{
-    AgentConfig, AgentError, AgentLoop, Content, Context, LlmService, ModelRequest,
+    AgentConfig, AgentError, AgentLoop, Content, Context, LlmService, Message, ModelRequest,
     SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, TurnOutcome, Usage,
     ToolRegistryService,
 };
@@ -298,6 +298,13 @@ impl AgentLoop for DefaultAgentLoop {
             // turn (no incomplete AssistantMessage is flushed); a stream that
             // fails or ends without a terminal frame sets the matching
             // terminal state instead of pretending success.
+            // Providers may stream trailing reasoning deltas AFTER the
+            // finish_reason frame. Emitting Done the moment it arrives would
+            // put such Thinking blocks after the final text/…/Done sequence
+            // on the wire — the UI then renders "thinking below the reply".
+            // Defer the Done emission until the stream truly ends, so any
+            // late Thinking/Text still lands BEFORE Done.
+            let mut pending_done: Option<Message> = None;
             loop {
                 let next = match cancel_rx.as_mut() {
                     Some(rx) => {
@@ -326,13 +333,13 @@ impl AgentLoop for DefaultAgentLoop {
                     }
                     StreamEvent::Done(message) => {
                         saw_done = true;
-                        self.emit(LoopEvent::Done(message.clone()));
-                        for content in message.content {
+                        for content in &message.content {
                             match content {
-                                Content::Text(text) => assistant_text.push_str(&text),
-                                Content::ToolCall(call) => tool_calls.push(call),
+                                Content::Text(text) => assistant_text.push_str(text),
+                                Content::ToolCall(call) => tool_calls.push(call.clone()),
                             }
                         }
+                        pending_done = Some(message);
                     }
                     StreamEvent::Failed { kind, message } => {
                         // Stream-level failure (truncated turn): terminal error.
@@ -345,6 +352,12 @@ impl AgentLoop for DefaultAgentLoop {
                         break;
                     }
                 }
+            }
+
+            // Flush the deferred Done (if any) before terminal handling, so
+            // late Thinking/Text emitted above precede it on the wire.
+            if let Some(m) = pending_done.take() {
+                self.emit(LoopEvent::Done(m));
             }
 
             if cancel_requested {

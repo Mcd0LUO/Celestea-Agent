@@ -314,6 +314,39 @@ mod tests {
     }
 
     #[test]
+    fn late_thinking_after_done_emits_before_done() {
+        // Providers may stream a trailing reasoning delta AFTER the
+        // finish_reason frame. The loop defers the Done emission until the
+        // stream ends, so the late thinking still lands BEFORE Done on the
+        // wire (the UI renders thinking above the reply, never below it).
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let collected = Arc::new(Mutex::new(Vec::new()));
+        let sink: EventSink = {
+            let collected = collected.clone();
+            Arc::new(move |ev| collected.lock().unwrap().push(ev))
+        };
+        let events = vec![
+            StreamEvent::Thinking("early.".to_string()),
+            StreamEvent::Text(" hi".to_string()),
+            StreamEvent::Done(Message::assistant_text(" hi")),
+            StreamEvent::Thinking("late.".to_string()),
+        ];
+        let res = run_with(&session, &registry, events, None, Some(sink));
+        assert!(res.is_ok());
+
+        let evs = collected.lock().unwrap().clone();
+        let kinds: Vec<&str> = evs.iter().map(|e| match e {
+            LoopEvent::Thinking(_) => "thinking",
+            LoopEvent::Text(_) => "text",
+            LoopEvent::Done(_) => "done",
+            LoopEvent::TurnEnd(_) => "turnend",
+            _ => "other",
+        }).collect();
+        assert_eq!(kinds, vec!["thinking", "text", "thinking", "done", "turnend"]);
+    }
+
+    #[test]
     fn sink_receives_tool_lifecycle_in_order() {
         // A turn with one tool call: the sink sees ToolCall, then ToolResult
         // (carrying the full ToolOutput incl. decision), then the final Done.
