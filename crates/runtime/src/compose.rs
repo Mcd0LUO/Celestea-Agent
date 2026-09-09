@@ -17,13 +17,15 @@ use celestea_core::{
 use celestea_llm::{deepseek_registry, DeepSeekConfig, DeepSeekLlm};
 use celestea_session::{InMemorySessionLog, PersistentSessionLog, Session, SessionMeta};
 use celestea_tools::{
-    ProcessCompletion, ProcessRegistry, ProcessRegistryService, ToolRegistryImpl,
+    ProcessCompletion, ProcessRegistry, ProcessRegistryService,
 };
 use celestea_workers::WorkerRegistry;
 
 use crate::config::{
     resolve_api_key, resolve_base_url, validate_model, Profile,
 };
+use crate::tools::build_registry;
+#[cfg(test)]
 use crate::tools::register_all_tools;
 
 /// 宿主（协调者）会话在引擎内的固定 id：持久化文件名、SessionRegistry 里的
@@ -161,9 +163,11 @@ impl Runtime {
             model: Some(profile.model.clone()),
         })));
 
-        let mut registry = ToolRegistryImpl::new();
-        register_all_tools(&mut registry, workers.clone(), processes.clone());
-        let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
+        // W255 run_code: the registry now also carries the run_code tool
+        // (Python parent-broker), wired to this session log so sub-call
+        // ToolCall/ToolResult events land there with parent_id set.
+        let registry: Arc<dyn ToolRegistry> =
+            build_registry(workers.clone(), processes.clone(), session.clone());
 
         let usage = Arc::new(UsageTracker::new());
         let config = AgentConfig {
@@ -304,18 +308,18 @@ mod tests {
 
     // ---- W206: worker tool surface + driven wiring ---------------------------
     /// compose() must register the three worker-orchestration tools alongside
-    /// the six builtin tools (W242 adds process_control + http_request), so
-    /// the real agent tool face has all 9.
+    /// the six builtin tools (W242 adds process_control + http_request) plus
+    /// run_code (W255), so the real agent tool face has all 10.
     #[test]
-    fn compose_tool_surface_has_nine_tools() {
+    fn compose_tool_surface_has_ten_tools() {
         let key_env = "W206_TOOL_SURFACE_KEY";
         std::env::set_var(key_env, "sk-test");
         let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
         let rt = Runtime::compose(&profile).unwrap();
         let names = worker_tool_names(&*rt.registry);
-        assert_eq!(names.len(), 9, "tool surface = {names:?}");
+        assert_eq!(names.len(), 10, "tool surface = {names:?}");
         for want in ["read_file", "write_file", "list_dir", "run_shell",
-                     "process_control", "http_request",
+                     "process_control", "http_request", "run_code",
                      "spawn_worker", "session_send_message", "worker_status"] {
             assert!(names.iter().any(|n| n == want), "missing {want} in {names:?}");
         }

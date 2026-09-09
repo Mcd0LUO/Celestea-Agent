@@ -438,6 +438,7 @@ impl AgentLoop for DefaultAgentLoop {
                     id: call.id.clone(),
                     name: call.name.clone(),
                     args: call.args.clone(),
+                    parent_id: None,
                 });
                 self.emit(LoopEvent::ToolCall {
                     id: call.id.clone(),
@@ -479,6 +480,7 @@ impl AgentLoop for DefaultAgentLoop {
                         id: output.call_id,
                         value: output.value,
                         error: output.error,
+                        parent_id: None,
                     });
                 }
             }

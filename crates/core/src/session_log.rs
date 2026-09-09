@@ -61,8 +61,27 @@ pub enum SessionEvent {
     /// rows replay unchanged, and thinking never enters the model-visible
     /// history (derive_messages skips it).
     ThinkingDelta { text: String },
-    ToolCall { id: String, name: String, args: Value },
-    ToolResult { id: String, value: Option<Value>, error: Option<String> },
+    ToolCall {
+        id: String,
+        name: String,
+        args: Value,
+        /// W255 run_code: Some(<parent call id>) marks a sub-call emitted by
+        /// the run_code parent-broker (id = "<parent>:c<n>"). The row stays in
+        /// the log for audit/replay, but `derive_messages` skips it so the
+        /// model-visible history only carries the outer run_code round trip.
+        /// `#[serde(default)]` keeps pre-W255 jsonl rows readable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_id: Option<String>,
+    },
+    ToolResult {
+        id: String,
+        value: Option<Value>,
+        error: Option<String>,
+        /// W255 run_code: same contract as ToolCall::parent_id — sub-call
+        /// results are logged but never projected into the model history.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_id: Option<String>,
+    },
 }
 
 pub trait SessionLog: Send + Sync {
@@ -120,5 +139,63 @@ mod tests {
                 "legacy row unexpectedly became a ThinkingDelta: {line}"
             );
         }
+    }
+
+    /// W255 run_code: pre-W255 tool_call/tool_result rows (no `parent_id`)
+    /// deserialize with parent_id=None — the new field is purely additive.
+    #[test]
+    fn legacy_tool_rows_without_parent_id_deserialize_as_none() {
+        let call: SessionEvent =
+            serde_json::from_str(r#"{"type":"tool_call","id":"c1","name":"f","args":{}}"#)
+                .expect("legacy tool_call parses");
+        match &call {
+            SessionEvent::ToolCall { parent_id, .. } => assert_eq!(*parent_id, None),
+            other => panic!("expected tool_call, got {other:?}"),
+        }
+        let result: SessionEvent =
+            serde_json::from_str(r#"{"type":"tool_result","id":"c1","value":true,"error":null}"#)
+                .expect("legacy tool_result parses");
+        match &result {
+            SessionEvent::ToolResult { parent_id, .. } => assert_eq!(*parent_id, None),
+            other => panic!("expected tool_result, got {other:?}"),
+        }
+    }
+
+    /// W255 run_code: rows without a parent (parent_id=None) serialize
+    /// WITHOUT the field — the pre-W255 jsonl byte shape is unchanged — while
+    /// nested rows carry "parent_id".
+    #[test]
+    fn parent_id_serializes_only_when_present() {
+        let outer = SessionEvent::ToolCall {
+            id: "rc1".into(),
+            name: "run_code".into(),
+            args: serde_json::json!({ "code": "pass" }),
+            parent_id: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&outer).unwrap(),
+            r#"{"type":"tool_call","id":"rc1","name":"run_code","args":{"code":"pass"}}"#
+        );
+
+        let nested = SessionEvent::ToolCall {
+            id: "rc1:c1".into(),
+            name: "read_file".into(),
+            args: serde_json::json!({ "path": "/x" }),
+            parent_id: Some("rc1".into()),
+        };
+        assert_eq!(
+            serde_json::to_string(&nested).unwrap(),
+            r#"{"type":"tool_call","id":"rc1:c1","name":"read_file","args":{"path":"/x"},"parent_id":"rc1"}"#
+        );
+
+        // Round trip in both directions (new field -> old reader ignores it
+        // via serde's default unknown-field tolerance; old rows -> new reader
+        // via #[serde(default)]).
+        let back: SessionEvent =
+            serde_json::from_str(&serde_json::to_string(&nested).unwrap()).unwrap();
+        assert!(matches!(
+            back,
+            SessionEvent::ToolCall { parent_id: Some(p), .. } if p == "rc1"
+        ));
     }
 }

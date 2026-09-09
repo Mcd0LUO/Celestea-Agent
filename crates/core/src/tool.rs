@@ -41,10 +41,30 @@ pub enum ToolDecision {
     Ask(String),
 }
 
+/// W255 run_code: the result of [Tool::execute_with] — the canonical value
+/// plus an optional tool-authored human rendering. When `render` is `None` the
+/// registry falls back to its generic rendering of `value`.
+#[derive(Debug, Clone)]
+pub struct ToolExecOutcome {
+    pub value: Value,
+    pub render: Option<String>,
+}
+
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn spec(&self) -> ToolSpec;
     async fn execute(&self, args: Value) -> Result<Value, String>;
+
+    /// W255 run_code: execute with the full [ToolInput]. Tools that need the
+    /// caller-assigned `call_id` at execution time (run_code embeds it in its
+    /// sub-call event ids, "<parent>:c<n>") or want to author their own
+    /// `render` (run_code's stdout logs) override this method; every other
+    /// tool keeps the default delegation to [Tool::execute]. The registry
+    /// always dispatches through this seam.
+    async fn execute_with(&self, input: ToolInput) -> Result<ToolExecOutcome, String> {
+        let value = self.execute(input.args).await?;
+        Ok(ToolExecOutcome { value, render: None })
+    }
 }
 
 /// A guard is the "waterfall" step: it may Allow, Deny, or Ask. Guards run in

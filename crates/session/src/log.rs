@@ -9,7 +9,9 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
-use celestea_core::{Content, Message, Role, SessionEvent, SessionLog, ToolCall, TurnOutcome};
+use celestea_core::{Content, Message, Role, SessionEvent, SessionLog, ToolCall};
+#[cfg(test)]
+use celestea_core::TurnOutcome;
 
 /// An in-memory, append-only session log.
 ///
@@ -74,8 +76,14 @@ pub(crate) fn derive_messages_from(events: &[SessionEvent]) -> Vec<Message> {
 
     for event in events {
         match event {
-            SessionEvent::ToolCall { id, name, args } => {
-                pending.push(ToolCall { id: id.clone(), name: name.clone(), args: args.clone() });
+            SessionEvent::ToolCall { id, name, args, parent_id } => {
+                // W255 run_code: sub-call rows (parent_id.is_some()) stay in
+                // the log for audit/replay but are never projected into the
+                // model-visible history — the outer run_code round trip is
+                // the only thing the model sees.
+                if parent_id.is_none() {
+                    pending.push(ToolCall { id: id.clone(), name: name.clone(), args: args.clone() });
+                }
             }
             other => {
                 flush_tool_calls(&mut messages, &mut pending);
@@ -122,7 +130,12 @@ fn project(event: SessionEvent) -> Option<Message> {
     match event {
         SessionEvent::UserMessage { text } => Some(Message::user(text)),
         SessionEvent::AssistantMessage { text } => Some(Message::assistant_text(text)),
-        SessionEvent::ToolResult { id, value, error } => {
+        SessionEvent::ToolResult { id, value, error, parent_id } => {
+            // W255 run_code: sub-call results are logged but context-retained
+            // (derive_messages skips them, mirroring the ToolCall arm above).
+            if parent_id.is_some() {
+                return None;
+            }
             let text = match error {
                 Some(err) if !err.is_empty() => format!("Error: {err}"),
                 _ => serde_json::to_string(&value).unwrap_or_else(|_| "null".to_string()),
@@ -188,21 +201,25 @@ mod tests {
             id: "c1".into(),
             name: "read_file".into(),
             args: json!({ "path": "/tmp/x" }),
+            parent_id: None,
         });
         log.append(SessionEvent::ToolCall {
             id: "c2".into(),
             name: "write_file".into(),
             args: json!({ "path": "/tmp/y", "content": "z" }),
+            parent_id: None,
         });
         log.append(SessionEvent::ToolResult {
             id: "c1".into(),
             value: Some(json!({ "ok": true })),
             error: None,
+            parent_id: None,
         });
         log.append(SessionEvent::ToolResult {
             id: "c2".into(),
             value: None,
             error: Some("boom".into()),
+            parent_id: None,
         });
         log.append(SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed });
 
@@ -279,16 +296,19 @@ mod tests {
             id: "c1".into(),
             name: "read_file".into(),
             args: json!({ "path": "/a" }),
+            parent_id: None,
         });
         log.append(SessionEvent::ToolCall {
             id: "c2".into(),
             name: "read_file".into(),
             args: json!({ "path": "/b" }),
+            parent_id: None,
         });
         log.append(SessionEvent::ToolCall {
             id: "c3".into(),
             name: "read_file".into(),
             args: json!({ "path": "/c" }),
+            parent_id: None,
         });
 
         let msgs = log.derive_messages();
@@ -310,6 +330,7 @@ mod tests {
             id: "c9".into(),
             name: "list_dir".into(),
             args: json!({ "path": "/tmp" }),
+            parent_id: None,
         });
         log.append(SessionEvent::UserMessage { text: "after".into() });
 
@@ -332,6 +353,7 @@ mod tests {
             id: "c3".into(),
             value: Some(json!("fallback")),
             error: Some(String::new()),
+            parent_id: None,
         });
 
         let msgs = log.derive_messages();
@@ -366,5 +388,60 @@ mod tests {
         log.append(SessionEvent::UserMessage { text: "x".into() });
         log.clear();
         assert_eq!(log.next_turn_id(), "turn-2");
+    }
+
+    /// W255 run_code: nested (parent_id.is_some()) ToolCall/ToolResult rows
+    /// stay in the log (events() sees the full subtree) but never reach the
+    /// model-visible history — derive_messages projects only the outer
+    /// run_code ToolCall + ToolResult.
+    #[test]
+    fn nested_run_code_sub_call_rows_are_context_retained() {
+        let log = InMemorySessionLog::new();
+        log.append(SessionEvent::UserMessage { text: "fold this".into() });
+        // outer run_code call (parent_id None -> visible)
+        log.append(SessionEvent::ToolCall {
+            id: "rc1".into(),
+            name: "run_code".into(),
+            args: json!({ "code": "pass" }),
+            parent_id: None,
+        });
+        // sub-call emitted by the parent-broker (parent_id Some -> logged only)
+        log.append(SessionEvent::ToolCall {
+            id: "rc1:c1".into(),
+            name: "read_file".into(),
+            args: json!({ "path": "/tmp/x" }),
+            parent_id: Some("rc1".into()),
+        });
+        log.append(SessionEvent::ToolResult {
+            id: "rc1:c1".into(),
+            value: Some(json!("first line")),
+            error: None,
+            parent_id: Some("rc1".into()),
+        });
+        // outer result (visible)
+        log.append(SessionEvent::ToolResult {
+            id: "rc1".into(),
+            value: Some(json!("first line")),
+            error: None,
+            parent_id: None,
+        });
+
+        let events = log.events();
+        assert_eq!(events.len(), 5, "log keeps the full subtree for audit/replay");
+
+        let msgs = log.derive_messages();
+        assert_eq!(msgs.len(), 3, "user + outer tool_call + outer tool_result only");
+        assert_eq!(msgs[0].role, Role::User);
+        assert!(matches!(msgs[1].role, Role::Assistant));
+        match &msgs[1].content[0] {
+            Content::ToolCall(tc) => {
+                assert_eq!(tc.id, "rc1");
+                assert_eq!(tc.name, "run_code");
+            }
+            other => panic!("expected outer tool call, got {other:?}"),
+        }
+        assert_eq!(msgs[2].role, Role::Tool);
+        assert_eq!(msgs[2].tool_call_id.as_deref(), Some("rc1"));
+        assert_eq!(text_of(&msgs[2]), r#""first line""#);
     }
 }

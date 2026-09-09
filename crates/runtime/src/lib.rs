@@ -48,5 +48,5 @@ pub use config::{
 };
 pub use run::TurnOutcome;
 pub use summary::{summarize_turn, ToolCallRec, ToolResultRec, TurnSummary};
-pub use tools::register_all_tools;
+pub use tools::{build_registry, register_all_tools};
 

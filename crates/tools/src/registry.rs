@@ -87,12 +87,16 @@ impl ToolRegistry for ToolRegistryImpl {
             }
         };
 
-        match tool.execute(input.args).await {
-            Ok(value) => {
-                let render = human_render(&value);
+        // W255: dispatch through execute_with so tools that need the full
+        // ToolInput (run_code's sub-call event ids embed the parent call_id)
+        // receive it; every other tool delegates to execute(args) unchanged.
+        // A tool-authored render (run_code's logs) wins over the generic one.
+        match tool.execute_with(input).await {
+            Ok(outcome) => {
+                let render = outcome.render.or_else(|| human_render(&outcome.value));
                 ToolOutput {
                     call_id,
-                    value: Some(value),
+                    value: Some(outcome.value),
                     render,
                     error: None,
                     decision: Some(ToolDecision::Allow),

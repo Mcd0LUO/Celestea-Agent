@@ -607,7 +607,7 @@ fn render_event_line(e: &SessionEvent) -> Option<String> {
         SessionEvent::ToolCall { name, args, .. } => {
             Some(format!("- tool_call {name}: {}", one_line(&args.to_string())))
         }
-        SessionEvent::ToolResult { id, value, error } => Some(match (value, error) {
+        SessionEvent::ToolResult { id, value, error, .. } => Some(match (value, error) {
             (Some(v), _) => format!("- tool_result {id}: {}", one_line(&v.to_string())),
             (_, Some(err)) => format!("- tool_result {id}: error {}", one_line(err)),
             _ => format!("- tool_result {id}"),

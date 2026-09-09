@@ -27,5 +27,5 @@ pub use event_bus::EventBus;
 pub use message::{Content, LlmError, LlmStream, Message, ModelRequest, Role, StreamEvent, ToolCall, ToolSpec, Usage};
 pub use llm::{Llm, LlmRegistry, LlmRegistryService, LlmService};
 pub use session_log::{SessionEvent, SessionLog, SessionService, TurnOutcome};
-pub use tool::{Tool, ToolDecision, ToolGuard, ToolInput, ToolOutput, ToolRegistry, ToolRegistryService};
+pub use tool::{Tool, ToolDecision, ToolExecOutcome, ToolGuard, ToolInput, ToolOutput, ToolRegistry, ToolRegistryService};
 pub use agent::{AgentConfig, AgentError, AgentLoop, AgentLoopService};

@@ -18,6 +18,7 @@ mod guard;
 mod http;
 mod process;
 mod registry;
+pub mod run_code;
 mod sandbox;
 
 pub use crate::builtin::{builtin_tools, builtin_tools_with};
@@ -26,6 +27,12 @@ pub use crate::process::{
     ChildHandle, ProcessCompletion, ProcessRegistry, ProcessRegistryService,
 };
 pub use crate::registry::ToolRegistryImpl;
+pub use crate::run_code::{
+    run_code_spec, run_code_tool_with_handle, RegistryHandle, RunCodeConfig, RunCodeTool,
+    DEFAULT_TIMEOUT as RUN_CODE_DEFAULT_TIMEOUT, MAX_LOG_BYTES as RUN_CODE_MAX_LOG_BYTES,
+    MAX_SUB_CALLS as RUN_CODE_MAX_SUB_CALLS, MAX_SUB_OUTPUT_BYTES as RUN_CODE_MAX_SUB_OUTPUT_BYTES,
+    MAX_TIMEOUT as RUN_CODE_MAX_TIMEOUT, RUN_CODE_SDK, SDK_TOOLS as RUN_CODE_SDK_TOOLS,
+};
 
 // Internal re-exports consumed by `mod tests` (super::*) within this crate.
 #[cfg(test)]

@@ -1622,6 +1622,14 @@ pub(crate) async fn spawn_sandboxed(
     Ok(SpawnedSandbox { child, stdin, stdout, stderr, sandbox: meta })
 }
 
+/// W255 run_code: resolve the sandbox's default workdir (created on demand,
+/// canonicalized, inside `config.root`) so the broker can place the assembled
+/// program file there before spawning. Mirrors exactly what spawn_sandboxed
+/// will use for the child cwd.
+pub(crate) async fn default_workdir(config: &SandboxConfig) -> Result<PathBuf, SandboxError> {
+    resolve_workdir(config, None).await
+}
+
 /// Resolve the effective workdir: default = `config.workdir` (created on
 /// demand); override must already exist, be a directory, and resolve inside
 /// the canonical `config.root`. Returns the canonical absolute path.
@@ -1688,7 +1696,7 @@ async fn resolve_workdir(
 /// Read `r` to EOF storing at most `cap` bytes; bytes past the cap are
 /// drained (never buffered) so the child can keep writing. Returns
 /// `(captured, truncated)`.
-async fn read_capped<R: tokio::io::AsyncRead + Unpin>(mut r: R, cap: usize) -> (Vec<u8>, bool) {
+pub(crate) async fn read_capped<R: tokio::io::AsyncRead + Unpin>(mut r: R, cap: usize) -> (Vec<u8>, bool) {
     let mut buf = Vec::with_capacity(cap.min(64 * 1024));
     let mut chunk = [0u8; 8192];
     let mut truncated = false;
@@ -1714,7 +1722,10 @@ async fn read_capped<R: tokio::io::AsyncRead + Unpin>(mut r: R, cap: usize) -> (
 /// (the child leads it via `process_group(0)`); always signal the direct
 /// child as well. Best effort — errors are swallowed because the timeout
 /// already failed the call.
-fn kill_process(child: &mut tokio::process::Child) {
+/// W255 run_code: kill the sandboxed process tree (whole pgid + direct
+/// child). Shared by execute_sandboxed's timeout path and the run_code
+/// parent-broker's wall-clock kill.
+pub(crate) fn kill_process(child: &mut tokio::process::Child) {
     #[cfg(unix)]
     if let Some(pid) = child.id() {
         // SAFETY: `pid` belongs to a child we spawned ourselves; kill(2) with

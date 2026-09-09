@@ -452,10 +452,10 @@ mod persistent_tests {
             SessionEvent::TurnStart { id: "t1".into() },
             SessionEvent::UserMessage { text: "hello".into() },
             SessionEvent::AssistantMessage { text: "hi there".into() },
-            SessionEvent::ToolCall { id: "c1".into(), name: "read_file".into(), args: json!({ "path": "/tmp/x" }) },
-            SessionEvent::ToolCall { id: "c2".into(), name: "write_file".into(), args: json!({ "path": "/tmp/y", "content": "z" }) },
-            SessionEvent::ToolResult { id: "c1".into(), value: Some(json!({ "ok": true })), error: None },
-            SessionEvent::ToolResult { id: "c2".into(), value: None, error: Some("boom".into()) },
+            SessionEvent::ToolCall { id: "c1".into(), name: "read_file".into(), args: json!({ "path": "/tmp/x" }), parent_id: None },
+            SessionEvent::ToolCall { id: "c2".into(), name: "write_file".into(), args: json!({ "path": "/tmp/y", "content": "z" }), parent_id: None },
+            SessionEvent::ToolResult { id: "c1".into(), value: Some(json!({ "ok": true })), error: None, parent_id: None },
+            SessionEvent::ToolResult { id: "c2".into(), value: None, error: Some("boom".into()), parent_id: None },
             SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed },
         ]
     }
@@ -635,6 +635,7 @@ mod persistent_tests {
                 id: format!("c{i}"),
                 name: "f".into(),
                 args: json!(i),
+                parent_id: None,
             };
             mem2.append(ev.clone());
             per2.append(ev);

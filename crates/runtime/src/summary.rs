@@ -112,14 +112,14 @@ pub fn summarize_turn(events: &[SessionEvent]) -> TurnSummary {
                 }
                 summary.assistant_text.push_str(text);
             }
-            SessionEvent::ToolCall { id, name, args } => {
+            SessionEvent::ToolCall { id, name, args, .. } => {
                 summary.tool_calls.push(ToolCallRec {
                     id: id.clone(),
                     name: name.clone(),
                     args: args.clone(),
                 });
             }
-            SessionEvent::ToolResult { id, value, error } => {
+            SessionEvent::ToolResult { id, value, error, .. } => {
                 summary.results.push(ToolResultRec {
                     id: id.clone(),
                     value: value.clone(),
@@ -145,11 +145,13 @@ mod tests {
                 id: "c1".into(),
                 name: "list_dir".into(),
                 args: json!({ "path": "/tmp" }),
+                parent_id: None,
             },
             SessionEvent::ToolResult {
                 id: "c1".into(),
                 value: Some(json!(["a"])),
                 error: None,
+                parent_id: None,
             },
             SessionEvent::AssistantMessage { text: "done".into() },
             SessionEvent::TurnEnd { id: "turn-7".into(), outcome: TurnOutcome::Completed },
