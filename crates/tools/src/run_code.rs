@@ -240,7 +240,12 @@ class _Value:
         self._v = v
 
     def __await__(self):
-        return iter((self._v,))
+        # Correct awaitable protocol: yield NOTHING and RETURN the value.
+        # (Yielding the value itself makes asyncio treat it as an awaitable
+        #  and dict/list results blow up with "Task got bad yield".)
+        if False:
+            yield
+        return self._v
 
     def __iter__(self):
         return iter(self._v)
@@ -298,6 +303,9 @@ class _Tools:
         return _bridge_call("list_dir", _merge_args(args, kwargs, "list_dir"))
 
     def run_shell(self, *args, **kwargs):
+        # Returns the full result dict: {"exit_code", "stdout", "stderr", ...}.
+        # Read fields via ['stdout'] / ['exit_code'] (or .get(...) via the
+        # wrapper's passthrough on the dict).
         return _bridge_call("run_shell", _merge_args(args, kwargs, "run_shell"))
 
 
@@ -1198,7 +1206,8 @@ async def main():
     a = tools.read_file(path="/tmp/x.txt")          # kwargs form
     b = tools.run_shell({"command": "printf hi"})   # positional-dict form
     c = tools.list_dir(path="/tmp")
-    return {"a": a, "b": b, "c": c}
+    d = await tools.run_shell(command="printf bye") # await form, dict result
+    return {"a": a, "b": b, "c": c, "d": d, "d_is_dict": isinstance(d, dict)}
 "#;
         let out = tool
             .execute_with(ToolInput {
@@ -1214,6 +1223,8 @@ async def main():
                 "a": {"echo": "read_file", "args": {"path": "/tmp/x.txt"}},
                 "b": {"echo": "run_shell", "args": {"command": "printf hi"}},
                 "c": {"echo": "list_dir", "args": {"path": "/tmp"}},
+                "d": {"echo": "run_shell", "args": {"command": "printf bye"}},
+                "d_is_dict": true,
             }),
             "render: {:?}",
             out.render
@@ -1221,8 +1232,8 @@ async def main():
         assert_eq!(out.render, None, "no logs printed");
 
         let evs = events.lock().unwrap();
-        assert_eq!(evs.len(), 6, "3 sub-calls x (call + result): {evs:?}");
-        for (i, name) in ["read_file", "run_shell", "list_dir"].iter().enumerate() {
+        assert_eq!(evs.len(), 8, "4 sub-calls x (call + result): {evs:?}");
+        for (i, name) in ["read_file", "run_shell", "list_dir", "run_shell"].iter().enumerate() {
             let n = i + 1;
             match &evs[2 * i] {
                 SessionEvent::ToolCall { id, name: n2, parent_id, .. } => {
