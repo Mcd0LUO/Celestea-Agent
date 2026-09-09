@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "<session-dir>/cli-main.jsonl (engine v1 session log)",
+  "source": {
+    "rust": "/src/celestea_harness/crates/core/src/session_log.rs:44-85",
+    "doc": "/src/celestea_studio/docs/data-files.md §4"
+  },
+  "path": {
+    "default": "<workspace path>/<session-dir>/cli-main.jsonl",
+    "envOverride": "CELESTEA_SESSION_DIR points at the session DIR"
+  },
+  "eventSchema": {
+    "$ref": "./session-event.schema.json"
+  },
+  "parse": {
+    "blankLines": "skipped",
+    "tornTail": "STOP at the first unparsable line; the rest of the file is ignored (never treated as content)"
+  },
+  "writer": "engine PersistentSessionLog (Studio never appends); /compact rewrites it atomically after backing up to cli-main.jsonl.precompact",
+  "generatedAt": "2026-09-10T01:20:00Z"
+}

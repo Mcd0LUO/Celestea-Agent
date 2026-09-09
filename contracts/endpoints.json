@@ -1,0 +1,2500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Celestea Studio HTTP API contract (39 endpoints)",
+  "generatedAt": "2026-09-10T01:20:00Z",
+  "phase": "P0 contract freeze",
+  "source": {
+    "doc": "/src/celestea_studio/docs/api-contract.md",
+    "routes": "/src/celestea_studio/src/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
+    "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
+    "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json"
+  },
+  "conventions": {
+    "responseBody": "JSON (application/json) except SSE and static assets",
+    "errorBody": "{\"ok\": false, \"error\": \"<verbatim source string>\"} (a few handlers return only {\"error\": ...})",
+    "requestBody": "POST endpoints declaring Json<T> reject missing/non-JSON/missing-required before the handler (415/400/422)",
+    "sessionId": "\"<workspace>/<session>\"; '/' in path params MUST be %2F encoded",
+    "singleConcurrency": "every write endpoint that swaps a generation or compacts grabs the busy slot and returns 409 while a turn runs",
+    "keySafety": "no response ever contains api_key"
+  },
+  "errorCodes": {
+    "400": "invalid parameters (empty, format, non-absolute/nonexistent path, id shape, active-session protection)",
+    "404": "unknown workspace/session/provider/prompt",
+    "405": "path exists but method mismatch (axum default)",
+    "409": "conflict: turn running (busy slot), duplicate registration, target exists, already archived",
+    "415": "request body missing / not JSON (axum Json rejection)",
+    "422": "field type mismatch (axum Json rejection)",
+    "500": "persist failure / compose failure / IO failure",
+    "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
+  },
+  "count": 39,
+  "endpoints": [
+    {
+      "id": "get_health",
+      "method": "GET",
+      "path": "/api/health",
+      "group": "health",
+      "rustHandler": "get_health",
+      "docRef": "api-contract.md#get-apihealth",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "required": false,
+            "note": "constant \"celestea-studio\""
+          },
+          {
+            "name": "model",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "base_url",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "bind",
+            "type": "string",
+            "required": false,
+            "note": "constant DEFAULT_BIND; does NOT follow STUDIO_BIND"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Always 200; no error branch."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "get_status",
+      "method": "GET",
+      "path": "/api/status",
+      "group": "health",
+      "rustHandler": "api::get_status",
+      "docRef": "api-contract.md#get-apistatus",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "reasoning_effort",
+            "type": "string|null",
+            "required": false
+          },
+          {
+            "name": "steps",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "tokens_per_sec",
+            "type": "number",
+            "required": false
+          },
+          {
+            "name": "context_usage",
+            "type": "object{used:int,window:int,ratio:number,estimated:bool,method:'usage_prompt_tokens'|'session_event_chars'}",
+            "required": false
+          },
+          {
+            "name": "usage",
+            "type": "object{prompt_tokens,completion_tokens,total_tokens,cache_read,cache_hit_ratio,reasoning_tokens,total:<same shape>}",
+            "required": false
+          },
+          {
+            "name": "session",
+            "type": "string|null",
+            "required": false,
+            "note": "from workspaces.active_session()"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Always 200."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "get_tools",
+      "method": "GET",
+      "path": "/api/tools",
+      "group": "health",
+      "rustHandler": "api::get_tools",
+      "docRef": "api-contract.md#get-apitools",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "tools",
+            "type": "array<{name:string,description:string}>",
+            "required": false,
+            "note": "schemas() of the CURRENT generation; sorted by name; 10 tools"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Always 200."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "get_events",
+      "method": "GET",
+      "path": "/api/events",
+      "group": "dialog",
+      "rustHandler": "get_events",
+      "docRef": "api-contract.md#get-apievents--sse",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "text/event-stream",
+        "fields": [
+          {
+            "name": "data",
+            "type": "string",
+            "required": false,
+            "note": "SSE envelope JSON: {turn:u64,seq:u64,payload:object}"
+          }
+        ],
+        "contentType": "text/event-stream"
+      },
+      "errors": [],
+      "notes": [
+        "KeepAlive enabled; bus capacity 512; slow clients get event `status` payload {phase:'lagged',hint:'slow client, skipped events',statusline:{...}} and the stream continues.",
+        "Event names (8): text, thinking, tool, tool_result, turn_end, done, status, compact. See contracts/sse-events.json."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only passive connect",
+        "server": "http://127.0.0.1:3777",
+        "headersObserved": {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "transfer-encoding": "chunked"
+        },
+        "eventsObserved": 0,
+        "reason": "no turn running and P0 forbids POST /api/turn (would append to production cli-main.jsonl)"
+      }
+    },
+    {
+      "id": "post_turn",
+      "method": "POST",
+      "path": "/api/turn",
+      "group": "dialog",
+      "rustHandler": "post_turn",
+      "docRef": "api-contract.md#post-apiturn",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "input",
+            "type": "string",
+            "required": true,
+            "note": "non-empty after trim"
+          }
+        ]
+      },
+      "response": {
+        "status": 202,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "turn",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "required": false,
+            "note": "constant \"started\""
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "input must not be empty"
+        },
+        {
+          "status": 409,
+          "error": "a turn is already running"
+        }
+      ],
+      "notes": [
+        "Grabs the busy slot, emits status:start, spawns execute_turn and returns immediately; all results go over SSE."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_cancel",
+      "method": "POST",
+      "path": "/api/cancel",
+      "group": "dialog",
+      "rustHandler": "post_cancel",
+      "docRef": "api-contract.md#post-apicancel",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false,
+            "note": "always true"
+          },
+          {
+            "name": "cancelled",
+            "type": "boolean",
+            "required": false,
+            "note": "true = cancel signal sent; false = idle"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Cooperative cancel; body ignored."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only error-branch probe",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "post_clear",
+      "method": "POST",
+      "path": "/api/clear",
+      "group": "dialog",
+      "rustHandler": "workspaces::post_clear",
+      "docRef": "api-contract.md#post-apiclear",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "cleared",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "session",
+            "type": "string|null",
+            "required": false
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Truncates cli-main.jsonl, clears in-memory events, resets turn counter. No backup, no 409 guard, does not affect worker sessions (pitfalls P11)."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "get_config",
+      "method": "GET",
+      "path": "/api/config",
+      "group": "config",
+      "rustHandler": "api::get_config",
+      "docRef": "api-contract.md#get-apiconfig",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "base_url",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "max_steps",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "max_parallel_tool_calls",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "reasoning_effort",
+            "type": "string|null",
+            "required": false
+          },
+          {
+            "name": "max_output_tokens",
+            "type": "integer|null",
+            "required": false
+          },
+          {
+            "name": "context_window",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "system_prompt",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "api_key_env",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "available",
+            "type": "object{models:array<{id,name,provider,reasoning:bool}>,efforts:array<string>}",
+            "required": false
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Always 200. Never contains api_key. available.models is rebuilt from the live providers store on every read."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "post_config",
+      "method": "POST",
+      "path": "/api/config",
+      "group": "config",
+      "rustHandler": "api::post_config",
+      "docRef": "api-contract.md#post-apiconfig",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "reasoning_effort",
+            "type": "string|null",
+            "required": ""
+          },
+          {
+            "name": "base_url",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "api_key",
+            "type": "string",
+            "required": false,
+            "note": "only into process env; never persisted/logged/echoed"
+          },
+          {
+            "name": "max_output_tokens",
+            "type": "number",
+            "required": false
+          },
+          {
+            "name": "context_window",
+            "type": "number",
+            "required": false
+          },
+          {
+            "name": "max_steps",
+            "type": "number",
+            "required": false
+          },
+          {
+            "name": "system_prompt",
+            "type": "string",
+            "required": false
+          }
+        ],
+        "note": "all fields optional; trim-empty model = not provided; reasoning_effort ''/'off' = clear; base_url '' = clear override; max_output_tokens 0 = clear cap; context_window 0 = disable trimming; max_steps 0 = 400, otherwise max(n,4096); system_prompt '' = clear in-memory override"
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "(same shape as GET /api/config)",
+            "type": "object",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 409,
+          "error": "turn in progress; config applies between turns"
+        },
+        {
+          "status": 400,
+          "error": "invalid model name '{m}': character {bad:?} is not allowed (only [A-Za-z0-9._-:/@]; no spaces, brackets or control characters)"
+        },
+        {
+          "status": 400,
+          "error": "invalid model name: '{m}' exceeds 128 characters"
+        },
+        {
+          "status": 400,
+          "error": "model '{target}' is not a reasoning model; reasoning_effort is unavailable"
+        },
+        {
+          "status": 400,
+          "error": "base_url must be an http:// or https:// URL"
+        },
+        {
+          "status": 400,
+          "error": "max_output_tokens must be <= u32::MAX"
+        },
+        {
+          "status": 400,
+          "error": "max_steps must be >= 1"
+        },
+        {
+          "status": 500,
+          "error": "compose failed: {e}"
+        }
+      ],
+      "notes": [
+        "Unknown model ids are treated as reasoning-capable."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "get_sessions",
+      "method": "GET",
+      "path": "/api/sessions",
+      "group": "sessions",
+      "rustHandler": "workspaces::get_sessions",
+      "docRef": "api-contract.md#get-apisessions",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "sessions",
+            "type": "array<{id,workspace,title,model:string|null,size:int,modified:int,active:bool,kind?:'worker'}>",
+            "required": false
+          },
+          {
+            "name": "active_session",
+            "type": "string|null",
+            "required": false
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "post_sessions",
+      "method": "POST",
+      "path": "/api/sessions",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_session_create",
+      "docRef": "api-contract.md#post-apisessions",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "workspace",
+            "type": "string",
+            "required": false,
+            "note": "defaults to active id segment 1, else first registered workspace basename"
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "model",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": false,
+            "note": "\"{ws}/{sanitized title}-{secs}.{nanos}\""
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown workspace '{ws_name}'"
+        },
+        {
+          "status": 400,
+          "error": "invalid model: {e}"
+        },
+        {
+          "status": 400,
+          "error": "invalid prompt: {e}"
+        },
+        {
+          "status": 400,
+          "error": "title must not be empty"
+        },
+        {
+          "status": 400,
+          "error": "title '{title}' sanitizes to the hidden name '{base}'"
+        },
+        {
+          "status": 404,
+          "error": "workspace path '{path}' is not accessible"
+        },
+        {
+          "status": 500,
+          "error": "create failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "meta write failed: {e}"
+        }
+      ],
+      "notes": [
+        "Does NOT activate. session.json written only when model/prompt non-empty."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "get_session_messages",
+      "method": "GET",
+      "path": "/api/sessions/{id}/messages",
+      "group": "sessions",
+      "rustHandler": "workspaces::get_session_messages",
+      "docRef": "api-contract.md#get-apisessionsidmessages",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": false,
+            "note": "echo of the raw id"
+          },
+          {
+            "name": "messages",
+            "type": "array<user|assistant|thinking|tool message>",
+            "required": false,
+            "note": "see contracts/session-event.schema.json #projection"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "invalid session id '{id}': expected '<workspace>/<session>'"
+        },
+        {
+          "status": 404,
+          "error": "unknown workspace '{ws_name}'"
+        },
+        {
+          "status": 400,
+          "error": "invalid session id '{id}'"
+        },
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        }
+      ],
+      "notes": [
+        "Parses cli-main.jsonl and STOPS at the first unparsable line (torn tail dropped). `worker:<sid>` reads the engine in-memory SessionRegistry."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only error-branch probe",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "post_session_activate",
+      "method": "POST",
+      "path": "/api/sessions/{id}/activate",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_session_activate",
+      "docRef": "api-contract.md#post-apisessionsidactivate",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "active_session",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 409,
+          "error": "turn in progress; activate applies between turns"
+        },
+        {
+          "status": 400,
+          "error": "invalid session model: {e}"
+        },
+        {
+          "status": 500,
+          "error": "compose failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "cannot persist active session: {e}"
+        }
+      ],
+      "notes": [
+        "On compose failure the env has already been rewritten and is NOT rolled back (pitfalls P12)."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_session_rename",
+      "method": "POST",
+      "path": "/api/sessions/{id}/rename",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_session_rename",
+      "docRef": "api-contract.md#post-apisessionsidrename",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "new_title",
+            "type": "string",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 409,
+          "error": "turn in progress; rename applies between turns"
+        },
+        {
+          "status": 400,
+          "error": "new title must not be empty"
+        },
+        {
+          "status": 400,
+          "error": "title '{...}' sanitizes to the hidden name '{base}'"
+        },
+        {
+          "status": 500,
+          "error": "move failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "compose failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "cannot persist active session: {e}"
+        }
+      ],
+      "notes": [
+        "Busy lock is taken only for the ACTIVE session. Same name = no-op success."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_session_branch",
+      "method": "POST",
+      "path": "/api/sessions/{id}/branch",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_session_branch",
+      "docRef": "api-contract.md#post-apisessionsidbranch",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "title",
+            "type": "string",
+            "required": false,
+            "note": "defaults to '{source}-分支'"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "title must not be empty"
+        },
+        {
+          "status": 400,
+          "error": "title sanitizes to the hidden name '{base}'"
+        },
+        {
+          "status": 500,
+          "error": "create failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "copy failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "meta copy failed: {e}"
+        }
+      ],
+      "notes": [
+        "Copies cli-main.jsonl (+ session.json if present). Never activates."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_session_compact",
+      "method": "POST",
+      "path": "/api/sessions/{id}/compact",
+      "group": "sessions",
+      "rustHandler": "compact::post_session_compact",
+      "docRef": "api-contract.md#post-apisessionsidcompact",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "compacted",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "kept_turns",
+            "type": "integer",
+            "required": false,
+            "note": "present only when compacted:true",
+            "optional": true
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 409,
+          "error": "turn 进行中，无法压缩"
+        },
+        {
+          "status": 400,
+          "error": "invalid session model: {e}"
+        },
+        {
+          "status": 400,
+          "error": "<from session_dir_for>"
+        },
+        {
+          "status": 404,
+          "error": "<from session_dir_for>"
+        },
+        {
+          "status": 500,
+          "error": "读取会话日志失败：{e}"
+        },
+        {
+          "status": 500,
+          "error": "摘要请求缺少可用密钥：{e}"
+        },
+        {
+          "status": 500,
+          "error": "摘要请求失败：{e}"
+        },
+        {
+          "status": 500,
+          "error": "摘要请求失败：HTTP {status}：{head 300}"
+        },
+        {
+          "status": 500,
+          "error": "摘要响应读取失败：{e}"
+        },
+        {
+          "status": 500,
+          "error": "摘要响应不是 JSON（{e}）；body 头部：{head 200}"
+        },
+        {
+          "status": 500,
+          "error": "摘要响应缺少 choices[0].message.content"
+        },
+        {
+          "status": 500,
+          "error": "内部错误：压缩计划为空"
+        },
+        {
+          "status": 500,
+          "error": "备份失败 '...'：{e}"
+        },
+        {
+          "status": 500,
+          "error": "临时文件创建失败 '...'：{e}"
+        },
+        {
+          "status": 500,
+          "error": "临时文件写入失败 '...'：{e}"
+        },
+        {
+          "status": 500,
+          "error": "临时文件 fsync 失败 '...'：{e}"
+        },
+        {
+          "status": 500,
+          "error": "原子替换失败 '...'：{e}"
+        },
+        {
+          "status": 500,
+          "error": "compose failed: {e}"
+        }
+      ],
+      "notes": [
+        "COMPACT_THRESHOLD=8 (needs >=9 complete turns), COMPACT_KEEP_TURNS=4. All summary error strings are redacted of api keys. On success broadcasts SSE `compact` with turn=0.",
+        "Fields marked optional:true appear only in some response variants."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_session_archive",
+      "method": "POST",
+      "path": "/api/sessions/{id}/archive",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_session_archive",
+      "docRef": "api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "active session '{id}' cannot be archived"
+        },
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        },
+        {
+          "status": 409,
+          "error": "session '{id}' is already archived"
+        },
+        {
+          "status": 500,
+          "error": "mkdir failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "move failed: {e}"
+        }
+      ],
+      "notes": [
+        "Moves to <ws>/.celestea-archived/<name> keeping the original name (id stable, unarchivable)."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_session_unarchive",
+      "method": "POST",
+      "path": "/api/sessions/{id}/unarchive",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_session_unarchive",
+      "docRef": "api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "session '{id}' is not archived"
+        },
+        {
+          "status": 409,
+          "error": "a live session already exists at '{id}'"
+        },
+        {
+          "status": 500,
+          "error": "move failed: {e}"
+        }
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_sessions_batch_archive",
+      "method": "POST",
+      "path": "/api/sessions/batch-archive",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_sessions_batch_archive",
+      "docRef": "api-contract.md#post-apisessionsbatch-archive",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "ids",
+            "type": "array<string>",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "archived",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "failed",
+            "type": "array<{id:string,error:string}>",
+            "required": false,
+            "optional": true
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Always 200; per-item failures go into `failed`.",
+        "Fields marked optional:true appear only in some response variants."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_sessions_batch_delete",
+      "method": "POST",
+      "path": "/api/sessions/batch-delete",
+      "group": "sessions",
+      "rustHandler": "workspaces::post_sessions_batch_delete",
+      "docRef": "api-contract.md#post-apisessionsbatch-delete",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "ids",
+            "type": "array<string>",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "deleted",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "failed",
+            "type": "array<{id:string,error:string}>",
+            "required": false,
+            "optional": true
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Moves to <ws>/.celestea-trash/<name>-<ts> (recoverable but no longer addressable by id). Active session refused (400).",
+        "Fields marked optional:true appear only in some response variants."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "get_workspaces",
+      "method": "GET",
+      "path": "/api/workspaces",
+      "group": "workspaces",
+      "rustHandler": "workspaces::get_workspaces",
+      "docRef": "api-contract.md#get-apiworkspaces",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "workspaces",
+            "type": "array<{name:string,path:string,sessions:integer}>",
+            "required": false,
+            "note": "sessions counts LIVE session dirs only"
+          },
+          {
+            "name": "active_session",
+            "type": "string|null",
+            "required": false
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "No `ok` field. Always 200."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "post_workspaces",
+      "method": "POST",
+      "path": "/api/workspaces",
+      "group": "workspaces",
+      "rustHandler": "workspaces::post_workspace_create",
+      "docRef": "api-contract.md#post-apiworkspaces",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "path",
+            "type": "string",
+            "required": true,
+            "note": "absolute existing directory; legacy v1 `name` tolerated and ignored"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "required": false,
+            "note": "folder basename"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "path must not be empty"
+        },
+        {
+          "status": 400,
+          "error": "path '{path}' must be absolute"
+        },
+        {
+          "status": 400,
+          "error": "path '{path}' is not an existing directory"
+        },
+        {
+          "status": 409,
+          "error": "path '{path}' is already registered as workspace '{base}'"
+        },
+        {
+          "status": 400,
+          "error": "path '{path}' has no folder name"
+        },
+        {
+          "status": 409,
+          "error": "workspace '{base}' already exists (folder '{path}' and '{other}' share the same folder name; rename one folder first)"
+        },
+        {
+          "status": 500,
+          "error": "<persist error>"
+        }
+      ],
+      "notes": [
+        "Registers only; never creates/modifies the directory."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_workspace_rename",
+      "method": "POST",
+      "path": "/api/workspaces/{name}/rename",
+      "group": "workspaces",
+      "rustHandler": "workspaces::post_workspace_rename",
+      "docRef": "api-contract.md#post-apiworkspacesnamerename",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "new_name",
+            "type": "string",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "workspaces",
+            "type": "array<{name,path,sessions}>",
+            "required": false
+          },
+          {
+            "name": "active_session",
+            "type": "string|null",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 409,
+          "error": "turn in progress; rename applies between turns"
+        },
+        {
+          "status": 400,
+          "error": "workspace name must not be empty"
+        },
+        {
+          "status": 400,
+          "error": "invalid workspace name '{name}'"
+        },
+        {
+          "status": 404,
+          "error": "unknown workspace '{old}'"
+        },
+        {
+          "status": 409,
+          "error": "workspace '{new_name}' already exists"
+        },
+        {
+          "status": 409,
+          "error": "target '{new_path}' already exists; rename the folder first"
+        },
+        {
+          "status": 500,
+          "error": "move failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "cannot derive the moved session dir"
+        },
+        {
+          "status": 500,
+          "error": "compose failed: {e}"
+        },
+        {
+          "status": 500,
+          "error": "cannot persist active session: {e}"
+        }
+      ],
+      "notes": [
+        "Really fs::rename()s the user folder. Returns the full registry view."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_workspace_delete",
+      "method": "POST",
+      "path": "/api/workspaces/{name}/delete",
+      "group": "workspaces",
+      "rustHandler": "workspaces::post_workspace_delete",
+      "docRef": "api-contract.md#post-apiworkspacesnamedelete",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown workspace '{name}'"
+        },
+        {
+          "status": 500,
+          "error": "<persist error>"
+        }
+      ],
+      "notes": [
+        "Unregisters only; never touches the user folder. Clears active_session if it belonged to this ws."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_workspaces_batch_delete",
+      "method": "POST",
+      "path": "/api/workspaces/batch-delete",
+      "group": "workspaces",
+      "rustHandler": "workspaces::post_workspaces_batch_delete",
+      "docRef": "api-contract.md#post-apiworkspacesbatch-delete",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "names",
+            "type": "array<string>",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "deleted",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "failed",
+            "type": "array<{name:string,error:string}>",
+            "required": false,
+            "optional": true
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Always 200.",
+        "Fields marked optional:true appear only in some response variants."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "get_fs_browse",
+      "method": "GET",
+      "path": "/api/fs/browse",
+      "group": "fs",
+      "rustHandler": "workspaces::get_fs_browse",
+      "docRef": "api-contract.md#get-apifsbrowsepath-绝对路径",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "path",
+            "type": "string",
+            "required": false,
+            "note": "absolute path; omitted/blank lists '/'"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "path",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "parent",
+            "type": "string|null",
+            "required": false
+          },
+          {
+            "name": "dirs",
+            "type": "array<string>",
+            "required": false
+          },
+          {
+            "name": "roots",
+            "type": "array<string>",
+            "required": false,
+            "note": "hard-coded [\"/src\",\"/tmp\",\"/srv\",\"/home\"]; informational only"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "path '{p}' must be absolute"
+        },
+        {
+          "status": 400,
+          "error": "path '{p}' is not an existing directory"
+        },
+        {
+          "status": 400,
+          "error": "cannot read '{p}': {e}"
+        }
+      ],
+      "notes": [
+        "Error responses keep the SAME shape plus `error` (not the {ok:false} envelope). Directories only, dot-dirs skipped, symlinks not followed, sorted then truncated at MAX_DIR_ENTRIES=200. No auth; loopback-bound only."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only error-branch probe",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "get_providers",
+      "method": "GET",
+      "path": "/api/providers",
+      "group": "providers",
+      "rustHandler": "providers::get_providers",
+      "docRef": "api-contract.md#get-apiproviders",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "providers",
+            "type": "array<provider public_view>",
+            "required": false
+          },
+          {
+            "name": "default_model",
+            "type": "string|null",
+            "required": false
+          }
+        ],
+        "publicView": {
+          "excluded": [
+            "api_key"
+          ],
+          "note": "the api_key KEY IS ABSENT (not null); has_key=api_key non-empty (untrimmed)"
+        }
+      },
+      "errors": [],
+      "notes": [
+        "Always 200."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "post_providers",
+      "method": "POST",
+      "path": "/api/providers",
+      "group": "providers",
+      "rustHandler": "providers::post_providers",
+      "docRef": "api-contract.md#post-apiproviders",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true,
+            "note": "identity; same id = overwrite"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "required": false,
+            "note": "defaults to id"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "required": false,
+            "note": "defaults to '' (cleared)"
+          },
+          {
+            "name": "base_url",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "request_format",
+            "type": "string",
+            "required": false,
+            "note": "chat_completions|responses|anthropic_messages; defaults to chat_completions (silently resets a stored anthropic_messages)"
+          },
+          {
+            "name": "api_key",
+            "type": "string",
+            "required": false,
+            "note": "absent/null/blank = KEEP the stored key (the only keep-on-default field)"
+          },
+          {
+            "name": "models",
+            "type": "array<{id:string,name?:string,reasoning_efforts?:string[],context_window?:number,max_output_tokens?:number}>",
+            "required": false,
+            "note": "absent = CLEAR the list"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "(provider public_view)",
+            "type": "object",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "provider id must not be empty"
+        },
+        {
+          "status": 400,
+          "error": "base_url is required"
+        },
+        {
+          "status": 400,
+          "error": "base_url must be an http:// or https:// URL"
+        },
+        {
+          "status": 400,
+          "error": "invalid request_format '{t}': expected chat_completions | responses | anthropic_messages"
+        },
+        {
+          "status": 400,
+          "error": "each model needs a non-empty id"
+        },
+        {
+          "status": 500,
+          "error": "providers serialize failed: {e}"
+        }
+      ],
+      "notes": [
+        "Response is the whole public_view, not {ok:true}. An empty model row fails the whole request."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_provider_delete",
+      "method": "POST",
+      "path": "/api/providers/{id}/delete",
+      "group": "providers",
+      "rustHandler": "providers::post_provider_delete",
+      "docRef": "api-contract.md#post-apiprovidersiddelete",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown provider '{id}'"
+        },
+        {
+          "status": 500,
+          "error": "<persist error>"
+        }
+      ],
+      "notes": [
+        "Uses the UNTRIMMED raw path value. Clears default_model when it is no longer listed by any live provider."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_provider_test",
+      "method": "POST",
+      "path": "/api/providers/test",
+      "group": "providers",
+      "rustHandler": "providers::post_provider_test",
+      "docRef": "api-contract.md#post-apiproviderstest",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "base_url",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "request_format",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "api_key",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "models",
+            "type": "array<object>",
+            "required": false
+          }
+        ],
+        "note": "all optional; inline overlay, NEVER persisted; missing fields resolved from the store by id; id absent and no store record -> label '__inline__'"
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "latency_ms",
+            "type": "integer",
+            "required": false,
+            "optional": true
+          },
+          {
+            "name": "model_count",
+            "type": "integer",
+            "required": false,
+            "optional": true
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "required": false,
+            "optional": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "<candidate error text>"
+        },
+        {
+          "status": 200,
+          "error": "该请求格式暂不支持自动测试"
+        },
+        {
+          "status": 200,
+          "error": "该提供商未配置 api_key"
+        },
+        {
+          "status": 200,
+          "error": "HTTP 401: {...}"
+        }
+      ],
+      "notes": [
+        "Never persists.",
+        "Fields marked optional:true appear only in some response variants."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_provider_models_fetch",
+      "method": "POST",
+      "path": "/api/providers/{id}/models/fetch",
+      "group": "providers",
+      "rustHandler": "providers::post_models_fetch",
+      "docRef": "api-contract.md#post-apiprovidersidmodelsfetch",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "models",
+            "type": "array<{id:string}>",
+            "required": false,
+            "optional": true
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "required": false,
+            "optional": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown provider '{id}'"
+        },
+        {
+          "status": 200,
+          "error": "该请求格式暂不支持自动测试"
+        },
+        {
+          "status": 200,
+          "error": "该提供商未配置 api_key"
+        },
+        {
+          "status": 200,
+          "error": "<probe error text>"
+        }
+      ],
+      "notes": [
+        "Keyless same-origin borrow: when the provider has no key and its normalized base_url equals the CURRENT generation's base_url, the engine's own key is borrowed for this request only (never persisted/logged/echoed). Response has no latency_ms.",
+        "Fields marked optional:true appear only in some response variants."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_provider_default",
+      "method": "POST",
+      "path": "/api/providers/default",
+      "group": "providers",
+      "rustHandler": "providers::post_provider_default",
+      "docRef": "api-contract.md#post-apiprovidersdefault",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "(provider public_view)",
+            "type": "object",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "model must not be empty"
+        },
+        {
+          "status": 409,
+          "error": "a turn is running; provider default applies between turns"
+        },
+        {
+          "status": 500,
+          "error": "<compose error text>"
+        },
+        {
+          "status": 500,
+          "error": "<set_default_model persist error>"
+        }
+      ],
+      "notes": [
+        "compose failure never persists; persist failure never swaps. Unknown model ids are applied and stored as-is."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "get_prompts",
+      "method": "GET",
+      "path": "/api/prompts",
+      "group": "prompts",
+      "rustHandler": "prompts::get_prompts",
+      "docRef": "api-contract.md#get-apiprompts",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "workspace",
+            "type": "string",
+            "required": false,
+            "note": "omitted/blank = global scope"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "scope",
+            "type": "'global'|'workspace'",
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "type": "string|null",
+            "required": false
+          },
+          {
+            "name": "global_file",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "sections",
+            "type": "array<{id,name,template,order,source:'builtin'|'global'|'workspace'}>",
+            "required": false
+          },
+          {
+            "name": "prompts",
+            "type": "array<{id,name,section_overrides,is_default,scope,shadowed}>",
+            "required": false
+          },
+          {
+            "name": "default_prompt",
+            "type": "object{id,scope}|null",
+            "required": false
+          },
+          {
+            "name": "active_prompt",
+            "type": "string|null",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown workspace '{name}'"
+        }
+      ],
+      "notes": [
+        "sections sorted by (order,id); workspace prompt with the same name sets the global entry's shadowed:true."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "post_prompts",
+      "method": "POST",
+      "path": "/api/prompts",
+      "group": "prompts",
+      "rustHandler": "prompts::post_prompts_upsert",
+      "docRef": "api-contract.md#post-apiprompts（upsert）",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "workspace",
+            "type": "string",
+            "required": false,
+            "note": "omitted = global"
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": true,
+            "note": "1-128 chars of [A-Za-z0-9._-]"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "section_overrides",
+            "type": "object<string,string>",
+            "required": false
+          },
+          {
+            "name": "is_default",
+            "type": "boolean",
+            "required": false,
+            "note": "absent keeps the old value (false when new)"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "scope",
+            "type": "'global'|'workspace'",
+            "required": false
+          },
+          {
+            "name": "hot_applied",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "prompt id must be 1-128 chars of [A-Za-z0-9._-]"
+        },
+        {
+          "status": 400,
+          "error": "section '{section_id}': template exceeds the 8192 byte cap ({n} bytes)"
+        },
+        {
+          "status": 400,
+          "error": "section '{section_id}': undefined prompt variable '{{name}}'"
+        },
+        {
+          "status": 400,
+          "error": "section '{section_id}': unclosed '{{' in template"
+        },
+        {
+          "status": 404,
+          "error": "unknown workspace '{name}'"
+        },
+        {
+          "status": 409,
+          "error": "turn in progress; prompt applies between turns"
+        },
+        {
+          "status": 500,
+          "error": "<persist error text>"
+        },
+        {
+          "status": 500,
+          "error": "compose failed: {e}"
+        }
+      ],
+      "notes": [
+        "Order: 409 check (no write) -> persist -> compose_and_swap -> on compose failure write the old file back."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_prompts_delete",
+      "method": "POST",
+      "path": "/api/prompts/{id}/delete",
+      "group": "prompts",
+      "rustHandler": "prompts::post_prompts_delete",
+      "docRef": "api-contract.md#post-apipromptsiddelete",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "workspace",
+            "type": "string",
+            "required": false,
+            "note": "all fields optional; body extractor required"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "scope",
+            "type": "'global'|'workspace'",
+            "required": false
+          },
+          {
+            "name": "hot_applied",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown prompt '{id}'"
+        },
+        {
+          "status": 404,
+          "error": "unknown workspace '{name}'"
+        },
+        {
+          "status": 409,
+          "error": "turn in progress; prompt applies between turns"
+        },
+        {
+          "status": 500,
+          "error": "<persist/compose error text>"
+        }
+      ],
+      "notes": [
+        "Uses the UNTRIMMED raw path value. Clears default_prompt when it pointed here."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_prompts_default",
+      "method": "POST",
+      "path": "/api/prompts/{id}/default",
+      "group": "prompts",
+      "rustHandler": "prompts::post_prompts_default",
+      "docRef": "api-contract.md#post-apipromptsiddefault",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "workspace",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "default_prompt",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "scope",
+            "type": "'global'|'workspace'",
+            "required": false
+          },
+          {
+            "name": "hot_applied",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown prompt '{id}'"
+        },
+        {
+          "status": 404,
+          "error": "unknown workspace '{name}'"
+        },
+        {
+          "status": 409,
+          "error": "turn in progress; prompt applies between turns"
+        },
+        {
+          "status": 500,
+          "error": "<persist/compose error text>"
+        }
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_worker_spawn",
+      "method": "POST",
+      "path": "/api/worker/spawn",
+      "group": "workers",
+      "rustHandler": "api::post_worker_spawn",
+      "docRef": "api-contract.md#post-apiworkerspawn",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "wid",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "brief",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "model",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "report_to",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "sessionId",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "wid",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 502,
+          "error": "<hard dispatch failure; {ok:false,error,...}>"
+        },
+        {
+          "status": 500,
+          "error": "tool returned no value"
+        }
+      ],
+      "notes": [
+        "Tool-contract failures ({ok:false}) still return 200; only hard failures are 5xx. report_to=cli-main wakes the host autowake loop."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_worker_send",
+      "method": "POST",
+      "path": "/api/worker/send",
+      "group": "workers",
+      "rustHandler": "api::post_worker_send",
+      "docRef": "api-contract.md#post-apiworkersend",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "target",
+            "type": "string",
+            "required": true,
+            "note": "session id or name"
+          },
+          {
+            "name": "content",
+            "type": "string",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "(worker tool {ok,delivered,...})",
+            "type": "object",
+            "required": false
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Same shape as the worker tool result."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "get_worker_status",
+      "method": "GET",
+      "path": "/api/worker/status",
+      "group": "workers",
+      "rustHandler": "api::get_worker_status",
+      "docRef": "api-contract.md#get-apiworkerstatuswid-可选",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "wid",
+            "type": "string",
+            "required": false
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "total",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "by_status",
+            "type": "object{DONE,RUNNING,FAILED}",
+            "required": false
+          },
+          {
+            "name": "by_state",
+            "type": "object{idle,in-turn,running}",
+            "required": false,
+            "note": "LIVE-ONLY additive field, not in api-contract.md"
+          },
+          {
+            "name": "workers",
+            "type": "array<object>",
+            "required": false
+          },
+          {
+            "name": "wid",
+            "type": "string",
+            "required": false,
+            "optional": true
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "required": false,
+            "optional": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 200,
+          "error": "no worker W264 in registry",
+          "note": "still HTTP 200 with ok:false"
+        }
+      ],
+      "notes": [
+        "Always 200, including the not-found case.",
+        "Fields marked optional:true appear only in some response variants."
+      ],
+      "probe": {
+        "checked": true,
+        "mode": "read-only GET",
+        "server": "http://127.0.0.1:3777"
+      }
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "prompts.json + <ws>/.celestea-prompts.json (section registry)",
+  "source": {
+    "rust": "src/prompts.rs:126-165",
+    "doc": "/src/celestea_studio/docs/data-files.md §3"
+  },
+  "path": {
+    "global": "<cwd>/prompts.json (CELESTEA_PROMPTS_FILE)",
+    "workspace": "<workspace path>/.celestea-prompts.json",
+    "mode": "0644 (no key)"
+  },
+  "notes": [
+    "New file, no migration. Missing/unreadable -> default empty; MALFORMED -> warn + default empty (the registry must never break compose/UI).",
+    "Persist: pretty JSON + .json.tmp + rename (no fsync, no 0600).",
+    "Four levels: builtin (10 code constants, order 100..1000) -> global.sections -> ws.sections -> bound prompt's section_overrides.",
+    "Existing sections keep their original order and only swap the template; new sections get ORDER_FALLBACK=2000; sort by (order,id); empty/whitespace templates dropped; join with '\\n\\n'; truncate to PROMPT_MAX_LEN=8192 bytes on a char boundary.",
+    "resolve_prompt: session-bound id (ws then global) -> if not found return None (NO default fallback); else ws.default_prompt -> global.default_prompt -> None.",
+    "is_default does NOT participate in the resolution chain; only default_prompt decides."
+  ],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "sections": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "template",
+            "order"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "template": {
+              "type": "string"
+            },
+            "order": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "prompts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._-]{1,128}$"
+            },
+            "name": {
+              "type": "string"
+            },
+            "section_overrides": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {}
+            },
+            "is_default": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "default_prompt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "default": null
+      }
+    },
+    "additionalProperties": true
+  },
+  "validation": {
+    "promptId": "1-128 chars of [A-Za-z0-9._-]",
+    "template": [
+      "<=8192 bytes",
+      "every '{{' must close",
+      "variables must be in the whitelist"
+    ],
+    "templateErrors": [
+      "template exceeds the 8192 byte cap ({n} bytes)",
+      "undefined prompt variable '{{name}}'",
+      "unclosed '{{' in template"
+    ]
+  },
+  "interpolation": {
+    "syntax": "{{name}} (name trimmed; no aliases, no escaping)",
+    "vars": [
+      "model",
+      "provider",
+      "base_url",
+      "workspace",
+      "session",
+      "tools",
+      "context_window",
+      "max_output_tokens",
+      "date"
+    ]
+  },
+  "writeOrder": [
+    "409 check (no write)",
+    "persist",
+    "compose_and_swap",
+    "on compose failure write the old file back"
+  ],
+  "memoryOverride": {
+    "slot": "USER_OVERRIDE via POST /api/config system_prompt",
+    "rule": "non-empty = fully bypass registry assembly; empty = clear and fall back to default_system_prompt(); assembled prompts are NEVER treated as an override"
+  },
+  "generatedAt": "2026-09-10T01:20:00Z"
+}

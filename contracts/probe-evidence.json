@@ -1,0 +1,197 @@
+{
+  "generatedAt": "2026-09-09T17:29:21.881Z",
+  "studio": "http://127.0.0.1:3777",
+  "policy": "read-only: GET probes + error branches proven mutation-free in the Rust source",
+  "counts": {
+    "checks": 25,
+    "passed": 25,
+    "failed": 0,
+    "endpointsSampled": 20,
+    "sseEvents": 8,
+    "tools": 10
+  },
+  "verdict": "consistent",
+  "checks": [
+    {
+      "endpoint": "contracts/endpoints.json",
+      "kind": "contract-count",
+      "status": "pass",
+      "detail": "39 endpoints (expected 39)"
+    },
+    {
+      "endpoint": "contracts/sse-events.json",
+      "kind": "contract-count",
+      "status": "pass",
+      "detail": "8 SSE events (expected 8)"
+    },
+    {
+      "endpoint": "contracts/tools.json",
+      "kind": "contract-count",
+      "status": "pass",
+      "detail": "10 tool specs (expected 10)"
+    },
+    {
+      "endpoint": "GET /api/health",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 5 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/status",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 7 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/tools",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 1 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/config",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 10 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/sessions",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 2 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/sessions/{id}/messages",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 3 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/workspaces",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 2 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/fs/browse",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 4 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/providers",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 2 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/prompts",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 8 key(s)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/worker/status",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; 5 key(s); optional absent: error, wid",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "POST /api/turn",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 400 + \"input must not be empty\"",
+      "observedStatus": 400,
+      "safeBecause": "src/main.rs:986-991 rejects a blank input BEFORE the busy slot is taken"
+    },
+    {
+      "endpoint": "POST /api/cancel",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 200",
+      "observedStatus": 200,
+      "safeBecause": "src/main.rs:1028-1037 only signals the watch channel; no state is written"
+    },
+    {
+      "endpoint": "POST /api/workspaces",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 400 + \"path must not be empty\"",
+      "observedStatus": 400,
+      "safeBecause": "src/workspaces.rs:825-827 validates before WorkspaceRegistry::register"
+    },
+    {
+      "endpoint": "POST /api/providers/test",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 400 + \"base_url\"",
+      "observedStatus": 400,
+      "safeBecause": "src/providers.rs:729-735 builds an inline candidate and fails before run_probe; never persists"
+    },
+    {
+      "endpoint": "POST /api/prompts",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 400 + \"prompt id must be 1-128 chars\"",
+      "observedStatus": 400,
+      "safeBecause": "src/prompts.rs:748-751 validates the id before load_prompt_file/persist"
+    },
+    {
+      "endpoint": "POST /api/prompts/__p0_probe_missing__/default",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 404 + \"unknown prompt\"",
+      "observedStatus": 404,
+      "safeBecause": "src/prompts.rs:857-860 returns 404 before any persist"
+    },
+    {
+      "endpoint": "GET /api/sessions/no-slash/messages",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 400 + \"invalid session id\"",
+      "observedStatus": 400,
+      "safeBecause": "parse_session_id rejects the id before any filesystem access"
+    },
+    {
+      "endpoint": "GET /api/fs/browse?path=relative-not-absolute",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 400 + \"must be absolute\"",
+      "observedStatus": 400,
+      "safeBecause": "pure read-only directory listing"
+    },
+    {
+      "endpoint": "GET /api/worker/status?wid=__p0_probe_missing__",
+      "kind": "error-branch",
+      "status": "pass",
+      "detail": "HTTP 200 + \"no worker\"",
+      "observedStatus": 200,
+      "safeBecause": "read-only registry lookup"
+    },
+    {
+      "endpoint": "GET /api/events",
+      "kind": "sse-transport",
+      "status": "pass",
+      "detail": "content-type=text/event-stream; envelope + 8 event names frozen from source (passive connect, no turn running)",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /api/tools",
+      "kind": "tool-set",
+      "status": "pass",
+      "detail": "10 names match contracts/tools.json exactly",
+      "observedStatus": 200
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "endpoint": "GET http://127.0.0.1:3777/api/health",
+  "status": 200,
+  "body": {
+    "base_url": "http://127.0.0.1:3001/v1",
+    "bind": "127.0.0.1:3777",
+    "model": "deepseek-v4.1-flash-expires-on-0910",
+    "name": "celestea-studio",
+    "ok": true
+  }
+}

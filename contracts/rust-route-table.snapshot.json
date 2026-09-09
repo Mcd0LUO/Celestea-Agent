@@ -1,0 +1,247 @@
+{
+  "source": "/src/celestea_studio/src/main.rs:1333-1376",
+  "extractedAt": "2026-09-10T01:20:00Z",
+  "extraction": "read-only regex over the Router::new() chain",
+  "routeDeclarations": 38,
+  "methodPathCombos": 43,
+  "apiEndpoints": 39,
+  "staticRoutes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "rustHandler": "get_static"
+    },
+    {
+      "method": "GET",
+      "path": "/index.html",
+      "rustHandler": "get_static"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/{*path}",
+      "rustHandler": "get_static"
+    },
+    {
+      "method": "GET",
+      "path": "/favicon.ico",
+      "rustHandler": "get_static"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "rustHandler": "get_static"
+    },
+    {
+      "method": "GET",
+      "path": "/index.html",
+      "rustHandler": "get_static"
+    },
+    {
+      "method": "GET",
+      "path": "/assets/{*path}",
+      "rustHandler": "get_static"
+    },
+    {
+      "method": "GET",
+      "path": "/favicon.ico",
+      "rustHandler": "get_static"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "rustHandler": "get_health"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "rustHandler": "api::get_status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/events",
+      "rustHandler": "get_events"
+    },
+    {
+      "method": "POST",
+      "path": "/api/turn",
+      "rustHandler": "post_turn"
+    },
+    {
+      "method": "POST",
+      "path": "/api/cancel",
+      "rustHandler": "post_cancel"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tools",
+      "rustHandler": "api::get_tools"
+    },
+    {
+      "method": "GET",
+      "path": "/api/config",
+      "rustHandler": "api::get_config"
+    },
+    {
+      "method": "POST",
+      "path": "/api/config",
+      "rustHandler": "api::post_config"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions",
+      "rustHandler": "workspaces::get_sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "rustHandler": "workspaces::post_session_create"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{id}/messages",
+      "rustHandler": "workspaces::get_session_messages"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{id}/activate",
+      "rustHandler": "workspaces::post_session_activate"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{id}/rename",
+      "rustHandler": "workspaces::post_session_rename"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{id}/branch",
+      "rustHandler": "workspaces::post_session_branch"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{id}/compact",
+      "rustHandler": "compact::post_session_compact"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{id}/archive",
+      "rustHandler": "workspaces::post_session_archive"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{id}/unarchive",
+      "rustHandler": "workspaces::post_session_unarchive"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/batch-archive",
+      "rustHandler": "workspaces::post_sessions_batch_archive"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/batch-delete",
+      "rustHandler": "workspaces::post_sessions_batch_delete"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspaces",
+      "rustHandler": "workspaces::get_workspaces"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspaces",
+      "rustHandler": "workspaces::post_workspace_create"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspaces/{name}/rename",
+      "rustHandler": "workspaces::post_workspace_rename"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspaces/{name}/delete",
+      "rustHandler": "workspaces::post_workspace_delete"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspaces/batch-delete",
+      "rustHandler": "workspaces::post_workspaces_batch_delete"
+    },
+    {
+      "method": "GET",
+      "path": "/api/fs/browse",
+      "rustHandler": "workspaces::get_fs_browse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/providers",
+      "rustHandler": "providers::get_providers"
+    },
+    {
+      "method": "POST",
+      "path": "/api/providers",
+      "rustHandler": "providers::post_providers"
+    },
+    {
+      "method": "POST",
+      "path": "/api/providers/{id}/delete",
+      "rustHandler": "providers::post_provider_delete"
+    },
+    {
+      "method": "POST",
+      "path": "/api/providers/test",
+      "rustHandler": "providers::post_provider_test"
+    },
+    {
+      "method": "POST",
+      "path": "/api/providers/{id}/models/fetch",
+      "rustHandler": "providers::post_models_fetch"
+    },
+    {
+      "method": "POST",
+      "path": "/api/providers/default",
+      "rustHandler": "providers::post_provider_default"
+    },
+    {
+      "method": "GET",
+      "path": "/api/prompts",
+      "rustHandler": "prompts::get_prompts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompts",
+      "rustHandler": "prompts::post_prompts_upsert"
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompts/{id}/delete",
+      "rustHandler": "prompts::post_prompts_delete"
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompts/{id}/default",
+      "rustHandler": "prompts::post_prompts_default"
+    },
+    {
+      "method": "POST",
+      "path": "/api/clear",
+      "rustHandler": "workspaces::post_clear"
+    },
+    {
+      "method": "POST",
+      "path": "/api/worker/spawn",
+      "rustHandler": "api::post_worker_spawn"
+    },
+    {
+      "method": "POST",
+      "path": "/api/worker/send",
+      "rustHandler": "api::post_worker_send"
+    },
+    {
+      "method": "GET",
+      "path": "/api/worker/status",
+      "rustHandler": "api::get_worker_status"
+    }
+  ]
+}

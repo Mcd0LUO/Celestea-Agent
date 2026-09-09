@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "workspaces.json (v2)",
+  "source": {
+    "rust": "src/workspaces.rs:122-140 (RegistryData)",
+    "doc": "/src/celestea_studio/docs/data-files.md §1"
+  },
+  "path": {
+    "default": "<cwd>/workspaces.json",
+    "envOverride": "CELESTEA_WORKSPACES_FILE",
+    "mode": "0644 (no key)"
+  },
+  "notes": [
+    "NO version field. \"v2\" is a naming convention only: the workspace key is the registered path's folder basename and is NEVER stored.",
+    "Unknown fields are tolerated (no deny_unknown_fields).",
+    "There is no archive-state field: archiving is a pure filesystem move into .celestea-archived/, and the scanner skips dot-dirs.",
+    "Write: to_string_pretty -> <path>.json.tmp -> rename (atomic, NO fsync)."
+  ],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "workspaces": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "absolute registered directory"
+            }
+          },
+          "additionalProperties": true
+        },
+        "default": []
+      },
+      "active_session": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "\"<workspace-basename>/<session-dir>\"; null when unset",
+        "default": null
+      }
+    },
+    "required": [],
+    "additionalProperties": true
+  },
+  "legacyV1": {
+    "name": "tolerated on load, used for the name->basename mapping, never written back"
+  },
+  "hardErrors": {
+    "malformed": "workspaces.json '<path>' is malformed: {e} (startup exits 1; the unreadable registry is never overwritten)",
+    "duplicateBasename": "two workspaces resolve to the same folder name '{base}' (workspace keys must be unique basenames; rename one folder)"
+  },
+  "sessionId": {
+    "shape": "<workspace-basename>/<session-dir>",
+    "rules": "exactly one '/', both sides non-empty, session segment has no '/' and is sanitized (separators/control/whitespace -> '_', CJK preserved); empty/'.'/'..'/leading-dot rejected; dir.parent() must equal the workspace path"
+  },
+  "generatedAt": "2026-09-10T01:20:00Z"
+}

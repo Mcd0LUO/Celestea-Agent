@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Celestea Studio SSE contract (GET /api/events)",
+  "generatedAt": "2026-09-10T01:20:00Z",
+  "source": {
+    "code": "/src/celestea_studio/src/main.rs:644-712 (emit + loop_event_to_json), 871-896 (handler), 1311 (bus capacity)",
+    "doc": "/src/celestea_studio/docs/DEVELOPMENT.md §2.5",
+    "liveProbe": {
+      "endpoint": "http://127.0.0.1:3777/api/events",
+      "mode": "read-only passive connect",
+      "observedHeaders": {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        "transfer-encoding": "chunked"
+      },
+      "eventsObserved": 0,
+      "reason": "no turn was running; P0 forbids POST /api/turn because it appends to the production cli-main.jsonl"
+    }
+  },
+  "transport": {
+    "contentType": "text/event-stream",
+    "keepAlive": true,
+    "busCapacity": 512,
+    "envelope": {
+      "turn": "u64",
+      "seq": "u64 (global atomic counter, monotonic across the process)",
+      "payload": "object"
+    },
+    "envelopeSchema": {
+      "type": "object",
+      "required": [
+        "turn",
+        "seq",
+        "payload"
+      ],
+      "properties": {
+        "turn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "frameFormat": "event: <name>\\ndata: <envelope JSON>\\n\\n"
+  },
+  "lagged": {
+    "trigger": "a slow client is dropped by the broadcast channel (capacity 512)",
+    "event": "status",
+    "payload": {
+      "phase": "lagged",
+      "hint": "slow client, skipped events",
+      "statusline": "<statusline object>"
+    },
+    "semantics": "the stream does NOT close; the client receives one lagged status and continues consuming. Skipped events are NOT replayed.",
+    "codeRef": "src/main.rs:883-892"
+  },
+  "count": 8,
+  "events": [
+    {
+      "name": "text",
+      "payload": {
+        "delta": "string"
+      },
+      "source": "LoopEvent::Text",
+      "codeRef": "src/main.rs:668",
+      "frontendListens": true
+    },
+    {
+      "name": "thinking",
+      "payload": {
+        "delta": "string"
+      },
+      "source": "LoopEvent::Thinking",
+      "codeRef": "src/main.rs:669",
+      "frontendListens": true
+    },
+    {
+      "name": "tool",
+      "payload": {
+        "id": "string",
+        "name": "string",
+        "args": "object"
+      },
+      "source": "LoopEvent::ToolCall",
+      "codeRef": "src/main.rs:670-672",
+      "frontendListens": true
+    },
+    {
+      "name": "tool_result",
+      "payload": {
+        "id": "string",
+        "ok": "boolean",
+        "value": "any|null",
+        "render": "any|null",
+        "error": "string|null",
+        "decision": "'allow'|'deny'|'ask'|null"
+      },
+      "source": "LoopEvent::ToolResult",
+      "codeRef": "src/main.rs:673-691",
+      "frontendListens": true
+    },
+    {
+      "name": "turn_end",
+      "payload": {
+        "outcome": "'completed'|'cancelled'|'error'|'step_limit'|'interrupted'",
+        "error": "string|null (only for outcome=error: '{kind}: {message}')"
+      },
+      "source": "LoopEvent::TurnEnd",
+      "codeRef": "src/main.rs:692-695,716-732",
+      "frontendListens": false
+    },
+    {
+      "name": "done",
+      "payload": {
+        "text": "string",
+        "tool_calls": "array<{id,name,args}>"
+      },
+      "source": "LoopEvent::Done",
+      "codeRef": "src/main.rs:696-710",
+      "frontendListens": true
+    },
+    {
+      "name": "status",
+      "payload": {
+        "phase": "'start'|'progress'|'completed'|'cancelled'|'error'|'step_limit'|'interrupted'|'lagged'",
+        "statusline": "object",
+        "error": "string?",
+        "source": "'autowake'?"
+      },
+      "source": "execute_turn / post_turn / slow-client degrade",
+      "codeRef": "src/main.rs:883-892,951-973,1005-1011,1172-1178",
+      "frontendListens": true
+    },
+    {
+      "name": "compact",
+      "payload": {
+        "session": "string",
+        "kept_turns": "integer",
+        "note": "string",
+        "rebound": "boolean"
+      },
+      "source": "compact handler",
+      "codeRef": "src/compact.rs:480-491",
+      "frontendListens": true,
+      "note": "envelope `turn` is ALWAYS 0 for compact events"
+    }
+  ],
+  "frontendDeadListener": {
+    "name": "context",
+    "note": "frontend/src/sse.ts:34-43 subscribes to `context` but the backend never emits it"
+  }
+}

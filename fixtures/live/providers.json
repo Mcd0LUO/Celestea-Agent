@@ -1,0 +1,59 @@
+{
+  "endpoint": "GET http://127.0.0.1:3777/api/providers",
+  "status": 200,
+  "body": {
+    "default_model": "deepseek-v4.1-flash-expires-on-0910",
+    "providers": [
+      {
+        "base_url": "http://127.0.0.1:3001/v1",
+        "has_key": true,
+        "id": "celestea",
+        "is_default": true,
+        "models": [
+          {
+            "context_window": 1000000,
+            "id": "deepseek-v4-flash-0731",
+            "max_output_tokens": null,
+            "name": "DeepSeek V4 Flash",
+            "reasoning_efforts": [
+              "low",
+              "high"
+            ]
+          },
+          {
+            "context_window": 1000000,
+            "id": "deepseek-v4-pro-0813",
+            "max_output_tokens": null,
+            "name": "DeepSeek V4 Pro",
+            "reasoning_efforts": [
+              "low",
+              "high",
+              "max"
+            ]
+          },
+          {
+            "context_window": 1000000,
+            "id": "deepseek-v4.1-flash-expires-on-0910",
+            "max_output_tokens": null,
+            "name": "deepseek-v4.1-flash-expires-on-0910",
+            "reasoning_efforts": [
+              "low",
+              "high",
+              "max"
+            ]
+          },
+          {
+            "context_window": null,
+            "id": "glm-5.3-flash",
+            "max_output_tokens": null,
+            "name": "glm-5.3-flash",
+            "reasoning_efforts": []
+          }
+        ],
+        "name": "Celestea 网关",
+        "note": "本机 newapi 网关",
+        "request_format": "chat_completions"
+      }
+    ]
+  }
+}

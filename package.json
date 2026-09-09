@@ -1,0 +1,26 @@
+{
+  "name": "celestea-studio-ts",
+  "version": "0.1.0-p0",
+  "private": true,
+  "type": "module",
+  "description": "Celestea Studio backend - TypeScript rewrite (P0: contract freeze + skeleton + golden-sample toolchain)",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "contracts:verify": "tsx scripts/verify-contracts.ts",
+    "golden:export": "tsx scripts/export-golden.ts",
+    "replay:compare": "tsx scripts/compare-replay.ts",
+    "check": "pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

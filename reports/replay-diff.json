@@ -1,0 +1,216 @@
+{
+  "generatedAt": "2026-09-09T17:29:23.111Z",
+  "fixtures": "/src/celestea_studio-ts/fixtures",
+  "fixturesGeneratedAt": "2026-09-09T17:28:54.740Z",
+  "strict": true,
+  "summary": {
+    "sessions": 5,
+    "goldenComparisons": 5,
+    "goldenDivergences": 0,
+    "selfCheckDivergences": 0,
+    "errors": 0,
+    "verdict": "match"
+  },
+  "sessions": [
+    {
+      "id": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577",
+      "slug": "scratch-cancel-e2e-1788971355.259970577",
+      "roles": [
+        "session-log",
+        "cancelled-outcome"
+      ],
+      "events": 6,
+      "turns": 1,
+      "danglingToolCalls": 0,
+      "orphanToolResults": 0,
+      "subCalls": 0,
+      "tornTail": false,
+      "turnIdMonotonic": true,
+      "outcomes": {
+        "cancelled": 1
+      },
+      "messages": {
+        "golden": 4,
+        "actual": 4,
+        "divergences": 0
+      },
+      "derived": {
+        "expected": 3,
+        "actual": 3,
+        "divergences": 0
+      },
+      "sse": {
+        "expected": 6,
+        "actual": 6,
+        "divergences": 0
+      },
+      "goldenVerdict": "match"
+    },
+    {
+      "id": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520",
+      "slug": "scratch-timeout-1788962615.856629520",
+      "roles": [
+        "session-log",
+        "error-outcome"
+      ],
+      "events": 3,
+      "turns": 1,
+      "danglingToolCalls": 0,
+      "orphanToolResults": 0,
+      "subCalls": 0,
+      "tornTail": false,
+      "turnIdMonotonic": true,
+      "outcomes": {
+        "error": 1
+      },
+      "messages": {
+        "golden": 1,
+        "actual": 1,
+        "divergences": 0
+      },
+      "derived": {
+        "expected": 1,
+        "actual": 1,
+        "divergences": 0
+      },
+      "sse": {
+        "expected": 3,
+        "actual": 3,
+        "divergences": 0
+      },
+      "goldenVerdict": "match"
+    },
+    {
+      "id": "CelesteaTeamAPI/test-1788787479.196315272",
+      "slug": "test-1788787479.196315272",
+      "roles": [
+        "session-log",
+        "run_code-parent-id",
+        "normal-multi-turn"
+      ],
+      "events": 53,
+      "turns": 6,
+      "danglingToolCalls": 0,
+      "orphanToolResults": 0,
+      "subCalls": 11,
+      "tornTail": false,
+      "turnIdMonotonic": true,
+      "outcomes": {
+        "completed": 6
+      },
+      "messages": {
+        "golden": 41,
+        "actual": 41,
+        "divergences": 0
+      },
+      "derived": {
+        "expected": 18,
+        "actual": 18,
+        "divergences": 0
+      },
+      "sse": {
+        "expected": 53,
+        "actual": 53,
+        "divergences": 0
+      },
+      "goldenVerdict": "match"
+    },
+    {
+      "id": "celestea_harness/harness架构哥-1788933931.279221103",
+      "slug": "harness架构哥-1788933931.279221103",
+      "roles": [
+        "session-log",
+        "dangling-tool-call",
+        "run_code-parent-id",
+        "cancelled-outcome",
+        "error-outcome"
+      ],
+      "events": 606,
+      "turns": 17,
+      "danglingToolCalls": 3,
+      "orphanToolResults": 0,
+      "subCalls": 11,
+      "tornTail": false,
+      "turnIdMonotonic": true,
+      "outcomes": {
+        "completed": 5,
+        "cancelled": 1,
+        "error": 8
+      },
+      "messages": {
+        "golden": 575,
+        "actual": 575,
+        "divergences": 0
+      },
+      "derived": {
+        "expected": 419,
+        "actual": 419,
+        "divergences": 0
+      },
+      "sse": {
+        "expected": 603,
+        "actual": 603,
+        "divergences": 0
+      },
+      "goldenVerdict": "match"
+    },
+    {
+      "id": "server-center/center-架构师-1788940601.93642104",
+      "slug": "center-架构师-1788940601.93642104",
+      "roles": [
+        "session-log",
+        "normal-multi-turn",
+        "error-outcome"
+      ],
+      "events": 967,
+      "turns": 7,
+      "danglingToolCalls": 0,
+      "orphanToolResults": 0,
+      "subCalls": 0,
+      "tornTail": false,
+      "turnIdMonotonic": true,
+      "outcomes": {
+        "completed": 6,
+        "error": 1
+      },
+      "messages": {
+        "golden": 953,
+        "actual": 953,
+        "divergences": 0
+      },
+      "derived": {
+        "expected": 755,
+        "actual": 755,
+        "divergences": 0
+      },
+      "sse": {
+        "expected": 967,
+        "actual": 967,
+        "divergences": 0
+      },
+      "goldenVerdict": "match"
+    }
+  ],
+  "findings": [
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: sse-transcript",
+      "kind": "info",
+      "detail": "derived transcript not stored (large session); regenerated in-memory for this run"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: sse-transcript",
+      "kind": "info",
+      "detail": "derived transcript not stored (large session); regenerated in-memory for this run"
+    },
+    {
+      "scope": "providers public_view",
+      "kind": "info",
+      "detail": "1 provider(s), 0 api_key keys"
+    },
+    {
+      "scope": "registry.tsv",
+      "kind": "info",
+      "detail": "11 row(s) by_status={\"RUNNING\":11,\"DONE\":0,\"FAILED\":0}"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "source": {
+    "endpoint": "GET /api/sessions/CelesteaTeamAPI/scratch-timeout-1788962615.856629520/messages",
+    "session": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520",
+    "fetchedFrom": "http://127.0.0.1:3777"
+  },
+  "messages": [
+    {
+      "content": "说一句 hi",
+      "role": "user"
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "providers.json (+ public_view)",
+  "source": {
+    "rust": "src/providers.rs:52-86 (Provider/ProviderModel), 219-241 (public_view)",
+    "doc": "/src/celestea_studio/docs/data-files.md §2"
+  },
+  "path": {
+    "default": "<cwd>/providers.json",
+    "envOverride": "CELESTEA_PROVIDERS_FILE",
+    "mode": "0600 (plaintext api_key)"
+  },
+  "notes": [
+    "NO version field and NO migration logic. id/name/base_url/request_format have no serde(default): a missing field is a deserialization failure.",
+    "ProviderModel deliberately does NOT derive Debug so a key can never be printed.",
+    "open(): missing file -> empty store; malformed JSON -> HARD error (never overwrite an unreadable file with an empty store).",
+    "save(): pretty JSON -> .tmp -> OpenOptions mode 0600 -> write_all + sync_all -> rename. Every save resets 0600."
+  ],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "providers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "base_url",
+            "request_format"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "identity; same id = overwrite"
+            },
+            "name": {
+              "type": "string",
+              "description": "display name only"
+            },
+            "note": {
+              "type": "string",
+              "default": ""
+            },
+            "base_url": {
+              "type": "string"
+            },
+            "request_format": {
+              "type": "string",
+              "enum": [
+                "chat_completions",
+                "responses",
+                "anthropic_messages"
+              ]
+            },
+            "api_key": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "PLAINTEXT secret; only this file may contain it"
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "reasoning_efforts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": [],
+                    "description": "free strings, no enum validation"
+                  },
+                  "context_window": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "max_output_tokens": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "default_model": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "providers"
+    ],
+    "additionalProperties": true
+  },
+  "publicView": {
+    "note": "The api_key KEY IS ABSENT from every response (not null/empty). Tests assert the response text contains neither the key nor the string \"api_key\".",
+    "fields": [
+      "id",
+      "name",
+      "note",
+      "base_url",
+      "request_format",
+      "models[].id",
+      "models[].name",
+      "models[].reasoning_efforts",
+      "models[].context_window",
+      "models[].max_output_tokens",
+      "is_default",
+      "has_key"
+    ],
+    "is_default": "default_model matches any of the provider's model ids (every provider listing that id gets true)",
+    "has_key": "api_key exists and is a non-empty string (UNtrimmed)",
+    "excluded": [
+      "api_key"
+    ]
+  },
+  "updateSemantics": {
+    "api_key": "absent/null/blank = KEEP the stored key (the only keep-on-default field)",
+    "models": "absent = CLEAR to []",
+    "note": "absent = CLEAR to \"\"",
+    "request_format": "absent = reset to chat_completions (silently reverts a stored anthropic_messages)",
+    "name": "absent = fall back to id"
+  },
+  "keylessBorrow": {
+    "rule": "provider has no key AND normalized base_url (trim + strip trailing '/') equals the CURRENT generation's base_url -> borrow the engine's own key for that request only (never persisted, never echoed, never logged)",
+    "codeRef": "src/providers.rs:523-553"
+  },
+  "generatedAt": "2026-09-10T01:20:00Z"
+}

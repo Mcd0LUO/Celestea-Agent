@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+# generated probe evidence is committed on purpose; keep scratch output out
+reports/*.tmp

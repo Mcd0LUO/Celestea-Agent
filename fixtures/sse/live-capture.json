@@ -1,0 +1,16 @@
+{
+  "source": {
+    "endpoint": "GET http://127.0.0.1:3777/api/events",
+    "mode": "read-only passive connect"
+  },
+  "windowMs": 3000,
+  "headers": {
+    "cache-control": "no-cache",
+    "content-type": "text/event-stream",
+    "date": "Wed, 09 Sep 2026 17:28:51 GMT",
+    "transfer-encoding": "chunked"
+  },
+  "framesObserved": 0,
+  "keepalives": 0,
+  "note": "No turn was running and P0 forbids POST /api/turn (it appends to the production cli-main.jsonl). The event NAMES are frozen in contracts/sse-events.json from the Rust source; per-session transcripts are derived from the session log (fixtures/sessions/*/sse-transcript-derived.jsonl)."
+}

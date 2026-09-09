@@ -1,0 +1,54 @@
+{
+  "endpoint": "GET http://127.0.0.1:3777/api/sessions",
+  "status": 200,
+  "body": {
+    "active_session": "celestea_harness/harness架构哥-1788933931.279221103",
+    "sessions": [
+      {
+        "active": false,
+        "id": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577",
+        "model": null,
+        "modified": 1788971362,
+        "size": 768,
+        "title": "scratch-cancel-e2e-1788971355.259970577",
+        "workspace": "CelesteaTeamAPI"
+      },
+      {
+        "active": false,
+        "id": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520",
+        "model": null,
+        "modified": 1788962676,
+        "size": 270,
+        "title": "scratch-timeout-1788962615.856629520",
+        "workspace": "CelesteaTeamAPI"
+      },
+      {
+        "active": false,
+        "id": "CelesteaTeamAPI/test-1788787479.196315272",
+        "model": null,
+        "modified": 1788962831,
+        "size": 20591,
+        "title": "test-1788787479.196315272",
+        "workspace": "CelesteaTeamAPI"
+      },
+      {
+        "active": true,
+        "id": "celestea_harness/harness架构哥-1788933931.279221103",
+        "model": "deepseek-v4.1-flash-expires-on-0910",
+        "modified": 1788972758,
+        "size": 1041894,
+        "title": "harness架构哥-1788933931.279221103",
+        "workspace": "celestea_harness"
+      },
+      {
+        "active": false,
+        "id": "server-center/center-架构师-1788940601.93642104",
+        "model": "deepseek-v4.1-flash-expires-on-0910",
+        "modified": 1788952991,
+        "size": 1749026,
+        "title": "center-架构师-1788940601.93642104",
+        "workspace": "server-center"
+      }
+    ]
+  }
+}

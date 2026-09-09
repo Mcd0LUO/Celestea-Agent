@@ -1,0 +1,19 @@
+{
+  "endpoint": "GET http://127.0.0.1:3777/api/worker/status",
+  "status": 200,
+  "body": {
+    "by_state": {
+      "idle": 0,
+      "in-turn": 0,
+      "running": 0
+    },
+    "by_status": {
+      "DONE": 0,
+      "FAILED": 0,
+      "RUNNING": 0
+    },
+    "ok": true,
+    "total": 0,
+    "workers": []
+  }
+}
