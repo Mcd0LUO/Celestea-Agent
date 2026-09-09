@@ -96,7 +96,58 @@ pub(crate) fn derive_messages_from(events: &[SessionEvent]) -> Vec<Message> {
 
     // Trailing tool calls (no following event) still need flushing.
     flush_tool_calls(&mut messages, &mut pending);
+    balance_tool_calls(&mut messages);
     messages
+}
+
+/// W267: protocol balance - every assistant "tool_calls" message must be
+/// followed by one "tool" message per call id. A cancelled/interrupted turn
+/// can stop between ToolCall and ToolResult, leaving a dangling call that makes
+/// the whole history invalid for OpenAI-compatible upstreams
+/// ("insufficient tool messages following tool_calls message"). Synthesize a
+/// cancelled-result for each unanswered call so the projection stays
+/// protocol-valid; the log itself is untouched (audit keeps the truth).
+fn balance_tool_calls(messages: &mut Vec<Message>) {
+    let mut i = 0;
+    while i < messages.len() {
+        let call_ids: Vec<String> = messages[i]
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                Content::ToolCall(tc) => Some(tc.id.clone()),
+                _ => None,
+            })
+            .collect();
+        if call_ids.is_empty() {
+            i += 1;
+            continue;
+        }
+        // Results must be the contiguous tool messages right after the call.
+        let mut answered: Vec<String> = Vec::new();
+        let mut j = i + 1;
+        while j < messages.len() && messages[j].role == Role::Tool {
+            if let Some(id) = messages[j].tool_call_id.clone() {
+                answered.push(id);
+            }
+            j += 1;
+        }
+        let missing: Vec<String> = call_ids
+            .into_iter()
+            .filter(|id| !answered.iter().any(|a| a == id))
+            .collect();
+        let mut inserted = 0usize;
+        for id in missing {
+            messages.insert(
+                j + inserted,
+                Message::tool_result(
+                    id,
+                    "Error: tool call was cancelled before execution (no result recorded)",
+                ),
+            );
+            inserted += 1;
+        }
+        i = j + inserted + 1;
+    }
 }
 
 /// Flush any accumulated tool calls as a single assistant message whose
@@ -188,6 +239,58 @@ mod tests {
             SessionEvent::UserMessage { text } => assert_eq!(text, "b"),
             other => panic!("unexpected event {other:?}"),
         }
+    }
+
+    #[test]
+    fn dangling_tool_call_gets_synthetic_result() {
+        // W267: a cancelled turn leaves ToolCall without ToolResult; the
+        // projection must still be protocol-valid (assistant tool_calls
+        // followed by one tool message per id).
+        let log = InMemorySessionLog::new();
+        log.append(SessionEvent::TurnStart { id: "turn-0".into() });
+        log.append(SessionEvent::UserMessage { text: "go".into() });
+        log.append(SessionEvent::ToolCall {
+            id: "c1".into(),
+            name: "run_shell".into(),
+            args: json!({"command": "sleep 1"}),
+            parent_id: None,
+        });
+        log.append(SessionEvent::TurnEnd { id: "turn-0".into(), outcome: TurnOutcome::Cancelled });
+        log.append(SessionEvent::TurnStart { id: "turn-1".into() });
+        log.append(SessionEvent::UserMessage { text: "again".into() });
+
+        let msgs = log.derive_messages();
+        let call_idx = msgs
+            .iter()
+            .position(|m| m.content.iter().any(|c| matches!(c, Content::ToolCall(tc) if tc.id == "c1")))
+            .expect("tool_calls message present");
+        let next = &msgs[call_idx + 1];
+        assert_eq!(next.role, Role::Tool, "synthetic result must follow the call");
+        assert_eq!(next.tool_call_id.as_deref(), Some("c1"));
+        assert!(msgs[call_idx + 2..].iter().any(|m| m.role == Role::User));
+    }
+
+    #[test]
+    fn answered_tool_call_is_not_duplicated() {
+        // W267 guard: a call with its real result must not get a synthetic one.
+        let log = InMemorySessionLog::new();
+        log.append(SessionEvent::UserMessage { text: "go".into() });
+        log.append(SessionEvent::ToolCall {
+            id: "c9".into(),
+            name: "run_shell".into(),
+            args: json!({"command": "echo hi"}),
+            parent_id: None,
+        });
+        log.append(SessionEvent::ToolResult {
+            id: "c9".into(),
+            value: Some(json!({"stdout": "hi"})),
+            error: None,
+            parent_id: None,
+        });
+        let msgs = log.derive_messages();
+        let tools: Vec<_> = msgs.iter().filter(|m| m.role == Role::Tool).collect();
+        assert_eq!(tools.len(), 1, "exactly the real result, no synthetic duplicate");
+        assert_eq!(tools[0].tool_call_id.as_deref(), Some("c9"));
     }
 
     #[test]
@@ -312,7 +415,9 @@ mod tests {
         });
 
         let msgs = log.derive_messages();
-        assert_eq!(msgs.len(), 1);
+        // W267: the three dangling calls each get a synthetic cancelled result,
+        // so the projection is protocol-valid (1 assistant + 3 tool messages).
+        assert_eq!(msgs.len(), 4);
         assert_eq!(msgs[0].role, Role::Assistant);
         assert_eq!(msgs[0].content.len(), 3);
         for (i, expected_id) in ["c1", "c2", "c3"].iter().enumerate() {
@@ -320,6 +425,8 @@ mod tests {
                 Content::ToolCall(tc) => assert_eq!(tc.id, *expected_id),
                 other => panic!("expected tool-call content, got {other:?}"),
             }
+            assert_eq!(msgs[i + 1].role, Role::Tool);
+            assert_eq!(msgs[i + 1].tool_call_id.as_deref(), Some(*expected_id));
         }
     }
 
@@ -335,15 +442,19 @@ mod tests {
         log.append(SessionEvent::UserMessage { text: "after".into() });
 
         let msgs = log.derive_messages();
-        assert_eq!(msgs.len(), 2);
+        // W267: the dangling call is balanced by a synthetic result, then the
+        // user message follows.
+        assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0].role, Role::Assistant);
         assert_eq!(msgs[0].content.len(), 1);
         match &msgs[0].content[0] {
             Content::ToolCall(tc) => assert_eq!(tc.id, "c9"),
             other => panic!("expected tool-call content, got {other:?}"),
         }
-        assert_eq!(msgs[1].role, Role::User);
-        assert_eq!(text_of(&msgs[1]), "after");
+        assert_eq!(msgs[1].role, Role::Tool);
+        assert_eq!(msgs[1].tool_call_id.as_deref(), Some("c9"));
+        assert_eq!(msgs[2].role, Role::User);
+        assert_eq!(text_of(&msgs[2]), "after");
     }
 
     #[test]
