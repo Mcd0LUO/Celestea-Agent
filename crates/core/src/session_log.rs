@@ -54,6 +54,13 @@ pub enum SessionEvent {
     },
     UserMessage { text: String },
     AssistantMessage { text: String },
+    /// One aggregated "continuous thinking segment" (W252): the agent loop
+    /// concatenates consecutive streamed reasoning deltas into ONE such event
+    /// per burst, so replay keeps the chain-of-thought without one jsonl row
+    /// per streamed delta. Purely additive — old jsonl files without these
+    /// rows replay unchanged, and thinking never enters the model-visible
+    /// history (derive_messages skips it).
+    ThinkingDelta { text: String },
     ToolCall { id: String, name: String, args: Value },
     ToolResult { id: String, value: Option<Value>, error: Option<String> },
 }
@@ -77,5 +84,41 @@ impl std::ops::Deref for SessionService {
     type Target = dyn SessionLog;
     fn deref(&self) -> &Self::Target {
         &*self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// W252: the tagged serde shape of the new variant (same `type`-tagged
+    /// family as every other variant) round-trips exactly.
+    #[test]
+    fn thinking_delta_serde_roundtrip() {
+        let ev = SessionEvent::ThinkingDelta { text: "let me think…".into() };
+        let json = serde_json::to_string(&ev).expect("serialize");
+        assert_eq!(json, r#"{"type":"thinking_delta","text":"let me think…"}"#);
+        let back: SessionEvent = serde_json::from_str(&json).expect("deserialize");
+        assert!(matches!(back, SessionEvent::ThinkingDelta { text } if text == "let me think…"));
+    }
+
+    /// W252: old jsonl (written before ThinkingDelta existed) still
+    /// deserializes unchanged — the new variant is purely additive.
+    #[test]
+    fn legacy_jsonl_without_thinking_delta_parses() {
+        for line in [
+            r#"{"type":"turn_start","id":"turn-0"}"#,
+            r#"{"type":"user_message","text":"hi"}"#,
+            r#"{"type":"assistant_message","text":"hello"}"#,
+            r#"{"type":"tool_call","id":"c1","name":"f","args":{}}"#,
+            r#"{"type":"tool_result","id":"c1","value":true,"error":null}"#,
+            r#"{"type":"turn_end","id":"turn-0"}"#, // legacy: no outcome field
+        ] {
+            let ev: SessionEvent = serde_json::from_str(line).expect("legacy row parses");
+            assert!(
+                !matches!(ev, SessionEvent::ThinkingDelta { .. }),
+                "legacy row unexpectedly became a ThinkingDelta: {line}"
+            );
+        }
     }
 }

@@ -601,6 +601,9 @@ fn render_event_line(e: &SessionEvent) -> Option<String> {
     match e {
         SessionEvent::UserMessage { text } => Some(format!("- user: {}", one_line(text))),
         SessionEvent::AssistantMessage { text } => Some(format!("- assistant: {}", one_line(text))),
+        // W252: persisted thinking rows render as thinking lines (replay-only
+        // decoration, same as TurnStart/TurnEnd markers).
+        SessionEvent::ThinkingDelta { text } => Some(format!("- thinking: {}", one_line(text))),
         SessionEvent::ToolCall { name, args, .. } => {
             Some(format!("- tool_call {name}: {}", one_line(&args.to_string())))
         }

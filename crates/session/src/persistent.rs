@@ -775,6 +775,76 @@ mod persistent_tests {
         assert!(text.contains("\"outcome\":\"interrupted\""), "new rows carry the outcome: {text}");
     }
 
+    // ---- W252: thinking-delta persistence + legacy jsonl compatibility ----
+
+    #[test]
+    fn persistent_thinking_delta_roundtrips_through_disk() {
+        let dir = TempDir::new("thinking");
+        let path;
+        {
+            let log = PersistentSessionLog::open(dir.0.as_path(), "s1").expect("open");
+            log.append(SessionEvent::UserMessage { text: "hi".into() });
+            log.append(SessionEvent::ThinkingDelta { text: "merged reasoning burst".into() });
+            log.append(SessionEvent::AssistantMessage { text: "answer".into() });
+            path = log.path().to_path_buf();
+        }
+        // One tagged jsonl line, in append order, between the messages.
+        let text = fs::read_to_string(&path).expect("read back");
+        assert!(
+            text.contains(r#"{"type":"thinking_delta","text":"merged reasoning burst"}"#),
+            "thinking row on disk: {text}"
+        );
+        // Replay reconstructs the same event sequence...
+        let log = PersistentSessionLog::open(dir.0.as_path(), "s1").expect("reopen");
+        let events = log.events();
+        assert!(matches!(
+            events.as_slice(),
+            [
+                SessionEvent::UserMessage { .. },
+                SessionEvent::ThinkingDelta { text },
+                SessionEvent::AssistantMessage { .. },
+            ] if text == "merged reasoning burst"
+        ));
+        // ...and the history projection still skips the thinking row.
+        assert_eq!(log.derive_messages().len(), 2);
+    }
+
+    #[test]
+    fn persistent_legacy_jsonl_without_thinking_rows_replays() {
+        // A pre-W252 file (only legacy row shapes, legacy TurnEnd without an
+        // outcome field) replays unchanged: the new variant is additive and
+        // old files need no migration.
+        let dir = TempDir::new("legacy-nothinking");
+        let path = file_path(dir.0.as_path(), "s1");
+        {
+            let mut f = fs::File::create(&path).expect("create");
+            f.write_all(br#"{"type":"turn_start","id":"turn-0"}"#).unwrap();
+            f.write_all(b"\n").unwrap();
+            f.write_all(br#"{"type":"user_message","text":"hi"}"#).unwrap();
+            f.write_all(b"\n").unwrap();
+            f.write_all(br#"{"type":"assistant_message","text":"there"}"#).unwrap();
+            f.write_all(b"\n").unwrap();
+            f.write_all(br#"{"type":"turn_end","id":"turn-0"}"#).unwrap(); // legacy: no outcome
+            f.write_all(b"\n").unwrap();
+            f.sync_all().unwrap();
+        }
+        let log = PersistentSessionLog::open(dir.0.as_path(), "s1").expect("open");
+        let events = log.events();
+        assert_eq!(events.len(), 4, "all four legacy rows replay");
+        assert!(
+            events.iter().all(|e| !matches!(e, SessionEvent::ThinkingDelta { .. })),
+            "no thinking rows invented during replay"
+        );
+        match &events[3] {
+            SessionEvent::TurnEnd { id, outcome } => {
+                assert_eq!(id, "turn-0");
+                assert_eq!(*outcome, TurnOutcome::Completed, "legacy TurnEnd reads as completed");
+            }
+            other => panic!("expected TurnEnd, got {other:?}"),
+        }
+        assert_eq!(log.derive_messages().len(), 2, "history projection unchanged");
+    }
+
     #[test]
     fn persistent_log_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}

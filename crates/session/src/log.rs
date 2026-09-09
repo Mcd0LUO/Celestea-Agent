@@ -130,6 +130,9 @@ fn project(event: SessionEvent) -> Option<Message> {
             Some(Message::tool_result(id, text))
         }
         SessionEvent::TurnStart { .. } | SessionEvent::TurnEnd { .. } => None,
+        // W252: persisted thinking is replay-only decoration; it never enters
+        // the model-visible context (context still rides assistant text/tools).
+        SessionEvent::ThinkingDelta { .. } => None,
         SessionEvent::ToolCall { .. } => {
             unreachable!("ToolCall must be accumulated by derive_messages, not projected")
         }
@@ -249,6 +252,24 @@ mod tests {
         assert_eq!(msgs[4].role, Role::Tool);
         assert_eq!(msgs[4].tool_call_id.as_deref(), Some("c2"));
         assert_eq!(text_of(&msgs[4]), "Error: boom");
+    }
+
+    #[test]
+    fn thinking_delta_is_skipped_by_derive_messages() {
+        // W252: ThinkingDelta rows are replay-only — the derived model history
+        // contains only the user/assistant/tool messages, in the same order.
+        let log = InMemorySessionLog::new();
+        log.append(SessionEvent::TurnStart { id: "t1".into() });
+        log.append(SessionEvent::UserMessage { text: "hi".into() });
+        log.append(SessionEvent::ThinkingDelta { text: "private reasoning".into() });
+        log.append(SessionEvent::AssistantMessage { text: "answer".into() });
+        log.append(SessionEvent::TurnEnd { id: "t1".into(), outcome: TurnOutcome::Completed });
+
+        let msgs = log.derive_messages();
+        assert_eq!(msgs.len(), 2, "thinking row must not project into a message");
+        assert_eq!(msgs[0].role, Role::User);
+        assert_eq!(msgs[1].role, Role::Assistant);
+        assert_eq!(text_of(&msgs[1]), "answer");
     }
 
     #[test]

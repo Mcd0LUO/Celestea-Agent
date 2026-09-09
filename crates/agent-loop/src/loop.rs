@@ -154,6 +154,22 @@ impl DefaultAgentLoop {
     }
 }
 
+/// W252: persist one accumulated "continuous thinking segment" as a single
+/// [SessionEvent::ThinkingDelta] (no-op when the buffer is empty).
+///
+/// The session log is the source of truth for replay, but thinking deltas
+/// stream token-by-token: writing one jsonl row per delta would explode the
+/// log. Instead the loop concatenates consecutive deltas into a buffer and
+/// flushes it only at visible boundaries (Text / Done / stream end), so one
+/// contiguous reasoning burst becomes exactly ONE persisted row.
+fn flush_thinking(session: &SessionService, buf: &mut String) {
+    if buf.is_empty() {
+        return;
+    }
+    let text = std::mem::take(buf);
+    session.append(SessionEvent::ThinkingDelta { text });
+}
+
 /// Whether the cancellation watch is set (value true). Synchronous, safe to
 /// call on a shared receiver (watch::Receiver::borrow is &self).
 pub(crate) fn cancel_set(rx: &watch::Receiver<bool>) -> bool {
@@ -293,6 +309,11 @@ impl AgentLoop for DefaultAgentLoop {
             let mut assistant_text = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
             let mut saw_done = false;
+            // W252: consecutive Thinking deltas aggregate here and are
+            // flushed as ONE ThinkingDelta per contiguous burst (see
+            // flush_thinking) so replay keeps the reasoning without one
+            // persisted row per streamed delta.
+            let mut thinking_buf = String::new();
 
             // Stream consumption loop. A cancel mid-stream drops the partial
             // turn (no incomplete AssistantMessage is flushed); a stream that
@@ -322,8 +343,18 @@ impl AgentLoop for DefaultAgentLoop {
                 match event {
                     // Stream deltas and the final message are routed through
                     // the sink when one is installed (no direct print).
-                    StreamEvent::Text(delta) => self.emit(LoopEvent::Text(delta)),
-                    StreamEvent::Thinking(delta) => self.emit(LoopEvent::Thinking(delta)),
+                    // A Text delta ends the current thinking segment: flush the
+                    // aggregated burst BEFORE anything that follows it.
+                    StreamEvent::Text(delta) => {
+                        flush_thinking(&session, &mut thinking_buf);
+                        self.emit(LoopEvent::Text(delta));
+                    }
+                    // Accumulate (concatenate) consecutive thinking deltas;
+                    // they persist as one row at the next boundary.
+                    StreamEvent::Thinking(delta) => {
+                        thinking_buf.push_str(&delta);
+                        self.emit(LoopEvent::Thinking(delta));
+                    }
                     StreamEvent::Usage(u) => {
                         // Record provider-reported usage into the optional
                         // shared tracker (runtime /api/status surface).
@@ -332,6 +363,9 @@ impl AgentLoop for DefaultAgentLoop {
                         }
                     }
                     StreamEvent::Done(message) => {
+                        // Boundary flush: the thinking segment precedes the
+                        // assistant text/tool calls it belongs to in the log.
+                        flush_thinking(&session, &mut thinking_buf);
                         saw_done = true;
                         for content in &message.content {
                             match content {
@@ -342,17 +376,28 @@ impl AgentLoop for DefaultAgentLoop {
                         pending_done = Some(message);
                     }
                     StreamEvent::Failed { kind, message } => {
-                        // Stream-level failure (truncated turn): terminal error.
+                        // Stream-level failure (truncated turn): terminal
+                        // error. Flush the partial segment first so the
+                        // reasoning that did stream survives in the log.
+                        flush_thinking(&session, &mut thinking_buf);
                         outcome = TurnOutcome::Error { kind, message };
                         break;
                     }
                     StreamEvent::Interrupted => {
                         // The stream was torn without a terminal frame.
+                        flush_thinking(&session, &mut thinking_buf);
                         outcome = TurnOutcome::Interrupted;
                         break;
                     }
                 }
             }
+
+            // Stream-end flush: covers trailing reasoning streamed AFTER the
+            // terminal frame (providers do that), a thinking-only stream that
+            // ended without Done, and a cancel mid-stream. It runs before any
+            // AssistantMessage/ToolCall append below, so every thinking
+            // segment lands in the log ahead of the step it belongs to.
+            flush_thinking(&session, &mut thinking_buf);
 
             // Flush the deferred Done (if any) before terminal handling, so
             // late Thinking/Text emitted above precede it on the wire.

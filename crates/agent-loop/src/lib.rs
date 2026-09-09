@@ -313,6 +313,109 @@ mod tests {
         assert_eq!(kinds, vec!["thinking", "text", "done", "turnend"]);
     }
 
+    // ---- W252: thinking-delta persistence (replay keeps chain-of-thought) --
+
+    /// The W252-relevant log projection: only thinking/assistant/tool events,
+    /// in append order (structural events filtered out).
+    fn persisted_kinds(session: &FakeSession) -> Vec<String> {
+        session
+            .all()
+            .iter()
+            .filter_map(|e| match e {
+                SessionEvent::ThinkingDelta { text } => Some(format!("thinking:{text}")),
+                SessionEvent::AssistantMessage { text } => Some(format!("assistant:{text}")),
+                SessionEvent::ToolCall { id, .. } => Some(format!("toolcall:{id}")),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn thinking_segments_persist_aggregated_before_reply() {
+        // Spec scenario: Thinking, Text, Thinking, Done stream input.
+        // Each contiguous thinking burst becomes ONE ThinkingDelta, in stream
+        // order, and both precede the assistant reply in the log.
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let events = vec![
+            StreamEvent::Thinking("part one.".to_string()),
+            StreamEvent::Thinking(" part two.".to_string()),
+            StreamEvent::Text(" hi".to_string()),
+            StreamEvent::Thinking("recheck.".to_string()),
+            StreamEvent::Done(Message::assistant_text(" hi")),
+        ];
+        let res = run_with(&session, &registry, events, None, None);
+        assert!(res.is_ok());
+
+        // TurnStart/UserMessage/TurnEnd aside, the log is exactly:
+        // ThinkingDelta("part one. part two.") (two deltas merged into one row),
+        // ThinkingDelta("recheck.") (split at the Text boundary),
+        // AssistantMessage(" hi").
+        let kinds = persisted_kinds(&session);
+        assert_eq!(
+            kinds,
+            vec![
+                "thinking:part one. part two.".to_string(),
+                "thinking:recheck.".to_string(),
+                "assistant: hi".to_string(),
+            ]
+        );
+        // Sanity: not one row per delta (2 deltas in the first burst -> 1 row).
+        let thinking_rows = session
+            .all()
+            .iter()
+            .filter(|e| matches!(e, SessionEvent::ThinkingDelta { .. }))
+            .count();
+        assert_eq!(thinking_rows, 2, "three deltas -> two aggregated rows");
+    }
+
+    #[test]
+    fn thinking_delta_precedes_tool_calls_in_log() {
+        // A tool-call step with reasoning: the aggregated ThinkingDelta must
+        // land BEFORE the step's ToolCall events, exactly like the
+        // AssistantMessage case.
+        struct ThinkingToolLlm {
+            calls: AtomicUsize,
+        }
+        #[async_trait]
+        impl Llm for ThinkingToolLlm {
+            async fn generate(&self, _req: ModelRequest) -> Result<LlmStream, LlmError> {
+                let n = self.calls.fetch_add(1, Ordering::Relaxed);
+                if n == 0 {
+                    Ok(stream::iter(vec![
+                        StreamEvent::Thinking("plan tool use.".to_string()),
+                        StreamEvent::Done(tool_call_message(&["c1"])),
+                    ])
+                    .boxed())
+                } else {
+                    Ok(stream::iter(vec![StreamEvent::Done(Message::assistant_text("done"))]).boxed())
+                }
+            }
+        }
+        let session = Arc::new(FakeSession::default());
+        let registry = Arc::new(FakeRegistry::default());
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let llm = LlmService(Arc::new(ThinkingToolLlm { calls: AtomicUsize::new(0) }));
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(llm);
+        let loop_ = DefaultAgentLoop::new(AgentConfig::default());
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(loop_.run_turn(&ctx, "hello")).unwrap();
+
+        let kinds = persisted_kinds(&session);
+        assert_eq!(
+            kinds,
+            vec![
+                "thinking:plan tool use.".to_string(),
+                "toolcall:c1".to_string(),
+                "assistant:done".to_string(),
+            ]
+        );
+    }
+
     #[test]
     fn late_thinking_after_done_emits_before_done() {
         // Providers may stream a trailing reasoning delta AFTER the
