@@ -29,8 +29,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::loop_module::cancel_set;
-    use tokio::sync::watch;
+    use crate::loop_module::{cancel_set, CANCELLED_BEFORE_EXECUTION};
+    use tokio::sync::{watch, Notify};
     use async_trait::async_trait;
     use futures_util::StreamExt;
     use celestea_core::{
@@ -1130,5 +1130,236 @@ mod tests {
         let msgs = &reqs[0].messages;
         assert_eq!(msgs.len(), 2, "no trim under the default window");
         assert!(!matches!(msgs[0].role, Role::System), "no marker inserted");
+    }
+
+    // ---- W267: cancel mid-dispatch closes every tool call in the log --------
+
+    /// W267 mock registry: dispatches instantly EXCEPT for the call ids listed
+    /// in `blocking`, which fire `started` and then park forever (simulating a
+    /// tool that is still running). Only the loop's cancel path can end such a
+    /// dispatch — exactly the state that used to leave dangling tool_calls.
+    struct CancelRegistry {
+        blocking: Vec<String>,
+        started: Arc<Notify>,
+        order: Mutex<Vec<String>>,
+    }
+
+    impl CancelRegistry {
+        fn new(blocking: Vec<String>, started: Arc<Notify>) -> Self {
+            Self { blocking, started, order: Mutex::new(Vec::new()) }
+        }
+        fn dispatch_order(&self) -> Vec<String> {
+            self.order.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl ToolRegistry for CancelRegistry {
+        fn register(&mut self, _tool: Box<dyn Tool>) {}
+        fn add_guard(&mut self, _guard: Box<dyn ToolGuard>) {}
+        fn get(&self, _name: &str) -> Option<&dyn Tool> {
+            None
+        }
+        fn schemas(&self) -> Vec<ToolSpec> {
+            Vec::new()
+        }
+        async fn dispatch(&self, input: ToolInput) -> ToolOutput {
+            self.order.lock().unwrap().push(input.call_id.clone());
+            if self.blocking.iter().any(|b| *b == input.call_id) {
+                // Announce "this call is in flight", then park forever: the
+                // future is only ever dropped by the loop's cancel branch.
+                self.started.notify_one();
+                std::future::pending::<()>().await;
+            }
+            ToolOutput {
+                call_id: input.call_id,
+                value: Some(json!({"ok": true})),
+                render: None,
+                error: None,
+                decision: Some(ToolDecision::Allow),
+            }
+        }
+    }
+
+    /// W267 regression: cancel a turn WHILE a tool is executing. The model asks
+    /// for c1/c2/c3; c1 completes for real, c2 parks forever, the turn is
+    /// cancelled mid-dispatch. Before the fix c2/c3 had no ToolResult at all,
+    /// leaving the assistant tool_calls message dangling (upstream 400
+    /// "An assistant message with tool_calls must be followed by tool
+    /// messages..."). Asserts: (1) every call id has a ToolResult, the
+    /// unanswered ones carrying "cancelled before execution"; (2) the turn still
+    /// ends TurnOutcome::Cancelled; (3) the real c1 result survives untouched
+    /// and no id gets two results; (4) synthetics sit after every real result
+    /// and before TurnEnd, in call order — in the log AND in the event stream.
+    #[test]
+    fn cancel_during_tool_dispatch_synthesizes_cancelled_results() {
+        let session = Arc::new(FakeSession::default());
+        let started = Arc::new(Notify::new());
+        let registry = Arc::new(CancelRegistry::new(vec!["c2".to_string()], started.clone()));
+        let (tx, rx) = watch::channel(false);
+        let collected = Arc::new(Mutex::new(Vec::new()));
+        let sink: EventSink = {
+            let c = collected.clone();
+            Arc::new(move |ev| c.lock().unwrap().push(ev))
+        };
+
+        let session_dyn: Arc<dyn SessionLog> = session.clone();
+        let registry_dyn: Arc<dyn ToolRegistry> = registry.clone();
+        let llm = LlmService(Arc::new(FakeLlm::new(vec![
+            tool_call_message(&["c1", "c2", "c3"]),
+            Message::assistant_text("never reached"),
+        ])));
+        let mut ctx = Context::new();
+        ctx.provide(SessionService(session_dyn));
+        ctx.provide(ToolRegistryService(registry_dyn));
+        ctx.provide(llm);
+
+        // Serial dispatch (limit 1): batch1 = [c1] completes for real, then
+        // batch2 = [c2] parks and the cancel fires while it is in flight.
+        let config = AgentConfig { max_parallel_tool_calls: 1, ..AgentConfig::default() };
+        let loop_ = DefaultAgentLoop::with_cancel_sink(config, rx, sink);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let turn = loop_.run_turn(&ctx, "hi");
+            tokio::pin!(turn);
+            let signal = async {
+                started.notified().await; // c2 is now executing
+                tx.send(true).ok();
+            };
+            tokio::pin!(signal);
+            let res: Result<(), AgentError> = tokio::select! {
+                r = &mut turn => r,
+                _ = &mut signal => turn.await,
+            };
+            assert!(res.is_ok());
+        });
+
+        // Dispatch stopped with the cancelled batch: c3 never ran.
+        assert_eq!(registry.dispatch_order(), vec!["c1", "c2"]);
+
+        let evs = session.all();
+
+        // (1) every ToolCall of the step has exactly one ToolResult, in order.
+        assert_eq!(logged_tool_calls(&evs), vec!["c1", "c2", "c3"]);
+        let results: Vec<(String, Option<String>)> = evs
+            .iter()
+            .filter_map(|e| match e {
+                SessionEvent::ToolResult { id, error, .. } => Some((id.clone(), error.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            results.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            vec!["c1", "c2", "c3"],
+            "every call id must be answered exactly once"
+        );
+
+        // (3) the real c1 result is preserved verbatim — not overwritten, not
+        // duplicated, and not relabelled as cancelled.
+        assert_eq!(results[0].1, None, "the real result keeps error=None");
+        match evs.iter().find(|e| matches!(e, SessionEvent::ToolResult { id, .. } if id == "c1")) {
+            Some(SessionEvent::ToolResult { value, error, .. }) => {
+                assert_eq!(*value, Some(json!({"ok": true})));
+                assert!(error.is_none());
+            }
+            other => panic!("expected the real c1 result, got {other:?}"),
+        }
+        // The unanswered calls carry the synthesized cancelled text.
+        assert_eq!(results[1].1.as_deref(), Some(CANCELLED_BEFORE_EXECUTION));
+        assert_eq!(results[2].1.as_deref(), Some(CANCELLED_BEFORE_EXECUTION));
+        for id in ["c2", "c3"] {
+            match evs.iter().find(|e| matches!(e, SessionEvent::ToolResult { id: i, .. } if i == id)) {
+                Some(SessionEvent::ToolResult { value, .. }) => {
+                    assert!(value.is_none(), "synthetic {id} carries no value")
+                }
+                other => panic!("expected a synthetic result for {id}, got {other:?}"),
+            }
+        }
+        let mut ids: Vec<String> = results.iter().map(|(id, _)| id.clone()).collect();
+        let total = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), total, "no call id may get two ToolResults");
+
+        // (4) ordering: ToolCalls < real result < synthetic results < TurnEnd.
+        let mut last_call = 0usize;
+        let mut first_result = usize::MAX;
+        let mut real_c1 = usize::MAX;
+        let mut first_synth = usize::MAX;
+        let mut last_synth = 0usize;
+        let mut turn_end = usize::MAX;
+        for (i, e) in evs.iter().enumerate() {
+            match e {
+                SessionEvent::ToolCall { .. } => last_call = i,
+                SessionEvent::ToolResult { id, error, .. } => {
+                    if first_result == usize::MAX {
+                        first_result = i;
+                    }
+                    if error.as_deref() == Some(CANCELLED_BEFORE_EXECUTION) {
+                        if first_synth == usize::MAX {
+                            first_synth = i;
+                        }
+                        last_synth = i;
+                    } else if id == "c1" {
+                        real_c1 = i;
+                    }
+                }
+                SessionEvent::TurnEnd { .. } => turn_end = i,
+                _ => {}
+            }
+        }
+        assert!(last_call < first_result, "all ToolCalls precede every ToolResult");
+        assert!(real_c1 < first_synth, "synthetics follow the real result");
+        assert!(last_synth < turn_end, "synthetics precede TurnEnd");
+        // The synthetic tail keeps the model's call order (c2 before c3).
+        assert_eq!(
+            evs.iter()
+                .filter_map(|e| match e {
+                    SessionEvent::ToolResult { id, error, .. }
+                        if error.as_deref() == Some(CANCELLED_BEFORE_EXECUTION) =>
+                        Some(id.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec!["c2", "c3"]
+        );
+
+        // (2) terminal state unchanged: cancellation still yields Cancelled.
+        let (_, outcome) = last_turn_end(&session);
+        assert_eq!(outcome, TurnOutcome::Cancelled);
+
+        // Event-stream side must pair with the log: ToolCall x3, ToolResult x3
+        // (c1 real, c2/c3 cancelled), then exactly one terminal TurnEnd.
+        let sevs = collected.lock().unwrap().clone();
+        let sunk_calls: Vec<String> = sevs
+            .iter()
+            .filter_map(|e| match e {
+                LoopEvent::ToolCall { id, .. } => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sunk_calls, vec!["c1", "c2", "c3"]);
+        let sunk_results: Vec<(String, Option<String>, bool)> = sevs
+            .iter()
+            .filter_map(|e| match e {
+                LoopEvent::ToolResult(o) => {
+                    Some((o.call_id.clone(), o.error.clone(), o.value.is_some()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            sunk_results,
+            vec![
+                ("c1".to_string(), None, true),
+                ("c2".to_string(), Some(CANCELLED_BEFORE_EXECUTION.to_string()), false),
+                ("c3".to_string(), Some(CANCELLED_BEFORE_EXECUTION.to_string()), false),
+            ]
+        );
+        match sevs.last() {
+            Some(LoopEvent::TurnEnd(o)) => assert_eq!(o, &TurnOutcome::Cancelled),
+            other => panic!("expected a terminal TurnEnd(Cancelled), got {other:?}"),
+        }
     }
 }

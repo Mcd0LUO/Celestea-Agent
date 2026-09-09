@@ -13,8 +13,8 @@ use async_trait::async_trait;
 use tokio::sync::watch;
 use celestea_core::{
     AgentConfig, AgentError, AgentLoop, Content, Context, LlmService, Message, ModelRequest,
-    SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, TurnOutcome, Usage,
-    ToolRegistryService,
+    SessionEvent, SessionService, StreamEvent, ToolCall, ToolInput, ToolOutput, TurnOutcome,
+    Usage, ToolRegistryService,
 };
 use futures_util::StreamExt;
 
@@ -169,6 +169,12 @@ fn flush_thinking(session: &SessionService, buf: &mut String) {
     let text = std::mem::take(buf);
     session.append(SessionEvent::ThinkingDelta { text });
 }
+
+/// W267: the canonical error text of a synthesized ToolResult for a tool call
+/// that never ran because the turn was cancelled mid-dispatch. Shared by the
+/// session-log append and the LoopEvent emission so both sides carry the exact
+/// same string (the UI renders it, the projection layer keys off it).
+pub(crate) const CANCELLED_BEFORE_EXECUTION: &str = "cancelled before execution";
 
 /// Whether the cancellation watch is set (value true). Synchronous, safe to
 /// call on a shared receiver (watch::Receiver::borrow is &self).
@@ -453,6 +459,11 @@ impl AgentLoop for DefaultAgentLoop {
             // the model's original call order even though the calls run in
             // parallel — the log ordering stays deterministic. A cancel during
             // a pending batch stops dispatch (dropped batch, consistent log).
+            //
+            // W267: `answered` tracks which call ids already have a REAL
+            // ToolResult in the log, so the cancel path below can close exactly
+            // the ones that do not.
+            let mut answered: Vec<String> = Vec::new();
             let limit = self.config.max_parallel_tool_calls.max(1);
             for batch in tool_calls.chunks(limit) {
                 let dispatch = futures_util::future::join_all(batch.iter().map(|call| {
@@ -476,12 +487,50 @@ impl AgentLoop for DefaultAgentLoop {
                 };
                 for output in outputs {
                     self.emit(LoopEvent::ToolResult(output.clone()));
+                    answered.push(output.call_id.clone());
                     session.append(SessionEvent::ToolResult {
                         id: output.call_id,
                         value: output.value,
                         error: output.error,
                         parent_id: None,
                     });
+                }
+            }
+
+            // W267 (log-layer fix): a cancel mid-dispatch drops the in-flight
+            // batch (join_all) and every later batch, so those calls would stay
+            // dangling: the assistant message already carries their tool_calls
+            // but no tool message follows, and an OpenAI-compatible upstream
+            // rejects the whole history with 400 "An assistant message with
+            // tool_calls must be followed by tool messages...".
+            // Synthesize one cancelled ToolResult per unanswered call so the
+            // LOG itself stays protocol-valid (not just the projection) and the
+            // UI can draw a "cancelled" tool card.
+            //
+            // Ordering contract: these land AFTER every real ToolResult of this
+            // step (the batch loop above already appended those) and BEFORE
+            // TurnEnd (appended once, after the loop), iterating tool_calls in
+            // model order so the synthetic tail keeps the original call order.
+            // Log and event stream are written as a pair for every call.
+            if cancel_requested {
+                for call in &tool_calls {
+                    if answered.iter().any(|id| id == &call.id) {
+                        continue; // a real result already covers this call
+                    }
+                    let error = Some(CANCELLED_BEFORE_EXECUTION.to_string());
+                    session.append(SessionEvent::ToolResult {
+                        id: call.id.clone(),
+                        value: None,
+                        error: error.clone(),
+                        parent_id: None,
+                    });
+                    self.emit(LoopEvent::ToolResult(ToolOutput {
+                        call_id: call.id.clone(),
+                        value: None,
+                        render: None,
+                        error,
+                        decision: None,
+                    }));
                 }
             }
             if cancel_requested {
