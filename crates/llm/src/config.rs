@@ -5,35 +5,15 @@
 //! configuration struct. Kept separate from the client so the request path can
 //! stay focused on mapping the core seam onto the OpenAI-compatible wire API.
 
-use serde::{Deserialize, Serialize};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 pub(crate) const DEFAULT_MODEL: &str = "deepseek-chat";
 pub(crate) const API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
 pub(crate) const BASE_URL_ENV: &str = "DEEPSEEK_BASE_URL";
 
-/// Reasoning effort for reasoning models (`deepseek-reasoner`).
-///
-/// Mirrors the subset of the OpenAI/DeepSeek `reasoning_effort` parameter that
-/// this provider exposes. Only `low` / `medium` / `high` are surfaced;
-/// `minimal` and the future `xhigh` are deliberately not exposed yet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ReasoningEffort {
-    Low,
-    Medium,
-    High,
-}
-
-impl From<ReasoningEffort> for async_openai::types::chat::ReasoningEffort {
-    fn from(effort: ReasoningEffort) -> Self {
-        match effort {
-            ReasoningEffort::Low => Self::Low,
-            ReasoningEffort::Medium => Self::Medium,
-            ReasoningEffort::High => Self::High,
-        }
-    }
-}
+// W260: reasoning_effort is FREE-FORM (Option<String>, verbatim passthrough).
+// User-defined tiers (low/high/max or any provider-specific label) reach the
+// upstream exactly as configured - no engine-imposed ceiling or renaming.
 
 /// Static capability metadata for a model this provider supports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,7 +38,7 @@ pub struct DeepSeekConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
-    pub reasoning_effort: Option<ReasoningEffort>,
+    pub reasoning_effort: Option<String>,
     pub max_output_tokens: Option<u32>,
 }
 

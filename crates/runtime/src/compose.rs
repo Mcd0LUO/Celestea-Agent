@@ -86,7 +86,7 @@ impl Runtime {
             base_url,
             api_key,
             model: profile.model.clone(),
-            reasoning_effort: profile.reasoning_effort,
+            reasoning_effort: profile.reasoning_effort.clone(),
             max_output_tokens: profile.max_output_tokens,
         };
         // LLM adapter registry (multi-provider seam, W189): register the deepseek

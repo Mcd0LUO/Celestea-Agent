@@ -6,7 +6,6 @@
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Result};
-use celestea_llm::ReasoningEffort;
 use serde_json::Value;
 
 /// Runtime configuration loaded from celestea.toml (or the legacy
@@ -27,7 +26,7 @@ pub struct Profile {
     /// provider default. The token value itself NEVER lives here (env only).
     pub base_url: Option<String>,
     /// Optional reasoning effort for reasoning models.
-    pub reasoning_effort: Option<ReasoningEffort>,
+    pub reasoning_effort: Option<String>,
     /// Optional output-token cap.
     pub max_output_tokens: Option<u32>,
     /// Env var that holds the API key (default DEEPSEEK_API_KEY).
@@ -195,12 +194,17 @@ pub fn merge_profile_mode(json: &Value, strict: bool) -> Result<Profile> {
     }
     if let Some(v) = obj.get("reasoning_effort") {
         match v.as_str() {
-            Some("low") => profile.reasoning_effort = Some(ReasoningEffort::Low),
-            Some("medium") => profile.reasoning_effort = Some(ReasoningEffort::Medium),
-            Some("high") => profile.reasoning_effort = Some(ReasoningEffort::High),
-            Some(other) if strict => bail!(
-                "profile field 'reasoning_effort' must be one of \"low\"/\"medium\"/\"high\", got \"{other}\""
-            ),
+            // W260 free-form passthrough: any non-empty tier label the
+            // provider defines (low/high/max/custom) is carried verbatim;
+            // empty or "off" clears the override.
+            Some(s) => {
+                let t = s.trim();
+                profile.reasoning_effort = if t.is_empty() || t.eq_ignore_ascii_case("off") {
+                    None
+                } else {
+                    Some(t.to_string())
+                };
+            }
             None if strict => {
                 bail!("profile field 'reasoning_effort' must be a string, got {}", json_kind(v))
             }
@@ -661,7 +665,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(p.base_url.as_deref(), Some("https://proxy.example.test/v1"));
-        assert_eq!(p.reasoning_effort, Some(ReasoningEffort::High));
+        assert_eq!(p.reasoning_effort.as_deref(), Some("high"));
         assert_eq!(p.max_output_tokens, Some(4096));
         assert_eq!(p.api_key_env, "MY_DEEPSEEK_KEY");
     }
@@ -680,12 +684,12 @@ mod tests {
         let p = merge_profile_strict(&json!({
             "model": "deepseek-reasoner",
             "base_url": "https://proxy.example.test",
-            "reasoning_effort": "medium",
+            "reasoning_effort": "max",
             "max_output_tokens": 8192,
             "api_key_env": "K"
         }))
         .unwrap();
-        assert_eq!(p.reasoning_effort, Some(ReasoningEffort::Medium));
+        assert_eq!(p.reasoning_effort.as_deref(), Some("max"));
         assert_eq!(p.max_output_tokens, Some(8192));
         assert_eq!(p.api_key_env, "K");
     }
@@ -703,9 +707,15 @@ mod tests {
     }
 
     #[test]
-    fn strict_rejects_unknown_reasoning_effort_value() {
-        let err = merge_profile_strict(&json!({ "reasoning_effort": "extreme" })).unwrap_err();
-        assert!(err.to_string().contains("reasoning_effort"));
+    fn reasoning_effort_accepts_user_defined_tiers_verbatim() {
+        // W260: free-form passthrough - custom tier labels are carried
+        // verbatim (previously rejected or collapsed to the engine ceiling).
+        let p = merge_profile_strict(&json!({ "reasoning_effort": "extreme" })).unwrap();
+        assert_eq!(p.reasoning_effort.as_deref(), Some("extreme"));
+        let p = merge_profile_strict(&json!({ "reasoning_effort": "max" })).unwrap();
+        assert_eq!(p.reasoning_effort.as_deref(), Some("max"));
+        let p = merge_profile_strict(&json!({ "reasoning_effort": "off" })).unwrap();
+        assert_eq!(p.reasoning_effort, None);
     }
 
     #[test]
@@ -718,7 +728,7 @@ mod tests {
     fn lenient_ignores_bad_new_key_types() {
         let p = merge_profile(&json!({
             "base_url": 123,
-            "reasoning_effort": "extreme",
+            "reasoning_effort": 1, // W260: non-string stays ignored; string tiers pass through
             "max_output_tokens": "many",
             "api_key_env": 7
         }))
@@ -767,7 +777,7 @@ api_key_file = "/tmp/keys/deepseek.key"
         assert_eq!(p.max_steps, 32);
         assert_eq!(p.max_parallel_tool_calls, 2);
         assert_eq!(p.base_url.as_deref(), Some("https://proxy.example.test/v1"));
-        assert_eq!(p.reasoning_effort, Some(ReasoningEffort::High));
+        assert_eq!(p.reasoning_effort.as_deref(), Some("high"));
         assert_eq!(p.max_output_tokens, Some(4096));
         assert_eq!(p.api_key_env, "MY_KEY");
         assert_eq!(p.api_key_file.as_deref(), Some("/tmp/keys/deepseek.key"));

@@ -35,7 +35,7 @@ use eventsource_stream::EventStream;
 use futures_util::{Stream, StreamExt};
 
 use crate::config::{
-    API_KEY_ENV, BASE_URL_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, DeepSeekConfig, ReasoningEffort,
+    API_KEY_ENV, BASE_URL_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, DeepSeekConfig,
 };
 
 /// DeepSeek provider backed by async-openai (OpenAI-compatible request types).
@@ -56,7 +56,7 @@ pub struct DeepSeekLlm {
     base_url: String,
     api_key: String,
     model: String,
-    reasoning_effort: Option<ReasoningEffort>,
+    reasoning_effort: Option<String>,
     max_output_tokens: Option<u32>,
 }
 
@@ -150,12 +150,28 @@ impl DeepSeekLlm {
             model: self.effective_model(req),
             messages,
             tools: if tools.is_empty() { None } else { Some(tools) },
-            reasoning_effort: self.reasoning_effort.map(Into::into),
+            // W260: the typed field stays None - the raw tier string is
+            // injected by request_body() after serialization (free-form
+            // passthrough, no enum ceiling).
+            reasoning_effort: None,
             max_tokens,
             temperature: req.temperature,
             stream: Some(true),
             ..Default::default()
         }
+    }
+
+    /// Serialized request body: the typed request plus the raw reasoning_effort
+    /// string (when configured) injected verbatim - user-defined tiers like
+    /// "max" reach the upstream exactly as written.
+    fn request_body(&self, req: &ModelRequest) -> Result<serde_json::Value, LlmError> {
+        let request = self.build_request(req);
+        let mut body = serde_json::to_value(&request)
+            .map_err(|e| LlmError(format!("failed to serialize request: {e}")))?;
+        if let Some(effort) = &self.reasoning_effort {
+            body["reasoning_effort"] = serde_json::Value::String(effort.clone());
+        }
+        Ok(body)
     }
 }
 
@@ -165,14 +181,14 @@ impl Llm for DeepSeekLlm {
         let model = self.effective_model(&req);
         self.validate_model(&model)?;
 
-        let request = self.build_request(&req);
+        let body = self.request_body(&req)?;
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
         let response = self
             .http
             .post(&url)
             .bearer_auth(&self.api_key)
             .header(reqwest::header::ACCEPT, "text/event-stream")
-            .json(&request)
+            .json(&body)
             .send()
             .await
             .map_err(|e| LlmError(format!("failed to start stream: {e}")))?;
@@ -637,23 +653,36 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_effort_serde_and_mapping() {
-        assert_eq!(
-            serde_json::to_string(&ReasoningEffort::Low).unwrap(),
-            "\"low\""
-        );
-        assert_eq!(
-            serde_json::to_string(&ReasoningEffort::Medium).unwrap(),
-            "\"medium\""
-        );
-        assert_eq!(
-            serde_json::to_string(&ReasoningEffort::High).unwrap(),
-            "\"high\""
-        );
-        use async_openai::types::chat::ReasoningEffort as OaEffort;
-        assert_eq!(OaEffort::from(ReasoningEffort::Low), OaEffort::Low);
-        assert_eq!(OaEffort::from(ReasoningEffort::Medium), OaEffort::Medium);
-        assert_eq!(OaEffort::from(ReasoningEffort::High), OaEffort::High);
+    fn reasoning_effort_passes_through_verbatim() {
+        // W260: user-defined tiers (max / custom labels) must reach the
+        // upstream exactly as written - no ceiling mapping to high.
+        let llm = DeepSeekLlm::new(DeepSeekConfig {
+            base_url: "https://api.deepseek.com".into(),
+            api_key: "sk-test".into(),
+            model: "deepseek-reasoner".into(),
+            reasoning_effort: Some("max".into()),
+            max_output_tokens: None,
+        });
+        let req = ModelRequest {
+            model: String::new(),
+            system: None,
+            messages: vec![Message::user("hi")],
+            tools: vec![],
+            max_tokens: None,
+            temperature: None,
+        };
+        let json = llm.request_body(&req).unwrap();
+        assert_eq!(json["reasoning_effort"], "max");
+
+        let llm2 = DeepSeekLlm::new(DeepSeekConfig {
+            base_url: "https://api.deepseek.com".into(),
+            api_key: "sk-test".into(),
+            model: "deepseek-reasoner".into(),
+            reasoning_effort: Some("xhigh-custom".into()),
+            max_output_tokens: None,
+        });
+        let json2 = llm2.request_body(&req).unwrap();
+        assert_eq!(json2["reasoning_effort"], "xhigh-custom");
     }
 
     #[test]
@@ -662,21 +691,21 @@ mod tests {
             base_url: "https://example.test".into(),
             api_key: "sk-secret".into(),
             model: "deepseek-reasoner".into(),
-            reasoning_effort: Some(ReasoningEffort::High),
+            reasoning_effort: Some("high".into()),
             max_output_tokens: Some(4096),
         });
         assert_eq!(llm.model, "deepseek-reasoner");
-        assert_eq!(llm.reasoning_effort, Some(ReasoningEffort::High));
+        assert_eq!(llm.reasoning_effort, Some("high".to_string()));
         assert_eq!(llm.max_output_tokens, Some(4096));
     }
 
     #[test]
-    fn build_request_maps_reasoning_effort_and_max_tokens() {
+    fn request_body_injects_reasoning_effort_and_max_tokens() {
         let llm = DeepSeekLlm::new(DeepSeekConfig {
             base_url: "https://api.deepseek.com".into(),
             api_key: "sk-test".into(),
             model: "deepseek-reasoner".into(),
-            reasoning_effort: Some(ReasoningEffort::High),
+            reasoning_effort: Some("max".into()),
             max_output_tokens: Some(2048),
         });
         let req = ModelRequest {
@@ -687,8 +716,8 @@ mod tests {
             max_tokens: None,
             temperature: Some(0.6),
         };
-        let json = serde_json::to_value(&llm.build_request(&req)).unwrap();
-        assert_eq!(json["reasoning_effort"], "high");
+        let json = llm.request_body(&req).unwrap();
+        assert_eq!(json["reasoning_effort"], "max");
         // config max_output_tokens is the fallback when the request is silent
         assert_eq!(json["max_tokens"], 2048);
         let temp = json["temperature"].as_f64().unwrap();

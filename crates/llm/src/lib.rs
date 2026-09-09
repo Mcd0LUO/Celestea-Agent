@@ -28,6 +28,6 @@ mod client;
 mod config;
 mod registry;
 
-pub use config::{DeepSeekConfig, ModelInfo, ReasoningEffort};
+pub use config::{DeepSeekConfig, ModelInfo};
 pub use client::DeepSeekLlm;
 pub use registry::deepseek_registry;
