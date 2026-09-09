@@ -228,7 +228,28 @@ def _bridge_call(tool, args):
         )
     if not reply.get("ok", False):
         raise ToolCallError(tool, reply.get("error", "unknown error"))
-    return _Value(reply.get("value"))
+    return _Value(_attr(reply.get("value")))
+
+
+class _AttrDict(dict):
+    """dict whose keys are also attributes: s.stdout == s['stdout'].
+    Models write both styles; both must work, including AFTER `await`."""
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+
+
+def _attr(v):
+    """Recursively convert decoded JSON dicts/lists so every dict in a tool
+    result is an _AttrDict (attribute access everywhere, at any depth)."""
+    if isinstance(v, dict):
+        return _AttrDict({k: _attr(x) for k, x in v.items()})
+    if isinstance(v, list):
+        return [_attr(x) for x in v]
+    return v
 
 
 class _Value:
@@ -304,8 +325,8 @@ class _Tools:
 
     def run_shell(self, *args, **kwargs):
         # Returns the full result dict: {"exit_code", "stdout", "stderr", ...}.
-        # Read fields via ['stdout'] / ['exit_code'] (or .get(...) via the
-        # wrapper's passthrough on the dict).
+        # Fields are readable both ways: s['stdout'] AND s.stdout, before or
+        # after `await` (results are _AttrDict at any depth).
         return _bridge_call("run_shell", _merge_args(args, kwargs, "run_shell"))
 
 
@@ -1207,7 +1228,9 @@ async def main():
     b = tools.run_shell({"command": "printf hi"})   # positional-dict form
     c = tools.list_dir(path="/tmp")
     d = await tools.run_shell(command="printf bye") # await form, dict result
-    return {"a": a, "b": b, "c": c, "d": d, "d_is_dict": isinstance(d, dict)}
+    e = d.echo                                      # s.stdout-style attr access (awaited dict)
+    f = b.get("echo")                               # .get passthrough on a wrapped dict
+    return {"a": a, "b": b, "c": c, "d": d, "d_is_dict": isinstance(d, dict), "e": e, "f": f}
 "#;
         let out = tool
             .execute_with(ToolInput {
@@ -1225,6 +1248,8 @@ async def main():
                 "c": {"echo": "list_dir", "args": {"path": "/tmp"}},
                 "d": {"echo": "run_shell", "args": {"command": "printf bye"}},
                 "d_is_dict": true,
+                "e": "run_shell",
+                "f": "run_shell",
             }),
             "render: {:?}",
             out.render
