@@ -228,7 +228,50 @@ def _bridge_call(tool, args):
         )
     if not reply.get("ok", False):
         raise ToolCallError(tool, reply.get("error", "unknown error"))
-    return reply.get("value")
+    return _Value(reply.get("value"))
+
+
+class _Value:
+    """Dual-interface tool result: usable directly (indexing/iteration/str)
+    AND awaitable. Models write both styles — `await tools.list_dir(...)`
+    and `tools.list_dir(...)` must behave identically."""
+
+    def __init__(self, v):
+        self._v = v
+
+    def __await__(self):
+        return iter((self._v,))
+
+    def __iter__(self):
+        return iter(self._v)
+
+    def __getitem__(self, k):
+        return self._v[k]
+
+    def __len__(self):
+        return len(self._v)
+
+    def __bool__(self):
+        return bool(self._v)
+
+    def __str__(self):
+        return str(self._v)
+
+    def __repr__(self):
+        return repr(self._v)
+
+    def __eq__(self, other):
+        if isinstance(other, _Value):
+            other = other._v
+        return self._v == other
+
+    def get(self, *a, **k):
+        return self._v.get(*a, **k) if hasattr(self._v, "get") else None
+
+    def __getattr__(self, name):
+        # Method passthrough (splitlines, keys, ...) so the wrapper behaves
+        # exactly like the wrapped value in normal code paths.
+        return getattr(self._v, name)
 
 
 def _merge_args(positional, kwargs, tool):
@@ -266,6 +309,17 @@ tools = _Tools()
 /// work), then emits the `__final__` / `__error__` protocol line.
 const RUN_CODE_RUNNER: &str = r##"
 # ======================= harness entry point (injected) =======================
+def _plain(v):
+    """Unwrap dual-interface results before JSON serialization (dict/list deep)."""
+    if isinstance(v, _Value):
+        v = v._v
+    if isinstance(v, dict):
+        return {k: _plain(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_plain(x) for x in v]
+    return v
+
+
 import asyncio as _asyncio
 
 
@@ -284,7 +338,7 @@ def _celestea_run_main():
 
 try:
     _final_value = _celestea_run_main()
-    print(_json.dumps({"__final__": _final_value}, ensure_ascii=False), flush=True)
+    print(_json.dumps({"__final__": _plain(_final_value)}, ensure_ascii=False), flush=True)
 except BaseException as _exc:  # report ANY failure as __error__
     _tb = _traceback.format_exc()
     for _line in _tb.rstrip("\n").split("\n"):
