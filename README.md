@@ -5,6 +5,21 @@ An "everything is a plugin" AI agent harness in Rust, inspired by DeepSeek Harne
 - Core seams live in crates/core/src/lib.rs (the pinned contracts).
 - See ARCHITECTURE.md for the design and module ownership.
 
+## 文档索引
+
+- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** — 引擎开发者权威入口：7 个 crate 的职责与依赖方向、
+  core seam 契约、`Runtime::compose` 组装顺序与生命周期、10 个工具契约、run_code 父 broker 协议、
+  沙箱分层、会话/事件模型、用量与缓存、配置键与环境变量总表、构建测试、与 Studio 的集成。
+- [docs/run-code-sdk.md](docs/run-code-sdk.md) — `run_code` SDK 使用与父 broker 协议详解（可运行示例、
+  错误分类、限额、本地验证方法）。
+- 设计/评估类文档（结论由各自文档维护，DEVELOPMENT.md 只做索引）：
+  [agent-iteration-roadmap.md](docs/agent-iteration-roadmap.md)、
+  [agent-iteration-roadmap-w245-supplement.md](docs/agent-iteration-roadmap-w245-supplement.md)、
+  [dsh-ptc-mode-eval.md](docs/dsh-ptc-mode-eval.md)、
+  [run-code-mode-eval.md](docs/run-code-mode-eval.md)、
+  [backend-optimization-eval.md](docs/backend-optimization-eval.md)。
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 早期设计文档（部分章节已过时，以 DEVELOPMENT.md 为准）。
+
 ## 安装
 
 ### 方式一：下载预编译二进制（推荐）
