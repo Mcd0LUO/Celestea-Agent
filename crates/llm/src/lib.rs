@@ -16,6 +16,12 @@
 //! hardcoded here: the provider talks to whatever OpenAI-compatible endpoint
 //! `base_url` points at, which decides its own catalog. `generate` only
 //! requires a non-empty model name.
+//!
+//! W266: requests are bounded per stage — a connect timeout, a
+//! response-headers timeout and an SSE stream idle timeout (see
+//! [`DeepSeekConfig`]). There is deliberately no total-request timeout, so a
+//! long generation is never killed; a wedged upstream surfaces as a
+//! structured timeout error instead of hanging the turn forever.
 
 //! [`LlmError`] that lists the supported ones.
 //!
@@ -28,6 +34,10 @@ mod client;
 mod config;
 mod registry;
 
-pub use config::{DeepSeekConfig, ModelInfo};
-pub use client::DeepSeekLlm;
+pub use config::{
+    CONNECT_TIMEOUT_ENV, DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_RESPONSE_TIMEOUT_MS,
+    DEFAULT_STREAM_IDLE_TIMEOUT_MS, DeepSeekConfig, ModelInfo, RESPONSE_TIMEOUT_ENV,
+    STREAM_IDLE_TIMEOUT_ENV,
+};
+pub use client::{DeepSeekLlm, TIMEOUT_ERROR_PREFIX};
 pub use registry::deepseek_registry;

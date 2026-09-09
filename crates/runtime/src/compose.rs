@@ -14,7 +14,11 @@ use celestea_core::{
     LlmService, SessionLog, SessionService, ToolRegistry,
     ToolRegistryService,
 };
-use celestea_llm::{deepseek_registry, DeepSeekConfig, DeepSeekLlm};
+use celestea_llm::{
+    deepseek_registry, DeepSeekConfig, DeepSeekLlm, CONNECT_TIMEOUT_ENV,
+    DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_RESPONSE_TIMEOUT_MS, DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+    RESPONSE_TIMEOUT_ENV, STREAM_IDLE_TIMEOUT_ENV,
+};
 use celestea_session::{InMemorySessionLog, PersistentSessionLog, Session, SessionMeta};
 use celestea_tools::{
     ProcessCompletion, ProcessRegistry, ProcessRegistryService,
@@ -22,7 +26,7 @@ use celestea_tools::{
 use celestea_workers::WorkerRegistry;
 
 use crate::config::{
-    resolve_api_key, resolve_base_url, validate_model, Profile,
+    resolve_api_key, resolve_base_url, resolve_llm_timeout_ms, validate_model, Profile,
 };
 use crate::tools::build_registry;
 #[cfg(test)]
@@ -82,12 +86,31 @@ impl Runtime {
             std::env::var("DEEPSEEK_BASE_URL").ok().as_deref(),
         );
 
+        // W266 LLM timeouts: env CELESTEA_LLM_* wins over the profile key,
+        // which wins over the provider default; 0 disables that stage. These
+        // are per-stage guards (connect / response headers / stream idle), not
+        // a total-request timeout, so long generations still run to completion.
         let config = DeepSeekConfig {
             base_url,
             api_key,
             model: profile.model.clone(),
             reasoning_effort: profile.reasoning_effort.clone(),
             max_output_tokens: profile.max_output_tokens,
+            connect_timeout_ms: resolve_llm_timeout_ms(
+                profile.llm_connect_timeout_ms,
+                std::env::var(CONNECT_TIMEOUT_ENV).ok().as_deref(),
+                DEFAULT_CONNECT_TIMEOUT_MS,
+            ),
+            response_timeout_ms: resolve_llm_timeout_ms(
+                profile.llm_response_timeout_ms,
+                std::env::var(RESPONSE_TIMEOUT_ENV).ok().as_deref(),
+                DEFAULT_RESPONSE_TIMEOUT_MS,
+            ),
+            stream_idle_timeout_ms: resolve_llm_timeout_ms(
+                profile.llm_stream_idle_timeout_ms,
+                std::env::var(STREAM_IDLE_TIMEOUT_ENV).ok().as_deref(),
+                DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+            ),
         };
         // LLM adapter registry (multi-provider seam, W189): register the deepseek
         // provider by name, then resolve it. LlmService stays provided for

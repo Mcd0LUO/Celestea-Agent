@@ -1,7 +1,7 @@
 //! Profile loading (lenient by default, strict validates), composition of the
-//! shared Context (compose renders the engine from a profile), .env handling
-//! and api-key / base-url resolution. Extracted from the CLI (W214): pure
-//! engine config — no terminal/CLI concepts.
+//! shared Context (compose renders the engine from a profile), .env handling,
+//! api-key / base-url resolution and the LLM timeout knobs (W266). Extracted
+//! from the CLI (W214): pure engine config — no terminal/CLI concepts.
 
 use std::path::Path;
 
@@ -29,6 +29,17 @@ pub struct Profile {
     pub reasoning_effort: Option<String>,
     /// Optional output-token cap.
     pub max_output_tokens: Option<u32>,
+    /// LLM TCP/TLS connect timeout in ms (W266; None = provider default
+    /// 15000, 0 disables). Env CELESTEA_LLM_CONNECT_TIMEOUT_MS wins.
+    pub llm_connect_timeout_ms: Option<u64>,
+    /// LLM send() -> response-headers timeout in ms (W266; None = provider
+    /// default 60000, 0 disables). Env CELESTEA_LLM_RESPONSE_TIMEOUT_MS wins.
+    /// This is NOT a total-request timeout: long generations are unaffected.
+    pub llm_response_timeout_ms: Option<u64>,
+    /// LLM SSE stream idle timeout in ms (W266): max gap between two data
+    /// chunks once the stream is open (None = provider default 90000, 0
+    /// disables). Env CELESTEA_LLM_STREAM_IDLE_TIMEOUT_MS wins.
+    pub llm_stream_idle_timeout_ms: Option<u64>,
     /// Env var that holds the API key (default DEEPSEEK_API_KEY).
     pub api_key_env: String,
     /// Optional path to a file whose trimmed contents hold the API key
@@ -53,6 +64,9 @@ impl Default for Profile {
             base_url: None,
             reasoning_effort: None,
             max_output_tokens: None,
+            llm_connect_timeout_ms: None,
+            llm_response_timeout_ms: None,
+            llm_stream_idle_timeout_ms: None,
             api_key_env: "DEEPSEEK_API_KEY".into(),
             api_key_file: None,
         }
@@ -60,9 +74,9 @@ impl Default for Profile {
 }
 
 /// The documented profile keys the runtime understands today. W178 added the
-/// model-config keys and W192 added api_key_file; strict unknown-key rejection
-/// keys off this list.
-pub const PROFILE_KEYS: [&str; 12] = [
+/// model-config keys, W192 added api_key_file and W266 added the three LLM
+/// timeout keys; strict unknown-key rejection keys off this list.
+pub const PROFILE_KEYS: [&str; 15] = [
     "model",
     "system_prompt",
     "max_steps",
@@ -73,6 +87,9 @@ pub const PROFILE_KEYS: [&str; 12] = [
     "base_url",
     "reasoning_effort",
     "max_output_tokens",
+    "llm_connect_timeout_ms",
+    "llm_response_timeout_ms",
+    "llm_stream_idle_timeout_ms",
     "api_key_env",
     "api_key_file",
 ];
@@ -216,6 +233,38 @@ pub fn merge_profile_mode(json: &Value, strict: bool) -> Result<Profile> {
             Some(n) => profile.max_output_tokens = Some(n),
             None if strict => bail!(
                 "profile field 'max_output_tokens' must be a non-negative integer (u32), got {}",
+                json_kind(v)
+            ),
+            None => {}
+        }
+    }
+    // W266 LLM timeout keys: non-negative integers in milliseconds.
+    // 0 is a meaningful value (disable that timeout), so it is accepted.
+    if let Some(v) = obj.get("llm_connect_timeout_ms") {
+        match v.as_u64() {
+            Some(n) => profile.llm_connect_timeout_ms = Some(n),
+            None if strict => bail!(
+                "profile field 'llm_connect_timeout_ms' must be a non-negative integer (ms), got {}",
+                json_kind(v)
+            ),
+            None => {}
+        }
+    }
+    if let Some(v) = obj.get("llm_response_timeout_ms") {
+        match v.as_u64() {
+            Some(n) => profile.llm_response_timeout_ms = Some(n),
+            None if strict => bail!(
+                "profile field 'llm_response_timeout_ms' must be a non-negative integer (ms), got {}",
+                json_kind(v)
+            ),
+            None => {}
+        }
+    }
+    if let Some(v) = obj.get("llm_stream_idle_timeout_ms") {
+        match v.as_u64() {
+            Some(n) => profile.llm_stream_idle_timeout_ms = Some(n),
+            None if strict => bail!(
+                "profile field 'llm_stream_idle_timeout_ms' must be a non-negative integer (ms), got {}",
                 json_kind(v)
             ),
             None => {}
@@ -390,6 +439,23 @@ pub fn resolve_base_url(profile_base: Option<&str>, env_base: Option<&str>) -> S
         .map(|s| s.to_string())
         .or_else(|| env_base.filter(|s| !s.is_empty()).map(|s| s.to_string()))
         .unwrap_or_else(|| "https://api.deepseek.com".to_string())
+}
+
+/// Resolve one W266 LLM timeout in milliseconds.
+///
+/// Precedence: env var (CELESTEA_LLM_*) wins over the profile key, which wins
+/// over `default_ms`. A blank or unparseable env var is ignored (lenient, like
+/// the rest of the profile loader). 0 is returned verbatim and means "disable
+/// this timeout" downstream. Pure — unit-tested.
+pub fn resolve_llm_timeout_ms(
+    profile_value: Option<u64>,
+    env_value: Option<&str>,
+    default_ms: u64,
+) -> u64 {
+    env_value
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .or(profile_value)
+        .unwrap_or(default_ms)
 }
 
 /// Validate the model string. Model names are free-form: the provider talks
@@ -927,6 +993,104 @@ bogus = 1
         let _ = std::fs::remove_file(&missing);
         assert!(!load_dotenv_at(&missing));
     }
+    // ---- W266: LLM request-timeout profile keys -----------------------------
+
+    #[test]
+    fn llm_timeout_keys_parse_lenient() {
+        let p = merge_profile(&json!({
+            "llm_connect_timeout_ms": 15000,
+            "llm_response_timeout_ms": 60000,
+            "llm_stream_idle_timeout_ms": 90000
+        }))
+        .unwrap();
+        assert_eq!(p.llm_connect_timeout_ms, Some(15000));
+        assert_eq!(p.llm_response_timeout_ms, Some(60000));
+        assert_eq!(p.llm_stream_idle_timeout_ms, Some(90000));
+    }
+
+    #[test]
+    fn llm_timeout_keys_default_to_none() {
+        // Unset keys leave the provider defaults in charge (15s/60s/90s).
+        let p = merge_profile(&json!({})).unwrap();
+        assert_eq!(p.llm_connect_timeout_ms, None);
+        assert_eq!(p.llm_response_timeout_ms, None);
+        assert_eq!(p.llm_stream_idle_timeout_ms, None);
+        assert_eq!(Profile::default().llm_connect_timeout_ms, None);
+    }
+
+    #[test]
+    fn llm_timeout_zero_parses_and_disables() {
+        let p = merge_profile(&json!({ "llm_stream_idle_timeout_ms": 0 })).unwrap();
+        assert_eq!(p.llm_stream_idle_timeout_ms, Some(0));
+        // 0 survives resolution verbatim: downstream it means "no timeout".
+        assert_eq!(resolve_llm_timeout_ms(Some(0), None, 90_000), 0);
+    }
+
+    #[test]
+    fn resolve_llm_timeout_precedence_env_over_profile_over_default() {
+        // env wins over the profile key
+        assert_eq!(resolve_llm_timeout_ms(Some(111), Some("222"), 333), 222);
+        // profile wins over the built-in default
+        assert_eq!(resolve_llm_timeout_ms(Some(111), None, 333), 111);
+        // default when neither is set
+        assert_eq!(resolve_llm_timeout_ms(None, None, 333), 333);
+        // blank / unparseable env is ignored (lenient), profile still applies
+        assert_eq!(resolve_llm_timeout_ms(Some(111), Some("not-a-number"), 333), 111);
+        assert_eq!(resolve_llm_timeout_ms(None, Some("   "), 333), 333);
+        // env 0 disables even when the profile set a value
+        assert_eq!(resolve_llm_timeout_ms(Some(111), Some("0"), 333), 0);
+    }
+
+    #[test]
+    fn llm_timeout_env_var_overrides_profile_key() {
+        let key = "CELESTEA_LLM_RESPONSE_TIMEOUT_MS";
+        let old = std::env::var(key).ok();
+        std::env::set_var(key, "1234");
+        let resolved = resolve_llm_timeout_ms(
+            Some(60_000),
+            std::env::var(key).ok().as_deref(),
+            60_000,
+        );
+        assert_eq!(resolved, 1234);
+        match old {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[test]
+    fn strict_accepts_llm_timeout_keys() {
+        let p = merge_profile_strict(&json!({
+            "llm_connect_timeout_ms": 1,
+            "llm_response_timeout_ms": 2,
+            "llm_stream_idle_timeout_ms": 0
+        }))
+        .unwrap();
+        assert_eq!(p.llm_connect_timeout_ms, Some(1));
+        assert_eq!(p.llm_response_timeout_ms, Some(2));
+        assert_eq!(p.llm_stream_idle_timeout_ms, Some(0));
+    }
+
+    #[test]
+    fn strict_rejects_bad_llm_timeout_key_types() {
+        for key in [
+            "llm_connect_timeout_ms",
+            "llm_response_timeout_ms",
+            "llm_stream_idle_timeout_ms",
+        ] {
+            let err = merge_profile_strict(&json!({ key: "slow" })).unwrap_err();
+            assert!(err.to_string().contains(key), "{key}: {err}");
+            let err = merge_profile_strict(&json!({ key: -1 })).unwrap_err();
+            assert!(err.to_string().contains(key), "{key} negative: {err}");
+        }
+    }
+
+    #[test]
+    fn lenient_ignores_bad_llm_timeout_key_types() {
+        let p = merge_profile(&json!({ "llm_response_timeout_ms": "slow" })).unwrap();
+        assert_eq!(p.llm_response_timeout_ms, None);
+    }
+
     // ---- W220: context-trim profile keys -----------------------------------
     #[test]
     fn context_keys_parse_lenient() {

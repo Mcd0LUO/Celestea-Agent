@@ -16,6 +16,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::pin::Pin;
+use std::time::Duration;
 
 use async_openai::types::chat::{
     ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
@@ -35,7 +36,9 @@ use eventsource_stream::EventStream;
 use futures_util::{Stream, StreamExt};
 
 use crate::config::{
-    API_KEY_ENV, BASE_URL_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, DeepSeekConfig,
+    API_KEY_ENV, BASE_URL_ENV, CONNECT_TIMEOUT_ENV, DEFAULT_BASE_URL, DEFAULT_CONNECT_TIMEOUT_MS,
+    DEFAULT_MODEL, DEFAULT_RESPONSE_TIMEOUT_MS, DEFAULT_STREAM_IDLE_TIMEOUT_MS, DeepSeekConfig,
+    RESPONSE_TIMEOUT_ENV, STREAM_IDLE_TIMEOUT_ENV,
 };
 
 /// DeepSeek provider backed by async-openai (OpenAI-compatible request types).
@@ -58,6 +61,13 @@ pub struct DeepSeekLlm {
     model: String,
     reasoning_effort: Option<String>,
     max_output_tokens: Option<u32>,
+    /// TCP/TLS connect timeout (W266); None = disabled.
+    connect_timeout: Option<Duration>,
+    /// send() -> response-headers timeout (W266); None = disabled. Deliberately
+    /// NOT a total-request timeout: long generations stay alive.
+    response_timeout: Option<Duration>,
+    /// SSE inter-chunk idle timeout (W266); None = disabled.
+    stream_idle_timeout: Option<Duration>,
 }
 
 impl DeepSeekLlm {
@@ -68,14 +78,29 @@ impl DeepSeekLlm {
     /// DeepSeekLlm::generate (and in the Result-returning from_env); callers
     /// may pre-check with DeepSeekLlm::validate_model.
     pub fn new(config: DeepSeekConfig) -> Self {
+        let connect_timeout = ms_to_duration(config.connect_timeout_ms);
         Self {
-            http: reqwest::Client::new(),
+            // W266: the transport is built explicitly instead of with the bare
+            // reqwest::Client::new() (which has no connect timeout at all and
+            // let a wedged upstream hang a turn forever). No total-request
+            // timeout is set: the response-header and stream-idle guards are
+            // applied per stage in generate().
+            http: build_http_client(connect_timeout),
             base_url: config.base_url,
             api_key: config.api_key,
             model: config.model,
             reasoning_effort: config.reasoning_effort,
             max_output_tokens: config.max_output_tokens,
+            connect_timeout,
+            response_timeout: ms_to_duration(config.response_timeout_ms),
+            stream_idle_timeout: ms_to_duration(config.stream_idle_timeout_ms),
         }
+    }
+
+    /// The effective timeouts (connect, response-header, stream-idle); None
+    /// means the stage is unbounded (configured 0).
+    pub fn timeouts(&self) -> (Option<Duration>, Option<Duration>, Option<Duration>) {
+        (self.connect_timeout, self.response_timeout, self.stream_idle_timeout)
     }
 
     /// Build a client from the environment.
@@ -94,6 +119,20 @@ impl DeepSeekLlm {
             model: DEFAULT_MODEL.to_string(),
             reasoning_effort: None,
             max_output_tokens: None,
+            // W266: the CELESTEA_LLM_* env knobs are honored on the from_env
+            // path too (env beats the built-in default; 0 disables).
+            connect_timeout_ms: timeout_ms_from_env(
+                CONNECT_TIMEOUT_ENV,
+                DEFAULT_CONNECT_TIMEOUT_MS,
+            ),
+            response_timeout_ms: timeout_ms_from_env(
+                RESPONSE_TIMEOUT_ENV,
+                DEFAULT_RESPONSE_TIMEOUT_MS,
+            ),
+            stream_idle_timeout_ms: timeout_ms_from_env(
+                STREAM_IDLE_TIMEOUT_ENV,
+                DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+            ),
         };
         let llm = Self::new(config);
         llm.validate_model(&llm.model)?;
@@ -183,15 +222,31 @@ impl Llm for DeepSeekLlm {
 
         let body = self.request_body(&req)?;
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        let response = self
+        let send = self
             .http
             .post(&url)
             .bearer_auth(&self.api_key)
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .json(&body)
-            .send()
-            .await
-            .map_err(|e| LlmError(format!("failed to start stream: {e}")))?;
+            .send();
+
+        // W266 response-header guard: the upstream may accept the TCP
+        // connection and then never answer (the exact gateway failure that
+        // used to hang a turn forever). Bound only the wait for the response
+        // HEADERS — the body/stream afterwards is guarded per-chunk by the
+        // idle timeout, so a long generation is never killed by this.
+        let response = match self.response_timeout {
+            Some(limit) => match tokio::time::timeout(limit, send).await {
+                Ok(result) => result.map_err(|e| transport_error("failed to start stream", &e))?,
+                Err(_) => {
+                    return Err(timeout_error(format!(
+                        "response headers not received within {}ms ({url})",
+                        limit.as_millis()
+                    )));
+                }
+            },
+            None => send.await.map_err(|e| transport_error("failed to start stream", &e))?,
+        };
 
         if !response.status().is_success() {
             let status = response.status();
@@ -201,12 +256,65 @@ impl Llm for DeepSeekLlm {
 
         // Raw SSE path: async-openai's typed stream drops reasoning_content
         // (see the NOTE on extract_reasoning), so decode the provider's
-        // events ourselves and surface each delta as it streams in.
+        // events ourselves and surface each delta as it streams in. The idle
+        // timeout aborts a stream that goes silent between chunks (W266).
         let byte_stream = response.bytes_stream().map(|r| r.map_err(io::Error::other));
-        let upstream = raw_chunk_stream(byte_stream);
+        let upstream = raw_chunk_stream(byte_stream, self.stream_idle_timeout);
 
         Ok(stream_events(upstream))
     }
+}
+
+/// W266: canonical prefix of every timeout error, so callers, logs and tests
+/// can distinguish a timeout from a generic transport/HTTP failure without
+/// parsing free-form provider text. `LlmError` is a plain string (core owns the
+/// type), so this prefix IS the structured contract: an LlmError whose message
+/// starts with it maps to `TurnOutcome::Error { kind: "generate", .. }` in the
+/// agent loop, and a streamed idle abort maps to `kind: "timeout"`.
+pub const TIMEOUT_ERROR_PREFIX: &str = "llm timeout";
+
+/// Build a structured timeout error with the canonical prefix.
+fn timeout_error(detail: impl std::fmt::Display) -> LlmError {
+    LlmError(format!("{TIMEOUT_ERROR_PREFIX}: {detail}"))
+}
+
+/// Map a reqwest failure to an LlmError, keeping timeout semantics visible
+/// (reqwest reports the connect-timeout as a timeout too).
+fn transport_error(stage: &str, e: &reqwest::Error) -> LlmError {
+    if e.is_timeout() {
+        timeout_error(format!("{stage}: {e}"))
+    } else {
+        LlmError(format!("{stage}: {e}"))
+    }
+}
+
+/// Convert a millisecond timeout into a Duration; 0 means "disabled" (None).
+fn ms_to_duration(ms: u64) -> Option<Duration> {
+    if ms == 0 { None } else { Some(Duration::from_millis(ms)) }
+}
+
+/// Read a CELESTEA_LLM_* timeout env var in milliseconds. Unset, blank or
+/// unparseable falls back to `default_ms`; 0 disables the timeout.
+fn timeout_ms_from_env(name: &str, default_ms: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(default_ms)
+}
+
+/// Build the reqwest transport with the configured connect timeout. reqwest's
+/// builder is effectively infallible here (no custom TLS/proxy config), but the
+/// constructor is pinned to return Self: a build failure degrades to the
+/// default client with a warning instead of panicking.
+fn build_http_client(connect_timeout: Option<Duration>) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder();
+    if let Some(limit) = connect_timeout {
+        builder = builder.connect_timeout(limit);
+    }
+    builder.build().unwrap_or_else(|e| {
+        eprintln!("[celestea] llm: failed to build http client ({e}); falling back to default client");
+        reqwest::Client::new()
+    })
 }
 
 /// Decode the raw SSE byte stream of a chat-completions response into
@@ -219,7 +327,7 @@ impl Llm for DeepSeekLlm {
 /// `Err(RawChunkError::Failed)` and an upstream that ends without the [DONE]
 /// sentinel yields `Err(RawChunkError::Interrupted)` — either way the caller
 /// reports a terminal state instead of a fake successful Done.
-fn raw_chunk_stream<S, B, E>(byte_stream: S) -> RawChunkStream
+fn raw_chunk_stream<S, B, E>(byte_stream: S, idle_timeout: Option<Duration>) -> RawChunkStream
 where
     S: Stream<Item = Result<B, E>> + Send + 'static,
     B: AsRef<[u8]> + Send + 'static,
@@ -229,7 +337,26 @@ where
     Box::pin(stream! {
         let mut saw_done = false;
         let mut failed = false;
-        while let Some(ev) = events.next().await {
+        loop {
+            // W266 stream-idle guard: the upstream answered with headers and
+            // then stopped sending. Bound the gap between any two data chunks
+            // (including the wait for the first one) — a live generation keeps
+            // emitting tokens, so this only trips on a stalled stream.
+            let next = match idle_timeout {
+                Some(limit) => match tokio::time::timeout(limit, events.next()).await {
+                    Ok(next) => next,
+                    Err(_) => {
+                        yield Err(RawChunkError::Timeout(format!(
+                            "stream idle timeout: no data chunk for {}ms",
+                            limit.as_millis()
+                        )));
+                        failed = true;
+                        break;
+                    }
+                },
+                None => events.next().await,
+            };
+            let Some(ev) = next else { break };
             let event = match ev {
                 Ok(e) => e,
                 Err(e) => {
@@ -339,6 +466,13 @@ fn stream_events(mut upstream: RawChunkStream) -> LlmStream {
                 // never a fake successful Done (R1).
                 yield StreamEvent::Failed { kind: "stream".into(), message: msg };
             }
+            Some(RawChunkError::Timeout(msg)) => {
+                // W266: a stalled stream is a terminal timeout, surfaced with
+                // its own kind so the agent loop reports
+                // TurnOutcome::Error { kind: "timeout", message } and Studio
+                // shows the reason instead of spinning forever.
+                yield StreamEvent::Failed { kind: "timeout".into(), message: msg };
+            }
             Some(RawChunkError::Interrupted) => {
                 yield StreamEvent::Interrupted;
             }
@@ -399,6 +533,10 @@ struct RawToolCallDelta {
 enum RawChunkError {
     /// Decode/transport error mid-stream (message carries the detail).
     Failed(String),
+    /// The upstream went silent mid-stream (W266 stream idle timeout). Kept
+    /// distinct from `Failed` so the terminal StreamEvent carries the
+    /// machine-readable kind "timeout" instead of a generic "stream" failure.
+    Timeout(String),
     /// The upstream ended before the [DONE] sentinel (torn stream).
     Interrupted,
 }
@@ -649,6 +787,9 @@ mod tests {
             model: "deepseek-chat".into(),
             reasoning_effort: None,
             max_output_tokens: None,
+            connect_timeout_ms: DEFAULT_CONNECT_TIMEOUT_MS,
+            response_timeout_ms: DEFAULT_RESPONSE_TIMEOUT_MS,
+            stream_idle_timeout_ms: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
         })
     }
 
@@ -662,6 +803,9 @@ mod tests {
             model: "deepseek-reasoner".into(),
             reasoning_effort: Some("max".into()),
             max_output_tokens: None,
+            connect_timeout_ms: DEFAULT_CONNECT_TIMEOUT_MS,
+            response_timeout_ms: DEFAULT_RESPONSE_TIMEOUT_MS,
+            stream_idle_timeout_ms: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
         });
         let req = ModelRequest {
             model: String::new(),
@@ -680,6 +824,9 @@ mod tests {
             model: "deepseek-reasoner".into(),
             reasoning_effort: Some("xhigh-custom".into()),
             max_output_tokens: None,
+            connect_timeout_ms: DEFAULT_CONNECT_TIMEOUT_MS,
+            response_timeout_ms: DEFAULT_RESPONSE_TIMEOUT_MS,
+            stream_idle_timeout_ms: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
         });
         let json2 = llm2.request_body(&req).unwrap();
         assert_eq!(json2["reasoning_effort"], "xhigh-custom");
@@ -693,6 +840,9 @@ mod tests {
             model: "deepseek-reasoner".into(),
             reasoning_effort: Some("high".into()),
             max_output_tokens: Some(4096),
+            connect_timeout_ms: DEFAULT_CONNECT_TIMEOUT_MS,
+            response_timeout_ms: DEFAULT_RESPONSE_TIMEOUT_MS,
+            stream_idle_timeout_ms: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
         });
         assert_eq!(llm.model, "deepseek-reasoner");
         assert_eq!(llm.reasoning_effort, Some("high".to_string()));
@@ -707,6 +857,9 @@ mod tests {
             model: "deepseek-reasoner".into(),
             reasoning_effort: Some("max".into()),
             max_output_tokens: Some(2048),
+            connect_timeout_ms: DEFAULT_CONNECT_TIMEOUT_MS,
+            response_timeout_ms: DEFAULT_RESPONSE_TIMEOUT_MS,
+            stream_idle_timeout_ms: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
         });
         let req = ModelRequest {
             model: "deepseek-reasoner".into(),
@@ -732,6 +885,9 @@ mod tests {
             model: "deepseek-chat".into(),
             reasoning_effort: None,
             max_output_tokens: Some(2048),
+            connect_timeout_ms: DEFAULT_CONNECT_TIMEOUT_MS,
+            response_timeout_ms: DEFAULT_RESPONSE_TIMEOUT_MS,
+            stream_idle_timeout_ms: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
         });
         let req = ModelRequest {
             model: String::new(),
@@ -1034,7 +1190,7 @@ mod tests {
             Ok::<Vec<u8>, io::Error>(sse[..split].as_bytes().to_vec()),
             Ok::<Vec<u8>, io::Error>(sse[split..].as_bytes().to_vec()),
         ]);
-        let mut chunks = raw_chunk_stream(byte_stream);
+        let mut chunks = raw_chunk_stream(byte_stream, None);
         let mut got = Vec::new();
         while let Some(chunk) = chunks.next().await {
             got.push(chunk.unwrap());
@@ -1174,7 +1330,7 @@ mod tests {
         let byte_stream = futures_util::stream::iter(vec![
             Ok::<Vec<u8>, io::Error>(sse.as_bytes().to_vec()),
         ]);
-        let mut stream = stream_events(raw_chunk_stream(byte_stream));
+        let mut stream = stream_events(raw_chunk_stream(byte_stream, None));
         let mut events: Vec<StreamEvent> = Vec::new();
         while let Some(ev) = stream.next().await {
             events.push(ev);
@@ -1346,7 +1502,7 @@ mod tests {
         let byte_stream = futures_util::stream::iter(vec![
             Ok::<Vec<u8>, io::Error>(sse.as_bytes().to_vec()),
         ]);
-        let mut stream = stream_events(raw_chunk_stream(byte_stream));
+        let mut stream = stream_events(raw_chunk_stream(byte_stream, None));
         let mut events: Vec<StreamEvent> = Vec::new();
         while let Some(ev) = stream.next().await {
             events.push(ev);
@@ -1419,7 +1575,7 @@ mod tests {
         let byte_stream = futures_util::stream::iter(vec![
             Ok::<Vec<u8>, io::Error>(sse.as_bytes().to_vec()),
         ]);
-        let mut chunks = raw_chunk_stream(byte_stream);
+        let mut chunks = raw_chunk_stream(byte_stream, None);
         let first = chunks.next().await.expect("first chunk").expect("text chunk");
         assert_eq!(first.choices[0].text.as_deref(), Some("hi"));
         let second = chunks.next().await.expect("terminal marker").expect_err("torn stream");
@@ -1435,7 +1591,7 @@ mod tests {
             Ok::<Vec<u8>, io::Error>(format!("{sse}\n\n").into_bytes()),
             Err::<Vec<u8>, io::Error>(io::Error::new(io::ErrorKind::ConnectionAborted, "aborted")),
         ]);
-        let mut stream = stream_events(raw_chunk_stream(byte_stream));
+        let mut stream = stream_events(raw_chunk_stream(byte_stream, None));
         let mut events: Vec<StreamEvent> = Vec::new();
         while let Some(ev) = stream.next().await {
             events.push(ev);

@@ -10,8 +10,9 @@
 //!
 //! # Public surface
 //!
-//! - [Profile] + [resolve_profile]: 9-key TOML/JSON config with lenient /
-//!   strict merge semantics, home-dir fallback, api-key 3-path resolution.
+//! - [Profile] + [resolve_profile]: 15-key TOML/JSON config with lenient /
+//!   strict merge semantics, home-dir fallback, api-key 3-path resolution and
+//!   the W266 LLM timeout knobs (env CELESTEA_LLM_* wins over the profile key).
 //! - [Runtime::compose]: build the shared [Context] + service registries from
 //!   a [Profile] (incl. the CELESTEA_SESSION_DIR persistence switch).
 //! - [Runtime::run_turn]: one cancellable, streaming turn — a frontend feeds
@@ -43,7 +44,7 @@ pub use celestea_workers::{WorkerRegistry, WorkerRegistryService};
 pub use compose::Runtime;
 pub use config::{
     load_dotenv, load_dotenv_at, load_profile, merge_profile, merge_profile_strict,
-    resolve_api_key, resolve_base_url, resolve_profile, validate_model,
+    resolve_api_key, resolve_base_url, resolve_llm_timeout_ms, resolve_profile, validate_model,
     Profile, DEFAULT_CONFIG, LEGACY_CONFIG, PROFILE_KEYS,
 };
 pub use run::TurnOutcome;
