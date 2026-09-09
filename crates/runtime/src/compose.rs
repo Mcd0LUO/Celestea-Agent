@@ -16,7 +16,9 @@ use celestea_core::{
 };
 use celestea_llm::{deepseek_registry, DeepSeekConfig, DeepSeekLlm};
 use celestea_session::{InMemorySessionLog, PersistentSessionLog, Session, SessionMeta};
-use celestea_tools::{ProcessRegistry, ProcessRegistryService, ToolRegistryImpl};
+use celestea_tools::{
+    ProcessCompletion, ProcessRegistry, ProcessRegistryService, ToolRegistryImpl,
+};
 use celestea_workers::WorkerRegistry;
 
 use crate::config::{
@@ -124,6 +126,27 @@ impl Runtime {
         // so detached sandbox processes survive across turns. Runtime drop kills
         // whatever is still running (ProcessRegistry::drop).
         let processes = Arc::new(ProcessRegistry::new());
+
+        // W251 后台进程完成回传：run_shell(background) 的子进程自然退出时，
+        // reaper 通过这里的 sink 把一行完成消息推入宿主会话 mailbox（Studio 的
+        // autowake 循环随后自动唤醒 agent），agent 不再需要轮询 process_control。
+        // 只克隆 SessionMailbox（无强引用回 WorkerRegistry，保持 W248 无环不变量）；
+        // kill / shutdown 路径由 ProcessRegistry 内部抑制，不会产生重复噪音。
+        let host_mailbox = workers.mailbox().clone();
+        processes.set_completion_sink(Arc::new(move |c: ProcessCompletion| {
+            let code = c
+                .exit_code
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "None".to_string());
+            host_mailbox.send(
+                HOST_SID,
+                format!(
+                    "[process] {} exited code={code} ({}ms)\nstdout: {}\nstderr: {}",
+                    c.handle, c.elapsed_ms, c.stdout_tail, c.stderr_tail
+                ),
+                format!("process-{}", c.handle),
+            );
+        }));
 
         // W232 会话通讯闭环：把宿主会话（cli-main）登记进共享 SessionRegistry，
         // 使 worker 侧 session_send_message(target="cli-main") 可按 id 解析并把
@@ -235,6 +258,7 @@ impl Drop for Runtime {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use celestea_core::{LlmRegistryService, LlmService, ToolRegistry};
     use celestea_tools::ToolRegistryImpl;
@@ -447,7 +471,7 @@ mod tests {
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("child stdout");
         let stderr = child.stderr.take().expect("child stderr");
-        proc_svc.0.insert(child, stdin, stdout, stderr);
+        proc_svc.0.insert(child, stdin, stdout, stderr, true);
         assert_eq!(proc_svc.len(), 1, "sleep process registered");
 
         // 显式 shutdown；再跑一次验证幂等（第二步全为 no-op，不 panic）。
@@ -491,6 +515,60 @@ mod tests {
         std::env::remove_var("CELESTEA_SESSION_DIR");
         std::env::remove_var(key_env);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- W251: 后台进程自然退出 → 完成消息回传宿主 mailbox ----------------------
+
+    /// compose 接线的 sink：后台进程自然退出后，WorkerRegistry.mailbox 的
+    /// cli-main 队列恰好入队一条完成消息，内容含 "[process]"、退出码与 tail，
+    /// from_label 为 "process-<handle>"（异步等待 ≤5s）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn compose_pushes_process_completion_to_host_mailbox() {
+        let key_env = "W251_MAILBOX_KEY";
+        std::env::set_var(key_env, "sk-test");
+        let profile = Profile { api_key_env: key_env.into(), ..Profile::default() };
+        let rt = Runtime::compose(&profile).unwrap();
+
+        let proc_svc =
+            rt.ctx.get::<ProcessRegistryService>().expect("ProcessRegistryService provided");
+        let mut child = tokio::process::Command::new("sh")
+            .args(["-c", "echo out; sleep 0.1; exit 3"])
+            .process_group(0)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn sh");
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("child stdout");
+        let stderr = child.stderr.take().expect("child stderr");
+        proc_svc.0.insert(child, stdin, stdout, stderr, true);
+
+        // 异步等待 ≤5s：宿主队列恰好一条完成消息。
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut pending = rt.workers.mailbox().pending(crate::compose::HOST_SID);
+        while pending == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "completion message not delivered to cli-main mailbox within 5s"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            pending = rt.workers.mailbox().pending(crate::compose::HOST_SID);
+        }
+        assert_eq!(pending, 1, "exactly one completion message");
+
+        let msgs = rt.workers.mailbox().poll(crate::compose::HOST_SID);
+        assert_eq!(msgs.len(), 1);
+        let m = &msgs[0];
+        assert!(m.content.contains("[process]"), "content: {}", m.content);
+        assert!(m.content.contains("exited code=3"), "content: {}", m.content);
+        assert!(m.content.contains("stdout: out"), "content: {}", m.content);
+        assert!(
+            m.from_label.starts_with("process-"),
+            "from_label: {}",
+            m.from_label
+        );
+        std::env::remove_var(key_env);
     }
 }
 

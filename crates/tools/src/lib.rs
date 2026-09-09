@@ -22,7 +22,9 @@ mod sandbox;
 
 pub use crate::builtin::{builtin_tools, builtin_tools_with};
 pub use crate::guard::{mount_production_guards, parse_roots, PathGuard, PathGuardPolicy};
-pub use crate::process::{ChildHandle, ProcessRegistry, ProcessRegistryService};
+pub use crate::process::{
+    ChildHandle, ProcessCompletion, ProcessRegistry, ProcessRegistryService,
+};
 pub use crate::registry::ToolRegistryImpl;
 
 // Internal re-exports consumed by `mod tests` (super::*) within this crate.

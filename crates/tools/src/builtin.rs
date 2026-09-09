@@ -143,6 +143,9 @@ pub(crate) fn run_shell_tool_with(config: SandboxConfig, processes: Arc<ProcessR
             let command = arg_str(&args, "command")?.to_owned();
             let workdir = args.get("workdir").and_then(Value::as_str);
             let background = args.get("background").and_then(Value::as_bool).unwrap_or(false);
+            // W251: completion message on natural exit (default true; false
+            // opts this spawn out of the registry's completion sink).
+            let notify = args.get("notify").and_then(Value::as_bool).unwrap_or(true);
 
             // W242 A: background spawn — detached child in the sandbox, no
             // call-level timeout (rlimits still apply), registered in the
@@ -151,7 +154,7 @@ pub(crate) fn run_shell_tool_with(config: SandboxConfig, processes: Arc<ProcessR
                 let spawned = crate::sandbox::spawn_sandboxed(&command, &config, workdir)
                     .await
                     .map_err(|e| e.to_string())?;
-                let h = processes.insert(spawned.child, spawned.stdin, spawned.stdout, spawned.stderr);
+                let h = processes.insert(spawned.child, spawned.stdin, spawned.stdout, spawned.stderr, notify);
                 return Ok(json!({
                     "background": true,
                     "handle": h.handle,
@@ -236,7 +239,8 @@ pub(crate) fn run_shell_spec() -> ToolSpec {
                 "command": { "type": "string", "description": "The command line to execute." },
                 "workdir": { "type": "string", "description": "Optional working directory. Must already exist inside the sandbox root; relative paths resolve against the sandbox workdir." },
                 "timeout_ms": { "type": "integer", "minimum": 1, "description": "Optional per-call timeout in milliseconds. Default 30000; can be raised up to the cap from CELESTEA_SHELL_MAX_TIMEOUT_MS (default 300000). Ignored when background:true." },
-                "background": { "type": "boolean", "description": "Optional, default false. When true, spawn the command detached (no call-level timeout; rlimits still apply) and return {background:true, handle, pid} immediately; control the process with process_control (poll / stdin / kill)." }
+                "background": { "type": "boolean", "description": "Optional, default false. When true, spawn the command detached (no call-level timeout; rlimits still apply) and return {background:true, handle, pid} immediately; control the process with process_control (poll / stdin / kill). On natural exit the system pushes a completion message into the session mailbox (notify:false turns that off)." },
+                "notify": { "type": "boolean", "description": "Optional, default true. When background:true and the process exits naturally, the system posts a '[process] <handle> exited code=<n>' completion message (with stdout/stderr tails) to the session mailbox so the agent is re-engaged automatically; set false to suppress that message (poll via process_control instead)." }
             },
             "required": ["command"],
             "additionalProperties": false

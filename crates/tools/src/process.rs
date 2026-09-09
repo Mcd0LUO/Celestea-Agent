@@ -9,6 +9,12 @@
 //! Every child gets a reaper task that drains its stdout/stderr into capped
 //! ring buffers and removes the handle from the registry as soon as the
 //! process exits; dropping the registry kills every remaining child.
+//!
+//! W251: a completion sink seam — `set_completion_sink` installs one callback
+//! per registry. The reaper invokes it exactly once per handle when a process
+//! exits *naturally* (kill / shutdown paths are suppressed, and notify=false
+//! opts out), so runtimes can push a "[process] ... exited ..." message into
+//! the session mailbox instead of polling.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,6 +36,21 @@ const TAIL_BYTES: usize = 4 * 1024;
 const KILL_GRACE: Duration = Duration::from_secs(1);
 /// Upper bound for a single stdin line write.
 const STDIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Bytes kept per stream tail in a [ProcessCompletion] (<= 1KB).
+const COMPLETION_TAIL_BYTES: usize = 1024;
+
+/// W251: one natural-exit completion record handed to the completion sink.
+/// `stdout_tail` / `stderr_tail` are the last [COMPLETION_TAIL_BYTES] bytes of
+/// each stream, newline runs folded.
+#[derive(Clone, Debug)]
+pub struct ProcessCompletion {
+    pub handle: String,
+    pub pid: u32,
+    pub exit_code: Option<i32>,
+    pub stdout_tail: String,
+    pub stderr_tail: String,
+    pub elapsed_ms: u64,
+}
 
 /// Shared, mutable state of one background process. The reaper task owns the
 /// [Child] itself and mirrors exit status + capped stream tails in here, so
@@ -44,6 +65,13 @@ struct ProcState {
     stdin: Option<ChildStdin>,
     /// Non-unix kill: the reaper notices the flag and start_kill()s the child.
     kill_requested: bool,
+    /// W251: kill/shutdown path (process_control kill or kill_all) — the
+    /// reaper records the exit but must NOT fire the completion sink.
+    kill_path: bool,
+    /// W251: completion message enabled (run_shell `notify`, default true).
+    notify: bool,
+    /// W251: spawn time for `elapsed_ms` in the completion record.
+    spawned_at: std::time::Instant,
 }
 
 /// Registry entry handed back to tools and tests: stable handle + pid plus the
@@ -62,6 +90,8 @@ pub struct ChildHandle {
 pub struct ProcessRegistry {
     map: Mutex<HashMap<String, ChildHandle>>,
     next_handle: AtomicU64,
+    /// W251: completion sink fired by reapers on natural exit (see module doc).
+    completion_sink: Mutex<Option<Arc<dyn Fn(ProcessCompletion) + Send + Sync>>>,
 }
 
 impl Default for ProcessRegistry {
@@ -72,7 +102,23 @@ impl Default for ProcessRegistry {
 
 impl ProcessRegistry {
     pub fn new() -> Self {
-        Self { map: Mutex::new(HashMap::new()), next_handle: AtomicU64::new(0) }
+        Self {
+            map: Mutex::new(HashMap::new()),
+            next_handle: AtomicU64::new(0),
+            completion_sink: Mutex::new(None),
+        }
+    }
+
+    /// W251: install the natural-exit completion sink (one per registry; the
+    /// last install wins). The reaper calls it at most once per handle, on
+    /// natural exit only — never on the kill / shutdown paths — and only when
+    /// the entry was spawned with notify enabled.
+    pub fn set_completion_sink(&self, sink: Arc<dyn Fn(ProcessCompletion) + Send + Sync>) {
+        *self.completion_sink.lock().unwrap_or_else(|p| p.into_inner()) = Some(sink);
+    }
+
+    fn completion_sink(&self) -> Option<Arc<dyn Fn(ProcessCompletion) + Send + Sync>> {
+        self.completion_sink.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
     /// Register a freshly spawned background child: takes ownership of the
@@ -86,6 +132,7 @@ impl ProcessRegistry {
         stdin: Option<ChildStdin>,
         stdout: ChildStdout,
         stderr: ChildStderr,
+        notify: bool,
     ) -> ChildHandle {
         let pid = child.id().unwrap_or(0);
         let handle = format!("proc-{}", self.next_handle.fetch_add(1, Ordering::Relaxed));
@@ -98,10 +145,13 @@ impl ProcessRegistry {
             stderr_truncated: false,
             stdin,
             kill_requested: false,
+            kill_path: false,
+            notify,
+            spawned_at: std::time::Instant::now(),
         }));
         let h = ChildHandle { handle: handle.clone(), pid, state: state.clone() };
         self.map.lock().unwrap_or_else(|p| p.into_inner()).insert(handle.clone(), h.clone());
-        spawn_reaper(Arc::downgrade(self), handle, child, stdout, stderr, state);
+        spawn_reaper(Arc::downgrade(self), handle, pid, child, stdout, stderr, state);
         h
     }
 
@@ -149,7 +199,13 @@ impl ProcessRegistry {
             return unknown_handle(handle);
         };
         // EOF on stdin nudges line-reading children toward a natural exit.
-        h.state.lock().unwrap_or_else(|p| p.into_inner()).stdin.take();
+        // W251: mark the kill path so the reaper records the exit without
+        // firing the completion sink (kill() already returns {killed:true}).
+        {
+            let mut st = h.state.lock().unwrap_or_else(|p| p.into_inner());
+            st.stdin.take();
+            st.kill_path = true;
+        }
         signal(&h, Signal::Term);
         // Grace window: wait for the reaper to observe the exit.
         let exited = wait_exited(&h, KILL_GRACE).await;
@@ -204,6 +260,8 @@ impl ProcessRegistry {
             let mut st = h.state.lock().unwrap_or_else(|p| p.into_inner());
             st.stdin.take();
             st.kill_requested = true;
+            // W251: shutdown kills are not "natural exits" — no sink callback.
+            st.kill_path = true;
             drop(st);
             signal(&h, Signal::Kill);
         }
@@ -226,6 +284,27 @@ fn unknown_handle(handle: &str) -> Value {
 fn tail_str(buf: &[u8]) -> String {
     let tail = &buf[buf.len().saturating_sub(TAIL_BYTES)..];
     String::from_utf8_lossy(tail).into_owned()
+}
+
+/// W251: completion-record tail — last [COMPLETION_TAIL_BYTES] bytes, newline
+/// runs folded into a single newline so mailbox messages stay compact.
+fn completion_tail(buf: &[u8]) -> String {
+    let tail = &buf[buf.len().saturating_sub(COMPLETION_TAIL_BYTES)..];
+    let text = String::from_utf8_lossy(tail).into_owned();
+    let mut out = String::with_capacity(text.len());
+    let mut prev_nl = false;
+    for ch in text.chars() {
+        if ch == '\n' {
+            if !prev_nl {
+                out.push(ch);
+                prev_nl = true;
+            }
+        } else {
+            out.push(ch);
+            prev_nl = false;
+        }
+    }
+    out
 }
 
 async fn wait_exited(h: &ChildHandle, window: Duration) -> bool {
@@ -312,6 +391,7 @@ fn append_capped(buf: &mut Vec<u8>, truncated: &mut bool, data: &[u8]) {
 fn spawn_reaper(
     weak: Weak<ProcessRegistry>,
     handle: String,
+    pid: u32,
     mut child: Child,
     stdout: ChildStdout,
     stderr: ChildStderr,
@@ -335,14 +415,33 @@ fn spawn_reaper(
             }
         };
         let (_, _, code) = tokio::join!(out_fut, err_fut, wait_fut);
-        {
+        // W251: record the exit once (dedup via the exited flag — the reaper
+        // is the only writer) and decide whether the sink fires: natural exit
+        // only (no kill_path), notify enabled, first observation.
+        let (fire, stdout_tail, stderr_tail, elapsed_ms) = {
             let mut st = state.lock().unwrap_or_else(|p| p.into_inner());
+            let first_exit = !st.exited;
             st.exited = true;
             st.exit_code = code;
             st.stdin.take();
-        }
+            let fire = first_exit && st.notify && !st.kill_path;
+            let elapsed_ms = st.spawned_at.elapsed().as_millis() as u64;
+            (fire, completion_tail(&st.stdout), completion_tail(&st.stderr), elapsed_ms)
+        };
         if let Some(reg) = weak.upgrade() {
             reg.remove(&handle);
+            if fire {
+                if let Some(sink) = reg.completion_sink() {
+                    sink(ProcessCompletion {
+                        handle,
+                        pid,
+                        exit_code: code,
+                        stdout_tail,
+                        stderr_tail,
+                        elapsed_ms,
+                    });
+                }
+            }
         }
     });
 }
@@ -425,12 +524,138 @@ mod tests {
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("child stdout");
         let stderr = child.stderr.take().expect("child stderr");
-        reg.insert(child, stdin, stdout, stderr);
+        reg.insert(child, stdin, stdout, stderr, true);
         assert_eq!(reg.len(), 1, "child registered");
 
         reg.kill_all();
         assert_eq!(reg.len(), 0, "map drained by kill_all");
         reg.kill_all(); // idempotent: empty map no-op
         assert!(reg.is_empty());
+    }
+
+    // ---- W251: completion sink (natural exit / kill / notify) -----------------
+
+    async fn wait_until<F: Fn() -> bool>(cond: F, timeout: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        while tokio::time::Instant::now() < deadline {
+            if cond() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        cond()
+    }
+
+    /// 自然退出：sink 恰好收到一次，exit_code / stdout tail / elapsed 正确；
+    /// 再等一段时间也不重复回调（退出标记去重）。
+    #[tokio::test]
+    async fn natural_exit_fires_completion_sink_exactly_once() {
+        let reg = Arc::new(ProcessRegistry::new());
+        let seen: Arc<Mutex<Vec<ProcessCompletion>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink_seen = seen.clone();
+        reg.set_completion_sink(Arc::new(move |c| {
+            sink_seen.lock().unwrap_or_else(|p| p.into_inner()).push(c);
+        }));
+
+        let mut child = Command::new("sh")
+            .args(["-c", "echo out; echo err >&2; sleep 0.2; exit 3"])
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sh");
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("child stdout");
+        let stderr = child.stderr.take().expect("child stderr");
+        let h = reg.insert(child, stdin, stdout, stderr, true);
+        let handle = h.handle.clone();
+
+        let got = wait_until(
+            || !seen.lock().unwrap_or_else(|p| p.into_inner()).is_empty(),
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(got, "completion sink never fired");
+
+        // 重复退出不重复回调：reaper 每 handle 只发一次。
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let completions = seen.lock().unwrap_or_else(|p| p.into_inner());
+        assert_eq!(completions.len(), 1, "exactly one completion: {completions:?}");
+        let c = &completions[0];
+        assert_eq!(c.handle, handle);
+        assert_eq!(c.exit_code, Some(3));
+        assert!(c.stdout_tail.contains("out"), "stdout_tail: {:?}", c.stdout_tail);
+        assert!(c.stderr_tail.contains("err"), "stderr_tail: {:?}", c.stderr_tail);
+        assert!(c.elapsed_ms > 0, "elapsed_ms: {}", c.elapsed_ms);
+        assert_eq!(reg.len(), 0, "reaper removed the exited handle");
+    }
+
+    /// kill 路径不触发 sink：process_control kill 已同步返回 {killed:true}，
+    /// 完成回传必须静默。
+    #[tokio::test]
+    async fn kill_does_not_fire_completion_sink() {
+        let reg = Arc::new(ProcessRegistry::new());
+        let seen: Arc<Mutex<Vec<ProcessCompletion>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink_seen = seen.clone();
+        reg.set_completion_sink(Arc::new(move |c| {
+            sink_seen.lock().unwrap_or_else(|p| p.into_inner()).push(c);
+        }));
+
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sleep");
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("child stdout");
+        let stderr = child.stderr.take().expect("child stderr");
+        let h = reg.insert(child, stdin, stdout, stderr, true);
+
+        let out = reg.kill(&h.handle).await;
+        assert_eq!(out["killed"], json!(true));
+        assert_eq!(reg.len(), 0, "kill removed the handle");
+
+        // 给 reaper 收尾时间：kill 路径必须静默。
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            seen.lock().unwrap_or_else(|p| p.into_inner()).is_empty(),
+            "kill path must not fire the completion sink"
+        );
+    }
+
+    /// notify:false 的 spawn 自然退出也不触发 sink。
+    #[tokio::test]
+    async fn notify_false_suppresses_completion_sink() {
+        let reg = Arc::new(ProcessRegistry::new());
+        let seen: Arc<Mutex<Vec<ProcessCompletion>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink_seen = seen.clone();
+        reg.set_completion_sink(Arc::new(move |c| {
+            sink_seen.lock().unwrap_or_else(|p| p.into_inner()).push(c);
+        }));
+
+        let mut child = Command::new("sh")
+            .args(["-c", "exit 0"])
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sh");
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("child stdout");
+        let stderr = child.stderr.take().expect("child stderr");
+        reg.insert(child, stdin, stdout, stderr, false);
+
+        let exited = wait_until(|| reg.is_empty(), Duration::from_secs(5)).await;
+        assert!(exited, "process never exited");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            seen.lock().unwrap_or_else(|p| p.into_inner()).is_empty(),
+            "notify:false must not fire the completion sink"
+        );
     }
 }
