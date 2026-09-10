@@ -38,11 +38,22 @@ const ALLOW: ToolDecision = { kind: "allow" };
 const READ_TOOLS = new Set(["read_file", "list_dir"]);
 const WRITE_TOOLS = new Set(["write_file"]);
 
-/** Split a comma-separated root list (empty entries skipped). */
+/**
+ * Platform path-list separator: `:` on unix, `;` on windows — the same
+ * semantics as Rust `std::env::split_paths`. A comma is ALSO accepted (the
+ * earlier TS-only documentation used commas), so `CELESTEA_TOOL_ROOTS` may be
+ * written either way.
+ *
+ * Note the platform distinction matters: a windows drive letter (`C:\dir`)
+ * must not be split on `:`.
+ */
+const LIST_SEPARATOR = new RegExp(`[${process.platform === "win32" ? ";" : ":"},]`);
+
+/** Split a root list (platform separator or comma; empty entries skipped). */
 export function parseToolRoots(value: string | undefined): string[] {
   if (value === undefined) return [];
   return value
-    .split(",")
+    .split(LIST_SEPARATOR)
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
 }
