@@ -22,7 +22,7 @@ pnpm golden:export      # 导出 fixtures/（只读现有会话日志 + 只读 /
 pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时 golden 分歧即退出码 1）
 ```
 
-一次跑完：`pnpm check`（typecheck + test）。
+一次跑完：`pnpm check`（typecheck + lint + lint:arch + test，见 §7）。
 
 端口约定：Rust 生产 `:3777` 保持不变；TS 开发实例预留 `:3778`（`pnpm --filter @celestea/studio start`，**P0 不启动任何常驻服务**）。
 
@@ -122,7 +122,42 @@ P0 实测结果：**5 个真实会话、1531 条消息投影、golden 分歧 0**
 
 ---
 
-## 7. P0 范围与非目标
+## 7. 架构规则与检查（W273，机械强制）
+
+**规则正文**：`docs/ARCHITECTURE.md`；**机械实现**：`eslint.config.js`（规模 + 导入边界）与 `.dependency-cruiser.cjs`（包依赖图）。
+违反架构规则会在 `pnpm check` 阶段直接失败——这是构建门槛，不是 review 建议。
+
+```bash
+pnpm lint           # ESLint：单文件规模（≤400 行 / 函数 ≤80 行 / 嵌套 ≤4 / 参数 ≤5）+ 跨包导入字面量
+pnpm lint:arch      # dependency-cruiser：分层方向、同层横向依赖、循环依赖、深层导入、不可解析导入
+pnpm typecheck      # tsc --noEmit（strict + noUncheckedIndexedAccess + verbatimModuleSyntax）
+pnpm test           # vitest（契约 / 回放 / 单元）
+pnpm check          # = 以上四者之和，本地提交前与 CI 的唯一门禁
+
+ARCH_STRICT=1 pnpm lint   # 忽略全部例外，用于复核 docs/ARCHITECTURE.md §5 的例外清单是否还有必要
+```
+
+CI / 新环境：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm check
+```
+
+### 新代码红线（摘要，全文见 `docs/ARCHITECTURE.md`）
+
+1. **依赖只能向下**：`core ← session / llm / tools / agent-loop / workers ← runtime ← apps/studio`；反向依赖、L1 同层横向依赖、跨层上跳一律拒绝。
+2. **跨包只走包入口**：只能 `import ... from "@celestea/<pkg>"`；`@celestea/<pkg>/src/...` 与 `../../other/src/x.js` 都是错误。
+3. **公开 API 收口在 `src/index.ts`**：拆目录不构成破坏性变更，改 `index.ts` 导出才是。
+4. **规模硬线**：单文件 ≤400 行（建议 ≤300）、单函数 ≤80 行、嵌套 ≤4、参数 ≤5；空行与注释不计费。
+5. **一切皆插件**：新能力 = 新增 seam 实现 + 在 `runtime/compose` 注册；禁止在 `core` 里写 `if (provider === "x")`。
+6. **例外只能登记**在 `eslint.config.js` 的 `ARCH_EXCEPTIONS` 与 `docs/ARCHITECTURE.md` §5（原因 / 拆分方案 / 移除阶段三件套齐全）；禁止就地 `// eslint-disable`。
+
+新增包时必须同时改三处：`tsconfig.json` 的 paths、`.dependency-cruiser.cjs` 的 `PACKAGES` 数组、`docs/ARCHITECTURE.md` §1 层级表——否则新包没有边界保护。
+
+---
+
+## 8. P0 范围与非目标
 
 - ✅ 契约冻结（39 端点 / 8 SSE / 7+5 SessionEvent / 10 工具 / 8 数据文件）
 - ✅ pnpm workspace 骨架（7 packages + apps/studio，Node 24 + Hono + strict TS + vitest）
