@@ -15,12 +15,17 @@
     "contracts:verify": "tsx scripts/verify-contracts.ts",
     "golden:export": "tsx scripts/export-golden.ts",
     "replay:compare": "tsx scripts/compare-replay.ts",
-    "check": "pnpm typecheck && pnpm test"
+    "lint": "eslint .",
+    "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps scripts tests",
+    "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
+    "dependency-cruiser": "^16.10.4",
+    "eslint": "^9.39.5",
     "tsx": "^4.20.6",
     "typescript": "^5.9.2",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^3.2.4"
   }
 }
