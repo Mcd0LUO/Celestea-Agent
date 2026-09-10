@@ -5,3 +5,6 @@ dist/
 .DS_Store
 # generated probe evidence is committed on purpose; keep scratch output out
 reports/*.tmp
+
+# generated per-run compare output
+reports/replay-diff-*.json
