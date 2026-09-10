@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-09T17:29:23.111Z",
+  "generatedAt": "2026-09-10T03:41:42.403Z",
   "fixtures": "/src/celestea_studio-ts/fixtures",
   "fixturesGeneratedAt": "2026-09-09T17:28:54.740Z",
   "strict": true,
@@ -143,8 +143,8 @@
         "divergences": 0
       },
       "derived": {
-        "expected": 419,
-        "actual": 419,
+        "expected": 373,
+        "actual": 373,
         "divergences": 0
       },
       "sse": {
@@ -179,8 +179,8 @@
         "divergences": 0
       },
       "derived": {
-        "expected": 755,
-        "actual": 755,
+        "expected": 628,
+        "actual": 628,
         "divergences": 0
       },
       "sse": {

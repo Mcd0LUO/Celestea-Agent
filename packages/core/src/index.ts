@@ -18,6 +18,7 @@
  *   event-bus.ts     EventBus seam (on/bail/waterfall)             (event_bus.rs)
  *   llm.ts           Llm seam + LlmRegistry                        (llm.rs)
  *   tool.ts          Tool / ToolGuard / ToolRegistry seams         (tool.rs)
+ *   sandbox.ts       Sandbox seam (execution boundary)             (tools/src/sandbox.rs)
  *   agent.ts         AgentLoop seam + AgentConfig                  (agent.rs)
  *   json.ts          JSON helpers + serde-exact text
  *   sse-bus.ts       SDK-side SSE broadcast bus
@@ -37,6 +38,7 @@ export * from "./context.js";
 export * from "./event-bus.js";
 export * from "./llm.js";
 export * from "./tool.js";
+export * from "./sandbox.js";
 export * from "./agent.js";
 export * from "./json.js";
 export * from "./sse-bus.js";
