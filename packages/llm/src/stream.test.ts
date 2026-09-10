@@ -69,18 +69,18 @@ describe("reasoning + content + tool calls + usage", () => {
       sseFrame("[DONE]"),
     ]);
 
-    expect(events.map((e) => e.type)).toEqual([
+    expect(events.map((e) => e.kind)).toEqual([
       "thinking",
       "thinking",
       "text",
       "usage",
       "done",
     ]);
-    expect(events[1]).toEqual({ type: "thinking", delta: " think" });
-    expect(events[2]).toEqual({ type: "text", delta: "Hi" });
+    expect(events[1]).toEqual({ kind: "thinking", text: " think" });
+    expect(events[2]).toEqual({ kind: "text", text: "Hi" });
     const terminal = events.at(-1);
-    expect(terminal?.type).toBe("done");
-    if (terminal?.type === "done") {
+    expect(terminal?.kind).toBe("done");
+    if (terminal?.kind === "done") {
       expect(terminal.message.content).toEqual([
         { type: "text", content: "Hi" },
         { type: "tool_call", content: { id: "call_1", name: "read_file", args: { path: "/tmp/a" } } },
@@ -97,8 +97,8 @@ describe("reasoning + content + tool calls + usage", () => {
       sseFrame({ choices: [{ index: 0, delta: { content: "ok" } }] }),
       sseFrame("[DONE]"),
     ]);
-    expect(events.map((e) => e.type)).toEqual(["text", "done"]);
-    expect(events[0]).toEqual({ type: "text", delta: "ok" });
+    expect(events.map((e) => e.kind)).toEqual(["text", "done"]);
+    expect(events[0]).toEqual({ kind: "text", text: "ok" });
   });
 
   it("reassembles a UTF-8 character and a frame split across TCP writes", async () => {
@@ -113,8 +113,8 @@ describe("reasoning + content + tool calls + usage", () => {
       bytes.subarray(bytes.length - 2),
       sseFrame("[DONE]"),
     ]);
-    expect(events[0]).toEqual({ type: "text", delta: "中文答案" });
-    expect(events.at(-1)?.type).toBe("done");
+    expect(events[0]).toEqual({ kind: "text", text: "中文答案" });
+    expect(events.at(-1)?.kind).toBe("done");
   });
 });
 
@@ -143,16 +143,16 @@ describe("usage frames and the three cache keys", () => {
         }),
         sseFrame("[DONE]"),
       ]);
-      const usageEvent = events.find((e) => e.type === "usage");
+      const usageEvent = events.find((e) => e.kind === "usage");
       expect(usageEvent).toBeDefined();
-      if (usageEvent?.type === "usage") {
+      if (usageEvent?.kind === "usage") {
         expect(usageEvent.usage.cache_read).toBe(expected);
         expect(usageEvent.usage.total_tokens).toBe(16);
         expect(usageEvent.usage.reasoning_tokens).toBe(3);
       }
       // usage rides just before the terminal event
-      expect(events.at(-2)?.type).toBe("usage");
-      expect(events.at(-1)?.type).toBe("done");
+      expect(events.at(-2)?.kind).toBe("usage");
+      expect(events.at(-1)?.kind).toBe("done");
     });
   }
 
@@ -162,9 +162,9 @@ describe("usage frames and the three cache keys", () => {
       sseFrame({ choices: [], usage: { prompt_tokens: 2, total_tokens: 2 } }),
       sseFrame("[DONE]"),
     ]);
-    const usageEvents = events.filter((e) => e.type === "usage");
+    const usageEvents = events.filter((e) => e.kind === "usage");
     expect(usageEvents).toHaveLength(1);
-    if (usageEvents[0]?.type === "usage") expect(usageEvents[0].usage.total_tokens).toBe(2);
+    if (usageEvents[0]?.kind === "usage") expect(usageEvents[0].usage.total_tokens).toBe(2);
   });
 });
 
@@ -173,12 +173,12 @@ describe("terminal states (R1: never a fake done)", () => {
     const events = await runFrames([
       sseFrame({ choices: [{ index: 0, delta: { content: "abc" } }] }),
     ]);
-    expect(events.map((e) => e.type)).toEqual(["text", "interrupted"]);
+    expect(events.map((e) => e.kind)).toEqual(["text", "interrupted"]);
   });
 
   it("yields interrupted for an empty body", async () => {
     const events = await runFrames([]);
-    expect(events).toEqual([{ type: "interrupted" }]);
+    expect(events).toEqual([{ kind: "interrupted" }]);
   });
 });
 

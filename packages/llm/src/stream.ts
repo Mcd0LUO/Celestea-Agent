@@ -55,7 +55,7 @@ export class TurnAccumulator {
     for (const choice of chunk.choices) {
       if (choice.text !== undefined && choice.text !== "") {
         this.#text += choice.text;
-        events.push({ type: "text", delta: choice.text });
+        events.push({ kind: "text", text: choice.text });
       }
       for (const fragment of choice.toolCalls) this.#addFragment(fragment);
     }
@@ -221,25 +221,25 @@ export async function* streamEvents(
 
   // Usage rides just before the terminal event (Rust order), so consumers that
   // treat the terminal event as the end still observe it.
-  if (turn.usage !== null) yield { type: "usage", usage: turn.usage };
+  if (turn.usage !== null) yield { kind: "usage", usage: turn.usage };
   if (failure !== null) {
     yield failure;
     return;
   }
   if (!sawDone) {
     // The upstream ended before the [DONE] sentinel: torn stream.
-    yield { type: "interrupted" };
+    yield { kind: "interrupted" };
     return;
   }
-  yield { type: "done", message: turn.doneMessage() };
+  yield { kind: "done", message: turn.doneMessage() };
 }
 
 /** Map a body-read failure onto its terminal event (R1: never a fake done). */
 function streamFailure(err: unknown): StreamEvent {
   if (err instanceof StreamIdleAbort) {
-    // W266: a stalled stream is a terminal timeout with its own kind.
-    return { type: "failed", kind: "timeout", message: err.message };
+    // W266: a stalled stream is a terminal timeout with its own kindOf.
+    return { kind: "failed", kindOf: "timeout", message: err.message };
   }
   const detail = err instanceof Error ? err.message : String(err);
-  return { type: "failed", kind: "stream", message: `sse decode error: ${detail}` };
+  return { kind: "failed", kindOf: "stream", message: `sse decode error: ${detail}` };
 }

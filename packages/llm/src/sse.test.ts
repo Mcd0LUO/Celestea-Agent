@@ -100,7 +100,7 @@ describe("parseRawChunk", () => {
   it("blank-gates thinking events but keeps the payload untrimmed", () => {
     expect(thinkingEvent("   ")).toBeNull();
     expect(thinkingEvent("")).toBeNull();
-    expect(thinkingEvent(" think")).toEqual({ type: "thinking", delta: " think" });
+    expect(thinkingEvent(" think")).toEqual({ kind: "thinking", text: " think" });
   });
 
   it("preserves malformed tool-call arguments as a raw string", () => {
