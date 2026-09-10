@@ -8,3 +8,4 @@ reports/*.tmp
 
 # generated per-run compare output
 reports/replay-diff-*.json
+results/
