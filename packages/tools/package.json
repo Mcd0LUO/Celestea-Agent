@@ -11,5 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@celestea/core": "workspace:*"
   }
 }
