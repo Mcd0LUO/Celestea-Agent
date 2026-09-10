@@ -1,4 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@celestea/llm": ["src/index.ts"]
+    }
+  },
   "include": ["src/**/*.ts"]
 }
