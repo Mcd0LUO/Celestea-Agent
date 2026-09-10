@@ -95,6 +95,17 @@ export {
   validateModel,
 } from "./profile.js";
 
+// Production factory: mode switch + live profile -> client assembly (W511).
+export type { LiveLlmProfile, LiveLlmView, LlmMode } from "./factory.js";
+export {
+  createLiveLlm,
+  liveLlmView,
+  LLM_BASE_URL_ENV,
+  LLM_MODE_ENV,
+  resolveLlmMode,
+  withBaseUrlFallback,
+} from "./factory.js";
+
 // The adapter + provider registration.
 export type { OpenAiCompatOptions } from "./client.js";
 export { OpenAiCompatClient } from "./client.js";

@@ -10,9 +10,10 @@
  *
  * The engine is injected: `opts.runtime` is a `RuntimeAdapter` (or a factory
  * over the composed stores, which is what the REAL adapter needs to resolve
- * session directories). With nothing injected the app mounts the real runtime
- * (`runtime/`), so the default deployment is the engine, not a fake; the P4 fake
- * stays available to tests through `harness.test-util.ts`.
+ * session directories AND the provider target). With nothing injected the app
+ * mounts the real runtime (`runtime/`) wired to the real LLM, so the default
+ * deployment is the engine over a live provider, not a fake; the P4 fake stays
+ * available to tests through `harness.test-util.ts`.
  */
 
 import { Hono } from "hono";
@@ -24,7 +25,7 @@ import { registerHandlers } from "./handlers/index.js";
 import { assembleSystemPromptFor } from "./handlers/config-shape.js";
 import { registerStatic } from "./static.js";
 import type { RuntimeAdapter } from "./runtime-adapter.js";
-import { createRealRuntimeAdapter, defaultEngineProfile } from "./runtime/index.js";
+import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
 
 export interface StudioAppOptions {
   cwd?: string;
@@ -45,14 +46,17 @@ export interface StudioApp {
 }
 
 /**
- * The production engine: the real runtime over the offline LLM seam. The factory
- * form lets the adapter resolve `<workspace>/<session>` through the session
- * store, and worker receipts land under `<data dir>/worker-results`.
+ * The production engine: the real runtime over the REAL provider. The factory
+ * form is what makes that possible — providers.json is composed before the
+ * engine, so the startup profile (model / base_url / api key channel) is
+ * resolved from the operator's provider registry, with the host's env and
+ * constants as the fallback chain (`startupEngineProfile`). Worker receipts land
+ * under `<data dir>/worker-results`.
  */
 function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv): EngineFactory {
   return (stores) =>
     createRealRuntimeAdapter({
-      profile: defaultEngineProfile(env, config.apiKeyEnv),
+      profile: startupEngineProfile(stores.providers, env, config.apiKeyEnv).profile,
       env,
       resultsDir: join(dirname(config.paths.workspacesFile), "worker-results"),
       resolveSession: (id) => {
