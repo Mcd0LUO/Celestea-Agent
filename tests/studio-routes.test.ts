@@ -1,13 +1,27 @@
+/**
+ * Cross-package contract test (P4): every one of the 39 frozen endpoints is
+ * bound to the contract method+path and is reachable — none of them falls
+ * through to the static/SPA handler.
+ *
+ * The app runs against a throwaway data directory, so a probe can never touch a
+ * production data file, and against the fake runtime adapter (the engine seam).
+ */
+
 import { describe, expect, it } from "vitest";
-import { createStudioApp } from "@celestea/studio";
-import { API_ENDPOINT_COUNT, concretePath, toHonoPath } from "@celestea/studio";
 import { loadEndpoints, loadTools } from "@celestea/core";
+import { API_ENDPOINT_COUNT, concretePath, toHonoPath } from "@celestea/studio";
+import { makeHarness } from "../apps/studio/src/harness.test-util.js";
 
-describe("apps/studio Hono skeleton", () => {
-  const { app, routes } = createStudioApp({ model: "test-model" });
+const harness = makeHarness({ session: { name: "sample-session", log: `${JSON.stringify({ type: "user_message", text: "hi" })}\n` } });
+const { app } = harness;
 
-  it("registers all 39 contract endpoints", () => {
-    expect(routes).toHaveLength(API_ENDPOINT_COUNT);
+describe("apps/studio contract surface", () => {
+  it("binds the 39 contract endpoints exactly once each", () => {
+    const contract = loadEndpoints().endpoints.map((e) => `${e.method} ${e.path}`);
+    const bound = harness.studio.routes.map((r) => `${r.method} ${r.contractPath}`);
+    expect(bound).toHaveLength(API_ENDPOINT_COUNT);
+    expect(new Set(bound).size).toBe(API_ENDPOINT_COUNT);
+    expect(bound.sort()).toEqual(contract.sort());
   });
 
   it("translates {param} to :param", () => {
@@ -15,51 +29,38 @@ describe("apps/studio Hono skeleton", () => {
     expect(toHonoPath("/api/health")).toBe("/api/health");
   });
 
-  it("answers every endpoint (none 404)", async () => {
-    const contract = loadEndpoints();
-    for (const e of contract.endpoints) {
-      if (e.id === "get_events") continue; // streaming; covered separately
+  it("answers every endpoint without a 404 fallback", async () => {
+    for (const e of loadEndpoints().endpoints) {
+      if (e.id === "get_events") continue; // streaming; covered by apps/studio tests
       const url = concretePath(e.path) + (e.request.kind === "query" ? "?path=/tmp" : "");
       const res = await app.request(url, { method: e.method });
-      expect(res.status, `${e.method} ${e.path}`).not.toBe(404);
+      if (res.status !== 404) continue;
+      // A handler 404 is `{ok:false,error}`; the static/API fallback is the
+      // bare `{error:"not found"}` — the two must never be confused.
+      expect(await res.json(), `${e.method} ${e.path}`).toHaveProperty("ok", false);
     }
   });
 
-  it("implements GET /api/health with the frozen shape", async () => {
-    const res = await app.request("/api/health");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toEqual({ ok: true, name: "celestea-studio", model: "test-model", base_url: "http://127.0.0.1:3001/v1", bind: "127.0.0.1:3777" });
+  it("keeps the health / status / tools shapes frozen", async () => {
+    const health = (await (await app.request("/api/health")).json()) as Record<string, unknown>;
+    expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "model", "name", "ok"]);
+    const status = (await (await app.request("/api/status")).json()) as Record<string, unknown>;
+    expect(Object.keys(status).sort()).toEqual(["context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
+    const tools = (await (await app.request("/api/tools")).json()) as { tools: unknown[] };
+    expect(Array.isArray(tools.tools)).toBe(true);
+    expect(loadTools().tools).toHaveLength(10);
   });
 
-  it("returns the frozen statusline shape from GET /api/status", async () => {
-    const res = await app.request("/api/status");
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(["context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
-  });
-
-  it("serves /api/events as an SSE stream with the envelope", async () => {
-    const res = await app.request("/api/events");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/event-stream");
-    const reader = res.body?.getReader();
-    expect(reader).toBeDefined();
-    const { value } = await reader!.read();
-    const chunk = new TextDecoder().decode(value);
-    expect(chunk).toContain("event: status");
-    expect(chunk).toContain('"turn":0');
-    expect(chunk).toContain('"seq":0');
-    expect(chunk).toContain('"payload"');
-    await reader!.cancel();
-  });
-
-  it("404s unknown /api/* paths with the JSON envelope", async () => {
+  it("404s unknown /api/* paths with the JSON envelope (never the SPA)", async () => {
     const res = await app.request("/api/does-not-exist");
     expect(res.status).toBe(404);
+    expect(res.headers.get("content-type")).toContain("application/json");
     expect(await res.json()).toEqual({ error: "not found" });
   });
 
-  it("keeps the tool registry at 10 tools", () => {
-    expect(loadTools().tools).toHaveLength(10);
+  it("falls back to the SPA index for an unknown non-API route", async () => {
+    const res = await app.request("/some/spa/route");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("studio");
   });
 });

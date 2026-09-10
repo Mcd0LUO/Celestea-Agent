@@ -1,103 +1,78 @@
 /**
- * Hono application skeleton.
+ * Hono application factory — P4.
  *
- * P0 registers all 39 contract endpoints and implements only the read-only
- * health/status shape; every other handler returns a 501 that names the
- * contract id, so P4 cannot silently ship an endpoint the contract does not
- * describe. SSE keeps the frozen envelope + lagged semantics.
+ * Wiring order is contract order:
+ *   1. compose the studio context (store plugins + bus + injected runtime);
+ *   2. register all 39 contract endpoints and assert full coverage;
+ *   3. `/api/*` fallback = 404 JSON (an unknown API path must NEVER fall
+ *      through to the static/SPA handler);
+ *   4. static files + SPA fallback from the read-only Vite build.
+ *
+ * The engine is injected: `opts.runtime` is a `RuntimeAdapter`. With no adapter
+ * the app mounts the fake one, which is what P4's contract tests exercise.
  */
 
 import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
-import { loadSse, type Statusline } from "@celestea/core";
-import { API_ENDPOINT_COUNT, studioRoutes, type RegisteredRoute } from "./routes.js";
+import { API_ENDPOINT_COUNT, routeTable, type RegisteredRoute } from "./routes.js";
+import { loadStudioConfig, type StudioConfig } from "./config.js";
+import { createFakeRuntimeAdapter } from "./fake-runtime-adapter.js";
+import { composeStudio, type StudioServices } from "./plugins.js";
+import { registerHandlers } from "./handlers/index.js";
+import { registerStatic } from "./static.js";
+import type { RuntimeAdapter } from "./runtime-adapter.js";
 
 export interface StudioAppOptions {
-  model?: string;
-  baseUrl?: string;
-  bind?: string;
-  /** Deterministic clock for tests. */
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  config?: StudioConfig;
+  /** Engine seam; defaults to the fake adapter (P4). */
+  runtime?: RuntimeAdapter;
+  /** Deterministic clock for session dir suffixes / trash stamps. */
   now?: () => number;
 }
 
 export interface StudioApp {
   app: Hono;
   routes: RegisteredRoute[];
-  notImplemented: (id: string) => Response;
+  services: StudioServices;
+  /** Contract ids bound by handlers (39 on success). */
+  endpointIds: string[];
 }
 
-const NAME = "celestea-studio";
-/** bind is a CONSTANT in Rust: it does not follow STUDIO_BIND (src/main.rs:867). */
-const DEFAULT_BIND = "127.0.0.1:3777";
+function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv): RuntimeAdapter {
+  return createFakeRuntimeAdapter({
+    profile: {
+      model: env["CELESTEA_MODEL"] ?? "unknown",
+      base_url: env["CELESTEA_BASE_URL"] ?? "http://127.0.0.1:3001/v1",
+      api_key_env: config.apiKeyEnv,
+    },
+  });
+}
 
-function notImplementedResponse(id: string): Response {
-  return Response.json({ ok: false, error: `not implemented in P0 skeleton: endpoint '${id}' (contract frozen, handler lands in P4)` }, { status: 501 });
+/** Every contract endpoint must be bound exactly once, or startup fails. */
+function assertCoverage(routes: readonly RegisteredRoute[], ids: readonly string[]): void {
+  const bound = new Set(ids);
+  const missing = routes.filter((r) => !bound.has(r.id)).map((r) => r.id);
+  if (missing.length > 0) throw new Error(`unbound contract endpoints: ${missing.join(", ")}`);
+  if (ids.length !== API_ENDPOINT_COUNT) {
+    throw new Error(`expected ${API_ENDPOINT_COUNT} contract endpoints, got ${ids.length}`);
+  }
 }
 
 export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
+  const env = opts.env ?? process.env;
+  const config = opts.config ?? loadStudioConfig({ cwd: opts.cwd, env });
+  const runtime = opts.runtime ?? defaultRuntime(config, env);
+  const services = composeStudio({ config, runtime, now: opts.now });
+  const table = routeTable();
   const app = new Hono();
-  const routes = studioRoutes();
-  if (routes.length !== API_ENDPOINT_COUNT) {
-    throw new Error(`expected ${API_ENDPOINT_COUNT} contract endpoints, got ${routes.length}`);
-  }
 
-  const model = opts.model ?? "unknown";
-  const baseUrl = opts.baseUrl ?? "http://127.0.0.1:3001/v1";
-  const bind = opts.bind ?? DEFAULT_BIND;
+  const endpointIds = registerHandlers(app, services, table);
+  assertCoverage(table.routes, endpointIds);
 
-  const emptyStatusline = (): Statusline => ({
-    model,
-    reasoning_effort: null,
-    steps: 0,
-    tokens_per_sec: 0,
-    context_usage: { used: 0, window: 1_000_000, ratio: 0, estimated: true, method: "session_event_chars" },
-    usage: {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-      cache_read: 0,
-      cache_hit_ratio: 0,
-      reasoning_tokens: 0,
-      total: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read: 0, cache_hit_ratio: 0, reasoning_tokens: 0 },
-    },
-  });
-
-  const sse = loadSse();
-
-  for (const r of routes) {
-    if (r.id === "get_health") {
-      app.on("GET", r.honoPath, (c) =>
-        c.json({ ok: true, name: NAME, model, base_url: baseUrl, bind }),
-      );
-      continue;
-    }
-    if (r.id === "get_status") {
-      app.on("GET", r.honoPath, (c) => c.json({ ...emptyStatusline(), session: null }));
-      continue;
-    }
-    if (r.id === "get_events") {
-      app.on("GET", r.honoPath, (c) =>
-        streamSSE(c, async (stream) => {
-          // P0: no engine is attached, so only the envelope contract is
-          // exercised (comment keepalive every 2s, matching STATUS_TICK).
-          stream.writeSSE({ event: "status", data: JSON.stringify({ turn: 0, seq: 0, payload: { phase: "start", statusline: emptyStatusline() } }) });
-          let n = 1;
-          for (;;) {
-            await stream.sleep(2000);
-            stream.writeSSE({ data: "", event: "keepalive" });
-            n += 1;
-            if (n > 1_000_000) break;
-          }
-        }),
-      );
-      continue;
-    }
-    const handler = (): Response => notImplementedResponse(r.id);
-    app.on(r.method, r.honoPath, handler);
-  }
-
-  // Unknown /api/* must be a 404 JSON (get_static fallback contract).
+  // Unknown API paths are 404 JSON, never the SPA (frozen static contract).
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
+  registerStatic(app, config.paths.staticRoot);
 
-  return { app, routes, notImplemented: notImplementedResponse };
+  return { app, routes: table.routes, services, endpointIds };
 }

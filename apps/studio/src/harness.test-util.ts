@@ -1,0 +1,115 @@
+/**
+ * Shared test harness for the Studio HTTP layer.
+ *
+ * Every test gets a THROWAWAY data directory (workspaces/providers/prompts +
+ * one registered workspace holding one session) and a throwaway static root, so
+ * no test can read or write a production data file, and the fake runtime adapter
+ * keeps the engine seam deterministic.
+ */
+
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Hono } from "hono";
+import { createStudioApp, type StudioApp, type StudioAppOptions } from "./app.js";
+import { createFakeRuntimeAdapter, type FakeRuntimeAdapter } from "./fake-runtime-adapter.js";
+import { loadStudioConfig } from "./config.js";
+import type { RuntimeAdapter } from "./runtime-adapter.js";
+
+/**
+ * A fake adapter that always reports the busy slot as taken (409 guards).
+ * A `Proxy` is used because spreading a class instance would drop its methods.
+ */
+export function busyRuntime(base: FakeRuntimeAdapter = createFakeRuntimeAdapter()): FakeRuntimeAdapter {
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      if (prop === "isBusy") return (): boolean => true;
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  }) as FakeRuntimeAdapter;
+}
+
+export const FIXED_NOW = 1_700_000_000_000;
+export const FIXED_TS = "1700000000.0";
+
+export interface StudioHarness {
+  app: Hono;
+  studio: StudioApp;
+  runtime: RuntimeAdapter;
+  /** Throwaway root of all data files + the static build. */
+  root: string;
+  /** Registered workspace folder (empty by default). */
+  workspace: string;
+  staticRoot: string;
+  cleanup(): void;
+}
+
+export interface HarnessOptions extends StudioAppOptions {
+  /** Files planted before the app composes (e.g. a providers.json secret). */
+  files?: Record<string, unknown>;
+  /** Create a session dir in the workspace holding `log` lines. */
+  session?: { name: string; log?: string; meta?: Record<string, string> };
+}
+
+function plantFiles(root: string, files: Record<string, unknown>): void {
+  for (const [rel, value] of Object.entries(files)) {
+    const path = join(root, rel);
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, typeof value === "string" ? {} : { mode: 0o644 });
+  }
+}
+
+function plantSession(workspace: string, session: HarnessOptions["session"]): void {
+  if (session === undefined) return;
+  const dir = join(workspace, session.name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "cli-main.jsonl"), session.log ?? "");
+  if (session.meta !== undefined) writeFileSync(join(dir, "session.json"), JSON.stringify(session.meta));
+}
+
+export function makeHarness(opts: HarnessOptions = {}): StudioHarness {
+  const root = mkdtempSync(join(tmpdir(), "studio-"));
+  const workspace = join(root, "sample-ws");
+  const staticRoot = join(root, "dist");
+  mkdirSync(workspace, { recursive: true });
+  mkdirSync(join(staticRoot, "assets"), { recursive: true });
+  writeFileSync(join(staticRoot, "index.html"), "<!doctype html><title>studio</title>\n");
+  writeFileSync(join(staticRoot, "assets", "app.js"), "export const x = 1;\n");
+  writeFileSync(join(staticRoot, "secret.txt"), "TOP-SECRET-STATIC\n");
+  writeFileSync(join(root, "workspaces.json"), JSON.stringify({ workspaces: [{ path: workspace }], active_session: null }, null, 2));
+  plantFiles(root, opts.files ?? {});
+  plantSession(workspace, opts.session);
+  const config = loadStudioConfig({
+    cwd: root,
+    env: {},
+    paths: { staticRoot, ...(opts.config?.paths ?? {}) },
+  });
+  const runtime = opts.runtime ?? createFakeRuntimeAdapter({ profile: { model: "test-model" } });
+  const studio = createStudioApp({ config, runtime, now: () => FIXED_NOW });
+  return {
+    app: studio.app,
+    studio,
+    runtime,
+    root,
+    workspace,
+    staticRoot,
+    cleanup: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+export function jsonRequest(method: string, body?: unknown): RequestInit {
+  if (body === undefined) return { method };
+  return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+}
+
+export async function getJson(app: Hono, path: string, init?: RequestInit): Promise<{ status: number; body: Record<string, unknown> }> {
+  const res = await app.request(path, init);
+  const text = await res.text();
+  let body: Record<string, unknown> = {};
+  try {
+    body = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    body = { raw: text };
+  }
+  return { status: res.status, body };
+}
