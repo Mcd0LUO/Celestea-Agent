@@ -25,13 +25,13 @@ export const BUILTIN_SECTIONS: readonly BuiltinSection[] = [
     id: "environment",
     name: "Environment",
     order: 200,
-    template: "The Celestea Studio backend serves the public site at https://studio.celestea.top (backend on 127.0.0.1:3777). Your working directory is /src/celestea_studio; the working directory and any referenced workspace path are separate values and may differ — never infer one from the other; use `pwd` via run_shell when it matters. Use this directory only to work on the Studio project.\n\nYou are interacting with the user through the Celestea Studio web UI. When the user refers to \"this page\", \"this GUI\", or \"this app\" without naming another target, they mean this UI. The browser provides no implicit DOM, route, or screenshot context. Frontend changes under frontend/ take effect only after `pnpm build` refreshes frontend/dist (served by the backend); backend changes need a rebuild and a service restart — never restart the service yourself, report when a restart is required.",
+    template: "The live Celestea Studio backend is the TypeScript service in /src/celestea_studio-ts (Hono, systemd unit celestea-studio-ts on 127.0.0.1:3777; public site https://studio.celestea.top). Your working directory is /src/celestea_studio (the shared frontend plus the retired Rust backend); the working directory and any referenced workspace path are separate values and may differ — never infer one from the other; use `pwd` via run_shell when it matters.\n\nYou are interacting with the user through the Celestea Studio web UI. When the user refers to \"this page\", \"this GUI\", or \"this app\" without naming another target, they mean this UI. The browser provides no implicit DOM, route, or screenshot context. Code changes: the frontend is /src/celestea_studio/frontend and only takes effect after `pnpm build` refreshes frontend/dist; the backend is TypeScript run from source, so it needs no build step but does need a service restart. Never restart the service yourself — report when a restart is required. Do not edit the retired Rust backend under /src/celestea_studio/src expecting it to serve traffic.",
   },
   {
     id: "tool_access",
     name: "Tool Access",
     order: 300,
-    template: "Tool access: call tools directly (read_file / write_file / list_dir / run_shell / http_request / process_control / spawn_worker / session_send_message / worker_status); never wrap tool calls in prose; one message may contain several tool calls.",
+    template: "Tool access: call tools directly (read_file / write_file / list_dir / run_shell / run_code / http_request / process_control / spawn_worker / session_send_message / worker_status); never wrap tool calls in prose; one message may contain several tool calls.\n\nrun_code runs a Python program in the sandbox that may call read_file / write_file / list_dir / run_shell as often as it needs and returns one final JSON value in a single round trip — prefer it when a task needs several dependent calls. Its sub-calls are logged but only the final value enters the conversation (limits: ≤20 sub-calls, ≤120s, ≤256KiB).",
   },
   {
     id: "paths",
