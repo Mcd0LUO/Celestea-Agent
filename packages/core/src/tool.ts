@@ -59,7 +59,11 @@ export interface ToolRegistry {
   register(tool: Tool): void;
   addGuard(guard: ToolGuard): void;
   get(name: string): Tool | undefined;
-  /** The model-facing specs, in registration order. */
+  /**
+   * The model-facing specs. Sorted by name, exactly like Rust
+   * `ToolRegistry::schemas` (crates/tools/src/registry.rs) — a deterministic
+   * order keeps the prompt prefix stable across registrations.
+   */
   schemas(): ToolSpec[];
   /** Run the guard chain, then the tool. Errors are captured, not thrown. */
   dispatch(input: ToolInput): Promise<ToolOutput>;
