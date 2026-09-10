@@ -11,5 +11,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@celestea/agent-loop": "workspace:*",
+    "@celestea/core": "workspace:*",
+    "@celestea/session": "workspace:*",
+    "@celestea/workers": "workspace:*"
   }
 }

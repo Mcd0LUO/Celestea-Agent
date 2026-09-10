@@ -32,6 +32,27 @@ importers:
 
   apps/studio:
     dependencies:
+      '@celestea/agent-loop':
+        specifier: workspace:*
+        version: link:../../packages/agent-loop
+      '@celestea/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@celestea/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@celestea/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@celestea/session':
+        specifier: workspace:*
+        version: link:../../packages/session
+      '@celestea/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
+      '@celestea/workers':
+        specifier: workspace:*
+        version: link:../../packages/workers
       '@hono/node-server':
         specifier: ^1.19.1
         version: 1.19.17(hono@4.13.7)
@@ -39,19 +60,52 @@ importers:
         specifier: ^4.9.6
         version: 4.13.7
 
-  packages/agent-loop: {}
+  packages/agent-loop:
+    dependencies:
+      '@celestea/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core: {}
 
-  packages/llm: {}
+  packages/llm:
+    dependencies:
+      '@celestea/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/runtime: {}
+  packages/runtime:
+    dependencies:
+      '@celestea/agent-loop':
+        specifier: workspace:*
+        version: link:../agent-loop
+      '@celestea/core':
+        specifier: workspace:*
+        version: link:../core
+      '@celestea/session':
+        specifier: workspace:*
+        version: link:../session
+      '@celestea/workers':
+        specifier: workspace:*
+        version: link:../workers
 
-  packages/session: {}
+  packages/session:
+    dependencies:
+      '@celestea/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/tools: {}
+  packages/tools:
+    dependencies:
+      '@celestea/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/workers: {}
+  packages/workers:
+    dependencies:
+      '@celestea/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
