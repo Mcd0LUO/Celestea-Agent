@@ -28,6 +28,11 @@
  *   tools/run_shell      run_shell: orchestration over the Sandbox seam         (builtin.rs, sandbox.rs)
  *   tools/process-control.ts  process_control (poll / stdin / kill)             (process.rs)
  *   tools/http-request.ts     http_request (SSRF, timeout, truncation)          (http.rs)
+ *   tools/run-code.ts    run_code: the broker tool + late-bound RegistryHandle   (run_code.rs)
+ *   run-code/sdk.ts      the injected Python SDK preamble + runner + assembly    (run_code.rs)
+ *   run-code/limits.ts   hard limits + env-tuned broker config                   (run_code.rs)
+ *   run-code/lines.ts    newline-framed line reader + UTF-8-safe byte budgets  (run_code.rs)
+ *   run-code/broker.ts   the parent broker loop: dispatch, ledger, events        (run_code.rs)
  *   http/ssrf.ts         IP/CIDR allow+deny policy, fail-closed                 (http.rs)
  *   http/headers.ts      request-header validation + response-header subset     (http.rs)
  *   http/transport.ts    one HTTP(S) hop over node:http/https                   (http.rs)
@@ -73,6 +78,7 @@ export { writeFileTool, writeFileSpec } from "./tools/write-file.js";
 export { listDirTool, listDirSpec } from "./tools/list-dir.js";
 export { runShellSpec, runShellTool, type RunShellToolOptions } from "./tools/run-shell.js";
 export { processControlSpec, processControlTool } from "./tools/process-control.js";
+export { RegistryHandle, runCodeSpec, runCodeTool, runCodeToolWithHandle, type RunCodeToolOptions } from "./tools/run-code.js";
 export { httpRequestSpec, httpRequestTool, type HttpRequestToolOptions } from "./tools/http-request.js";
 export { builtinTools, type BuiltinToolsOptions } from "./builtin.js";
 
@@ -169,4 +175,33 @@ export { applyLimits, ulimitScript, type RlimitPlan, type RlimitVia } from "./sa
 export { buildSeccompFilter, instructionCount, openSeccompBlob, toBlobBytes, type BpfInstruction } from "./sandbox/seccomp.js";
 
 // --- plugin -------------------------------------------------------------------
-export { assembleTools, TOOLS_PLUGIN_NAME, toolsPlugin, type ToolAssembly, type ToolsPluginOptions } from "./plugin.js";
+export {
+  assembleTools,
+  TOOLS_PLUGIN_NAME,
+  toolsPlugin,
+  type RunCodeMount,
+  type ToolAssembly,
+  type ToolsPluginOptions,
+} from "./plugin.js";
+
+// --- run_code (W255: Python parent-broker + SDK) ------------------------------
+export { assembleProgram, firstNonblankLineIndented, RUN_CODE_RUNNER, RUN_CODE_SDK } from "./run-code/sdk.js";
+export {
+  clampTimeoutMs,
+  DEFAULT_TIMEOUT_MS as RUN_CODE_DEFAULT_TIMEOUT_MS,
+  ENV_RUN_CODE_TIMEOUT_MS,
+  EXIT_GRACE_MS,
+  MAX_LINE_BYTES,
+  MAX_LOG_BYTES,
+  MAX_SUB_CALLS,
+  MAX_SUB_OUTPUT_BYTES,
+  MAX_TIMEOUT_MS as RUN_CODE_MAX_TIMEOUT_MS,
+  resolveTimeoutMs,
+  RUN_CODE_ERROR_PREFIX,
+  runCodeConfig,
+  runCodeConfigFromEnv,
+  SDK_TOOLS,
+  type RunCodeConfig,
+} from "./run-code/limits.js";
+export { brokerRun, type BrokerContext, type RunCodeEventSink } from "./run-code/broker.js";
+export { appendBounded, jsonByteLength, LineReader, safeUtf8, tail, truncateValue, utf8Prefix, type BoundedLine } from "./run-code/lines.js";
