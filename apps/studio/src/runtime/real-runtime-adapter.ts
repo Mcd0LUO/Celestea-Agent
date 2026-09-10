@@ -29,7 +29,8 @@
  * (`llm-assembly.ts`), i.e. production is a real model.
  */
 
-import type { Statusline, TurnOutcome } from "@celestea/core";
+import type { InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome } from "@celestea/core";
+import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
   createStatusTracker,
   createUsageTracker,
@@ -130,7 +131,12 @@ class RealEngine implements RealRuntimeAdapter {
     this.opts = opts;
     this.env = opts.env ?? process.env;
     this.profileValue = profileFromEngine(opts.profile ?? defaultEngineProfile(this.env, "CELESTEA_API_KEY"));
-    this.composer = new SessionComposer({ ...opts, env: this.env, baseProfile: () => this.profileValue });
+    this.composer = new SessionComposer({
+      ...opts,
+      env: this.env,
+      baseProfile: () => this.profileValue,
+      sessionHooks: (sessionId) => this.injectionHooks(sessionId),
+    });
     this.registry = new SessionRuntimeRegistry({
       build: (sessionId, dir) => this.composer.compose(sessionId, dir),
       dispose: (runtime) => disposeRuntime(runtime),
@@ -173,6 +179,45 @@ class RealEngine implements RealRuntimeAdapter {
   /** The composed tool registry of the default instance (`GET /api/tools`). */
   tools(): ToolInfo[] {
     return (this.registry.peek(null)?.runtime.tools?.schemas() ?? []).map((spec) => ({ name: spec.name, description: spec.description }));
+  }
+
+  /**
+   * W515 §2/§4: the session's inbox publishes every placement change on the bus
+   * (`queued`/`steering` when a message is accepted, `context` when a boundary
+   * consumes it), carrying the envelope so a settlement notice stays
+   * distinguishable from a deliberate relay message.
+   */
+  private injectionHooks(sessionId: string | null): { inbox: SessionInbox; onInjected: (messages: readonly PendingInjection[], boundary: "turn-start" | "step") => void } {
+    const publish = (placement: InjectionPlacement, message: InjectedMessage, boundary?: "turn-start" | "step"): void => {
+      this.bus?.emit(
+        "status",
+        0,
+        {
+          phase: "progress",
+          placement,
+          ...(boundary === undefined ? {} : { boundary }),
+          message: {
+            id: message.id,
+            kind: message.kind,
+            from: message.from,
+            lane: message.lane,
+            source: message.source,
+            summary: message.source.summary ?? message.text.slice(0, 120),
+          },
+          statusline: {},
+        },
+        sessionId,
+      );
+    };
+    return {
+      // Only the ACCEPT side is observed here: the `context` placement is
+      // published once, by `onInjected`, which also knows WHICH boundary
+      // consumed the message (a mailbox receipt never enters the inbox).
+      inbox: createSessionInbox(this.now, { onQueued: (message, placement) => publish(placement, message) }),
+      onInjected: (messages, boundary) => {
+        for (const message of messages) publish("context", inboxMessageOf(message), boundary);
+      },
+    };
   }
 
   // --- sessions ----------------------------------------------------------
@@ -218,16 +263,31 @@ class RealEngine implements RealRuntimeAdapter {
     const turn = this.beginTurn(entry, controller);
     this.emitStatus(entry, turn, "start");
     void this.drive(entry, req.input, turn, controller);
-    return { turn };
+    // W515 §2: this input IS the turn, so it is already in the context.
+    return { turn, placement: "context" };
   }
 
-  /** W513: deliver into the RUNNING turn instead of refusing with a 409. */
+  /**
+   * W513/W515 §1-§3: the delivery decision table in one place —
+   *   owner session RUNNING (or closing) -> `next-step` lane, a STEERING message
+   *   consumed at the running turn's next step boundary (`injected: true`);
+   *   owner session IDLE -> `next-turn` lane, QUEUED for the next turn start.
+   * The lane is what makes "insert now" and "wake me later" the same mechanism.
+   */
   inject(req: TurnRequest): InjectOutcome {
     const entry = this.registry.peek(req.session);
-    if (entry === null || !entry.inFlight) return { turn: entry?.turnNo ?? 0, injected: false, pending: 0 };
-    entry.runtime.inject(req.input, "");
-    entry.lastActiveAt = this.now();
-    return { turn: entry.turnNo, injected: true, pending: entry.runtime.pendingInjections() };
+    const busy = entry?.inFlight === true;
+    const lane = busy ? "next-step" : "next-turn";
+    const target = entry ?? this.entryFor(req.session);
+    const message = target.runtime.inject(req.input, lane, { kind: "user", source: { kind: "user", form: "message" } });
+    target.lastActiveAt = this.now();
+    return {
+      turn: target.turnNo,
+      injected: busy,
+      pending: target.runtime.pendingInjections(lane),
+      placement: busy ? "steering" : "queued",
+      duplicate: message.duplicate,
+    };
   }
 
   private beginTurn(entry: SessionRuntime, controller: AbortController): number {
@@ -413,6 +473,32 @@ class RealEngine implements RealRuntimeAdapter {
   private get now(): () => number {
     return this.opts.now ?? Date.now;
   }
+}
+
+/** The client-visible projection of one delivered message (W515 §2/§4). */
+function describeInjection(message: InjectedMessage): Record<string, unknown> {
+  return {
+    id: message.id,
+    kind: message.kind,
+    from: message.from,
+    lane: message.lane,
+    source: message.source,
+    summary: message.source.summary ?? message.text.slice(0, 120),
+  };
+}
+
+/** Normalize a drained message into the inbox shape the publisher expects. */
+function inboxMessageOf(message: PendingInjection): InjectedMessage {
+  return {
+    text: message.text,
+    from: message.from,
+    at: 0,
+    lane: message.lane ?? "next-turn",
+    kind: message.kind ?? "user",
+    id: message.id ?? "",
+    source: message.source ?? { kind: "user", form: "message" },
+    duplicate: false,
+  };
 }
 
 /** The frozen "nothing to compact" note (kept in sync with compact/plan.ts). */

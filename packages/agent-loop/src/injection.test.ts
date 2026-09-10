@@ -111,6 +111,50 @@ describe("mid-turn injection at the step boundary", () => {
     expect(userTexts(h.session.events())).toEqual(["go", "第一次插话", "[from session-9] WORKER_W9_DONE 报告 results/W9-x.md"]);
   });
 
+  it("does NOT close the turn while a steering message is still waiting (W515 §1)", async () => {
+    // The inbox reports one pending steering message only AFTER the answer is
+    // complete: this is the "closing -> inject" case — the turn must take one
+    // more step (which drains it) instead of ending.
+    let pending = 0;
+    const queue: PendingInjection[] = [];
+    const requests: ModelRequest[] = [];
+    let calls = 0;
+    const llm: Llm = {
+      generate(req: ModelRequest): Promise<LlmStream> {
+        requests.push(req);
+        calls += 1;
+        if (calls === 1) {
+          // The answer is complete, but a steer message lands right here.
+          queue.push({ text: "刚到的插话", from: "" });
+          pending = 1;
+          return Promise.resolve(scriptedStream([done(assistantText("先答一版"))]));
+        }
+        return Promise.resolve(scriptedStream([done(assistantText("已按插话继续"))]));
+      },
+    };
+    const h = harness({
+      llm,
+      session: new ProjectingLog(),
+      bindings: {
+        injections: {
+          drain: () => {
+            const taken = queue.splice(0, queue.length);
+            pending = queue.length;
+            return taken;
+          },
+          pending: () => pending,
+        },
+      },
+    });
+
+    expect(await h.run("go")).toBe("completed");
+    expect(requests).toHaveLength(2);
+    expect(userTexts(h.session.events())).toEqual(["go", "刚到的插话"]);
+    expect(h.session.events().filter((e) => e.type === "turn_start")).toHaveLength(1);
+    expect(h.session.events().filter((e) => e.type === "turn_end")).toHaveLength(1);
+    expect(requests[1]?.messages).toEqual([userMessage("go"), userMessage("刚到的插话")]);
+  });
+
   it("drains nothing and makes no extra call when the inbox stays empty", async () => {
     const box = inbox();
     const requests: ModelRequest[] = [];

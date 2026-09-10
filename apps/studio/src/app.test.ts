@@ -149,7 +149,7 @@ describe("dialog", () => {
     expect(empty.body).toEqual({ error: "input must not be empty" });
     const res = await h.app.request("/api/turn", jsonRequest("POST", { input: "hi" }));
     expect(res.status).toBe(202);
-    expect(await res.json()).toEqual({ turn: 1, status: "started" });
+    expect(await res.json()).toEqual({ turn: 1, status: "started", placement: "context" });
   });
 
   it("W513: a busy session takes the input as an interjection (no 409) and 200s cancel", async () => {
@@ -157,7 +157,7 @@ describe("dialog", () => {
     harnesses.push(h);
     const res = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "hi" }));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, injected: true, turn: 0, pending: 1 });
+    expect(res.body).toEqual({ ok: true, injected: true, turn: 0, pending: 1, placement: "steering", duplicate: false });
     const cancel = await getJson(h.app, "/api/cancel", jsonRequest("POST"));
     expect(cancel.body).toEqual({ ok: true, cancelled: false });
   });

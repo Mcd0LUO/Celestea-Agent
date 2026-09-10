@@ -28,33 +28,56 @@ function userTexts(log: ReturnType<typeof memoryLog>): string[] {
 }
 
 describe("session inbox", () => {
-  it("queues an interjection without starting anything", () => {
+  it("tracks the two lanes separately (W515 §1)", () => {
     const { runtime } = runtimeWithInbox();
-    runtime.inject("插话");
-    expect(runtime.pendingInjections()).toBe(1);
-    expect(runtime.isBusy).toBe(false);
-    runtime.inject("再来一条");
+    runtime.inject("排队等我下一轮开始", "next-turn");
+    runtime.inject("插话：现在就转向 B 方案", "next-step");
     expect(runtime.pendingInjections()).toBe(2);
+    expect(runtime.pendingInjections("next-turn")).toBe(1);
+    expect(runtime.pendingInjections("next-step")).toBe(1);
+    expect(runtime.isBusy).toBe(false);
   });
 
-  it("drains the inbox BEFORE the mailbox, and both before the turn input", async () => {
+  it("drains the NEXT-TURN lane and the mailbox before the turn input", async () => {
     const { runtime, log } = runtimeWithInbox();
     const host = runtime.hostSessionId ?? "";
     runtime.workers?.mailbox.send(host, "WORKER_W1_DONE 报告 results/W1-x.md", "session-0");
-    runtime.inject("用户的插话");
+    runtime.inject("排队等我下一轮", "next-turn");
+    runtime.inject("只给 step 边界的插话", "next-step");
     expect(runtime.pendingReceipts()).toBe(1);
 
     expect(await runtime.runTurn("正式输入")).toBe("completed");
 
-    expect(userTexts(log)).toEqual(["用户的插话", "[from session-0] WORKER_W1_DONE 报告 results/W1-x.md", "正式输入"]);
-    expect(runtime.pendingInjections()).toBe(0);
+    // The next-turn lane and the mailbox precede the input; the next-step lane
+    // is NOT drained at the turn start (there is no step boundary yet).
+    expect(userTexts(log)).toEqual(["排队等我下一轮", "[from session-0] WORKER_W1_DONE 报告 results/W1-x.md", "正式输入"]);
+    expect(runtime.pendingInjections("next-step")).toBe(1);
     expect(runtime.pendingReceipts()).toBe(0);
+  });
+
+  it("carries the receipt envelope and drops a duplicate id (W515 §3/§4)", () => {
+    const { runtime } = runtimeWithInbox();
+    const first = runtime.inject("WORKER_W1_DONE 报告 results/W1-x.md", "next-step", {
+      from: "session-0",
+      id: "mailbox:7",
+      kind: "receipt",
+      source: { kind: "subagent-settled", form: "notice", summary: "做完了", senderSessionId: "session-0" },
+    });
+    expect(first.duplicate).toBe(false);
+    expect(first.kind).toBe("receipt");
+    expect(first.source.kind).toBe("subagent-settled");
+    expect(runtime.pendingInjections("next-step")).toBe(1);
+
+    // The same receipt replayed by a restarted driver is injected ONCE.
+    const again = runtime.inject("WORKER_W1_DONE 报告 results/W1-x.md", "next-step", { id: "mailbox:7", kind: "receipt" });
+    expect(again.duplicate).toBe(true);
+    expect(runtime.pendingInjections("next-step")).toBe(1);
   });
 
   it("keeps the inbox per runtime instance (two sessions cannot see each other)", () => {
     const a = runtimeWithInbox();
     const b = runtimeWithInbox();
-    a.runtime.inject("给 A 的");
+    a.runtime.inject("给 A 的", "next-turn");
     expect(b.runtime.pendingInjections()).toBe(0);
     expect(a.runtime.pendingInjections()).toBe(1);
   });

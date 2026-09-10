@@ -123,13 +123,15 @@ class FakeRuntime implements FakeRuntimeAdapter {
     return this.busy;
   }
 
+  /** Same decision table as the real adapter: busy -> steering, idle -> queued. */
   inject(req: TurnRequest): InjectOutcome {
     const key = req.session ?? "";
     const queued = this.injected.get(key) ?? [];
     queued.push(req.input);
     this.injected.set(key, queued);
-    this.emit("status", { phase: "progress", statusline: this.statusline() }, this.turns.get(key) ?? 0);
-    return { turn: this.turns.get(key) ?? 0, injected: true, pending: queued.length };
+    const placement = this.busy ? "steering" : "queued";
+    this.emit("status", { phase: "progress", placement, statusline: this.statusline() }, this.turns.get(key) ?? 0, req.session);
+    return { turn: this.turns.get(key) ?? 0, injected: this.busy, pending: queued.length, placement, duplicate: false };
   }
 
   /** Messages injected into the given session's turn (test assertion hook). */
@@ -217,7 +219,7 @@ class FakeRuntime implements FakeRuntimeAdapter {
     this.turns.set(key, this.turn);
     this.emit("status", { phase: "start", statusline: this.statusline() }, this.turn, req.session);
     setTimeout(() => void this.runTurn(req), 0);
-    return { turn: this.turn };
+    return { turn: this.turn, placement: "context" };
   }
 
   cancel(_session?: string | null): boolean {

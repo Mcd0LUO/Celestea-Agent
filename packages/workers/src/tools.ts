@@ -155,7 +155,11 @@ async function sendMessage(registry: WorkerRegistry, args: Record<string, unknow
   const session = resolved.session;
   if (session === undefined) return contractError("resolve", `no session matches target: ${target}`);
   const from = registry.sourceLabel;
-  const sent = registry.mailbox.send(session.meta.id, content, from);
+  // A deliberate relay message — never a settlement notice (W515 §4).
+  const sent = registry.mailbox.send(session.meta.id, content, from, {
+    kind: "relay",
+    source: { kind: "worker-relay", form: "message", senderSessionId: from },
+  });
   return {
     ok: true,
     delivered: true,

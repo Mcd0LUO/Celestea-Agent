@@ -22,6 +22,7 @@ import {
   type AgentLoop,
   type Context,
   type InjectionSource,
+  type PendingInjection,
   type LoopEvent,
   type SessionEvent,
   type SessionLog,
@@ -56,11 +57,8 @@ export interface LoopBindings {
 /** Builds the per-turn `AgentLoop`; the host injects its concrete loop here. */
 export type LoopFactory = (bindings: LoopBindings) => AgentLoop;
 
-/** A worker receipt waiting in the host mailbox. */
-export interface PendingReceipt {
-  text: string;
-  from: string;
-}
+/** Anything waiting to be appended to the log (user text, receipt, relay). */
+export type PendingReceipt = PendingInjection;
 
 export interface TurnRunnerDeps {
   ctx: Context;
@@ -73,13 +71,17 @@ export interface TurnRunnerDeps {
   /** Absent = the loop is resolved from `AGENT_LOOP_SERVICE` in the Context. */
   loopFactory?: LoopFactory;
   /**
-   * Everything waiting to be injected into the log: the session inbox (user
-   * interjections) followed by the session mailbox (worker receipts). Drained
-   * at turn START (receipts precede the input, W232) and again before EVERY
-   * model call (W513), so a message that arrives while the turn runs reaches
-   * that turn instead of waiting for the next one.
+   * The TURN-START drain (`next-turn` lane + session mailbox): receipts precede
+   * the input (W232) and a follow-up queued while the session was idle is
+   * appended before it (W515 §1: `placement: "queued"`).
    */
   drainPending?: () => PendingReceipt[];
+  /**
+   * The STEP-BOUNDARY source handed to the loop (`next-step` lane + session
+   * mailbox). It carries `pending()` so the loop can refuse to close a turn
+   * while a steering message is still waiting (W515 §1 invariant).
+   */
+  injections?: InjectionSource;
 }
 
 export class TurnRunner {
@@ -184,7 +186,7 @@ export class TurnRunner {
   private resolveLoop(signal: AbortSignal, sink: LoopEventSink): AgentLoop {
     const factory = this.deps.loopFactory;
     if (factory !== undefined) {
-      const injections = this.injections();
+      const injections = this.deps.injections;
       return factory({
         config: this.deps.agentConfig,
         signal,
@@ -212,14 +214,7 @@ export class TurnRunner {
     return this.deps.drainPending?.() ?? [];
   }
 
-  /**
-   * The step-boundary source handed to the loop: the same drain, so the loop
-   * appends interjections and receipts as ordinary `user_message` rows in the
-   * running turn (no new turn, no interruption).
-   */
-  private injections(): InjectionSource | undefined {
-    return this.deps.drainPending === undefined ? undefined : { drain: () => this.drainPending() };
-  }
+
 }
 
 /** `[from W1] content` — the receipt attribution the host log shows verbatim. */

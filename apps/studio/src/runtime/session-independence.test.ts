@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseSessionJsonl } from "@celestea/session";
 import type { SessionEvent } from "@celestea/core";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
+import type { BusSubscription } from "../sse.js";
 import { activate, engineOf, makeEngineHarness, readSessionLog, turns, waitIdle } from "./test-util.js";
 import type { OfflineStep } from "./offline-llm.js";
 
@@ -65,6 +66,35 @@ async function pollLog(h: StudioHarness, name: string, predicate: (events: Sessi
   }
 }
 
+/**
+ * Continuously collect frames of one subscription. A polling loop that times out
+ * would leave a dangling `next()` waiter behind and swallow the NEXT frame, so
+ * the collector subscribes once and drains forever.
+ */
+interface FrameLog {
+  frames: Array<{ event: string; payload: Record<string, unknown> }>;
+  find(predicate: (payload: Record<string, unknown>) => boolean): Record<string, unknown> | undefined;
+  settle(ms?: number): Promise<void>;
+  stop(): void;
+}
+
+function collect(sub: BusSubscription): FrameLog {
+  const frames: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  void (async () => {
+    for (;;) {
+      const frame = await sub.next();
+      if (frame === null) return;
+      frames.push({ event: frame.event, payload: (frame.envelope.payload ?? {}) as Record<string, unknown> });
+    }
+  })();
+  return {
+    frames,
+    find: (predicate) => frames.map((f) => f.payload).find(predicate),
+    settle: (ms = 150) => new Promise((r) => setTimeout(r, ms)),
+    stop: () => sub.close(),
+  };
+}
+
 describe("session independence", () => {
   it("opens and runs a second session while the first one is streaming (no 409)", async () => {
     const h = makeSlow({ s1: [], s2: turns(1) });
@@ -82,7 +112,7 @@ describe("session independence", () => {
     // (3) the second session runs its own turn, numbered from 1, while s1 streams.
     const second = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "B 的任务", session: "sample-ws/s2" }));
     expect(second.status).toBe(202);
-    expect(second.body).toEqual({ turn: 1, status: "started" });
+    expect(second.body).toEqual({ turn: 1, status: "started", placement: "context" });
     await waitIdle(h);
 
     expect(userTexts(eventsOf(h, "s2")).slice(-1)).toEqual(["B 的任务"]);
@@ -99,7 +129,7 @@ describe("session independence", () => {
 
     const injected = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "中途插话", session: "sample-ws/s1" }));
     expect(injected.status).toBe(200);
-    expect(injected.body).toEqual({ ok: true, injected: true, turn: 1, pending: 1 });
+    expect(injected.body).toEqual({ ok: true, injected: true, turn: 1, pending: 1, placement: "steering", duplicate: false });
 
     // The interjection is written by the RUNNING turn: it shows up before the
     // turn_end row, while the turn is still in flight.
@@ -136,6 +166,73 @@ describe("session independence", () => {
     expect(userTexts(events)).toEqual(["第一轮", "[from celestea.studio-ts] WORKER_W1_DONE 报告 results/W1-x.md"]);
     const kinds = events.map((e) => e.type);
     expect(kinds.lastIndexOf("user_message")).toBeLessThan(kinds.lastIndexOf("turn_end"));
+  });
+
+  it("publishes placement (queued/steering/context) and the receipt envelope (W515 §2/§4)", async () => {
+    const script: OfflineStep[] = [];
+    const h = make({ sessions: { s1: [] }, llm: { script } });
+    await activate(h, "sample-ws/s1");
+    const log = collect(h.studio.services.bus.subscribe());
+
+    // 1. an idle turn: the input IS the context.
+    script.push({ text: "普通回答" });
+    const first = await h.app.request("/api/turn", jsonRequest("POST", { input: "第一轮", session: "sample-ws/s1" }));
+    expect(((await first.json()) as Record<string, unknown>)["placement"]).toBe("context");
+    await waitIdle(h);
+
+    // 2. a worker on this session settles -> a QUEUED receipt in the mailbox.
+    const spawn = await getJson(h.app, "/api/worker/spawn", jsonRequest("POST", { wid: "W1", brief: "x", session: "sample-ws/s1" }));
+    expect(spawn.body["ok"]).toBe(true);
+    const workerId = String(spawn.body["sessionId"]);
+    const deadline = Date.now() + 4_000;
+    while (Date.now() < deadline) {
+      // `state: idle` means the driver parked in its mailbox loop, i.e. the
+      // settlement notice was already enqueued into the host mailbox.
+      const status = await getJson(h.app, "/api/worker/status?wid=W1");
+      const worker = (status.body["workers"] as Array<Record<string, unknown>>)[0];
+      if (worker?.["state"] === "idle") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    await log.settle(100);
+
+    // 3. the next turn drains it at the TURN START: placement "context", envelope
+    //    `subagent-settled` (a settlement notice, not a deliberate relay).
+    script.push({ text: "带回执的回答" });
+    const second = await h.app.request("/api/turn", jsonRequest("POST", { input: "第二轮", session: "sample-ws/s1" }));
+    expect(second.status).toBe(202);
+    await waitIdle(h);
+    const receiptFrame = log.find((p) => (p["message"] as Record<string, unknown> | undefined)?.["kind"] === "receipt");
+    expect(receiptFrame?.["placement"]).toBe("context");
+    expect(receiptFrame?.["boundary"]).toBe("turn-start");
+    expect((receiptFrame?.["message"] as Record<string, unknown>)["source"]).toMatchObject({ kind: "subagent-settled", form: "notice" });
+    expect(userTexts(eventsOf(h, "s1")).some((t) => t.includes("WORKER_W1_DONE"))).toBe(true);
+
+    // 4. an explicit relay message keeps its own envelope.
+    await getJson(h.app, "/api/worker/send", jsonRequest("POST", { target: "sample-ws/s1", content: "主动消息" }));
+    script.push({ text: "带 relay 的回答" });
+    await h.app.request("/api/turn", jsonRequest("POST", { input: "第三轮", session: "sample-ws/s1" }));
+    await waitIdle(h);
+    const relayFrame = log.find((p) => (p["message"] as Record<string, unknown> | undefined)?.["kind"] === "relay");
+    expect((relayFrame?.["message"] as Record<string, unknown>)["source"]).toMatchObject({ kind: "worker-relay", form: "message" });
+
+    // 5. a busy session: the interjection is STEERING now, CONTEXT at the step.
+    const slow = makeSlow({ s1: [] });
+    await activate(slow, "sample-ws/s1");
+    const slowLog = collect(slow.studio.services.bus.subscribe());
+    await slow.app.request("/api/turn", jsonRequest("POST", { input: "长任务", session: "sample-ws/s1" }));
+    const injected = await getJson(slow.app, "/api/turn", jsonRequest("POST", { input: "中途插话", session: "sample-ws/s1" }));
+    expect(injected.body["placement"]).toBe("steering");
+    await slowLog.settle(200);
+    const steering = slowLog.find((p) => p["placement"] === "steering");
+    expect((steering?.["message"] as Record<string, unknown>)["lane"]).toBe("next-step");
+    await waitIdle(slow);
+    await slowLog.settle(200);
+    const context = slowLog.find((p) => p["placement"] === "context" && p["boundary"] === "step");
+    expect(context?.["boundary"]).toBe("step");
+    expect((context?.["message"] as Record<string, unknown>)["summary"]).toBe("中途插话");
+
+    log.stop();
+    slowLog.stop();
   });
 
   it("lists worker rows with wid/status/host_session and per-session busy flags", async () => {

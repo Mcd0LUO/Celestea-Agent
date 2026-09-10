@@ -32,7 +32,7 @@ describe("POST /api/turn over the real engine", () => {
     await activate(h, "sample-ws/s1");
     const res = await runTurnWithFrames(h, "hi");
     expect(res.status).toBe(202);
-    expect(res.body).toEqual({ turn: 1, status: "started" });
+    expect(res.body).toEqual({ turn: 1, status: "started", placement: "context" });
 
     const events = res.frames.map((f) => f.event);
     expect(events[0]).toBe("status");
@@ -67,7 +67,7 @@ describe("POST /api/turn over the real engine", () => {
 
     const second = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "again" }));
     expect(second.status).toBe(200);
-    expect(second.body).toEqual({ ok: true, injected: true, turn: 1, pending: 1 });
+    expect(second.body).toEqual({ ok: true, injected: true, turn: 1, pending: 1, placement: "steering", duplicate: false });
 
     const cancel = await getJson(h.app, "/api/cancel", jsonRequest("POST"));
     expect(cancel.body).toEqual({ ok: true, cancelled: true });

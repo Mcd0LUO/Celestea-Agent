@@ -22,14 +22,14 @@
 
 import { readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { WorkerEntry } from "@celestea/core";
+import type { SessionLog, WorkerEntry } from "@celestea/core";
 import { runDriverLoop, type WorkerDrivers } from "./driver.js";
-import { executeReceipt, type ReceiptRequest } from "./receipt.js";
+import { executeReceipt, lastAssistantSummary, type ReceiptRequest } from "./receipt.js";
 import { SessionMailbox } from "./mailbox.js";
 import { SessionRegistry } from "./sessions.js";
 import type { SessionLogFactory } from "./log.js";
 import { REGISTRY_TSV_PATH, getExtra, parseRegistryTsv, serializeRegistryTsv, summarize } from "./registry-tsv.js";
-import { sanitizeExtra, utcNow, type WorkerSession } from "./types.js";
+import { sanitizeExtra, truncateChars, utcNow, type WorkerSession } from "./types.js";
 
 export const RESULTS_DIR_DEFAULT = "results";
 export const WORKER_REGISTRY_SERVICE = "celestea.workers.WorkerRegistry";
@@ -327,8 +327,23 @@ export class WorkerRegistry {
       failure,
     };
     const result = executeReceipt(req);
-    this.mailboxRegistry.send(reportTo, result.content, sid);
+    // W515 §4: the settlement notice carries its own envelope, so the host can
+    // tell it apart from a relay message the worker sent on purpose.
+    this.mailboxRegistry.send(reportTo, result.content, sid, {
+      kind: "receipt",
+      source: { kind: "subagent-settled", form: "notice", summary: receiptSummary(req, result.content), senderSessionId: sid },
+    });
   }
+}
+
+/** One-line summary of a settlement notice (the DSH `source.summary` field). */
+function receiptSummary(req: ReceiptRequest, content: string): string {
+  const summary = lastAssistantSummaryOf(req.log);
+  return summary === null ? truncateChars(content, 120) : truncateChars(summary, 120);
+}
+
+function lastAssistantSummaryOf(log: SessionLog | undefined): string | null {
+  return log === undefined ? null : lastAssistantSummary(log.events());
 }
 
 /** Row ownership: only a matching `proc` token makes a row ours (W234). */

@@ -58,6 +58,7 @@ import { createStatusTracker, type StatusTracker } from "./status.js";
 import { STATUS_TRACKER_SERVICE, USAGE_TRACKER_SERVICE } from "./tokens.js";
 import { TurnRunner, type LoopFactory, type PendingReceipt } from "./turn-runner.js";
 import { createUsageTracker, type UsageAccounting } from "./usage.js";
+import type { InjectionLane, PendingInjection } from "@celestea/core";
 import { createSessionInbox, type SessionInbox } from "./inbox.js";
 import { ensureWorkerWiring, type WorkerHost, type WorkerWiring } from "./worker-wiring.js";
 
@@ -81,6 +82,12 @@ export interface ComposeConfig {
   workers?: WorkerWiring | false;
   /** Mid-turn injection queue (default: a fresh one per generation). */
   inbox?: SessionInbox;
+  /**
+   * W515 §2: every message that LEAVES a lane (or the host mailbox) is reported
+   * with the boundary that consumed it, so the host can publish
+   * `placement: "context"` (the message is now model-visible) over SSE.
+   */
+  onInjected?: (messages: readonly PendingInjection[], boundary: "turn-start" | "step") => void;
   /** Host teardown hooks (process kills) — run once, in order, by `shutdown`. */
   shutdownHooks?: readonly ShutdownHook[];
   /** Injectable clock (status tracker rate window). */
@@ -111,6 +118,16 @@ export function compose(config: ComposeConfig): Runtime {
 
   const agentConfig = agentConfigFromProfile(config.profile, config.agentConfig ?? {});
   const inbox = config.inbox ?? createSessionInbox();
+  const receipts = (): PendingReceipt[] => workerHost?.drain() ?? [];
+  const drained = (messages: PendingReceipt[], boundary: "turn-start" | "step"): PendingReceipt[] => {
+    if (messages.length === 0) return messages;
+    // A mailbox message never entered a lane: the BOUNDARY that consumed it is
+    // what tells the client where it landed (W515 §1/§2).
+    const lane: InjectionLane = boundary === "step" ? "next-step" : "next-turn";
+    const annotated = messages.map((message) => (message.lane === undefined ? { ...message, lane } : message));
+    config.onInjected?.(annotated, boundary);
+    return annotated;
+  };
   const runner = new TurnRunner({
     ctx,
     session: () => sessionRef.log,
@@ -119,7 +136,11 @@ export function compose(config: ComposeConfig): Runtime {
     agentConfig,
     frameMapper: config.frameMapper ?? loopEventToFrame,
     ...(config.loopFactory === undefined ? {} : { loopFactory: config.loopFactory }),
-    drainPending: () => drainPending(inbox, workerHost),
+    drainPending: () => drained([...inbox.drain("next-turn"), ...receipts()], "turn-start"),
+    injections: {
+      drain: () => drained([...inbox.drain("next-step"), ...receipts()], "step"),
+      pending: () => inbox.pending("next-step") + (workerHost?.pending() ?? 0),
+    },
   });
 
   const parts: RuntimeParts = {
@@ -140,16 +161,6 @@ export function compose(config: ComposeConfig): Runtime {
     shutdownHooks: config.shutdownHooks ?? [],
   };
   return new Runtime(parts);
-}
-
-/**
- * Everything the turn must inject into the log, in order: the session inbox
- * (user interjections, W513) then the host mailbox (worker receipts, W232).
- * Called at turn start and again at every step boundary.
- */
-export function drainPending(inbox: SessionInbox, workerHost: WorkerHost | null): PendingReceipt[] {
-  const injected = inbox.drain().map((message) => ({ text: message.text, from: message.from }));
-  return workerHost === null ? injected : [...injected, ...workerHost.drain()];
 }
 
 /** The plugin set that was mounted, in mount order (order is contract). */

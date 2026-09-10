@@ -14,7 +14,7 @@
  *     shutdown), and `release` parks nothing further.
  */
 
-import type { MailboxMessage, MailboxWaiter } from "./types.js";
+import type { MailboxMessage, MailboxSendOptions, MailboxWaiter } from "./types.js";
 
 export class SessionMailbox {
   private readonly queues = new Map<string, MailboxMessage[]>();
@@ -32,8 +32,16 @@ export class SessionMailbox {
   }
 
   /** Queue (or hand straight to a parked consumer) one message. */
-  send(to: string, content: string, fromLabel: string): MailboxMessage {
-    const msg: MailboxMessage = { id: this.nextId++, to, content, from_label: fromLabel, at: this.now() };
+  send(to: string, content: string, fromLabel: string, opts: MailboxSendOptions = {}): MailboxMessage {
+    const msg: MailboxMessage = {
+      id: this.nextId++,
+      to,
+      content,
+      from_label: fromLabel,
+      at: this.now(),
+      kind: opts.kind ?? "relay",
+      source: opts.source ?? { kind: "worker-relay", form: "message", senderSessionId: fromLabel },
+    };
     if (this.released) return msg;
     const waiter = this.waiters.get(to)?.shift();
     if (waiter !== undefined) {

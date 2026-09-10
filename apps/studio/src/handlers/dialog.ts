@@ -71,7 +71,8 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
     if (deps.runtime.isBusy(session)) return injectInto(c, deps, text, session);
     try {
       const started = await deps.runtime.startTurn({ input: text, session });
-      return c.json({ turn: started.turn, status: "started" }, 202);
+      // W515 §2: the turn's own input IS the context the model sees first.
+      return c.json({ turn: started.turn, status: "started", placement: started.placement ?? "context" }, 202);
     } catch (e) {
       if (e instanceof TurnBusyError) return injectInto(c, deps, text, session);
       if (e instanceof CapacityError) return capacityJson(c, e);
@@ -81,10 +82,10 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
   return turn.id;
 }
 
-/** W513: the session is busy -> the input joins the RUNNING turn. */
+/** W513: the session is busy -> the input joins the RUNNING turn (steering). */
 function injectInto(c: Parameters<typeof failJson>[0], deps: Deps, text: string, session: string | null): Response {
   const out = deps.runtime.inject({ input: text, session });
-  return c.json({ ok: true, injected: out.injected, turn: out.turn, pending: out.pending });
+  return c.json({ ok: true, injected: out.injected, turn: out.turn, pending: out.pending, placement: out.placement, duplicate: out.duplicate });
 }
 
 /** The optional `{session}` of the cancel/clear bodies (absent = active). */
