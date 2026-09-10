@@ -137,7 +137,7 @@ export function parseRawChunk(data: string): RawChunk | undefined {
 
 /** Build a thinking event for a non-blank reasoning delta (blank-gated). */
 export function thinkingEvent(reasoning: string): StreamEvent | null {
-  return reasoning.trim() === "" ? null : { type: "thinking", delta: reasoning };
+  return reasoning.trim() === "" ? null : { kind: "thinking", text: reasoning };
 }
 
 /** Parse accumulated tool-call arguments; malformed JSON is preserved raw. */

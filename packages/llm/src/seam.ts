@@ -70,14 +70,21 @@ export interface ModelRequest {
  * `StreamEvent` — the streamed turn. Reasoning/text deltas stream live, a usage
  * event rides just before the terminal event, and the turn ends with exactly
  * one of done / failed / interrupted — never a fake done (R1).
+ *
+ * Shape = `@celestea/core` `stream.ts` (discriminator `kind`, delta field
+ * `text`, terminal failure field `kindOf`), so the swap is an import change.
+ * `kindOf` is a free-form string in Rust (`StreamEvent::Failed { kind, .. }`)
+ * whose live values are "stream" (mid-stream decode failure) and "timeout"
+ * (SSE idle guard); core's TS union currently lists "generate" | "stream" only
+ * and must be widened (see README §"core seam adapter").
  */
 export type StreamEvent =
-  | { type: "thinking"; delta: string }
-  | { type: "text"; delta: string }
-  | { type: "usage"; usage: Usage }
-  | { type: "done"; message: Message }
-  | { type: "failed"; kind: "stream" | "timeout"; message: string }
-  | { type: "interrupted" };
+  | { kind: "text"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "usage"; usage: Usage }
+  | { kind: "done"; message: Message }
+  | { kind: "failed"; kindOf: "generate" | "stream" | "timeout"; message: string }
+  | { kind: "interrupted" };
 
 /** The streamed turn: an async iterable of events. */
 export type LlmStream = AsyncIterable<StreamEvent>;

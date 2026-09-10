@@ -91,14 +91,14 @@ describe("2. stream idle timeout (one chunk, then silence)", () => {
     const events = await collectStream(stream);
     const elapsed = Date.now() - started;
 
-    expect(events.some((e) => e.type === "text" && e.delta === "Hel")).toBe(true);
+    expect(events.some((e) => e.kind === "text" && e.text === "Hel")).toBe(true);
     const terminal = events.at(-1);
     expect(terminal).toEqual({
-      type: "failed",
-      kind: "timeout",
+      kind: "failed",
+      kindOf: "timeout",
       message: "stream idle timeout: no data chunk for 300ms",
     });
-    expect(events.some((e) => e.type === "done")).toBe(false);
+    expect(events.some((e) => e.kind === "done")).toBe(false);
     expect(elapsed).toBeGreaterThanOrEqual(250);
     expect(elapsed).toBeLessThan(3_000);
   });
@@ -116,10 +116,10 @@ describe("2b. usage frames seen before a stall are still surfaced", () => {
     const llm = client(upstream.baseUrl, 5_000, 250);
 
     const events = await collectStream(await llm.generate(request()));
-    expect(events.map((e) => e.type)).toEqual(["text", "usage", "failed"]);
+    expect(events.map((e) => e.kind)).toEqual(["text", "usage", "failed"]);
     const usage = events[1];
-    if (usage?.type === "usage") expect(usage.usage.total_tokens).toBe(9);
-    expect(events.at(-1)).toMatchObject({ type: "failed", kind: "timeout" });
+    if (usage?.kind === "usage") expect(usage.usage.total_tokens).toBe(9);
+    expect(events.at(-1)).toMatchObject({ kind: "failed", kindOf: "timeout" });
   });
 });
 
@@ -136,15 +136,15 @@ describe("3. a healthy fast stream is not killed", () => {
 
     const events = await collectStream(await llm.generate(request()));
 
-    expect(events.some((e) => e.type === "failed")).toBe(false);
-    expect(events.filter((e) => e.type === "text").map((e) => e.delta)).toEqual([
+    expect(events.some((e) => e.kind === "failed")).toBe(false);
+    expect(events.filter((e) => e.kind === "text").map((e) => e.text)).toEqual([
       "He",
       "llo",
       " world",
     ]);
     const terminal = events.at(-1);
-    expect(terminal?.type).toBe("done");
-    if (terminal?.type === "done") {
+    expect(terminal?.kind).toBe("done");
+    if (terminal?.kind === "done") {
       expect(terminal.message.content).toEqual([{ type: "text", content: "Hello world" }]);
       expect(terminal.message.tool_call_id).toBeNull();
     }
@@ -160,7 +160,7 @@ describe("3. a healthy fast stream is not killed", () => {
     });
     const llm = client(upstream.baseUrl, 20, 5_000);
     const events = await collectStream(await llm.generate(request()));
-    expect(events.at(-1)?.type).toBe("done");
+    expect(events.at(-1)?.kind).toBe("done");
   });
 });
 
