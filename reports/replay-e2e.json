@@ -1,0 +1,1025 @@
+{
+  "generatedAt": "2026-09-10T14:56:06.128Z",
+  "fixtures": "/src/celestea_studio-ts/fixtures",
+  "fixturesGeneratedAt": "2026-09-09T17:28:54.740Z",
+  "probeInput": "P5 重放探针",
+  "summary": {
+    "sessions": 5,
+    "findings": 77,
+    "matched": 75,
+    "byteExact": 52,
+    "golden": 15,
+    "diffed": 0,
+    "skipped": 2,
+    "errors": 0,
+    "verdict": "match"
+  },
+  "sessions": [
+    {
+      "id": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577",
+      "slug": "scratch-cancel-e2e-1788971355.259970577",
+      "roles": [
+        "session-log",
+        "cancelled-outcome"
+      ],
+      "events": 6,
+      "turns": 1,
+      "findings": [
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: session-log-jsonl",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay -> re-serialize: 768 bytes identical (sha256 05ea06870091)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: session-log-file",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay kept the file untouched: 768 bytes identical (sha256 05ea06870091)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: session-log-replay",
+          "kind": "byte-exact",
+          "detail": "6 event(s), no torn tail, next turn id turn-1",
+          "verdict": "match"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: messages-projection",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "GET /api/sessions/{id}/messages (200): 4 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: engine-derive-messages",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "engine model-visible history: 3 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: sse-transcript",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "TS-derived transcript (Rust capture is a P6 gap): 6 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: sse-transport",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "GET /api/events replayed stored golden transcript frames: 6 wire block(s) byte-identical (envelope order turn,seq,payload)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-append-bytes",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn is exactly its serialized events: 969 bytes identical (sha256 88891d790f28)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-append-shape",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn shape: 4 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-answer",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "offline answer: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-outcome",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "terminal outcome: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-sse",
+          "kind": "byte-exact",
+          "detail": "turn frames status>text>done>turn_end>status",
+          "verdict": "match"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: compact-log",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "log untouched (history below threshold): 969 bytes identical (sha256 88891d790f28)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: compact-response",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "skip branch: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: compact-sse",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "compact frame: value identical"
+        }
+      ],
+      "verdict": "match"
+    },
+    {
+      "id": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520",
+      "slug": "scratch-timeout-1788962615.856629520",
+      "roles": [
+        "session-log",
+        "error-outcome"
+      ],
+      "events": 3,
+      "turns": 1,
+      "findings": [
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: session-log-jsonl",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay -> re-serialize: 270 bytes identical (sha256 b7832af1e3f2)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: session-log-file",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay kept the file untouched: 270 bytes identical (sha256 b7832af1e3f2)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: session-log-replay",
+          "kind": "byte-exact",
+          "detail": "3 event(s), no torn tail, next turn id turn-1",
+          "verdict": "match"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: messages-projection",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "GET /api/sessions/{id}/messages (200): 1 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: engine-derive-messages",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "engine model-visible history: 1 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: sse-transcript",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "TS-derived transcript (Rust capture is a P6 gap): 3 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: sse-transport",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "GET /api/events replayed stored golden transcript frames: 3 wire block(s) byte-identical (envelope order turn,seq,payload)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-append-bytes",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn is exactly its serialized events: 471 bytes identical (sha256 270b767f3170)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-append-shape",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn shape: 4 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-answer",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "offline answer: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-outcome",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "terminal outcome: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-sse",
+          "kind": "byte-exact",
+          "detail": "turn frames status>text>done>turn_end>status",
+          "verdict": "match"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: compact-log",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "log untouched (history below threshold): 471 bytes identical (sha256 270b767f3170)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: compact-response",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "skip branch: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: compact-sse",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "compact frame: value identical"
+        }
+      ],
+      "verdict": "match"
+    },
+    {
+      "id": "CelesteaTeamAPI/test-1788787479.196315272",
+      "slug": "test-1788787479.196315272",
+      "roles": [
+        "session-log",
+        "run_code-parent-id",
+        "normal-multi-turn"
+      ],
+      "events": 53,
+      "turns": 6,
+      "findings": [
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: session-log-jsonl",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay -> re-serialize: 20591 bytes identical (sha256 f49df2d4560d)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: session-log-file",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay kept the file untouched: 20591 bytes identical (sha256 f49df2d4560d)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: session-log-replay",
+          "kind": "byte-exact",
+          "detail": "53 event(s), no torn tail, next turn id turn-7",
+          "verdict": "match"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: messages-projection",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "GET /api/sessions/{id}/messages (200): 41 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: engine-derive-messages",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "engine model-visible history: 18 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: sse-transcript",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "TS-derived transcript (Rust capture is a P6 gap): 53 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: sse-transport",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "GET /api/events replayed stored golden transcript frames: 53 wire block(s) byte-identical (envelope order turn,seq,payload)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-append-bytes",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn is exactly its serialized events: 20792 bytes identical (sha256 787868b3a0cb)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-append-shape",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn shape: 4 item(s) identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-answer",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "offline answer: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-outcome",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "terminal outcome: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-sse",
+          "kind": "byte-exact",
+          "detail": "turn frames status>text>done>turn_end>status",
+          "verdict": "match"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: compact-log",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "log untouched (history below threshold): 20792 bytes identical (sha256 787868b3a0cb)"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: compact-response",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "skip branch: value identical"
+        },
+        {
+          "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: compact-sse",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "compact frame: value identical"
+        }
+      ],
+      "verdict": "match"
+    },
+    {
+      "id": "celestea_harness/harness架构哥-1788933931.279221103",
+      "slug": "harness架构哥-1788933931.279221103",
+      "roles": [
+        "session-log",
+        "dangling-tool-call",
+        "run_code-parent-id",
+        "cancelled-outcome",
+        "error-outcome"
+      ],
+      "events": 606,
+      "turns": 17,
+      "findings": [
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: session-log-jsonl",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay -> re-serialize: 1041745 bytes identical (sha256 eff6eab2ea58)"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: session-log-file",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay kept the file untouched: 1041745 bytes identical (sha256 eff6eab2ea58)"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: session-log-replay",
+          "kind": "byte-exact",
+          "detail": "606 event(s), no torn tail, next turn id turn-17",
+          "verdict": "match"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: messages-projection",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "GET /api/sessions/{id}/messages (200): 575 item(s) identical"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: engine-derive-messages",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "engine model-visible history: 373 item(s) identical"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: sse-transcript",
+          "kind": "self-check",
+          "detail": "golden transcript not stored for this session; 603 frame(s) regenerated in-memory",
+          "verdict": "skip"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: sse-transport",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "GET /api/events replayed TS-derived frames: 603 wire block(s) byte-identical (envelope order turn,seq,payload)"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-append-bytes",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn is exactly its serialized events: 1041948 bytes identical (sha256 af4fe83c55ba)"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-append-shape",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn shape: 4 item(s) identical"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-answer",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "offline answer: value identical"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-outcome",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "terminal outcome: value identical"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-sse",
+          "kind": "byte-exact",
+          "detail": "turn frames status>text>done>turn_end>status",
+          "verdict": "match"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-log",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "independent re-derivation of the W259 plan: 45855 bytes identical (sha256 cb043e253f75)"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-backup",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": ".precompact backup of the pre-compaction log: 1041948 bytes identical (sha256 af4fe83c55ba)"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-kept-turn-bodies",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "kept turns are byte-identical apart from renumbering: 4 item(s) identical"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-response",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "compacted branch: value identical"
+        },
+        {
+          "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-sse",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "compact frame: value identical"
+        }
+      ],
+      "verdict": "match"
+    },
+    {
+      "id": "server-center/center-架构师-1788940601.93642104",
+      "slug": "center-架构师-1788940601.93642104",
+      "roles": [
+        "session-log",
+        "normal-multi-turn",
+        "error-outcome"
+      ],
+      "events": 967,
+      "turns": 7,
+      "findings": [
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: session-log-jsonl",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay -> re-serialize: 1748650 bytes identical (sha256 84ab09aa53c2)"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: session-log-file",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "replay kept the file untouched: 1748650 bytes identical (sha256 84ab09aa53c2)"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: session-log-replay",
+          "kind": "byte-exact",
+          "detail": "967 event(s), no torn tail, next turn id turn-7",
+          "verdict": "match"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: messages-projection",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "GET /api/sessions/{id}/messages (200): 953 item(s) identical"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: engine-derive-messages",
+          "kind": "self-check",
+          "verdict": "match",
+          "detail": "engine model-visible history: 628 item(s) identical"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: sse-transcript",
+          "kind": "self-check",
+          "detail": "golden transcript not stored for this session; 967 frame(s) regenerated in-memory",
+          "verdict": "skip"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: sse-transport",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "GET /api/events replayed TS-derived frames: 967 wire block(s) byte-identical (envelope order turn,seq,payload)"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: turn-append-bytes",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn is exactly its serialized events: 1748851 bytes identical (sha256 d28ed510068c)"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: turn-append-shape",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "appended turn shape: 4 item(s) identical"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: turn-answer",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "offline answer: value identical"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: turn-outcome",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "terminal outcome: value identical"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: turn-sse",
+          "kind": "byte-exact",
+          "detail": "turn frames status>text>done>turn_end>status",
+          "verdict": "match"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: compact-log",
+          "kind": "byte-exact",
+          "verdict": "match",
+          "detail": "log untouched (history below threshold): 1748851 bytes identical (sha256 d28ed510068c)"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: compact-response",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "skip branch: value identical"
+        },
+        {
+          "scope": "server-center/center-架构师-1788940601.93642104 :: compact-sse",
+          "kind": "golden",
+          "verdict": "match",
+          "detail": "compact frame: value identical"
+        }
+      ],
+      "verdict": "match"
+    }
+  ],
+  "findings": [
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: session-log-jsonl",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay -> re-serialize: 768 bytes identical (sha256 05ea06870091)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: session-log-file",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay kept the file untouched: 768 bytes identical (sha256 05ea06870091)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: session-log-replay",
+      "kind": "byte-exact",
+      "detail": "6 event(s), no torn tail, next turn id turn-1",
+      "verdict": "match"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: messages-projection",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "GET /api/sessions/{id}/messages (200): 4 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: engine-derive-messages",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "engine model-visible history: 3 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: sse-transcript",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "TS-derived transcript (Rust capture is a P6 gap): 6 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: sse-transport",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "GET /api/events replayed stored golden transcript frames: 6 wire block(s) byte-identical (envelope order turn,seq,payload)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-append-bytes",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn is exactly its serialized events: 969 bytes identical (sha256 88891d790f28)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-append-shape",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn shape: 4 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-answer",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "offline answer: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-outcome",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "terminal outcome: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: turn-sse",
+      "kind": "byte-exact",
+      "detail": "turn frames status>text>done>turn_end>status",
+      "verdict": "match"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: compact-log",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "log untouched (history below threshold): 969 bytes identical (sha256 88891d790f28)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: compact-response",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "skip branch: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-cancel-e2e-1788971355.259970577 :: compact-sse",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "compact frame: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: session-log-jsonl",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay -> re-serialize: 270 bytes identical (sha256 b7832af1e3f2)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: session-log-file",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay kept the file untouched: 270 bytes identical (sha256 b7832af1e3f2)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: session-log-replay",
+      "kind": "byte-exact",
+      "detail": "3 event(s), no torn tail, next turn id turn-1",
+      "verdict": "match"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: messages-projection",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "GET /api/sessions/{id}/messages (200): 1 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: engine-derive-messages",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "engine model-visible history: 1 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: sse-transcript",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "TS-derived transcript (Rust capture is a P6 gap): 3 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: sse-transport",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "GET /api/events replayed stored golden transcript frames: 3 wire block(s) byte-identical (envelope order turn,seq,payload)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-append-bytes",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn is exactly its serialized events: 471 bytes identical (sha256 270b767f3170)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-append-shape",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn shape: 4 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-answer",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "offline answer: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-outcome",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "terminal outcome: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: turn-sse",
+      "kind": "byte-exact",
+      "detail": "turn frames status>text>done>turn_end>status",
+      "verdict": "match"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: compact-log",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "log untouched (history below threshold): 471 bytes identical (sha256 270b767f3170)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: compact-response",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "skip branch: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/scratch-timeout-1788962615.856629520 :: compact-sse",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "compact frame: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: session-log-jsonl",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay -> re-serialize: 20591 bytes identical (sha256 f49df2d4560d)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: session-log-file",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay kept the file untouched: 20591 bytes identical (sha256 f49df2d4560d)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: session-log-replay",
+      "kind": "byte-exact",
+      "detail": "53 event(s), no torn tail, next turn id turn-7",
+      "verdict": "match"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: messages-projection",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "GET /api/sessions/{id}/messages (200): 41 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: engine-derive-messages",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "engine model-visible history: 18 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: sse-transcript",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "TS-derived transcript (Rust capture is a P6 gap): 53 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: sse-transport",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "GET /api/events replayed stored golden transcript frames: 53 wire block(s) byte-identical (envelope order turn,seq,payload)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-append-bytes",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn is exactly its serialized events: 20792 bytes identical (sha256 787868b3a0cb)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-append-shape",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn shape: 4 item(s) identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-answer",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "offline answer: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-outcome",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "terminal outcome: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: turn-sse",
+      "kind": "byte-exact",
+      "detail": "turn frames status>text>done>turn_end>status",
+      "verdict": "match"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: compact-log",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "log untouched (history below threshold): 20792 bytes identical (sha256 787868b3a0cb)"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: compact-response",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "skip branch: value identical"
+    },
+    {
+      "scope": "CelesteaTeamAPI/test-1788787479.196315272 :: compact-sse",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "compact frame: value identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: session-log-jsonl",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay -> re-serialize: 1041745 bytes identical (sha256 eff6eab2ea58)"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: session-log-file",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay kept the file untouched: 1041745 bytes identical (sha256 eff6eab2ea58)"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: session-log-replay",
+      "kind": "byte-exact",
+      "detail": "606 event(s), no torn tail, next turn id turn-17",
+      "verdict": "match"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: messages-projection",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "GET /api/sessions/{id}/messages (200): 575 item(s) identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: engine-derive-messages",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "engine model-visible history: 373 item(s) identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: sse-transcript",
+      "kind": "self-check",
+      "detail": "golden transcript not stored for this session; 603 frame(s) regenerated in-memory",
+      "verdict": "skip"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: sse-transport",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "GET /api/events replayed TS-derived frames: 603 wire block(s) byte-identical (envelope order turn,seq,payload)"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-append-bytes",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn is exactly its serialized events: 1041948 bytes identical (sha256 af4fe83c55ba)"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-append-shape",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn shape: 4 item(s) identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-answer",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "offline answer: value identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-outcome",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "terminal outcome: value identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: turn-sse",
+      "kind": "byte-exact",
+      "detail": "turn frames status>text>done>turn_end>status",
+      "verdict": "match"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-log",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "independent re-derivation of the W259 plan: 45855 bytes identical (sha256 cb043e253f75)"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-backup",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": ".precompact backup of the pre-compaction log: 1041948 bytes identical (sha256 af4fe83c55ba)"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-kept-turn-bodies",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "kept turns are byte-identical apart from renumbering: 4 item(s) identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-response",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "compacted branch: value identical"
+    },
+    {
+      "scope": "celestea_harness/harness架构哥-1788933931.279221103 :: compact-sse",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "compact frame: value identical"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: session-log-jsonl",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay -> re-serialize: 1748650 bytes identical (sha256 84ab09aa53c2)"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: session-log-file",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "replay kept the file untouched: 1748650 bytes identical (sha256 84ab09aa53c2)"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: session-log-replay",
+      "kind": "byte-exact",
+      "detail": "967 event(s), no torn tail, next turn id turn-7",
+      "verdict": "match"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: messages-projection",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "GET /api/sessions/{id}/messages (200): 953 item(s) identical"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: engine-derive-messages",
+      "kind": "self-check",
+      "verdict": "match",
+      "detail": "engine model-visible history: 628 item(s) identical"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: sse-transcript",
+      "kind": "self-check",
+      "detail": "golden transcript not stored for this session; 967 frame(s) regenerated in-memory",
+      "verdict": "skip"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: sse-transport",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "GET /api/events replayed TS-derived frames: 967 wire block(s) byte-identical (envelope order turn,seq,payload)"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: turn-append-bytes",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn is exactly its serialized events: 1748851 bytes identical (sha256 d28ed510068c)"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: turn-append-shape",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "appended turn shape: 4 item(s) identical"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: turn-answer",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "offline answer: value identical"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: turn-outcome",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "terminal outcome: value identical"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: turn-sse",
+      "kind": "byte-exact",
+      "detail": "turn frames status>text>done>turn_end>status",
+      "verdict": "match"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: compact-log",
+      "kind": "byte-exact",
+      "verdict": "match",
+      "detail": "log untouched (history below threshold): 1748851 bytes identical (sha256 d28ed510068c)"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: compact-response",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "skip branch: value identical"
+    },
+    {
+      "scope": "server-center/center-架构师-1788940601.93642104 :: compact-sse",
+      "kind": "golden",
+      "verdict": "match",
+      "detail": "compact frame: value identical"
+    }
+  ],
+  "errors": [],
+  "gaps": [
+    "compact 后日志：TS 侧与「独立重推导（spec-derived）」逐字节一致，但 Rust 实机 compact 产物尚未捕获 —— P6 需在 Rust 侧用打桩上游（非流式摘要）跑一次 compact，导出 compact-expected.jsonl 作为真黄金。",
+    "SSE 序列：逐帧对比的黄金是 TS 自推导 transcript（P0 导出器生成），fixtures/sse/live-capture.raw.txt 为 0 字节（P0 禁止 POST /api/turn）—— P6 需驱动一次 Rust 真实 turn 抓取 live SSE（8 事件 + lagged 降级），并把 JSONL transcript 换成 Rust 原生产物。",
+    "LLM 是离线确定性 mock：usage / cache_hit_ratio / context_usage 的数值来自 mock 的 usage 帧，未经真实 provider 的 SSE/usage 解析链路 —— P6 需接 packages/llm 的 mock-upstream（本地假上游，仍禁真网）验证解析与状态线口径。",
+    "live/*.json（Rust 实机只读快照）尚未纳入 e2e 逐字段对拍（本阶段只验形状与口径）—— P6 把 status/config/tools/health 快照纳入逐字段对比。",
+    "worker 编排：spawn/send/status 走真实 registry 且 driven=true，但表是内存实现（tsvPath=null，不写共享 registry.tsv），receipt/report 文件协议未对拍 —— P6 与 Rust 的 registry.tsv / WORKER_<wid>_DONE 回执对拍。",
+    "compact 摘要正文由 mock 生成，只做结构性校验（头部轮、保留轮、重编号、备份）—— P6 接入真实/打桩摘要后再逐字节对拍摘要正文。",
+    "大 fixture 的 SSE 采用分批推送（每批 < 总线容量 512），未覆盖容量溢出后的 lagged 降级 —— 该路径由 apps/studio/src/sse.test.ts 覆盖，P6 需在 e2e 中补一条真机溢出用例。"
+  ]
+}

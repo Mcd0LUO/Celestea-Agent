@@ -37,10 +37,26 @@ export const BUS_SERVICE = "studio.bus";
 export const RUNTIME_SERVICE = "studio.runtime";
 export const SETTINGS_SERVICE = "studio.settings";
 
+/** The four data stores composed BEFORE the engine (the engine resolves sessions). */
+export interface StoreServices {
+  workspaces: WorkspacesStore;
+  sessions: SessionsStore;
+  sessionOps: SessionOps;
+  providers: ProvidersStore;
+  prompts: PromptsStore;
+}
+
+/**
+ * Engine factory: the real adapter needs the session store to resolve
+ * `<workspace>/<session>` -> directory, so the host may inject a factory that
+ * receives the composed stores instead of a ready-made adapter.
+ */
+export type EngineFactory = (stores: StoreServices) => RuntimeAdapter;
+
 export interface ComposeInput {
   config: StudioConfig;
-  /** Injected engine seam; defaults to the fake adapter at the app edge. */
-  runtime: RuntimeAdapter;
+  /** Injected engine seam, or a factory over the composed stores. */
+  runtime: RuntimeAdapter | EngineFactory;
   /** Deterministic clock for tests (session dir suffixes, trash stamps). */
   now?: () => number;
 }
@@ -77,30 +93,32 @@ export function storePlugins(config: StudioConfig, now: () => number): Plugin[] 
 }
 
 /** Bus + runtime + settings: the three host singletons. */
-export function hostPlugins(input: ComposeInput, bus: StudioBus): Plugin[] {
+export function hostPlugins(runtime: RuntimeAdapter, bus: StudioBus): Plugin[] {
   return [
     definePlugin("studio/bus", (ctx) => ctx.provide(BUS_SERVICE, bus)),
-    definePlugin("studio/runtime", (ctx) => ctx.provide(RUNTIME_SERVICE, input.runtime)),
+    definePlugin("studio/runtime", (ctx) => ctx.provide(RUNTIME_SERVICE, runtime)),
     definePlugin("studio/settings", (ctx) => ctx.provide(SETTINGS_SERVICE, new StudioSettings())),
   ];
 }
 
-/** Compose the studio context; the caller owns the runtime adapter instance. */
+/**
+ * Compose the studio context in TWO phases: the stores first (so an engine
+ * factory can resolve session directories), then the host singletons. The
+ * caller owns the runtime adapter instance either way.
+ */
 export function composeStudio(input: ComposeInput): StudioServices {
   const ctx = Context.root();
-  const bus = createStudioBus({ statusline: () => input.runtime.statusline() });
-  input.runtime.attach(bus);
-  mountPlugins(ctx, [...storePlugins(input.config, input.now ?? Date.now), ...hostPlugins(input, bus)]);
-  return {
-    ctx,
-    config: input.config,
-    bus,
-    runtime: ctx.require(RUNTIME_SERVICE),
-    settings: ctx.require(SETTINGS_SERVICE),
+  mountPlugins(ctx, storePlugins(input.config, input.now ?? Date.now));
+  const stores: StoreServices = {
     workspaces: ctx.require(WORKSPACES_SERVICE),
     sessions: ctx.require(SESSIONS_SERVICE),
     sessionOps: ctx.require(SESSION_OPS_SERVICE),
     providers: ctx.require(PROVIDERS_SERVICE),
     prompts: ctx.require(PROMPTS_SERVICE),
   };
+  const runtime = typeof input.runtime === "function" ? input.runtime(stores) : input.runtime;
+  const bus = createStudioBus({ statusline: () => runtime.statusline() });
+  runtime.attach(bus);
+  mountPlugins(ctx, hostPlugins(runtime, bus));
+  return { ctx, config: input.config, bus, runtime, settings: ctx.require(SETTINGS_SERVICE), ...stores };
 }

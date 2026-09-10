@@ -149,6 +149,12 @@ export interface RuntimeAdapter {
   readonly name: string;
   /** Hand the adapter the bus it emits engine frames into. */
   attach(bus: StudioBus): void;
+  /**
+   * Optional host hook: hand the engine the system prompt the HOST assembled
+   * (prompt registry + settings override). The real adapter applies it to the
+   * next composed generation; an adapter without a prompt registry ignores it.
+   */
+  primeSystemPrompt?(prompt: string): void;
   /** Single-concurrency slot: true while a turn is running. */
   isBusy(): boolean;
   /** Grab the slot, emit `status:start`, return; the rest goes over SSE. */

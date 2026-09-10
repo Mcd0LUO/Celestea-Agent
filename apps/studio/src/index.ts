@@ -6,7 +6,9 @@
  *   routes.ts               the frozen contract route table (id -> method+path)
  *   config.ts               host paths + the constants Rust hardcodes
  *   runtime-adapter.ts      the ONE engine seam (RuntimeAdapter interface)
- *   fake-runtime-adapter.ts scripted P4 stand-in for the engine
+ *   fake-runtime-adapter.ts scripted P4 stand-in for the engine (tests)
+ *   runtime/                the REAL engine (packages/runtime + offline LLM seam)
+ *   replay/                 P5 double-run comparison harness (pnpm replay:e2e)
  *   sse.ts                  SSE bus: envelope / 8 events / lagged degradation
  *   static.ts               read-only Vite build + traversal hardening
  *   plugins.ts              compose root: store plugins -> Context services
@@ -19,6 +21,8 @@ export * from "./routes.js";
 export * from "./config.js";
 export * from "./runtime-adapter.js";
 export * from "./fake-runtime-adapter.js";
+export * from "./runtime/index.js";
+export * from "./replay/index.js";
 export * from "./sse.js";
 export * from "./static.js";
 export * from "./settings.js";

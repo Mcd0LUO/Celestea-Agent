@@ -14,6 +14,7 @@ import type { Hono } from "hono";
 import { createStudioApp, type StudioApp, type StudioAppOptions } from "./app.js";
 import { createFakeRuntimeAdapter, type FakeRuntimeAdapter } from "./fake-runtime-adapter.js";
 import { loadStudioConfig } from "./config.js";
+import type { EngineFactory } from "./plugins.js";
 import type { RuntimeAdapter } from "./runtime-adapter.js";
 
 /**
@@ -44,7 +45,14 @@ export interface StudioHarness {
   cleanup(): void;
 }
 
-export interface HarnessOptions extends StudioAppOptions {
+export interface HarnessOptions extends Omit<StudioAppOptions, "runtime"> {
+  /** Tests inject a concrete adapter (the fake by default). */
+  runtime?: RuntimeAdapter;
+  /**
+   * Real-engine path: a factory over the composed stores (the adapter it builds
+   * is `studio.services.runtime`, which is what [StudioHarness.runtime] exposes).
+   */
+  engineFactory?: EngineFactory;
   /** Files planted before the app composes (e.g. a providers.json secret). */
   files?: Record<string, unknown>;
   /** Create a session dir in the workspace holding `log` lines. */
@@ -85,11 +93,11 @@ export function makeHarness(opts: HarnessOptions = {}): StudioHarness {
     paths: { staticRoot, ...(opts.config?.paths ?? {}) },
   });
   const runtime = opts.runtime ?? createFakeRuntimeAdapter({ profile: { model: "test-model" } });
-  const studio = createStudioApp({ config, runtime, now: () => FIXED_NOW });
+  const studio = createStudioApp({ config, runtime: opts.engineFactory ?? runtime, now: () => FIXED_NOW });
   return {
     app: studio.app,
     studio,
-    runtime,
+    runtime: studio.services.runtime,
     root,
     workspace,
     staticRoot,
