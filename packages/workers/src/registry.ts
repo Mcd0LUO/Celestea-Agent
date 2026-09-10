@@ -48,6 +48,8 @@ export interface WorkerRegistryOptions {
   resultsDir?: string;
   sourceLabel?: string;
   logFactory?: SessionLogFactory;
+  /** Id prefix of the worker sessions this registry mints (`session-`). */
+  sessionIdPrefix?: string;
   now?: () => number;
   pid?: number;
 }
@@ -74,7 +76,10 @@ export class WorkerRegistry {
     this.sourceLabelValue = opts.sourceLabel ?? "unknown";
     this.now = opts.now ?? Date.now;
     this.ownPid = opts.pid ?? process.pid;
-    this.sessionRegistry = new SessionRegistry({ logFactory: opts.logFactory });
+    this.sessionRegistry = new SessionRegistry({
+      logFactory: opts.logFactory,
+      ...(opts.sessionIdPrefix === undefined ? {} : { prefix: opts.sessionIdPrefix }),
+    });
     this.mailboxRegistry = new SessionMailbox(this.now);
     this.reload();
   }

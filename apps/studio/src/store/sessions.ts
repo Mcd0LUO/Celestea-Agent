@@ -37,8 +37,13 @@ export interface SessionRow {
   size: number;
   modified: number;
   active: boolean;
-  /** Present only for engine worker sessions (`workspace: "engine"`). */
-  kind?: "worker";
+  /**
+   * W513 row kind: `session` = a filesystem session directory, `worker` = an
+   * engine-memory worker conversation (`workspace: "engine"`).
+   */
+  kind?: "session" | "worker";
+  /** W513: this session has an in-flight turn (its OWN slot, not the process's). */
+  busy?: boolean;
 }
 
 export interface SessionCreateRequest {
@@ -65,6 +70,7 @@ export class SessionsStore {
         rows.push({
           id: `${name}/${e.name}`,
           workspace: name,
+          kind: "session" as const,
           title: e.name,
           model: readSessionMeta(`${w.path}/${e.name}`)?.model ?? null,
           size: st?.size ?? 0,

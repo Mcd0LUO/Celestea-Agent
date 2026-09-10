@@ -146,8 +146,18 @@ export const SSE_EVENT_NAMES = [
 
 export type SseEventName = (typeof SSE_EVENT_NAMES)[number];
 
-/** `data:` field of every SSE frame. */
+/**
+ * `data:` field of every SSE frame.
+ *
+ * W513 extension (pure addition): `v` is the envelope version (2 = per-session
+ * envelope; a missing `v` is a legacy 0 envelope) and `session` names the
+ * session the frame belongs to (`null` = process-level frame, e.g. `lagged`).
+ * `turn` is the SESSION-local turn number, `seq` stays process-global monotonic
+ * and `payload` is unchanged.
+ */
 export interface SseEnvelope<P = unknown> {
+  v: number;
+  session: string | null;
   turn: number;
   seq: number;
   payload: P;

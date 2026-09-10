@@ -231,7 +231,10 @@ describe("live LLM assembly (mock upstream, no real network)", () => {
 
       const activated = await host.app.request(`/api/sessions/${encodeURIComponent("ws/s1")}/activate`, jsonRequest("POST"));
       expect(activated.status).toBe(200);
-      expect((await jsonOf(host.app, "/api/health"))["model"]).toBe("mock-session-model");
+      // W513: the override is SESSION-scoped (it no longer rewrites the global
+      // engine profile), so `/api/health` keeps the engine model while the
+      // session's own statusline reports the override.
+      expect((await jsonOf(host.app, "/api/health"))["model"]).toBe("mock-v4-flash");
       expect((await jsonOf(host.app, "/api/status"))["model"]).toBe("mock-session-model");
 
       await runTurn(host.app, "hi");

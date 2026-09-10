@@ -6,18 +6,27 @@
  * workstream. Everything the engine owns is therefore expressed here as an
  * injected interface, and P4 verifies the contract against a fake adapter:
  *
- *   POST /api/turn                     -> startTurn()   (busy slot = 409)
- *   GET  /api/events                   -> attach(bus)   (the adapter emits)
- *   POST /api/cancel                   -> cancel()
+ *   POST /api/turn                     -> startTurn() / inject()  (W513: a busy
+ *                                         session takes an interjection instead
+ *                                         of a 409; the turn is never restarted)
+ *   GET  /api/events                   -> attach(bus)   (the adapter emits,
+ *                                         one envelope per session)
+ *   POST /api/cancel                   -> cancel(session)
  *   POST /api/clear                    -> clear(session)
+ *   POST /api/sessions/{id}/activate   -> ensureSession(id)  (W513: never 409)
  *   POST /api/sessions/{id}/compact    -> compact(session)
- *   GET  /api/status                   -> statusline()
+ *   GET  /api/status                   -> statusline(session?) + isBusy(session?)
  *   GET  /api/tools                    -> tools()
  *   GET+POST /api/config               -> profile() / configure(patch)
  *   POST /api/worker/{spawn,send}      -> workerSpawn() / workerSend()
  *   GET  /api/worker/status            -> workerStatus(wid?)
  *   GET  /api/sessions (worker rows)   -> workerSessions()
  *   GET  /api/sessions/worker:<sid>/…  -> workerMessages(sid)
+ *
+ * W513 (session independence): busy, turn numbering, status/usage trackers and
+ * the session inbox are PER SESSION. `isBusy()` with no argument keeps the
+ * legacy "is anything running" reading for the handlers that guard process-wide
+ * operations; every session-scoped handler passes the target session id.
  *
  * Replacing the fake with the real runtime is a one-line change in
  * `createStudioApp({ runtime })` — no handler changes, no route changes.
@@ -41,6 +50,18 @@ export class TurnBusyError extends Error {
   constructor(message = "a turn is already running") {
     super(message);
     this.name = "TurnBusyError";
+  }
+}
+
+/** Thrown when the live-session / concurrent-turn cap is reached (503). */
+export class CapacityError extends Error {
+  readonly kind = "capacity";
+  /** Seconds the client should wait before retrying (Retry-After). */
+  readonly retryAfterSeconds: number;
+  constructor(message: string, retryAfterSeconds = 1) {
+    super(message);
+    this.name = "CapacityError";
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -85,6 +106,26 @@ export interface TurnStart {
   turn: number;
 }
 
+/** Result of delivering a message into a turn (W513 interjection). */
+export interface InjectOutcome {
+  /** Session-local turn number the message was (or will be) injected into. */
+  turn: number;
+  /** True = delivered into a RUNNING turn; false = nothing was running. */
+  injected: boolean;
+  /** Messages still queued for the running turn after this delivery. */
+  pending: number;
+}
+
+/** `POST /api/sessions/{id}/activate` — "open the view + ensure the runtime". */
+export interface SessionRuntimeInfo {
+  /** `created` = this call composed the instance, `reused` = it already existed. */
+  runtime: "created" | "reused";
+  /** Whether the session has an in-flight turn right now. */
+  busy: boolean;
+  /** True when the instance was recomposed (profile epoch had moved on). */
+  rebuilt: boolean;
+}
+
 export interface ClearOutcome {
   cleared: boolean;
 }
@@ -105,6 +146,8 @@ export interface WorkerSpawnRequest {
   title?: string;
   model?: string;
   report_to?: string;
+  /** Host session whose registry spawns the worker (default: active session). */
+  session?: string | null;
 }
 
 export interface WorkerSpawnOutcome {
@@ -142,6 +185,16 @@ export interface WorkerSessionRow {
   size: number;
   modified: number;
   active: boolean;
+  /** Worker id (`W513`) — the same `wid` the registry row carries. */
+  wid?: string;
+  /** Registry status: `RUNNING` / `DONE` / `FAILED`. */
+  status?: string;
+  /** Driver state: `idle` / `in-turn`. */
+  state?: string;
+  /** Host session that owns this worker's registry. */
+  host_session?: string | null;
+  /** Whether the OWNING host session has an in-flight turn. */
+  busy?: boolean;
 }
 
 export interface RuntimeAdapter {
@@ -155,19 +208,33 @@ export interface RuntimeAdapter {
    * next composed generation; an adapter without a prompt registry ignores it.
    */
   primeSystemPrompt?(prompt: string): void;
-  /** Single-concurrency slot: true while a turn is running. */
-  isBusy(): boolean;
-  /** Grab the slot, emit `status:start`, return; the rest goes over SSE. */
+  /**
+   * Busy probe. No argument = "is ANY session running" (legacy reading, used by
+   * the process-wide guards); with a session id = that session's own slot.
+   */
+  isBusy(session?: string | null): boolean;
+  /** Grab the session's slot, emit `status:start`, return; rest goes over SSE. */
   startTurn(req: TurnRequest): Promise<TurnStart>;
-  /** Cooperative cancel: true = signal sent, false = idle. */
-  cancel(): boolean;
+  /**
+   * Deliver `input` into the session's RUNNING turn: it is appended as a
+   * `user_message` at the next step boundary (no new turn, no interruption).
+   */
+  inject(req: TurnRequest): InjectOutcome;
+  /** Ensure the session has a runtime instance (activate; never fails on busy). */
+  ensureSession(session: string | null): SessionRuntimeInfo;
+  /** Session ids with a live runtime instance. */
+  liveSessions(): string[];
+  /** Session ids with an in-flight turn. */
+  busySessions(): string[];
+  /** Cooperative cancel of the target session's turn: true = signal sent. */
+  cancel(session?: string | null): boolean;
   /** Truncate the active session log + reset the turn counter. */
   clear(session: string | null): Promise<ClearOutcome>;
   compact(session: string): Promise<CompactOutcome>;
   profile(): EngineProfile;
   /** Apply an accepted patch (hot compose); throws EngineError on failure. */
   configure(patch: ProfilePatch): Promise<EngineProfile>;
-  statusline(): Statusline;
+  statusline(session?: string | null): Statusline;
   tools(): ToolInfo[];
   workerSpawn(req: WorkerSpawnRequest): Promise<WorkerSpawnOutcome>;
   workerSend(req: WorkerSendRequest): Promise<Record<string, unknown>>;

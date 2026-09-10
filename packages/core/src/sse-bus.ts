@@ -59,6 +59,8 @@ function laggedMarker(
   sub.buffer.push({
     kind: "status",
     data: {
+      v: 2,
+      session: null,
       turn,
       seq: seq,
       payload: {
@@ -78,7 +80,7 @@ export function createSseBus(opts: SseBusOptions = {}): SseBus {
   let nextSubId = 1;
 
   function emit(kind: SseEventName, turn: number, payload: Record<string, unknown>): BusEvent {
-    const ev: BusEvent = { kind, data: { turn, seq: seq++, payload } };
+    const ev: BusEvent = { kind, data: { v: 2, session: null, turn, seq: seq++, payload } };
     for (const sub of subs) {
       if (sub.buffer.length >= capacity) {
         seq = laggedMarker(capacity, sub, turn, seq, opts);

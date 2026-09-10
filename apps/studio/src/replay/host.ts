@@ -72,8 +72,7 @@ export function createReplayHost(opts: ReplayHostOptions): ReplayHost {
           const resolved = stores.sessions.require(id);
           return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
         },
-        activeSession: () => stores.workspaces.activeSession(),
-      }),
+        }),
   });
   return {
     app: studio.app,

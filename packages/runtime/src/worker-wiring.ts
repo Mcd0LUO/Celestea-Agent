@@ -40,8 +40,15 @@ export interface WorkerWiring {
   sourceLabel?: string;
   /** Worker session log factory (default: `InMemorySessionLog`). */
   logFactory?: SessionLogFactory;
-  /** Host conversation id (default `cli-main`). */
+  /** Host conversation id (default `cli-main`; the host passes the session id). */
   hostSessionId?: string;
+  /**
+   * Prefix of the worker session ids this registry mints (`session-` by
+   * default). Every session runtime owns its OWN registry since W513, so the
+   * host passes a session-derived prefix: `worker:<sid>` ids stay unique in the
+   * merged `GET /api/sessions` list.
+   */
+  sessionIdPrefix?: string;
   /** Model token recorded on the host session meta. */
   hostModel?: string | null;
 }
@@ -82,6 +89,7 @@ function mountDefault(ctx: Context, wiring: WorkerWiring): WorkerRegistry {
     resultsDir: wiring.resultsDir ?? RESULTS_DIR,
     sourceLabel: wiring.sourceLabel ?? "celestea.runtime",
     logFactory: wiring.logFactory ?? ((): SessionLog => new InMemorySessionLog()),
+    ...(wiring.sessionIdPrefix === undefined ? {} : { sessionIdPrefix: wiring.sessionIdPrefix }),
   });
   mountPlugins(ctx, [workersPlugin({ registry, name: DEFAULT_WORKER_PLUGIN })]);
   return registry;

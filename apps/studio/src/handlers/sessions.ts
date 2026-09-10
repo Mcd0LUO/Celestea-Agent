@@ -1,30 +1,43 @@
 /**
- * Session endpoints, part 1: list / create / transcript / activate
- * (`src/workspaces.rs:1092-1221,1323-1374,1459-1501`).
+ * Session endpoints, part 1: list / create / transcript / activate.
  *
  * `GET /api/sessions` merges two sources: session directories across every
  * registered workspace, plus the engine's in-memory worker sessions
  * (`worker:<sid>`, pseudo-workspace "engine", `kind:"worker"`), sorted by id.
- * Activation is the only path that re-composes the engine generation, and it
- * is the only place a session-level `model` override is honored.
+ * W513: every row carries `kind` (`session` | `worker`) and `busy` (that
+ * session's own turn slot), and worker rows carry `wid` / `status` / `state` /
+ * `host_session`, so the UI can list and open them.
+ *
+ * `POST /api/sessions/{id}/activate` is "open this view + make sure the session
+ * HAS a runtime": it composes the instance on demand, persists the active
+ * session as a view preference, and NEVER returns 409 — a session that is
+ * already running is perfectly fine (that is the point of session independence).
  */
 
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
-import { EngineError } from "../runtime-adapter.js";
+import { CapacityError, EngineError, type SessionRuntimeInfo } from "../runtime-adapter.js";
 import { readSessionMeta } from "../store/session-meta.js";
 import { validateModelName } from "../store/validate.js";
 import type { SessionRow } from "../store/sessions.js";
-import { failJson, readJsonBody, strField, storeFail, type Deps } from "./common.js";
+import { capacityJson, failJson, readJsonBody, strField, storeFail, type Deps } from "./common.js";
 
 function workerRows(deps: Deps): SessionRow[] {
   return deps.runtime.workerSessions() as SessionRow[];
 }
 
+/** W513: `busy` is the session's OWN turn slot, never a process-wide flag. */
+function withBusy(deps: Deps, row: SessionRow): SessionRow {
+  return row.kind === "worker" ? row : { ...row, busy: deps.runtime.isBusy(row.id) };
+}
+
 function registerList(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("get_sessions");
   app.on(route.method, route.honoPath, (c) =>
-    c.json({ sessions: deps.sessions.list(workerRows(deps)), active_session: deps.workspaces.activeSession() }),
+    c.json({
+      sessions: deps.sessions.list(workerRows(deps)).map((row) => withBusy(deps, row)),
+      active_session: deps.workspaces.activeSession(),
+    }),
   );
   return route.id;
 }
@@ -67,26 +80,31 @@ function registerMessages(app: Hono, deps: Deps, table: RouteTable): string {
   return route.id;
 }
 
+/** The session-level model override problem, or null when it is usable. */
+function invalidSessionModel(dir: string): string | null {
+  const model = readSessionMeta(dir)?.model;
+  if (model === undefined || model === "") return null;
+  return validateModelName(model);
+}
+
 function registerActivate(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_session_activate");
-  app.on(route.method, route.honoPath, async (c) => {
-    if (deps.runtime.isBusy()) return failJson(c, 409, "turn in progress; activate applies between turns");
+  app.on(route.method, route.honoPath, (c) => {
     const id = c.req.param("id") ?? "";
     const resolved = deps.sessions.require(id);
     if (!resolved.ok) return storeFail(c, resolved);
-    const model = readSessionMeta(resolved.value.dir)?.model;
-    if (model !== undefined && model !== "") {
-      const bad = validateModelName(model);
-      if (bad !== null) return failJson(c, 400, `invalid session model: ${bad}`);
-      try {
-        await deps.runtime.configure({ model });
-      } catch (e) {
-        return failJson(c, 500, `compose failed: ${e instanceof EngineError ? e.message : String(e)}`);
-      }
+    const bad = invalidSessionModel(resolved.value.dir);
+    if (bad !== null) return failJson(c, 400, `invalid session model: ${bad}`);
+    let info: SessionRuntimeInfo;
+    try {
+      info = deps.runtime.ensureSession(resolved.value.id);
+    } catch (e) {
+      if (e instanceof CapacityError) return capacityJson(c, e);
+      return failJson(c, 500, `compose failed: ${e instanceof EngineError ? e.message : String(e)}`);
     }
     const saved = deps.workspaces.setActiveSession(resolved.value.id);
     if (!saved.ok) return failJson(c, 500, `cannot persist active session: ${saved.error}`);
-    return c.json({ ok: true, active_session: resolved.value.id });
+    return c.json({ ok: true, active_session: resolved.value.id, runtime: info.runtime, busy: info.busy, rebuilt: info.rebuilt });
   });
   return route.id;
 }

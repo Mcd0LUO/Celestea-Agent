@@ -45,7 +45,7 @@ describe("apps/studio contract surface", () => {
     const health = (await (await app.request("/api/health")).json()) as Record<string, unknown>;
     expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "model", "name", "ok"]);
     const status = (await (await app.request("/api/status")).json()) as Record<string, unknown>;
-    expect(Object.keys(status).sort()).toEqual(["context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
+    expect(Object.keys(status).sort()).toEqual(["busy", "context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
     const tools = (await (await app.request("/api/tools")).json()) as { tools: unknown[] };
     expect(Array.isArray(tools.tools)).toBe(true);
     expect(loadTools().tools).toHaveLength(10);

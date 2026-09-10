@@ -59,7 +59,7 @@ describe("sessions endpoints", () => {
   it("activates a session, persists active_session, and rejects an invalid session model", async () => {
     const h = make();
     const res = await getJson(h.app, `/api/sessions/${S1}/activate`, jsonRequest("POST"));
-    expect(res.body).toEqual({ ok: true, active_session: "sample-ws/s1" });
+    expect(res.body).toEqual({ ok: true, active_session: "sample-ws/s1", runtime: "created", busy: false, rebuilt: false });
     const status = await getJson(h.app, "/api/status");
     expect(status.body["session"]).toBe("sample-ws/s1");
 
@@ -68,10 +68,11 @@ describe("sessions endpoints", () => {
     expect(res2.status).toBe(400);
     expect(String(res2.body["error"])).toContain("invalid session model:");
 
+    // W513: activate NEVER 409s — a busy session is exactly what it must accept.
     const busy = make({ runtime: busyRuntime() });
     const res3 = await getJson(busy.app, `/api/sessions/${S1}/activate`, jsonRequest("POST"));
-    expect(res3.status).toBe(409);
-    expect(res3.body).toEqual({ ok: false, error: "turn in progress; activate applies between turns" });
+    expect(res3.status).toBe(200);
+    expect(res3.body).toEqual({ ok: true, active_session: "sample-ws/s1", runtime: "created", busy: true, rebuilt: false });
   });
 
   it("renames, branches, archives, unarchives and batch-moves sessions", async () => {

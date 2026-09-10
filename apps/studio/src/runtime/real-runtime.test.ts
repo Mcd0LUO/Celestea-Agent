@@ -58,7 +58,7 @@ describe("POST /api/turn over the real engine", () => {
     expect(engineOf(h).lastTurnOutcome()).toBe("completed");
   });
 
-  it("409s a concurrent turn and cancels the running one cooperatively", async () => {
+  it("W513: a concurrent turn becomes an interjection, then cancels cooperatively", async () => {
     const h = make({ sessions: { s1: [] }, llm: { script: [{ text: "x".repeat(4000) }], deltaMs: 3, chunkChars: 8 } });
     await activate(h, "sample-ws/s1");
     const sub = h.studio.services.bus.subscribe();
@@ -66,8 +66,8 @@ describe("POST /api/turn over the real engine", () => {
     expect(first.status).toBe(202);
 
     const second = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "again" }));
-    expect(second.status).toBe(409);
-    expect(second.body).toEqual({ ok: false, error: "a turn is already running" });
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual({ ok: true, injected: true, turn: 1, pending: 1 });
 
     const cancel = await getJson(h.app, "/api/cancel", jsonRequest("POST"));
     expect(cancel.body).toEqual({ ok: true, cancelled: true });
@@ -184,7 +184,7 @@ describe("GET /api/status and /api/tools", () => {
   it("reports steps, usage, cache_hit_ratio and context_usage from the live trackers", async () => {
     const h = make();
     const before = await getJson(h.app, "/api/status");
-    expect(Object.keys(before.body).sort()).toEqual(["context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
+    expect(Object.keys(before.body).sort()).toEqual(["busy", "context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
     expect(before.body["context_usage"]).toMatchObject({ estimated: true, method: "session_event_chars" });
 
     await runTurnWithFrames(h, "hi");

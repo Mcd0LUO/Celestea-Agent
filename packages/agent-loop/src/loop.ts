@@ -9,7 +9,11 @@
  *   3. appends the authoritative assistant reply, or dispatches the step's
  *      tool calls through the `ToolRegistry` seam (all `tool_call` rows first,
  *      then one `tool_result` per call, in model order);
- *   4. repeats until the model answers without tool calls, the step budget is
+ *   4. appends whatever arrived while the turn was RUNNING — a user
+ *      interjection or a worker receipt — to the log at the step boundary,
+ *      right before the next model call (W513), so the running turn receives it
+ *      without being interrupted and without a second turn being started;
+ *   5. repeats until the model answers without tool calls, the step budget is
  *      exhausted, the turn is cancelled, or the stream fails.
  *
  * Every started turn ends with EXACTLY ONE `turn_end` — in the log and on the
@@ -26,9 +30,11 @@
 
 import {
   AgentError,
+  formatInjection,
   type AgentConfig,
   type AgentLoop,
   type Context,
+  type InjectionSource,
   type LoopEvent,
   type LlmStream,
   type ModelRequest,
@@ -53,6 +59,8 @@ export interface AgentLoopBindings {
   sink?: EventSink;
   /** Shared usage accounting; absent = provider usage is not recorded. */
   usage?: UsageTracker;
+  /** Mid-turn injection source (W513); absent = the turn takes no interjections. */
+  injections?: InjectionSource;
 }
 
 export class DefaultAgentLoop implements AgentLoop {
@@ -60,12 +68,14 @@ export class DefaultAgentLoop implements AgentLoop {
   private readonly signal: AbortSignal | undefined;
   private readonly sink: EventSink | undefined;
   private readonly usage: UsageTracker | undefined;
+  private readonly injections: InjectionSource | undefined;
 
   constructor(config: AgentConfig, bindings: AgentLoopBindings = {}) {
     this.config = config;
     this.signal = bindings.signal;
     this.sink = bindings.sink;
     this.usage = bindings.usage;
+    this.injections = bindings.injections;
   }
 
   /** The config this loop drives turns with. */
@@ -150,8 +160,9 @@ export class DefaultAgentLoop implements AgentLoop {
     return { kind: "ok", stream: raced.value };
   }
 
-  /** One step: generate, consume, and let the stream decide the next move. */
+  /** One step: inject what arrived mid-turn, generate, consume, decide. */
   private async runStep(seams: Seams): Promise<StepResult> {
+    this.injectPending(seams);
     const started = await this.generate(seams, this.buildRequest(seams));
     if (started.kind === "cancelled") return { kind: "cancelled" };
     if (started.kind === "failed") return { kind: "final", outcome: started.outcome };
@@ -283,6 +294,23 @@ export class DefaultAgentLoop implements AgentLoop {
       seams.session.append({ type: "tool_result", id: call.id, value: null, error });
       this.emit(toolResultEvent({ call_id: call.id, value: null, render: null, error, decision: null }));
     }
+  }
+
+  /**
+   * W513 step boundary: append every message that arrived while the turn was
+   * running as a `user_message` row, in arrival order, before the model call
+   * that follows. Returns how many rows were appended.
+   *
+   * The log is the only source of truth, so the injected text is part of the
+   * derived history of THIS turn and of every later step of it — and it is
+   * written by the same append path as the turn's own input.
+   */
+  private injectPending(seams: Seams): number {
+    const pending = this.injections?.drain() ?? [];
+    for (const injection of pending) {
+      seams.session.append({ type: "user_message", text: formatInjection(injection) });
+    }
+    return pending.length;
   }
 
   /** Route one turn event to the sink; without a sink the host renders nothing. */

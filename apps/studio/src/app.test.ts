@@ -62,8 +62,9 @@ describe("health / status / tools / config", () => {
   it("serves GET /api/status with the statusline + session", async () => {
     const h = make();
     const { body } = await getJson(h.app, "/api/status");
-    expect(Object.keys(body).sort()).toEqual(["context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
+    expect(Object.keys(body).sort()).toEqual(["busy", "context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
     expect(body["session"]).toBeNull();
+    expect(body["busy"]).toBe(false);
     expect(body["context_usage"]).toMatchObject({ window: 1_000_000, estimated: true, method: "session_event_chars" });
   });
 
@@ -151,12 +152,12 @@ describe("dialog", () => {
     expect(await res.json()).toEqual({ turn: 1, status: "started" });
   });
 
-  it("409s a second concurrent turn and 200s cancel", async () => {
+  it("W513: a busy session takes the input as an interjection (no 409) and 200s cancel", async () => {
     const h = makeHarness({ runtime: busyRuntime() });
     harnesses.push(h);
     const res = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "hi" }));
-    expect(res.status).toBe(409);
-    expect(res.body).toEqual({ ok: false, error: "a turn is already running" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, injected: true, turn: 0, pending: 1 });
     const cancel = await getJson(h.app, "/api/cancel", jsonRequest("POST"));
     expect(cancel.body).toEqual({ ok: true, cancelled: false });
   });
