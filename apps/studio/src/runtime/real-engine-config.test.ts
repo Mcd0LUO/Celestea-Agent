@@ -95,7 +95,7 @@ describe("POST /api/sessions/{id}/compact", () => {
     expect(res2.frames.find((f) => f.event === "done")?.payload["text"]).toBe("echo: post compact");
   });
 
-  it("skips a short history, and 409s while a turn runs", async () => {
+  it("skips a short history, and 409s only while THAT session runs", async () => {
     const h = make({ sessions: { s1: [], s3: turns(3) } });
     await activate(h, "sample-ws/s3");
     const original = readSessionLog(h, "s3");
@@ -104,12 +104,17 @@ describe("POST /api/sessions/{id}/compact", () => {
     expect(res.body).toEqual({ ok: true, compacted: false, note: "历史不足，无需压缩" });
     expect(readSessionLog(h, "s3")).toBe(original);
 
-    const busy = make({ sessions: { s1: [] }, llm: { script: [{ text: "z".repeat(3000) }], deltaMs: 2, chunkChars: 8 } });
+    const busy = make({ sessions: { s1: [], s2: turns(3) }, llm: { script: [{ text: "z".repeat(3000) }], deltaMs: 2, chunkChars: 8 } });
+    await activate(busy, "sample-ws/s1");
     const started = await busy.app.request("/api/turn", jsonRequest("POST", { input: "slow" }));
     expect(started.status).toBe(202);
     const denied = await getJson(busy.app, "/api/sessions/sample-ws%2Fs1/compact", jsonRequest("POST"));
     expect(denied.status).toBe(409);
     expect(denied.body).toEqual({ ok: false, error: "turn 进行中，无法压缩" });
+    // W513: a DIFFERENT session is not blocked by s1's running turn.
+    const other = await getJson(busy.app, "/api/sessions/sample-ws%2Fs2/compact", jsonRequest("POST"));
+    expect(other.status).toBe(200);
+    expect(other.body).toEqual({ ok: true, compacted: false, note: "历史不足，无需压缩" });
     await getJson(busy.app, "/api/cancel", jsonRequest("POST"));
     await waitIdle(busy);
   });

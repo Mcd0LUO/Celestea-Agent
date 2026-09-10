@@ -53,6 +53,20 @@ export function bindingFor(
   return createSessionBinding({ sessionId, dir, open: (): SessionLog => openSessionLog(dir) });
 }
 
+/**
+ * Worker session-id prefix of one host session (W513).
+ *
+ * Every session runtime owns its OWN worker registry, and a registry mints
+ * `session-<n>` by default — which would collide across sessions in the merged
+ * `GET /api/sessions` view. The session id therefore prefixes the ids
+ * (`sample-ws_s1-session-0`); the detached runtime keeps the frozen
+ * `session-<n>` shape so single-session hosts and fixtures are unchanged.
+ */
+export function workerSessionPrefix(sessionId: string | null): string {
+  if (sessionId === null) return "session-";
+  return `${sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}-session-`;
+}
+
 /** Close a session log when its implementation owns a descriptor (idempotent). */
 export function closeLog(log: SessionLog | null | undefined): void {
   const close = log === null || log === undefined ? undefined : (log as { close?: () => void }).close;

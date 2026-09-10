@@ -18,13 +18,17 @@ import type { EngineFactory } from "./plugins.js";
 import type { RuntimeAdapter } from "./runtime-adapter.js";
 
 /**
- * A fake adapter that always reports the busy slot as taken (409 guards).
+ * A fake adapter that always reports ITS BUSY SLOT as taken: every session is
+ * busy, so the process-wide guards (config / prompts / providers) 409 while
+ * `/api/turn` takes the interjection path and activate reports `busy:true`.
  * A `Proxy` is used because spreading a class instance would drop its methods.
  */
 export function busyRuntime(base: FakeRuntimeAdapter = createFakeRuntimeAdapter()): FakeRuntimeAdapter {
   return new Proxy(base, {
     get(target, prop, receiver) {
       if (prop === "isBusy") return (): boolean => true;
+      if (prop === "ensureSession") return (): { runtime: "created"; busy: boolean; rebuilt: boolean } => ({ runtime: "created", busy: true, rebuilt: false });
+      if (prop === "busySessions") return (): string[] => target.liveSessions();
       return Reflect.get(target, prop, receiver) as unknown;
     },
   }) as FakeRuntimeAdapter;

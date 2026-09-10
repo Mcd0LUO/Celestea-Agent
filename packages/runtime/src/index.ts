@@ -23,6 +23,8 @@
  *   frames.ts          LoopEvent -> SSE frame mapping            (studio/main.rs:667-713)
  *   session-binding.ts session id/dir + log opener + rebind      (compose.rs:131-146)
  *   turn-runner.ts     one turn: busy slot, sink, cancel, outcome (runtime/run.rs)
+ *   inbox.ts           per-session mid-turn injection queue      (W513)
+ *   session-registry.ts session id -> independent Runtime        (W513)
  *   worker-wiring.ts   worker driver seams + host receipt drain  (compose.rs:148-193)
  *   runtime.ts         Runtime handles + lifecycle               (compose.rs:44-281)
  *   gen.ts             Gen + GenerationHub (hot swap)            (studio/main.rs:340-420)
@@ -44,6 +46,8 @@ export * from "./status.js";
 export * from "./frames.js";
 export * from "./session-binding.js";
 export * from "./turn-runner.js";
+export * from "./inbox.js";
+export * from "./session-registry.js";
 export * from "./worker-wiring.js";
 export * from "./runtime.js";
 export * from "./gen.js";

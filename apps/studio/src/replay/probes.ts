@@ -127,7 +127,7 @@ export interface SseCapture {
   blocks: string[];
 }
 
-export async function captureSseWire(host: ReplayHost, frames: readonly WireFrame[], timeoutMs = 20_000): Promise<SseCapture> {
+export async function captureSseWire(host: ReplayHost, frames: readonly WireFrame[], session: string | null = null, timeoutMs = 20_000): Promise<SseCapture> {
   const res = await host.app.request("/api/events");
   const reader = res.body?.getReader();
   if (reader === undefined) throw new Error("/api/events returned no body");
@@ -137,7 +137,7 @@ export async function captureSseWire(host: ReplayHost, frames: readonly WireFram
   const burst = 128;
   for (let i = 0; i < frames.length; i += burst) {
     const target = Math.min(i + burst, frames.length);
-    for (const frame of frames.slice(i, target)) host.studio.services.bus.emit(frame.event as SseEventName, frame.turn, frame.payload);
+    for (const frame of frames.slice(i, target)) host.studio.services.bus.emit(frame.event as SseEventName, frame.turn, frame.payload, session);
     const deadline = Date.now() + timeoutMs;
     while (parseWire(wire).length < target && Date.now() < deadline) {
       const chunk = await Promise.race([reader.read(), delay(300).then(() => null)]);
@@ -152,10 +152,16 @@ export async function captureSseWire(host: ReplayHost, frames: readonly WireFram
 /**
  * Byte-level wire check: every frame the endpoint wrote must equal the block
  * re-serialized from its own envelope — which pins the field ORDER
- * (`{turn,seq,payload}`), the SSE framing and one-block-per-frame, not merely
- * the parsed values.
+ * (`{v,session,turn,seq,payload}` since W513), the SSE framing and
+ * one-block-per-frame, not merely the parsed values.
  */
-export function compareSseWire(scope: string, expected: readonly WireFrame[], capture: SseCapture, note: string): Finding {
+export function compareSseWire(
+  scope: string,
+  expected: readonly WireFrame[],
+  capture: SseCapture,
+  note: string,
+  session: string | null = null,
+): Finding {
   if (capture.frames.length !== expected.length) {
     return wireDiff(scope, `${note}: ${capture.frames.length} frame(s) on the wire, expected ${expected.length}`, []);
   }
@@ -166,11 +172,11 @@ export function compareSseWire(scope: string, expected: readonly WireFrame[], ca
     // `seq` is a process-global counter the replay cannot predict: take it off
     // the wire, then demand the REST of the block be byte-identical.
     const seq = seqOf(block);
-    const rebuilt = `event: ${frame.event}\ndata: ${JSON.stringify({ turn: frame.turn, seq, payload: frame.payload })}`;
+    const rebuilt = `event: ${frame.event}\ndata: ${JSON.stringify({ v: 2, session, turn: frame.turn, seq, payload: frame.payload })}`;
     if (block !== rebuilt && diffs.length < 3) diffs.push(`$[${i}] wire block differs: ${block.slice(0, 80)} != ${rebuilt.slice(0, 80)}`);
   }
   if (diffs.length > 0) return wireDiff(scope, `${note}: ${diffs.length} wire divergence(s)`, diffs);
-  return { scope, kind: "byte-exact", verdict: "match", detail: `${note}: ${capture.frames.length} wire block(s) byte-identical (envelope order turn,seq,payload)` };
+  return { scope, kind: "byte-exact", verdict: "match", detail: `${note}: ${capture.frames.length} wire block(s) byte-identical (envelope order v,session,turn,seq,payload)` };
 }
 
 /** One wire-level divergence finding (only byte-level evidence is reported here). */
@@ -203,7 +209,7 @@ export function sseFindings(id: string, derived: unknown[], golden: unknown[] | 
     payload: f.data.payload,
   }));
   const source = golden === null ? "TS-derived frames" : "stored golden transcript frames";
-  findings.push(compareSseWire(`${id} :: sse-transport`, expected, capture, `GET /api/events replayed ${source}`));
+  findings.push(compareSseWire(`${id} :: sse-transport`, expected, capture, `GET /api/events replayed ${source}`, id));
   return findings;
 }
 

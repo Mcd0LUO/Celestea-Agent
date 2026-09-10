@@ -21,6 +21,7 @@ import {
   type AgentConfig,
   type AgentLoop,
   type Context,
+  type InjectionSource,
   type LoopEvent,
   type SessionEvent,
   type SessionLog,
@@ -48,6 +49,8 @@ export interface LoopBindings {
   signal: AbortSignal;
   sink: LoopEventSink;
   usage: UsageAccounting;
+  /** Mid-turn injection source (absent = nothing can be injected). */
+  injections?: InjectionSource;
 }
 
 /** Builds the per-turn `AgentLoop`; the host injects its concrete loop here. */
@@ -69,8 +72,14 @@ export interface TurnRunnerDeps {
   frameMapper: FrameMapper;
   /** Absent = the loop is resolved from `AGENT_LOOP_SERVICE` in the Context. */
   loopFactory?: LoopFactory;
-  /** Absent = no host mailbox is wired (no worker receipts to inject). */
-  drainReceipts?: () => PendingReceipt[];
+  /**
+   * Everything waiting to be injected into the log: the session inbox (user
+   * interjections) followed by the session mailbox (worker receipts). Drained
+   * at turn START (receipts precede the input, W232) and again before EVERY
+   * model call (W513), so a message that arrives while the turn runs reaches
+   * that turn instead of waiting for the next one.
+   */
+  drainPending?: () => PendingReceipt[];
 }
 
 export class TurnRunner {
@@ -175,7 +184,14 @@ export class TurnRunner {
   private resolveLoop(signal: AbortSignal, sink: LoopEventSink): AgentLoop {
     const factory = this.deps.loopFactory;
     if (factory !== undefined) {
-      return factory({ config: this.deps.agentConfig, signal, sink, usage: this.deps.usage });
+      const injections = this.injections();
+      return factory({
+        config: this.deps.agentConfig,
+        signal,
+        sink,
+        usage: this.deps.usage,
+        ...(injections === undefined ? {} : { injections }),
+      });
     }
     const loop = this.deps.ctx.get<AgentLoop>(AGENT_LOOP_SERVICE);
     if (loop === undefined) {
@@ -184,10 +200,25 @@ export class TurnRunner {
     return loop;
   }
 
+  /** Turn-start drain: receipts and interjections land BEFORE the input. */
   private injectReceipts(log: SessionLog): void {
-    for (const receipt of this.deps.drainReceipts?.() ?? []) {
+    for (const receipt of this.drainPending()) {
       log.append({ type: "user_message", text: formatReceipt(receipt) });
     }
+  }
+
+  /** The single drain function shared by turn start and the step boundary. */
+  private drainPending(): readonly PendingReceipt[] {
+    return this.deps.drainPending?.() ?? [];
+  }
+
+  /**
+   * The step-boundary source handed to the loop: the same drain, so the loop
+   * appends interjections and receipts as ordinary `user_message` rows in the
+   * running turn (no new turn, no interruption).
+   */
+  private injections(): InjectionSource | undefined {
+    return this.deps.drainPending === undefined ? undefined : { drain: () => this.drainPending() };
   }
 }
 

@@ -8,6 +8,7 @@
  */
 
 import type { Context } from "hono";
+import { CapacityError } from "../runtime-adapter.js";
 import type { StudioServices } from "../plugins.js";
 import type { StoreResult } from "../store/result.js";
 
@@ -19,6 +20,16 @@ export type JsonObject = Record<string, unknown>;
 /** `{ok:false,error}` with the contract status (plus optional extra fields). */
 export function failJson(c: Context, status: number, error: string, extra?: JsonObject): Response {
   return c.json(extra === undefined ? { ok: false, error } : { ok: false, error, ...extra }, status as never);
+}
+
+/**
+ * W513 capacity response: 503 + `Retry-After` (the engine refused to create
+ * another live session or another concurrent turn, and waiting helps).
+ */
+export function capacityJson(c: Context, error: CapacityError): Response {
+  const response = failJson(c, 503, error.message);
+  response.headers.set("retry-after", String(error.retryAfterSeconds));
+  return response;
 }
 
 /** Turn a store failure straight into its contract response. */

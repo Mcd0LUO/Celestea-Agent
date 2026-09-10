@@ -3,6 +3,10 @@
  *
  * All three are always 200 with no error branch. `bind` is the CONSTANT
  * `DEFAULT_BIND`: it deliberately does not follow STUDIO_BIND.
+ *
+ * W513: `GET /api/status` reads ONE session's trackers — `?session=<id>`, or the
+ * active session when the query is absent — and reports that session's `busy`
+ * slot alongside the (unchanged) 7 statusline fields.
  */
 
 import type { Hono } from "hono";
@@ -23,7 +27,11 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
   );
 
   const status = table.get("get_status");
-  app.on(status.method, status.honoPath, (c) => c.json({ ...deps.runtime.statusline(), session: activeSession(deps) }));
+  app.on(status.method, status.honoPath, (c) => {
+    const asked = c.req.query("session");
+    const session = asked === undefined || asked === "" ? activeSession(deps) : asked;
+    return c.json({ ...deps.runtime.statusline(session), session, busy: deps.runtime.isBusy(session) });
+  });
 
   const tools = table.get("get_tools");
   app.on(tools.method, tools.honoPath, (c) => c.json({ tools: deps.runtime.tools() }));

@@ -25,6 +25,7 @@ import { registerHandlers } from "./handlers/index.js";
 import { assembleSystemPromptFor } from "./handlers/config-shape.js";
 import { registerStatic } from "./static.js";
 import type { RuntimeAdapter } from "./runtime-adapter.js";
+import { readSessionMeta } from "./store/session-meta.js";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
 
 export interface StudioAppOptions {
@@ -63,7 +64,12 @@ function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv): EngineFac
         const resolved = stores.sessions.resolve(id);
         return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
       },
-      activeSession: () => stores.workspaces.activeSession(),
+      // W513: the session-level model override is applied to that session's own
+      // instance (it no longer rewrites a global engine profile).
+      sessionModel: (id) => {
+        const resolved = stores.sessions.resolve(id);
+        return resolved.ok ? (readSessionMeta(resolved.value.dir)?.model ?? null) : null;
+      },
     });
 }
 

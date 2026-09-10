@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { serializeEventLog } from "@celestea/runtime";
 import type { SessionEvent } from "@celestea/core";
 import { jsonRequest, makeHarness, type StudioHarness } from "../harness.test-util.js";
+import { readSessionMeta } from "../store/session-meta.js";
 import type { BusFrame, BusSubscription } from "../sse.js";
 import { createOfflineLlm, type OfflineLlmOptions } from "./offline-llm.js";
 import { createRealRuntimeAdapter, type RealRuntimeAdapter } from "./real-runtime-adapter.js";
@@ -156,7 +157,12 @@ export function makeEngineHarness(opts: EngineHarnessOptions = {}): StudioHarnes
           const resolved = stores.sessions.require(id);
           return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
         },
-        activeSession: () => stores.workspaces.activeSession(),
+        // W513: the session-level model override is applied to that session's
+        // own instance (mirrors `app.ts`).
+        sessionModel: (id) => {
+          const resolved = stores.sessions.resolve(id);
+          return resolved.ok ? (readSessionMeta(resolved.value.dir)?.model ?? null) : null;
+        },
       });
     },
   });

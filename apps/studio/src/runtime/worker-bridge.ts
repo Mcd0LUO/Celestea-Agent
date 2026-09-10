@@ -1,35 +1,72 @@
 /**
  * Worker orchestration bridge: the `POST /api/worker/*` surface is a thin proxy
  * over the engine's own worker tools (Rust `src/api.rs:437-503`), and the two
- * `GET` surfaces read the in-process registry directly.
+ * `GET` surfaces read the in-process registries directly.
  *
  * Keeping the mapping here means the adapter never re-implements orchestration:
  * `spawn_worker` / `session_send_message` are DISPATCHED through the composed
  * `ToolRegistry` (so the HTTP surface and the model's tool surface cannot
  * drift), while `worker_status` reads the same registry summary the tool reads.
+ *
+ * W513: each session runtime owns its own registry, so the rows carry the
+ * owning host session (`host_session`) and the worker id / registry status /
+ * driver state — enough for `GET /api/sessions` to list workers per session and
+ * for the host to aggregate a process-wide `worker_status`.
  */
 
-import { isRecord, type ToolRegistry } from "@celestea/core";
+import { isRecord, type ToolRegistry, type WorkerEntry } from "@celestea/core";
 import { projectMessages } from "@celestea/session";
-import type { WorkerRegistry } from "@celestea/workers";
+import { getExtra, type WorkerRegistry } from "@celestea/workers";
 import type { WorkerSessionRow, WorkerSpawnOutcome, WorkerStatusReport } from "../runtime-adapter.js";
+
+/** Registry session id -> its worker row (the `sess=` token is the link). */
+function entriesBySession(registry: WorkerRegistry): Map<string, WorkerEntry> {
+  const bySid = new Map<string, WorkerEntry>();
+  for (const entry of registry.ownEntries()) {
+    const sid = getExtra(entry, "sess");
+    if (sid !== null && sid !== "") bySid.set(sid, entry);
+  }
+  return bySid;
+}
 
 /** Engine-memory worker sessions (`worker:<sid>`, pseudo-workspace "engine"). */
 export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId: string | null): WorkerSessionRow[] {
   if (registry === null) return [];
+  const bySid = entriesBySession(registry);
   return registry.sessions
     .metas()
     .filter((m) => m.id !== hostSessionId)
-    .map((m) => ({
-      id: `worker:${m.id}`,
-      workspace: "engine",
-      kind: "worker" as const,
-      title: m.title,
-      model: m.model,
-      size: registry.sessions.logOf(m.id)?.events().length ?? 0,
-      modified: 0,
-      active: false,
-    }));
+    .map((m) => {
+      const entry = bySid.get(m.id);
+      return {
+        id: `worker:${m.id}`,
+        workspace: "engine",
+        kind: "worker" as const,
+        title: m.title,
+        model: m.model,
+        size: registry.sessions.logOf(m.id)?.events().length ?? 0,
+        modified: 0,
+        active: false,
+        ...(entry === undefined ? {} : { wid: entry.wid, status: entry.status, state: getExtra(entry, "state") ?? "" }),
+      };
+    });
+}
+
+/** Process-wide `worker_status` fold over the merged rows (W513). */
+export function aggregateWorkerStatus(rows: readonly WorkerSessionRow[], wid?: string): WorkerStatusReport {
+  const scoped = wid === undefined ? [...rows] : rows.filter((row) => row.wid === wid);
+  const by_status: Record<string, number> = {};
+  const by_state: Record<string, number> = {};
+  for (const row of scoped) {
+    const status = row.status ?? "RUNNING";
+    const state = row.state ?? "idle";
+    by_status[status] = (by_status[status] ?? 0) + 1;
+    by_state[state] = (by_state[state] ?? 0) + 1;
+  }
+  if (wid !== undefined && scoped.length === 0) {
+    return { ok: false, total: 0, by_status, by_state, workers: [], wid, error: `no worker ${wid} in registry` };
+  }
+  return { ok: scoped.length > 0, total: scoped.length, by_status, by_state, workers: scoped, ...(wid === undefined ? {} : { wid }) };
 }
 
 /** Studio projection of a worker session transcript (null = unknown session). */

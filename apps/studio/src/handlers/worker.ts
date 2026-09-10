@@ -21,7 +21,8 @@ function registerSpawn(app: Hono, deps: Deps, table: RouteTable): string {
     const title = strField(c, read.body, "title");
     const model = strField(c, read.body, "model");
     const reportTo = strField(c, read.body, "report_to");
-    for (const f of [wid, brief, title, model, reportTo]) if (!f.ok) return f.response;
+    const session = strField(c, read.body, "session");
+    for (const f of [wid, brief, title, model, reportTo, session]) if (!f.ok) return f.response;
     if ((wid.ok ? wid.value : undefined) === undefined || (brief.ok ? brief.value : undefined) === undefined) {
       return failJson(c, 422, "fields 'wid' and 'brief' are required");
     }
@@ -31,6 +32,7 @@ function registerSpawn(app: Hono, deps: Deps, table: RouteTable): string {
       title: title.ok ? title.value : undefined,
       model: model.ok ? model.value : undefined,
       report_to: reportTo.ok ? reportTo.value : undefined,
+      session: session.ok ? (session.value ?? null) : null,
     });
     if (out.ok) return c.json({ ok: true, sessionId: out.sessionId, title: out.title, wid: out.wid });
     if (out.error === undefined && out.value === undefined) return failJson(c, 500, "tool returned no value");

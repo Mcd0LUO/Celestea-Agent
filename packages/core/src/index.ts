@@ -13,6 +13,7 @@
  *   stream.ts        ModelRequest / StreamEvent / LlmError         (message.rs, llm.rs)
  *   session-event.ts SessionEvent JSONL codec (validate / serialize)  (session_log.rs)
  *   session-log.ts   SessionLog seam
+ *   injection.ts     mid-turn injection seam (W513)
  *   plugin.ts        Plugin seam + NamedRegistry                   (plugin.rs)
  *   context.ts       Context service container                     (context.rs)
  *   event-bus.ts     EventBus seam (on/bail/waterfall)             (event_bus.rs)
@@ -33,6 +34,7 @@ export * from "./message.js";
 export * from "./stream.js";
 export * from "./session-event.js";
 export * from "./session-log.js";
+export * from "./injection.js";
 export * from "./plugin.js";
 export * from "./context.js";
 export * from "./event-bus.js";

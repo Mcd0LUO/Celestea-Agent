@@ -22,7 +22,7 @@ function registerRename(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_session_rename");
   app.on(route.method, route.honoPath, async (c) => {
     const id = c.req.param("id") ?? "";
-    if (isActive(deps, id) && deps.runtime.isBusy()) return failJson(c, 409, "turn in progress; rename applies between turns");
+    if (deps.runtime.isBusy(id)) return failJson(c, 409, "turn in progress; rename applies between turns");
     const read = await readJsonBody(c);
     if (!read.ok) return read.response;
     const title = strField(c, read.body, "new_title");
@@ -55,8 +55,8 @@ function registerBranch(app: Hono, deps: Deps, table: RouteTable): string {
 function registerCompact(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_session_compact");
   app.on(route.method, route.honoPath, async (c) => {
-    if (deps.runtime.isBusy()) return failJson(c, 409, "turn 进行中，无法压缩");
     const id = c.req.param("id") ?? "";
+    if (deps.runtime.isBusy(id)) return failJson(c, 409, "turn 进行中，无法压缩");
     const resolved = deps.sessions.require(id);
     if (!resolved.ok) return storeFail(c, resolved);
     try {

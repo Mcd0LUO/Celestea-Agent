@@ -114,7 +114,7 @@ export async function sseChecks(host: ReplayHost, id: string, sseFile: string | 
     turn: f.data.turn,
     payload: f.data.payload,
   }));
-  const capture = await captureSseWire(host, expected);
+  const capture = await captureSseWire(host, expected, id);
   return sseFindings(id, derived, golden, capture);
 }
 

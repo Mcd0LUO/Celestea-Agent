@@ -30,6 +30,7 @@ import type {
 } from "@celestea/core";
 import type { WorkerRegistry } from "@celestea/workers";
 import { RuntimeReleasedError, TurnBusyError } from "./errors.js";
+import type { InjectedMessage, SessionInbox } from "./inbox.js";
 import { bindSession, type SessionBinding } from "./session-binding.js";
 import { statuslineOf, type StatusTracker, type StatusView } from "./status.js";
 import type { FrameSink, TurnOptions, TurnRunner } from "./turn-runner.js";
@@ -50,6 +51,8 @@ export interface RuntimeParts {
   binding: SessionBinding | null;
   status: StatusTracker;
   usage: UsageAccounting;
+  /** Per-session mid-turn injection queue (W513). */
+  inbox: SessionInbox;
   runner: TurnRunner;
   workerHost: WorkerHost | null;
   llm: LlmRegistry | null;
@@ -103,6 +106,11 @@ export class Runtime {
 
   get status(): StatusTracker {
     return this.p.status;
+  }
+
+  /** The session's injection queue (drained by the turn at step boundaries). */
+  get inbox(): SessionInbox {
+    return this.p.inbox;
   }
 
   get usage(): UsageAccounting {
@@ -173,6 +181,21 @@ export class Runtime {
   pendingReceipts(): number {
     const host = this.parts?.workerHost ?? null;
     return host === null ? 0 : host.registry.mailbox.pending(host.hostSessionId);
+  }
+
+  /**
+   * Deliver a message into THIS session's RUNNING turn (next step boundary).
+   * The message is queued, never dispatched here: the turn decides when the
+   * step boundary is. `from` is the attribution label (`""` = the user).
+   */
+  inject(text: string, from = ""): InjectedMessage {
+    this.assertLive();
+    return this.p.inbox.push(text, from);
+  }
+
+  /** Messages queued for the running/next turn (diagnostics / tests). */
+  pendingInjections(): number {
+    return this.parts?.inbox.pending() ?? 0;
   }
 
   // --- lifecycle ---------------------------------------------------------

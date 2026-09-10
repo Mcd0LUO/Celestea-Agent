@@ -56,8 +56,9 @@ import { Runtime, type RuntimeParts, type ShutdownHook } from "./runtime.js";
 import { bindSession, type SessionBinding } from "./session-binding.js";
 import { createStatusTracker, type StatusTracker } from "./status.js";
 import { STATUS_TRACKER_SERVICE, USAGE_TRACKER_SERVICE } from "./tokens.js";
-import { TurnRunner, type LoopFactory } from "./turn-runner.js";
+import { TurnRunner, type LoopFactory, type PendingReceipt } from "./turn-runner.js";
 import { createUsageTracker, type UsageAccounting } from "./usage.js";
+import { createSessionInbox, type SessionInbox } from "./inbox.js";
 import { ensureWorkerWiring, type WorkerHost, type WorkerWiring } from "./worker-wiring.js";
 
 export interface ComposeConfig {
@@ -78,6 +79,8 @@ export interface ComposeConfig {
   status?: StatusTracker;
   /** Worker orchestration wiring; `false` disables it. */
   workers?: WorkerWiring | false;
+  /** Mid-turn injection queue (default: a fresh one per generation). */
+  inbox?: SessionInbox;
   /** Host teardown hooks (process kills) — run once, in order, by `shutdown`. */
   shutdownHooks?: readonly ShutdownHook[];
   /** Injectable clock (status tracker rate window). */
@@ -107,6 +110,7 @@ export function compose(config: ComposeConfig): Runtime {
   attachDrivers(workerHost, { llm: resolveDriverLlm(ctx, llm), tools, agentLoop });
 
   const agentConfig = agentConfigFromProfile(config.profile, config.agentConfig ?? {});
+  const inbox = config.inbox ?? createSessionInbox();
   const runner = new TurnRunner({
     ctx,
     session: () => sessionRef.log,
@@ -115,7 +119,7 @@ export function compose(config: ComposeConfig): Runtime {
     agentConfig,
     frameMapper: config.frameMapper ?? loopEventToFrame,
     ...(config.loopFactory === undefined ? {} : { loopFactory: config.loopFactory }),
-    ...(workerHost === null ? {} : { drainReceipts: workerHost.drain }),
+    drainPending: () => drainPending(inbox, workerHost),
   });
 
   const parts: RuntimeParts = {
@@ -126,6 +130,7 @@ export function compose(config: ComposeConfig): Runtime {
     binding,
     status,
     usage,
+    inbox,
     runner,
     workerHost,
     llm,
@@ -135,6 +140,16 @@ export function compose(config: ComposeConfig): Runtime {
     shutdownHooks: config.shutdownHooks ?? [],
   };
   return new Runtime(parts);
+}
+
+/**
+ * Everything the turn must inject into the log, in order: the session inbox
+ * (user interjections, W513) then the host mailbox (worker receipts, W232).
+ * Called at turn start and again at every step boundary.
+ */
+export function drainPending(inbox: SessionInbox, workerHost: WorkerHost | null): PendingReceipt[] {
+  const injected = inbox.drain().map((message) => ({ text: message.text, from: message.from }));
+  return workerHost === null ? injected : [...injected, ...workerHost.drain()];
 }
 
 /** The plugin set that was mounted, in mount order (order is contract). */

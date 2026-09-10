@@ -6,6 +6,11 @@
  * single-concurrency slot, emits the contract SSE events on a scripted turn,
  * and answers the worker/compact/status calls deterministically.
  *
+ * W513: the fake models the same SESSION-SCOPED contract as the real adapter —
+ * one busy slot per session, `inject()` for a busy session (the interjection is
+ * recorded and asserted by the HTTP tests), `ensureSession()` for activate — so
+ * the handler tests exercise the real routing rules.
+ *
  * It is a *test/development* adapter, never a production engine: the scripted
  * turn is an echo and no model is ever called.
  */
@@ -16,8 +21,10 @@ import {
   type ClearOutcome,
   type CompactOutcome,
   type EngineProfile,
+  type InjectOutcome,
   type ProfilePatch,
   type RuntimeAdapter,
+  type SessionRuntimeInfo,
   type ToolInfo,
   type TurnRequest,
   type TurnStart,
@@ -95,6 +102,12 @@ class FakeRuntime implements FakeRuntimeAdapter {
   private busy = false;
   private turn = 0;
   private idleWaiters: Array<() => void> = [];
+  /** Session -> its own turn counter (W513). */
+  private readonly turns = new Map<string, number>();
+  /** Session -> messages delivered into a running turn (W513). */
+  private readonly injected = new Map<string, string[]>();
+  /** Session -> live runtime (W513 registry stand-in). */
+  private readonly live = new Set<string>();
 
   constructor(opts: FakeRuntimeOptions) {
     this.engineProfile = defaultProfile(opts.profile ?? {});
@@ -106,8 +119,36 @@ class FakeRuntime implements FakeRuntimeAdapter {
     this.bus = next;
   }
 
-  isBusy(): boolean {
+  isBusy(_session?: string | null): boolean {
     return this.busy;
+  }
+
+  inject(req: TurnRequest): InjectOutcome {
+    const key = req.session ?? "";
+    const queued = this.injected.get(key) ?? [];
+    queued.push(req.input);
+    this.injected.set(key, queued);
+    this.emit("status", { phase: "progress", statusline: this.statusline() }, this.turns.get(key) ?? 0);
+    return { turn: this.turns.get(key) ?? 0, injected: true, pending: queued.length };
+  }
+
+  /** Messages injected into the given session's turn (test assertion hook). */
+  injectedInto(session: string | null): string[] {
+    return [...(this.injected.get(session ?? "") ?? [])];
+  }
+
+  ensureSession(session: string | null): SessionRuntimeInfo {
+    const created = !this.live.has(session ?? "");
+    this.live.add(session ?? "");
+    return { runtime: created ? "created" : "reused", busy: this.busy, rebuilt: false };
+  }
+
+  liveSessions(): string[] {
+    return [...this.live].filter((id) => id !== "");
+  }
+
+  busySessions(): string[] {
+    return this.busy ? this.liveSessions() : [];
   }
 
   profile(): EngineProfile {
@@ -134,8 +175,8 @@ class FakeRuntime implements FakeRuntimeAdapter {
     };
   }
 
-  private emit(event: SseEventName, payload: Record<string, unknown>, envelopeTurn = this.turn): void {
-    this.bus?.emit(event, envelopeTurn, payload);
+  private emit(event: SseEventName, payload: Record<string, unknown>, envelopeTurn = this.turn, session: string | null = null): void {
+    this.bus?.emit(event, envelopeTurn, payload, session);
   }
 
   private settle(): void {
@@ -155,12 +196,13 @@ class FakeRuntime implements FakeRuntimeAdapter {
 
   /** Scripted turn: start -> text -> done -> turn_end -> completed. */
   private async runTurn(req: TurnRequest): Promise<void> {
+    const session = req.session;
     try {
-      this.emit("text", { delta: `echo: ${req.input}` });
+      this.emit("text", { delta: `echo: ${req.input}` }, this.turn, session);
       await this.pause();
-      this.emit("done", { text: `echo: ${req.input}`, tool_calls: [] });
-      this.emit("turn_end", { outcome: "completed", error: null });
-      this.emit("status", { phase: "completed", statusline: this.statusline() });
+      this.emit("done", { text: `echo: ${req.input}`, tool_calls: [] }, this.turn, session);
+      this.emit("turn_end", { outcome: "completed", error: null }, this.turn, session);
+      this.emit("status", { phase: "completed", statusline: this.statusline() }, this.turn, session);
     } finally {
       this.settle();
     }
@@ -169,13 +211,16 @@ class FakeRuntime implements FakeRuntimeAdapter {
   async startTurn(req: TurnRequest): Promise<TurnStart> {
     if (this.busy) throw new TurnBusyError();
     this.busy = true;
+    const key = req.session ?? "";
+    this.live.add(key);
     this.turn += 1;
-    this.emit("status", { phase: "start", statusline: this.statusline() }, this.turn);
+    this.turns.set(key, this.turn);
+    this.emit("status", { phase: "start", statusline: this.statusline() }, this.turn, req.session);
     setTimeout(() => void this.runTurn(req), 0);
     return { turn: this.turn };
   }
 
-  cancel(): boolean {
+  cancel(_session?: string | null): boolean {
     if (!this.busy) return false;
     this.settle();
     this.emit("status", { phase: "cancelled", statusline: this.statusline() });
@@ -200,6 +245,9 @@ class FakeRuntime implements FakeRuntimeAdapter {
       size: this.transcripts.get(w.sessionId)?.length ?? 0,
       modified: 0,
       active: false,
+      wid: w.wid,
+      status: w.status,
+      state: w.state,
     }));
   }
 
