@@ -1,0 +1,26 @@
+# Read-only Rust↔TS parity probe (P1: core + session semantic kernel).
+#
+# It links the REAL engine crates (celestea-core + celestea-session) and prints
+# the canonical derive_messages JSON for a cli-main.jsonl, which is how
+# fixtures/sessions/*/derive-messages-expected.json was regenerated and how
+# packages/session/src/parity.test.ts's golden is produced.
+#
+# It never writes into /src/celestea_harness (target dir stays local) and it is
+# not part of the pnpm/TS build.
+#
+#   cargo run --offline --release -- <path/to/cli-main.jsonl>
+#
+# The `[workspace]` table keeps this crate out of any parent workspace.
+[package]
+name = "celestea-parity-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+celestea-core = { path = "../../../../../celestea_harness/crates/core" }
+celestea-session = { path = "../../../../../celestea_harness/crates/session" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace]

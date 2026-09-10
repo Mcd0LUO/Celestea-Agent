@@ -74,3 +74,59 @@ function typeOf(v: unknown): string {
   if (Array.isArray(v)) return "array";
   return typeof v;
 }
+
+// ---------------------------------------------------------------------------
+// serde_json-compatible text (the engine re-serializes every Value)
+// ---------------------------------------------------------------------------
+
+/**
+ * `serde_json::to_string` equivalent for the JSON subset the engine carries.
+ *
+ * Why not `JSON.stringify`: the Rust engine stores every `args` / `value` as a
+ * `serde_json::Value`, whose object map is a **BTreeMap** — so a re-serialized
+ * value always has its keys in sorted order, and `None` becomes `null` rather
+ * than an omitted key. `derive_messages` embeds this text in the model-visible
+ * history ("Error: …" or the JSON of the value) and `PersistentSessionLog`
+ * writes each event through it, so the difference is observable in the log and
+ * in the derived messages. Values that `serde_json::Value` cannot hold
+ * (undefined, functions, NaN/Infinity) have no Rust counterpart and map to
+ * `null`, matching the `unwrap_or_else(|_| "null")` fallback in
+ * `crates/session/src/log.rs:192`.
+ */
+export function serdeJsonString(value: unknown): string {
+  return writeValue(value);
+}
+
+function writeValue(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  switch (typeof v) {
+    case "string":
+      return JSON.stringify(v);
+    case "number":
+      return serdeNumber(v);
+    case "boolean":
+      return v ? "true" : "false";
+    case "object": {
+      if (Array.isArray(v)) return `[${v.map(writeValue).join(",")}]`;
+      const o = v as Record<string, unknown>;
+      const keys = Object.keys(o).sort();
+      return `{${keys.map((k) => `${JSON.stringify(k)}:${writeValue(o[k])}`).join(",")}}`;
+    }
+    default:
+      return "null";
+  }
+}
+
+/**
+ * Rust number formatting (ryu shortest round-trip): integers keep their plain
+ * form and exponents lose the JS `+` sign (`1e+21` -> `1e21`).
+ * Known residual difference: a JSON literal `1.0` is stored as `f64` by
+ * serde_json and prints back as `1.0`, while JS has a single number type and
+ * prints `1`. No engine-written log contains such a literal (asserted by
+ * `packages/core/src/json.test.ts:fixture logs carry no float literals`).
+ */
+function serdeNumber(n: number): string {
+  if (!Number.isFinite(n)) return "null";
+  if (Number.isInteger(n) && Math.abs(n) < 1e21) return String(n);
+  return n.toString().replace("e+", "e");
+}

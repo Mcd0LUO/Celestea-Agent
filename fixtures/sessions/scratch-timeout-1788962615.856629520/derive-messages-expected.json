@@ -1,9 +1,22 @@
 {
-  "note": "DERIVED by the TS reference implementation (engine derive_messages has no HTTP surface; P1 validates it against the Rust unit tests)",
+  "note": "Rust golden (P1): messages derived by the real engine (celestea-session derive_messages_from + balance_tool_calls, crates/session/src/log.rs) from this session's cli-main.jsonl. Regenerated at P1 by a read-only parity probe that links celestea-core/celestea-session; TS @celestea/session is asserted field-for-field against it by packages/session/src/parity.test.ts.",
+  "source": {
+    "rust": "crates/session/src/log.rs:73-204 (derive_messages_from, flush_tool_calls, balance_tool_calls)",
+    "core": "crates/core/src/message.rs (Message / Content::Text|ToolCall)",
+    "input": "cli-main.jsonl"
+  },
+  "events": 3,
+  "nextTurnIdFromEmptyLog": "turn-0",
   "messages": [
     {
+      "content": [
+        {
+          "content": "说一句 hi",
+          "type": "text"
+        }
+      ],
       "role": "user",
-      "content": "说一句 hi"
+      "tool_call_id": null
     }
   ]
 }

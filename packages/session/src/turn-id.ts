@@ -34,7 +34,16 @@ export function maxTurnNumber(events: readonly SessionEvent[]): number {
 
 /** The next id the log would allocate. */
 export function nextTurnId(events: readonly SessionEvent[]): string {
-  return formatTurnId(maxTurnNumber(events) + 1);
+  return formatTurnId(nextTurnNumber(events));
+}
+
+/**
+ * Rust `next_turn_number` (persistent.rs:391-402): max `turn-<n>` in the log
+ * plus one, or 0 when the log holds no such id. Legacy ids (e.g. `"t1"`) are
+ * ignored, so a replayed counter never collides with an id already on disk.
+ */
+export function nextTurnNumber(events: readonly SessionEvent[]): number {
+  return maxTurnNumber(events) + 1;
 }
 
 export interface TurnIdAudit {
