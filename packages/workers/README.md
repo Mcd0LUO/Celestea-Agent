@@ -1,0 +1,89 @@
+# `@celestea/workers` (L1 · worker 编排)
+
+一句职责：**维护本进程所有 worker 的状态与通讯**——`registry.tsv` 表（解析/序列化/内存态/行归属）、
+会话寻址、mailbox 事件循环（挂起→唤醒→投递）、三个编排工具（`spawn_worker` /
+`session_send_message` / `worker_status`）、以及 brief 轮结束后的**回执协议**（报告文件 + 一行回执）。
+对应 Rust `crates/workers/src/{types,registry,tools,plugin}.rs` + `celestea_session` 的
+`SessionRegistry` / `SessionMailbox`。
+
+```
+core ← workers
+```
+
+依赖方向：**只依赖 core**。驱动 seam（`Llm` / `ToolRegistry` / `AgentLoop`）与 worker 会话日志
+由装配层（`packages/runtime`）注入，本包不 import 任何同层实现（ARCHITECTURE.md §1.3 D2）。
+
+## 公开 API（只从 `src/index.ts` 收口）
+
+| 导出 | 作用 |
+|---|---|
+| `WorkerRegistry` | 表状态 + 会话/邮箱 + 驱动 seam；`upsert` / `status` / `setWorkerState` / `driveIfPossible` / `shutdown` / `release` |
+| `WORKER_REGISTRY_SERVICE` | Context token（`celestea.workers.WorkerRegistry`） |
+| `parseRegistryTsv` / `serializeRegistryTsv` / `getExtra` / `summarize` | 4 列 TSV 的解析/序列化/k=v token/汇总（坏行跳行不崩） |
+| `SessionRegistry` | `session-<n>` 建会话、id→title→workspace 解析、歧义返回候选 |
+| `SessionMailbox` | `send` / `poll` / `pending` / `recv`（可 abort）/ `purge` / `release` |
+| `runDriverLoop` / `workerContext` / `WorkerDrivers` | mailbox 事件循环驱动（brief 轮 → 回执 → 挂起/唤醒/投递） |
+| `executeReceipt` / `sanitizeFileStem` / `lastAssistantSummary` / `reportRelPath` | 回执协议（报告 + 一行回执） |
+| `workerTools` / `workerToolSpec` / `contractError` / `deriveShort` / `tokenSafe` | 三个工具（spec 取自 `contracts/tools.json`） |
+| `workersPlugin` / `createWorkerRegistry` | 插件：provide 注册表 + 把三个工具注册进已存在的 `ToolRegistry` |
+| `recordingSessionLog` / `SessionLogFactory` | 默认 worker 会话日志（只记录）与注入点 |
+
+## registry.tsv 与行归属
+
+4 列：`wid \t started_at \t status \t extra`，`extra` 是空格分隔的 `k=v` token
+（`sess` / `title` / `driven` / `ws` / `provider` / `model` / `effort` / `report_to` / `brief` / `proc` / `state`）。
+
+- **行归属**：写行时打 `proc=<pid>`；`ownEntries()` 只认本进程行，其他进程（含无 `proc` 的旧残留行）
+  不进 `worker_status` 视图，也不会被 wid 过滤命中（W234）。
+- **写盘**：tmp + `rename` 原子替换；写失败只回报告警，不阻断 spawn（W180 B1(c)）。
+- `tsvPath: null` → 纯内存表（测试 / 临时宿主）。
+
+## mailbox 事件循环
+
+```
+driveIfPossible(sid, brief)
+  ├─ prune → drivers 未齐 / 会话不存在 → false（仅登记不驱动）
+  └─ 后台任务 runDriverLoop：
+       state=in-turn → brief turn → 回执协议（写报告 + 投递回执，Ok/Err 都执行一次）
+       loop: state=idle → mailbox.recv(sid, signal)  ← 挂起
+             收到消息 → state=in-turn → 用 content 跑一轮（同一 worker 天然串行）
+             会话被移除 / stopDriver / abortAllNow / release → 退出并释放挂起
+```
+
+`send` 若有 parked `recv` 就**直接投给它**（这就是唤醒语义），否则 FIFO 入队；
+`recv(sid, signal)` 在 abort / release 时返回 `null`，因此 shutdown 永远不会被挂起的消费者卡住。
+
+## 回执协议（W235/W241）
+
+`spawn_worker(report_to=…)` 时：brief 尾部注入中性提示；brief 轮结束后由驱动**机械执行一次**：
+
+1. 写 `<resultsDir>/<wid>-<short>.md`（`sanitizeFileStem` 防路径穿越；目录不存在则建；写失败只 warn）；
+2. 往 `report_to` 的 mailbox 投一行 `WORKER_<wid>_DONE …` / `WORKER_<wid>_FAILED ERR …`，
+   尾附 worker 会话最后一条 `assistant_message` 的 `答复: …`（截断 200 字符、换行折叠）。
+
+宿主 `Runtime.runTurn` 在每轮开始 drain 自己的 mailbox，因此回执会作为 `[from <wid>] …` 注入宿主日志。
+
+## 注入点（为什么没有强引用环）
+
+| 注入 | 默认 | 说明 |
+|---|---|---|
+| `logFactory` | `recordingSessionLog`（只记录） | 真实投影（`deriveMessages`）在 `packages/session`，由装配层注入 `InMemorySessionLog` |
+| `attachDrivers({llm, tools, agentLoop})` | 无 → 只登记不驱动 | 由装配层从 Context 解析后交给注册表 |
+| 三个工具对注册表持 **`WeakRef`** | — | registry 释放后工具 fail-closed（`{ok:false,step:"registry",error:"registry released"}`），不复活旧代 |
+
+## 已知迁移差异（与 Rust 的显式分歧）
+
+- Rust 把多词 `title` / `brief` 直接塞进空格分隔的 `extra`，读回时只剩第一个词（`title=Do the thing`
+  只解析出 `Do`）。TS 侧：`title` token 折空白为 `-` 保持单 token（回执文件名因此稳定），
+  而报告用的**可读** brief/title 存在注册表的**内存态**（`rememberSpawn`），token 仅作诊断/跨进程兜底。
+
+## 测试
+
+`packages/workers/src/*.test.ts`（63 例）：
+
+- `registry.test.ts`：tsv upsert/落盘/round-trip、行归属、汇总与过滤、state 标注、内存模式、驱动生命周期；
+- `mailbox.test.ts`：FIFO、挂起→唤醒→投递、多消费者顺序、signal abort、purge、release；
+- `sessions.test.ts`：`session-<n>`、解析优先级、歧义候选、主机会话登记；
+- `tools.test.ts`：三工具 spec 来自契约、spawn 校验/去重/命名/token、send 投递与歧义、status 汇总、WeakRef fail-closed；
+- `receipt.test.ts`：报告文件与 DONE/FAILED 回执、`答复` 摘要、消毒、坏路径只 warn、驱动 brief→回执→挂起→唤醒→串行投递；
+- `plugin.test.ts`：provide token、三工具注册进 ToolRegistry、后挂载覆盖。
