@@ -17,7 +17,7 @@ import { readFileTool } from "./tools/read-file.js";
 import { runShellTool } from "./tools/run-shell.js";
 import { writeFileTool } from "./tools/write-file.js";
 import { ProcessRegistry } from "./process/registry.js";
-import { userspaceSandbox } from "./sandbox/userspace.js";
+import { selectSandbox } from "./sandbox/provider.js";
 
 export interface BuiltinToolsOptions {
   sandbox?: Sandbox;
@@ -28,7 +28,7 @@ export interface BuiltinToolsOptions {
 /** The six builtins, sharing one sandbox + one process registry. */
 export function builtinTools(options: BuiltinToolsOptions = {}): Tool[] {
   const processes = options.processes ?? new ProcessRegistry();
-  const sandbox = options.sandbox ?? userspaceSandbox();
+  const sandbox = options.sandbox ?? selectSandbox();
   return [
     readFileTool(),
     writeFileTool(),

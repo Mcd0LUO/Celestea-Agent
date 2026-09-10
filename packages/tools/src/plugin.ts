@@ -26,7 +26,7 @@ import { builtinTools } from "./builtin.js";
 import { mountProductionGuards } from "./guard/path-guard.js";
 import { PROCESS_REGISTRY_SERVICE, ProcessRegistry } from "./process/registry.js";
 import { ToolRegistryImpl } from "./registry.js";
-import { userspaceSandbox } from "./sandbox/userspace.js";
+import { selectSandbox } from "./sandbox/provider.js";
 
 export const TOOLS_PLUGIN_NAME = "celestea.tools";
 
@@ -52,7 +52,7 @@ export interface ToolAssembly {
 export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
   const env = options.env ?? process.env;
   const processes = options.processes ?? new ProcessRegistry();
-  const sandbox = options.sandbox ?? userspaceSandbox();
+  const sandbox = options.sandbox ?? selectSandbox({ env });
   const registry = new ToolRegistryImpl();
   for (const tool of options.tools ?? builtinTools({ sandbox, processes })) registry.register(tool);
 
