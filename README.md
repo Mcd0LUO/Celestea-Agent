@@ -165,3 +165,115 @@ pnpm check
 - ✅ 实机契约校验（20 端点抽样，只读）
 - ❌ 不含真实业务实现（LLM 调用、沙箱、agent loop、HTTP handler 行为）——P1–P4
 - ❌ 不启动任何服务、不改 systemd/nginx、不写任何生产数据文件
+
+---
+
+## P4: apps/studio（Hono HTTP 层 + 数据存储）
+
+> 契约真源：`contracts/endpoints.json`（39 端点）、`contracts/sse-events.json`、
+> `contracts/data-files/`、`/src/celestea_studio/docs/api-contract.md`。
+
+### 一句话
+
+`apps/studio` 是 L3 宿主：**Hono 路由 + 只读静态服务 + 三个 JSON 数据存储**，
+引擎能力全部经一个注入的 `RuntimeAdapter` 调用——P4 用 fake adapter 验契约，
+真实 runtime 落地后只换一行装配。
+
+### 模块地图
+
+| 文件 | 职责 |
+|---|---|
+| `src/app.ts` | `createStudioApp`：compose → 注册 39 端点 → `/api/*` 404 → 静态/SPA |
+| `src/routes.ts` | 冻结路由表（contract id → method + path，`{x}`→`:x`） |
+| `src/runtime-adapter.ts` | **唯一的引擎 seam**（`RuntimeAdapter` 接口 + 错误类型） |
+| `src/fake-runtime-adapter.ts` | P4 假引擎：抢 busy 槽、脚本化 turn、worker/compact 确定应答 |
+| `src/sse.ts` | SSE 总线：`{turn,seq,payload}` 信封、8 事件名、512 容量 + lagged 降级 |
+| `src/static.ts` | 只读 Vite 产物 + SPA fallback + 路径穿越加固 |
+| `src/plugins.ts` | 装配根：store 插件 → `Context` 服务（一切皆插件） |
+| `src/settings.ts` | 宿主级 `system_prompt` / `base_url` 覆盖（USER_OVERRIDE 槽） |
+| `src/handlers/` | 按端点组拆分的处理器（health / dialog / config / sessions / session-move / workspaces / fs / providers / prompts / worker） |
+| `src/store/` | 数据存储：`workspaces.json` v2、`providers.json`(0600)、`prompts.json` + 模板引擎 |
+
+### 端点覆盖（39/39）
+
+`createStudioApp` 在启动期断言「契约里的每个 id 都恰好绑定一次」，缺一个直接抛错，
+所以**不存在静默漏掉的端点**。分组：
+
+| 组 | 数量 | 说明 |
+|---|---|---|
+| health | 3 | health / status / tools（恒 200，无错误分支） |
+| dialog | 4 | events(SSE) / turn(202 或 409 或 400) / cancel / clear |
+| config | 2 | GET + POST（宿主校验 → `runtime.configure`） |
+| sessions | 11 | 列表/创建/投影/激活/改名/分支/压缩/归档/回收站/批量 |
+| workspaces | 5 | 注册/改名（真动文件夹）/注销/批量注销 |
+| fs | 1 | browse（仅目录名、隐藏 dot、不跟随符号链接、200 上限） |
+| providers | 6 | 列表/upsert/删除/test/models fetch/default |
+| prompts | 4 | 列表/upsert/删除/设默认（persist → hot apply → 失败回滚） |
+| workers | 3 | spawn(502 硬失败) / send / status(恒 200) |
+
+### RuntimeAdapter（引擎 seam）
+
+```
+attach(bus)                        // 引擎把事件写进 SSE 总线
+isBusy() / startTurn(req)          // 单并发槽：409 "a turn is already running"
+cancel() / clear(session)          // 协作式取消 / 截断活动会话日志
+compact(session)                   // 压缩；成功额外广播 event: compact（信封 turn 恒 0）
+profile() / configure(patch)       // 引擎档案：model/base_url/limits/system_prompt
+statusline() / tools()             // GET /api/status 与 /api/tools
+workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
+```
+
+替换真实 runtime = 在 `createStudioApp({ runtime })` 传另一个实现；**处理器与路由零改动**。
+
+### 数据存储
+
+* **`workspaces.json`（v2，0644）**：注册表（key = 目录 basename，从不落盘）、`active_session`、
+  会话目录扫描（直接子目录且含 `cli-main.jsonl`，跳过 dot-dir）。写盘 = pretty JSON → `.tmp` → rename（无 fsync）。
+  文件损坏 = **硬错误**（绝不用空表覆盖读不出来的注册表）。
+* **`providers.json`（0600，含明文 key）**：每次保存都强制 0600 + fsync；
+  `public_view` 结构里**根本没有 `api_key` 字段**（不是 null），所以处理器无法"顺手"泄漏；
+  `api_key` 缺省/null/空白 = 保留旧 key（唯一 keep-on-default 字段），`models` 缺省 = 清空。
+  `/models` 探测与 `/test`：非 `chat_completions` → 该格式不支持；无 key 且 base_url 归一化后
+  **等于当前代际 base_url** → 借用引擎 key（请求级，不落盘、不回显、不打日志）；否则不发请求。
+* **`prompts.json` + `<ws>/.celestea-prompts.json`（0644）**：段注册表（builtin 10 段，order 100..1000）
+  四级覆盖 builtin → global → ws → 绑定 prompt 的 `section_overrides`；`{{var}}` 白名单插值、
+  8192 字节截断；写路径固定为 **409 检查 → 落盘 → hot apply → 失败写回旧文件**。
+
+### 安全
+
+* key 只进 `process.env[api_key_env]` 与 `providers.json`(0600)：**不进响应、不进日志、不回显**；
+  测试断言 providers/config 响应文本里既没有 key，也没有 `"api_key"` 这个键名。
+* 静态服务双重加固：`sanitizeRel` 拒绝 `..`/绝对/前缀组件，再对 realpath 做 root 包含性检查（符号链接也逃不出）。
+* `/api/*` 未匹配 → `{"error":"not found"}` 404，**永不落到静态/SPA**。
+* fs browse 无鉴权，因此默认只绑环回（`STUDIO_TS_BIND` 改非环回 = 开放全盘目录名枚举）。
+
+### 测试
+
+| 文件 | 覆盖 |
+|---|---|
+| `src/sse.test.ts` | 信封形状、8 事件名、多订阅者、lagged 降级、关闭语义 |
+| `src/static.test.ts` | SPA fallback、content-type、穿越拒绝、符号链接逃逸拒绝、`/api/*` JSON 404 |
+| `src/store/workspaces.test.ts` | 注册表 round-trip、v1 容忍、损坏文件硬错、basename 冲突、注销/改名 |
+| `src/store/sessions.test.ts` | 扫描/投影（撕裂尾部丢弃）、四种 id 错误码、创建、改名/分支/归档/回收站/批量 |
+| `src/store/providers.test.ts` | round-trip、0600、public_view 脱敏、keep-key 语义、探测三分支 + keyless 借用 |
+| `src/store/prompts.test.ts` | 模板三错、插值、四级组装、默认链、CRUD round-trip |
+| `src/app.test.ts` / `src/app-domains.test.ts` | 39 端点形状/状态码/409 守卫/错误码/redaction/SSE 帧 |
+| `tests/studio-routes.test.ts` | 跨包契约：路由表与契约逐条一致，无端点漏绑 |
+
+### 已知边界（P4）
+
+1. **引擎是假的**：`turn/cancel/clear/compact/worker` 由 `createFakeRuntimeAdapter` 应答，
+   真实 runtime 由另一条线交付后替换。
+2. **静态模型目录**：`/api/config.available.models` 目前**只**从 providers store 重建
+   （Rust 还有一份静态 `AVAILABLE_MODELS` 兜底表），providers 为空时该数组为空。
+3. **`POST /api/config` 的 base_url 空串**：清覆盖后回落链在 P4 只覆盖 env/provider；
+   引擎代际重算随真实 runtime 落地。
+4. **请求体拒绝**：axum 的 415/422 语义按「缺 body=415、非 JSON=400、字段类型错=422」复刻，
+   文案是 TS 侧自拟（契约只冻结了成功形状与业务错误串）。
+
+### 运行
+
+```bash
+pnpm --filter @celestea/studio start      # 默认 127.0.0.1:3778（Rust 参考实现占 3777）
+pnpm check                                # typecheck + lint + lint:arch + test
+```

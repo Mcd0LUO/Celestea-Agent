@@ -42,3 +42,23 @@ export function studioRoutes(): RegisteredRoute[] {
 
 export const API_ENDPOINT_COUNT = 39;
 export const STATIC_ROUTE_COUNT = 4;
+
+/** Id-keyed view of the contract routes: a handler asks for its id, never a path. */
+export interface RouteTable {
+  routes: RegisteredRoute[];
+  /** Throws when the id is not in the frozen contract (typo guard). */
+  get(id: string): RegisteredRoute;
+}
+
+export function routeTable(): RouteTable {
+  const routes = studioRoutes();
+  const byId = new Map(routes.map((r) => [r.id, r]));
+  return {
+    routes,
+    get(id: string): RegisteredRoute {
+      const route = byId.get(id);
+      if (route === undefined) throw new Error(`unknown contract endpoint id '${id}'`);
+      return route;
+    },
+  };
+}
