@@ -124,7 +124,49 @@ export {
   shellInvocation,
   type SandboxConfigOverrides,
 } from "./sandbox/config.js";
-export { readCapped, resolveWorkdir, USERSPACE_META, UserspaceSandbox, userspaceSandbox, userspaceSandboxWith, type CappedText } from "./sandbox/userspace.js";
+export { USERSPACE_META, UserspaceSandbox, userspaceSandbox, userspaceSandboxWith } from "./sandbox/userspace.js";
+export { readCapped, REAP_GRACE_MS, type CappedText } from "./sandbox/launch.js";
+export { resolveWorkdir } from "./sandbox/workdir.js";
+// --- sandbox (P2c: OS-isolated provider + provider policy) --------------------
+export {
+  BWRAP_PROVIDER,
+  buildBwrapArgv,
+  buildBwrapCommand,
+  bwrapMeta,
+  DEFAULT_BWRAP_OPTIONS,
+  SECCOMP_FD,
+  type BwrapOptions,
+} from "./sandbox/bwrap-argv.js";
+export { BwrapSandbox, bwrapSandbox, bwrapSandboxWith, rlimitVia, type BwrapMeta, type BwrapSandboxOptions } from "./sandbox/bwrap.js";
+export {
+  ENV_SANDBOX_FALLBACK,
+  ENV_SANDBOX_MASK,
+  ENV_SANDBOX_NET,
+  ENV_SANDBOX_SECCOMP,
+  ENV_SANDBOX_SHARE_TMP,
+  bwrapOptionsFromEnv,
+  fallbackMode,
+  selectSandbox,
+  selectSandboxDetailed,
+  type SandboxFallbackMode,
+  type SandboxSelection,
+  type SelectOptions,
+} from "./sandbox/provider.js";
+export {
+  countUidThreads,
+  DEFAULT_LIMITS,
+  deriveNproc,
+  ENV_SANDBOX_NPROC,
+  ENV_SANDBOX_NPROC_HEADROOM,
+  limitsFromEnv,
+  NPROC_FLOOR,
+  NPROC_HEADROOM,
+  rlimitsEnabled,
+  type SandboxLimits,
+} from "./sandbox/limits.js";
+export { ENV_SANDBOX_BWRAP, probeHost, resetProbeCache, whichSync, type HostProbe } from "./sandbox/probe.js";
+export { applyLimits, ulimitScript, type RlimitPlan, type RlimitVia } from "./sandbox/rlimit.js";
+export { buildSeccompFilter, instructionCount, openSeccompBlob, toBlobBytes, type BpfInstruction } from "./sandbox/seccomp.js";
 
 // --- plugin -------------------------------------------------------------------
 export { assembleTools, TOOLS_PLUGIN_NAME, toolsPlugin, type ToolAssembly, type ToolsPluginOptions } from "./plugin.js";
