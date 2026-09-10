@@ -27,6 +27,7 @@
  *   runtime.ts         Runtime handles + lifecycle               (compose.rs:44-281)
  *   gen.ts             Gen + GenerationHub (hot swap)            (studio/main.rs:340-420)
  *   compose.ts         compose(config) — mount order             (runtime/compose.rs)
+ *   compact/           context compaction (W259)                 (studio/src/compact.rs)
  *   tokens.ts          runtime service tokens
  *   errors.ts          TurnBusyError / RuntimeReleasedError / ComposeError
  *
@@ -47,3 +48,4 @@ export * from "./worker-wiring.js";
 export * from "./runtime.js";
 export * from "./gen.js";
 export * from "./compose.js";
+export * from "./compact/index.js";

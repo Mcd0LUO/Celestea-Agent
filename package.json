@@ -15,6 +15,7 @@
     "contracts:verify": "tsx scripts/verify-contracts.ts",
     "golden:export": "tsx scripts/export-golden.ts",
     "replay:compare": "tsx scripts/compare-replay.ts",
+    "replay:e2e": "tsx scripts/replay-e2e.ts",
     "lint": "eslint .",
     "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps scripts tests",
     "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test"
