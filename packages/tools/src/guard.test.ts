@@ -26,7 +26,11 @@ const input = (tool: string, target: string): ToolInput => ({ call_id: "c1", nam
 describe("parseToolRoots", () => {
   it("splits on commas and drops empty entries", () => {
     expect(parseToolRoots("/a,/b ,/c")).toEqual(["/a", "/b", "/c"]);
-    expect(parseToolRoots(" :/a::")).toEqual([":/a::"]);
+    // W513: PATH-style (colon) roots must parse exactly like Rust
+    // `std::env::split_paths` — this is what the systemd units actually set.
+    expect(parseToolRoots("/src/a:/src/b:/tmp")).toEqual(["/src/a", "/src/b", "/tmp"]);
+    expect(parseToolRoots("/src/a:/src/b,/tmp")).toEqual(["/src/a", "/src/b", "/tmp"]);
+    expect(parseToolRoots(" :/a::")).toEqual(["/a"]);
     expect(parseToolRoots(",, ,")).toEqual([]);
     expect(parseToolRoots(undefined)).toEqual([]);
   });
