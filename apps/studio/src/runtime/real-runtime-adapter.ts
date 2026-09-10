@@ -23,10 +23,13 @@
  * active session the generation runs on an in-memory log, so `/api/turn` still
  * works and the adapter never invents a session directory.
  *
- * LLM: an injected seam whose default is the OFFLINE deterministic engine
- * (`createOfflineLlm`), so no test, no contract check and no replay reaches the
- * network. Usage accounting is ONE tracker shared by the loop and the runtime,
- * so the statusline observes exactly what the model reported.
+ * LLM: an injected seam wins (tests / replay inject the OFFLINE deterministic
+ * engine, so no test, no contract check and no replay reaches the network); with
+ * nothing injected the generation is assembled against the profile's provider
+ * (`llm-assembly.ts`), i.e. production is a real model, and only
+ * `CELESTEA_LLM_MODE=offline` swaps the network seam back out. Usage accounting
+ * is ONE tracker shared by the loop and the runtime, so the statusline observes
+ * exactly what the model reported.
  */
 
 import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
@@ -67,7 +70,7 @@ import type { StudioBus } from "../sse.js";
 import { applyProfilePatch, defaultEngineProfile, engineProfileOf, profileFromEngine } from "./engine-profile.js";
 import { bindingFor, closeLog, memoryBindingFor, SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
 import { enginePlugins } from "./engine-plugins.js";
-import { createOfflineLlm } from "./offline-llm.js";
+import { createEngineLlm } from "./llm-assembly.js";
 import { dispatchWorkerTool, sendBodyOf, spawnOutcomeOf, toStatusReport, workerMessagesOf, workerSessionsOf } from "./worker-bridge.js";
 
 export { SESSION_LOG_ID, SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
@@ -204,8 +207,14 @@ class RealEngine implements RealRuntimeAdapter {
     return runtime;
   }
 
+  /**
+   * The seam factory of every generation: the host's injected seam when given
+   * (tests / replay), otherwise the assembled engine LLM — LIVE against the
+   * profile's provider, or the deterministic offline seam when the deployment
+   * selected `CELESTEA_LLM_MODE=offline`.
+   */
   private llmFactory(): (profile: Profile) => Llm {
-    return this.opts.llm ?? ((): Llm => createOfflineLlm());
+    return this.opts.llm ?? ((profile: Profile): Llm => createEngineLlm(profile, this.env));
   }
 
   private runtime(): Runtime {
