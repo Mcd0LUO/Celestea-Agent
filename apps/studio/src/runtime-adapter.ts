@@ -32,7 +32,7 @@
  * `createStudioApp({ runtime })` — no handler changes, no route changes.
  */
 
-import type { Statusline } from "@celestea/core";
+import type { InjectionPlacement, Statusline } from "@celestea/core";
 import type { StudioBus } from "./sse.js";
 
 /** Verbatim engine error text (Rust `{e}` placeholders). */
@@ -104,16 +104,28 @@ export interface TurnRequest {
 
 export interface TurnStart {
   turn: number;
+  /** W515 §2: the placement of this turn's own input (`context` = it IS the turn). */
+  placement?: InjectionPlacement;
 }
 
-/** Result of delivering a message into a turn (W513 interjection). */
+/**
+ * Result of delivering a message into a session (W513 interjection).
+ *
+ * W515 §2: `placement` is the client-visible landing state —
+ * `steering` = will be injected into the RUNNING turn at its next step
+ * boundary, `queued` = accepted and waiting for the next turn start,
+ * `context` = already appended to the model-visible log.
+ */
 export interface InjectOutcome {
   /** Session-local turn number the message was (or will be) injected into. */
   turn: number;
-  /** True = delivered into a RUNNING turn; false = nothing was running. */
+  /** True = delivered into a RUNNING turn; false = queued for the next one. */
   injected: boolean;
-  /** Messages still queued for the running turn after this delivery. */
+  /** Messages still waiting on the target lane after this delivery. */
   pending: number;
+  placement: InjectionPlacement;
+  /** True when the idempotency key was already accepted (nothing was queued). */
+  duplicate: boolean;
 }
 
 /** `POST /api/sessions/{id}/activate` — "open the view + ensure the runtime". */

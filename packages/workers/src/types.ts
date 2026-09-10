@@ -9,7 +9,7 @@
  * alone (ARCHITECTURE.md §1.1, L1).
  */
 
-import type { SessionLog } from "@celestea/core";
+import type { DeliverySource, InjectionKind, SessionLog } from "@celestea/core";
 
 /** Addressing face of a conversation (id / title / workspace grouping). */
 export interface WorkerSessionMeta {
@@ -39,6 +39,16 @@ export interface MailboxMessage {
   content: string;
   from_label: string;
   at: number;
+  /** W515 §4: a settlement notice is NOT a deliberate relay message. */
+  kind: InjectionKind;
+  /** Envelope of the delivery (`subagent-settled` / `worker-relay`). */
+  source: DeliverySource;
+}
+
+/** Optional envelope of one `send` (kind + source); defaults to a relay. */
+export interface MailboxSendOptions {
+  kind?: InjectionKind;
+  source?: DeliverySource;
 }
 
 /** A waiter parked in `recv`, resolved by the next `send` (or by release). */

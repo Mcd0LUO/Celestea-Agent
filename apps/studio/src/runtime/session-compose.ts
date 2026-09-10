@@ -13,7 +13,8 @@
  */
 
 import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
-import type { Llm, Sandbox, SessionLog, Tool, ToolGuard } from "@celestea/core";
+import type { Llm, PendingInjection, Sandbox, SessionLog, Tool, ToolGuard } from "@celestea/core";
+import { createSessionInbox, type SessionInbox } from "@celestea/runtime";
 import { InMemorySessionLog } from "@celestea/session";
 import {
   compose,
@@ -37,8 +38,18 @@ export const MAX_LIVE_SESSIONS = 4;
 export const MAX_CONCURRENT_TURNS = 2;
 export const SESSION_IDLE_TTL_MS = 15 * 60 * 1_000;
 
+/** Per-session injection wiring the host supplies (placement over SSE, W515 §2). */
+export interface SessionInjectionHooks {
+  /** The session's inbox (default: a plain one with no observers). */
+  inbox?: SessionInbox;
+  /** Called when a message LEAVES a lane and becomes model-visible history. */
+  onInjected?: (messages: readonly PendingInjection[], boundary: "turn-start" | "step") => void;
+}
+
 export interface SessionComposerOptions {
   env: NodeJS.ProcessEnv;
+  /** Build the injection hooks of one session instance (inbox + observer). */
+  sessionHooks?: (sessionId: string | null) => SessionInjectionHooks;
   /** BASE profile (the `/api/config` one); sessions add their model override. */
   baseProfile: () => Profile;
   /** Host lookup: `<workspace>/<session>` -> directory (null = detached). */
@@ -102,11 +113,14 @@ export class SessionComposer {
       env: this.opts.env,
     });
     const usage = createUsageTracker();
+    const hooks = this.opts.sessionHooks?.(sessionId) ?? {};
     return compose({
       profile,
       plugins: engine.plugins,
       sessionBinding: this.bindingTo(sessionId, dir),
       usage,
+      inbox: hooks.inbox ?? createSessionInbox(),
+      ...(hooks.onInjected === undefined ? {} : { onInjected: hooks.onInjected }),
       loopFactory: (bindings) =>
         new DefaultAgentLoop(bindings.config, {
           signal: bindings.signal,

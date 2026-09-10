@@ -58,8 +58,10 @@ export interface WorkerHost {
   hostSessionId: string;
   /** Name of the plugin this wiring mounted (null when a host plugin provided it). */
   mountedPlugin: string | null;
-  /** Poll the host mailbox: the receipts to inject before the next turn. */
+  /** Poll the host mailbox: the messages to inject at the next boundary. */
   drain: () => PendingReceipt[];
+  /** Messages waiting in the host mailbox (the loop's close guard reads it). */
+  pending: () => number;
   /** Attach driver seams so a spawn is driven, not merely registered. */
   attach: (drivers: WorkerDrivers | null) => boolean;
 }
@@ -79,6 +81,7 @@ export function ensureWorkerWiring(ctx: Context, wiring: WorkerWiring | false | 
     hostSessionId,
     mountedPlugin: provided === undefined ? DEFAULT_WORKER_PLUGIN : null,
     drain: () => drainHost(registry, hostSessionId),
+    pending: () => registry.mailbox.pending(hostSessionId),
     attach: (drivers) => attachDrivers(registry, drivers),
   };
 }
@@ -104,9 +107,19 @@ function registerHost(registry: WorkerRegistry, hostSessionId: string, model: st
   registry.registerHostSession(host);
 }
 
-/** FIFO drain of the host queue, annotated with the sender label. */
+/**
+ * FIFO drain of the host queue, annotated with the sender label, the envelope
+ * (`source`) and an IDEMPOTENCY key (W515 §3/§4): a receipt replayed by a
+ * restarted driver carries the same id and is injected once.
+ */
 function drainHost(registry: WorkerRegistry, hostSessionId: string): PendingReceipt[] {
-  return registry.mailbox.poll(hostSessionId).map((m) => ({ text: m.content, from: m.from_label }));
+  return registry.mailbox.poll(hostSessionId).map((m) => ({
+    text: m.content,
+    from: m.from_label,
+    id: `mailbox:${m.id}`,
+    kind: m.kind,
+    source: m.source ?? { kind: "worker-relay", form: "message", senderSessionId: m.from_label },
+  }));
 }
 
 function attachDrivers(registry: WorkerRegistry, drivers: WorkerDrivers | null): boolean {

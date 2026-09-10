@@ -13,7 +13,7 @@
  *   stream.ts        ModelRequest / StreamEvent / LlmError         (message.rs, llm.rs)
  *   session-event.ts SessionEvent JSONL codec (validate / serialize)  (session_log.rs)
  *   session-log.ts   SessionLog seam
- *   injection.ts     mid-turn injection seam (W513)
+ *   injection.ts     mid-turn delivery seam: lanes / placement / envelope (W513)
  *   plugin.ts        Plugin seam + NamedRegistry                   (plugin.rs)
  *   context.ts       Context service container                     (context.rs)
  *   event-bus.ts     EventBus seam (on/bail/waterfall)             (event_bus.rs)

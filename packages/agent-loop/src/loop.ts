@@ -63,6 +63,9 @@ export interface AgentLoopBindings {
   injections?: InjectionSource;
 }
 
+/** Bound of the "do not close while a steering message waits" extension. */
+export const MAX_STEER_EXTENSIONS = 8;
+
 export class DefaultAgentLoop implements AgentLoop {
   private readonly config: AgentConfig;
   private readonly signal: AbortSignal | undefined;
@@ -111,9 +114,17 @@ export class DefaultAgentLoop implements AgentLoop {
     return outcome;
   }
 
-  /** The step loop: budget -> cancel checkpoint -> one model step. */
+  /**
+   * The step loop: budget -> cancel checkpoint -> one model step.
+   *
+   * W515 §1 invariant: a turn must NOT reach its terminal state while the
+   * `next-step` lane still holds something — the message is drained and answered
+   * inside THIS turn (that is what makes "closing -> inject" real). The
+   * extension is bounded, and a cancelled turn still stops immediately.
+   */
   private async driveSteps(seams: Seams): Promise<TurnOutcome> {
     let stepsDone = 0;
+    let extensions = 0;
     for (;;) {
       // max_steps === 0 means unlimited steps (W220); a nonzero cap stops the
       // loop without a final answer, which is a step_limit, never completed.
@@ -122,8 +133,17 @@ export class DefaultAgentLoop implements AgentLoop {
       if (isAborted(this.signal)) return "cancelled";
       const step = await this.runStep(seams);
       if (step.kind === "continue") continue;
+      if (step.kind === "final" && extensions < MAX_STEER_EXTENSIONS && this.pendingSteering() > 0) {
+        extensions += 1;
+        continue;
+      }
       return step.kind === "cancelled" ? "cancelled" : step.outcome;
     }
+  }
+
+  /** Steering messages still waiting (the close guard of W515 §1). */
+  private pendingSteering(): number {
+    return this.injections?.pending?.() ?? 0;
   }
 
   /**

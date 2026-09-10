@@ -30,7 +30,8 @@ import type {
 } from "@celestea/core";
 import type { WorkerRegistry } from "@celestea/workers";
 import { RuntimeReleasedError, TurnBusyError } from "./errors.js";
-import type { InjectedMessage, SessionInbox } from "./inbox.js";
+import type { InjectionLane } from "@celestea/core";
+import type { InboxPushOptions, InjectedMessage, SessionInbox } from "./inbox.js";
 import { bindSession, type SessionBinding } from "./session-binding.js";
 import { statuslineOf, type StatusTracker, type StatusView } from "./status.js";
 import type { FrameSink, TurnOptions, TurnRunner } from "./turn-runner.js";
@@ -184,18 +185,20 @@ export class Runtime {
   }
 
   /**
-   * Deliver a message into THIS session's RUNNING turn (next step boundary).
-   * The message is queued, never dispatched here: the turn decides when the
-   * step boundary is. `from` is the attribution label (`""` = the user).
+   * Deliver a message into THIS session's inbox on `lane` (W513/W515 §1):
+   * `next-turn` = drained at the next turn start (`placement: "queued"`),
+   * `next-step` = drained at the next step boundary of the RUNNING turn
+   * (`placement: "steering"`). The lane is the caller's decision — the host
+   * knows whether a turn is in flight, the runtime does not guess.
    */
-  inject(text: string, from = ""): InjectedMessage {
+  inject(text: string, lane: InjectionLane = "next-turn", opts: InboxPushOptions = {}): InjectedMessage {
     this.assertLive();
-    return this.p.inbox.push(text, from);
+    return this.p.inbox.push(text, lane, opts);
   }
 
-  /** Messages queued for the running/next turn (diagnostics / tests). */
-  pendingInjections(): number {
-    return this.parts?.inbox.pending() ?? 0;
+  /** Messages queued on one lane, or on both (diagnostics / tests). */
+  pendingInjections(lane?: InjectionLane): number {
+    return this.parts?.inbox.pending(lane) ?? 0;
   }
 
   // --- lifecycle ---------------------------------------------------------

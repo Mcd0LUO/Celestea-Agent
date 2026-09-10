@@ -1,19 +1,29 @@
 /**
- * SessionInbox — the per-session mid-turn injection queue (W513).
+ * SessionInbox — the per-session delivery queue with TWO LANES (W513 + W515 §1).
  *
  * One inbox per session runtime instance. It is the ONE place a message can be
- * delivered into a turn that is ALREADY RUNNING:
+ * delivered into a session, and the lane it lands in decides WHEN it is seen:
  *
- *   - `POST /api/turn` on a busy session pushes here instead of 409-ing
- *     (the host handler calls `Runtime.inject`);
- *   - a worker receipt addressed to this session lands in the session mailbox
- *     and is pumped through the same drain at the next step boundary.
+ *   - `next-turn` — drained by the turn driver at the TURN START, before the
+ *     turn's own input (a follow-up sent while the session is idle; a receipt
+ *     that arrived while nothing was running). Reported as `placement: "queued"`.
+ *   - `next-step` — drained by the loop at EVERY STEP BOUNDARY, right before the
+ *     next model call (a user interjection sent while the turn is running; a
+ *     receipt that arrives mid-turn). Reported as `placement: "steering"`.
  *
- * The turn driver drains the queue at two points: before the turn's input (turn
- * start) and before every model call (step boundary). Draining appends ordinary
- * `user_message` rows to the session log, so the injected text is real,
- * model-visible history and the turn is neither interrupted nor restarted.
+ * Invariants:
+ *   - a message with an `id` already accepted is DROPPED as a duplicate (a
+ *     receipt delivered twice is injected once);
+ *   - while `next-step` is non-empty the turn must not reach its terminal state
+ *     (enforced by the loop, see `@celestea/agent-loop`);
+ *   - both transport paths (a host API call and a session-mailbox receipt) end
+ *     in the same lanes, so the injection mechanism is literally the same one.
+ *
+ * The two hooks (`onQueued`, `onDelivered`) let the host publish the placement
+ * over SSE without the inbox knowing anything about a transport.
  */
+
+import type { DeliverySource, InjectionKind, InjectionLane, InjectionPlacement } from "@celestea/core";
 
 /** One message waiting to be appended to the session log. */
 export interface InjectedMessage {
@@ -22,32 +32,96 @@ export interface InjectedMessage {
   from: string;
   /** Arrival time (diagnostics / tests). */
   at: number;
+  /** Lane the message waits in. */
+  lane: InjectionLane;
+  kind: InjectionKind;
+  /** Idempotency key (`""` = never deduplicated). */
+  id: string;
+  /** Envelope, so a settlement notice is not mistaken for a deliberate relay. */
+  source: DeliverySource;
+  /** True when this push was dropped because the id was already accepted. */
+  duplicate: boolean;
 }
 
-/** FIFO queue of pending injections (never throws, never blocks). */
+export interface InboxHooks {
+  /** A message was accepted into a lane (placement `queued` / `steering`). */
+  onQueued?: (message: InjectedMessage, placement: InjectionPlacement) => void;
+  /** A message left a lane and is now part of the model-visible log. */
+  onDelivered?: (message: InjectedMessage) => void;
+}
+
 export interface SessionInbox {
-  /** Queue one message; returns the queued entry. */
-  push(text: string, from?: string): InjectedMessage;
-  /** Take everything queued so far, in arrival order. */
-  drain(): InjectedMessage[];
-  /** Queued-but-not-yet-injected messages. */
-  pending(): number;
+  /** Move one message into `lane`; a duplicate id is dropped (`duplicate: true`). */
+  push(text: string, lane: InjectionLane, opts?: InboxPushOptions): InjectedMessage;
+  /** Take everything waiting in one lane, in arrival order. */
+  drain(lane: InjectionLane): InjectedMessage[];
+  /** Messages waiting (one lane, or both). */
+  pending(lane?: InjectionLane): number;
 }
 
-/** Build one inbox; `now` is injectable so tests can pin arrival times. */
-export function createSessionInbox(now: () => number = Date.now): SessionInbox {
-  const queue: InjectedMessage[] = [];
+export interface InboxPushOptions {
+  from?: string;
+  id?: string;
+  kind?: InjectionKind;
+  source?: DeliverySource;
+}
+
+/** How many ids are remembered for duplicate detection (bounded memory). */
+export const DELIVERED_ID_MEMORY = 512;
+
+/** Placement a lane implies, before the drain: queued vs steering. */
+export function placementOfLane(lane: InjectionLane): InjectionPlacement {
+  return lane === "next-step" ? "steering" : "queued";
+}
+
+/** Build one inbox; `now` and the placement hooks are injectable. */
+export function createSessionInbox(now: () => number = Date.now, hooks: InboxHooks = {}): SessionInbox {
+  const lanes: Record<InjectionLane, InjectedMessage[]> = { "next-turn": [], "next-step": [] };
+  const seen: string[] = [];
+  const seenSet = new Set<string>();
+
+  const remember = (id: string): boolean => {
+    if (id === "" || !seenSet.has(id)) {
+      if (id !== "") {
+        seenSet.add(id);
+        seen.push(id);
+        if (seen.length > DELIVERED_ID_MEMORY) {
+          const oldest = seen.shift();
+          if (oldest !== undefined) seenSet.delete(oldest);
+        }
+      }
+      return false;
+    }
+    return true;
+  };
+
   return {
-    push(text: string, from = ""): InjectedMessage {
-      const message: InjectedMessage = { text, from, at: now() };
-      queue.push(message);
+    push(text: string, lane: InjectionLane, opts: InboxPushOptions = {}): InjectedMessage {
+      const id = opts.id ?? "";
+      const message: InjectedMessage = {
+        text,
+        from: opts.from ?? "",
+        at: now(),
+        lane,
+        kind: opts.kind ?? "user",
+        id,
+        source: opts.source ?? { kind: "user", form: "message" },
+        duplicate: remember(id),
+      };
+      if (!message.duplicate) {
+        lanes[lane].push(message);
+        hooks.onQueued?.(message, placementOfLane(lane));
+      }
       return message;
     },
-    drain(): InjectedMessage[] {
-      return queue.splice(0, queue.length);
+    drain(lane: InjectionLane): InjectedMessage[] {
+      const taken = lanes[lane].splice(0, lanes[lane].length);
+      for (const message of taken) hooks.onDelivered?.(message);
+      return taken;
     },
-    pending(): number {
-      return queue.length;
+    pending(lane?: InjectionLane): number {
+      if (lane !== undefined) return lanes[lane].length;
+      return lanes["next-turn"].length + lanes["next-step"].length;
     },
   };
 }

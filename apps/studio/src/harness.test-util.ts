@@ -15,7 +15,7 @@ import { createStudioApp, type StudioApp, type StudioAppOptions } from "./app.js
 import { createFakeRuntimeAdapter, type FakeRuntimeAdapter } from "./fake-runtime-adapter.js";
 import { loadStudioConfig } from "./config.js";
 import type { EngineFactory } from "./plugins.js";
-import type { RuntimeAdapter } from "./runtime-adapter.js";
+import type { InjectOutcome, RuntimeAdapter } from "./runtime-adapter.js";
 
 /**
  * A fake adapter that always reports ITS BUSY SLOT as taken: every session is
@@ -28,6 +28,7 @@ export function busyRuntime(base: FakeRuntimeAdapter = createFakeRuntimeAdapter(
     get(target, prop, receiver) {
       if (prop === "isBusy") return (): boolean => true;
       if (prop === "ensureSession") return (): { runtime: "created"; busy: boolean; rebuilt: boolean } => ({ runtime: "created", busy: true, rebuilt: false });
+      if (prop === "inject") return (): InjectOutcome => ({ turn: 0, injected: true, pending: 1, placement: "steering", duplicate: false });
       if (prop === "busySessions") return (): string[] => target.liveSessions();
       return Reflect.get(target, prop, receiver) as unknown;
     },
