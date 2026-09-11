@@ -27,6 +27,7 @@ import { registerStatic } from "./static.js";
 import type { RuntimeAdapter } from "./runtime-adapter.js";
 import { readSessionMeta } from "./store/session-meta.js";
 import { createSessionGrants } from "./runtime/session-grants.js";
+import { grantsEnv } from "./store/grants-service.js";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
 
 export interface StudioAppOptions {
@@ -62,7 +63,7 @@ function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv): EngineFac
       env,
       resultsDir: join(dirname(config.paths.workspacesFile), "worker-results"),
       // W516: every instance reads its session's grants at compose time.
-      grants: createSessionGrants({ dataDir: dirname(config.paths.workspacesFile), env }),
+      grants: createSessionGrants({ dataDir: dirname(config.paths.workspacesFile), env: grantsEnv(env, config.paths.workspacesFile) }),
       resolveSession: (id) => {
         const resolved = stores.sessions.resolve(id);
         return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;

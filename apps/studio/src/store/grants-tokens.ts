@@ -65,9 +65,10 @@ export class GrantTokenStore {
     return "ok";
   }
 
+  /** Drop only EXPIRED tokens: a burned one must stay recognizable as `used`. */
   private gc(): void {
     const deadline = Math.floor(this.now() / 1000);
-    for (const [key, value] of this.tokens) if (value.expiresAt <= deadline || value.used) this.tokens.delete(key);
+    for (const [key, value] of this.tokens) if (value.expiresAt <= deadline) this.tokens.delete(key);
   }
 }
 

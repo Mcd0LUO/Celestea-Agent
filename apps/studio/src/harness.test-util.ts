@@ -7,9 +7,10 @@
  * keeps the engine seam deterministic.
  */
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { canonicalScopeHash } from "./store/grants.js";
 import type { Hono } from "hono";
 import { createStudioApp, type StudioApp, type StudioAppOptions } from "./app.js";
 import { createFakeRuntimeAdapter, type FakeRuntimeAdapter } from "./fake-runtime-adapter.js";
@@ -98,7 +99,12 @@ export function makeHarness(opts: HarnessOptions = {}): StudioHarness {
     paths: { staticRoot, ...(opts.config?.paths ?? {}) },
   });
   const runtime = opts.runtime ?? createFakeRuntimeAdapter({ profile: { model: "test-model" } });
-  const studio = createStudioApp({ config, runtime: opts.engineFactory ?? runtime, now: () => FIXED_NOW });
+  const studio = createStudioApp({
+    config,
+    runtime: opts.engineFactory ?? runtime,
+    now: () => FIXED_NOW,
+    ...(opts.env === undefined ? {} : { env: opts.env }),
+  });
   return {
     app: studio.app,
     studio,
@@ -113,6 +119,44 @@ export function makeHarness(opts: HarnessOptions = {}): StudioHarness {
 export function jsonRequest(method: string, body?: unknown): RequestInit {
   if (body === undefined) return { method };
   return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+}
+
+/**
+ * W516 grant helpers: a grant needs a one-shot token from the same-origin
+ * token endpoint, so every test drives the same two-step handshake the UI does.
+ */
+export async function grantToken(h: StudioHarness, id: string, cap: string, scope: Record<string, unknown>): Promise<string> {
+  const hash = canonicalScopeHash(cap, scope as never);
+  const res = await getJson(h.app, `/api/sessions/${id}/grants/confirm-token?cap=${cap}&scope_hash=${hash}`, {
+    headers: { "sec-fetch-site": "same-origin" },
+  });
+  // An unsupported cap has no token to issue; the POST's own 400 still wins
+  // because the body is validated before the token is looked at.
+  return res.status === 200 ? String(res.body["token"]) : "";
+}
+
+/** POST a grant (token minted automatically unless one is passed / `null`). */
+export async function grant(
+  h: StudioHarness,
+  id: string,
+  body: Record<string, unknown>,
+  token?: string | null,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const scope = (body["scope"] ?? {}) as Record<string, unknown>;
+  const used = token === null ? null : (token ?? (await grantToken(h, id, String(body["cap"]), scope)));
+  if (used !== null) headers["x-celestea-grant-confirm"] = used;
+  return getJson(h.app, `/api/sessions/${id}/grants`, { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+/** The local (authoritative) grants audit channel of a harness data dir. */
+export function auditLines(h: StudioHarness): Array<Record<string, unknown>> {
+  const path = join(h.root, "grants-audit.jsonl");
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 export async function getJson(app: Hono, path: string, init?: RequestInit): Promise<{ status: number; body: Record<string, unknown> }> {

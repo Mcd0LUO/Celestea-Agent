@@ -59,15 +59,19 @@ function registerCreate(app: Hono, deps: Deps, table: RouteTable): string {
     const services = deps.grants;
     const limit = services.limits.allow(sessionId);
     if (!limit.ok) return failJson(c, limit.status, limitMessage(limit), { retry_after: limit.retryAfterSec });
+    const refusal: Refusal = { deps, sessionId, reason: "" };
     const read = await readJsonBody(c);
-    if (!read.ok) return denied(c, deps, sessionId, read.response);
+    if (!read.ok) return denied({ ...refusal, reason: "readable JSON body required" }, read.response);
     const request = parseGrantRequest(c, read.body, services.env);
-    if (!request.ok) return denied(c, deps, sessionId, request.response);
+    if (!request.ok) return denied({ ...refusal, reason: request.reason }, request.response);
+    refusal.cap = request.value.cap;
     const token = c.req.header(CONFIRM_HEADER) ?? "";
-    if (token === "") return denied(c, deps, sessionId, failJson(c, 403, CONFIRM_REQUIRED));
+    if (token === "") return denied({ ...refusal, reason: CONFIRM_REQUIRED }, failJson(c, 403, CONFIRM_REQUIRED));
     const verdict = services.tokens.consume(sessionId, request.value.cap, request.value.scopeHash, token);
-    if (verdict === "invalid") return denied(c, deps, sessionId, failJson(c, 403, CONFIRM_REQUIRED));
-    if (verdict === "used") return denied(c, deps, sessionId, failJson(c, 409, "confirmation token already used"));
+    if (verdict === "invalid") return denied({ ...refusal, reason: CONFIRM_REQUIRED }, failJson(c, 403, CONFIRM_REQUIRED));
+    if (verdict === "used") {
+      return denied({ ...refusal, reason: "confirmation token already used" }, failJson(c, 409, "confirmation token already used"));
+    }
     return persistGrant(c, deps, resolved.value.dir, sessionId, request.value);
   });
   return route.id;
@@ -215,10 +219,28 @@ function hasSameOriginEvidence(c: Context): boolean {
   }
 }
 
-/** A refused grant counts toward the 3-strikes cooldown (§5.5.5). */
-function denied(c: Context, deps: Deps, sessionId: string, response: Response): Response {
-  deps.grants.limits.recordDenial(sessionId);
+/**
+ * A refused grant counts toward the 3-strikes cooldown (§5.5.5) and is audited
+ * (§4.4). The audited reason is the SAME sanitized text the client got: a
+ * rejected value never reaches the audit file either (§5.4).
+ */
+function denied(ctx: Refusal, response: Response): Response {
+  ctx.deps.grants.limits.recordDenial(ctx.sessionId);
+  ctx.deps.grants.audit.write({
+    session: ctx.sessionId,
+    event: "deny",
+    ...(ctx.cap === undefined ? {} : { cap: ctx.cap }),
+    reason: ctx.reason,
+  });
   return response;
+}
+
+/** Everything a refusal needs to be audited (kept out of the param budget). */
+interface Refusal {
+  deps: Deps;
+  sessionId: string;
+  reason: string;
+  cap?: string;
 }
 
 export function registerGrants(app: Hono, deps: Deps, table: RouteTable): string[] {

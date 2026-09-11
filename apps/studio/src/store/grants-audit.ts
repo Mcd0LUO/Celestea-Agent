@@ -21,7 +21,7 @@ export const GRANTS_AUDIT_FILE = "grants-audit.jsonl";
 export const AUDIT_MAX_BYTES = 16 * 1024 * 1024;
 export const ENV_AUDIT_URL = "CELESTEA_AUDIT_URL";
 export const ENV_CENTER_TOKEN = "CELESTEA_CENTER_TOKEN";
-/** server-center contract port (LTS ops: 127.0.0.1:8390). */
+/** server-center contract port (LTS ops: 127.0.0.1:8390), for reference only. */
 export const DEFAULT_AUDIT_URL = "http://127.0.0.1:8390/api/audit";
 
 export type GrantsAuditEventName =
@@ -105,8 +105,15 @@ export class GrantsAuditWriter {
     return (event) => this.write(event);
   }
 
+  /**
+   * The platform channel is CONFIGURED by `CELESTEA_AUDIT_URL`: unset means the
+   * deployment runs the local channel only (LTS "审计双通道" allows that), so
+   * nothing is attempted and nothing is reported missing. Once a URL IS set,
+   * every failed delivery is recorded locally — never swallowed.
+   */
   private async deliver(line: GrantsAuditEvent): Promise<void> {
-    const url = this.env[ENV_AUDIT_URL] ?? DEFAULT_AUDIT_URL;
+    const url = this.env[ENV_AUDIT_URL];
+    if (url === undefined || url.trim() === "") return;
     const token = this.env[ENV_CENTER_TOKEN];
     const body = JSON.stringify({
       category: "audit",

@@ -128,6 +128,7 @@ export function composeStudio(input: ComposeInput): StudioServices {
   mountPlugins(ctx, hostPlugins(runtime, bus));
   const grants = createGrantsServices({
     dataDir: dirname(input.config.paths.workspacesFile),
+    workspacesFile: input.config.paths.workspacesFile,
     ...(input.env === undefined ? {} : { env: input.env }),
     ...(input.now === undefined ? {} : { now: input.now }),
   });
