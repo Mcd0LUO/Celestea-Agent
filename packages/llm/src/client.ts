@@ -21,7 +21,7 @@
 
 import type http from "node:http";
 
-import { LlmError } from "./errors.js";
+import { statusError } from "./errors.js";
 import {
   resolveClientConfig,
   validateModel,
@@ -172,5 +172,5 @@ async function assertSuccess(response: http.IncomingMessage): Promise<void> {
   const text = await readBodySnippet(response);
   response.destroy();
   const label = httpStatusLabel(status, response.statusMessage);
-  throw new LlmError(`stream request failed: ${label}: ${redact(text)}`, "generate");
+  throw statusError(status, label, redact(text));
 }

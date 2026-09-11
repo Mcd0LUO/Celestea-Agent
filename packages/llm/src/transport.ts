@@ -15,7 +15,7 @@
 import http from "node:http";
 import https from "node:https";
 
-import { connectTimeoutError, LlmError, responseHeaderTimeoutError } from "./errors.js";
+import { connectTimeoutError, networkError, responseHeaderTimeoutError } from "./errors.js";
 
 /** Max bytes of a non-2xx body echoed in the error message. */
 export const ERROR_BODY_SNIPPET_BYTES = 2048;
@@ -110,7 +110,7 @@ export async function sendChatRequest(options: SendOptions): Promise<http.Incomi
     );
     guard.attach(request);
     request.on("error", (err: Error) => {
-      guard.settle(() => reject(new LlmError(`failed to start stream: ${err.message}`, "generate")));
+      guard.settle(() => reject(networkError(`failed to start stream: ${err.message}`)));
     });
     guard.armConnect(options.connectMs, options.url);
     guard.armResponse(options.responseMs, options.url);

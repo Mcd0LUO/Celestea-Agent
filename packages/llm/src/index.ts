@@ -50,14 +50,20 @@ export {
   zeroUsage,
 } from "./usage.js";
 
-// Errors: the machine-readable timeout/timeout-stage contract.
-export type { LlmErrorKind, TimeoutStage } from "./errors.js";
+// Errors: the machine-readable timeout/timeout-stage + status/retryability
+// contract (iteration E §4 P0 adds httpStatus/retryable; nothing is renamed).
+export type { LlmErrorKind, LlmErrorOptions, TimeoutStage } from "./errors.js";
 export {
+  cancelledError,
   connectTimeoutError,
   errorKind,
+  isRetryableStatus,
   isTimeoutError,
   LlmError,
+  networkError,
   responseHeaderTimeoutError,
+  RETRYABLE_HTTP_STATUSES,
+  statusError,
   streamIdleTimeoutMessage,
   TIMEOUT_ERROR_PREFIX,
   timeoutError,
