@@ -1,0 +1,273 @@
+{
+  "$comment": "冻结向量：前端 security/scope-hash.ts 与服务端 apps/studio/src/store/grants.ts 必须对本文件的每一条逐字给出同一个 canonical_json 与 sha256。任一端偏离即门禁失败（前端 frontend/tools/check-scope-hash.mjs / 服务端 tests/scope-hash-vectors.test.ts）。",
+  "schema": 1,
+  "kind": "scope-hash-frozen-vectors",
+  "contract": "提权范围的规范序列化 + SHA-256（= 线上 scope_hash，设计 §6.4 / W516；前端 security/scope-hash.ts）",
+  "source_of_truth": "apps/studio/src/store/grants.ts 的 canonicalScopeJson / canonicalScopeHash（本文件的 canonical_json / sha256 由该实现产出）",
+  "must_match_verbatim": "两侧必须逐字一致：前端把摘要放进一次性令牌，服务端拿到提交体后按自己的公式重算再比对；任何一个字节不同 ⇒ 每次授予都被判 403（历史事故 commit 692f19c 就是这个原因）。",
+  "shape": "{\"cap\":\"<cap>\",\"scope\":{\"<roots|hosts|tools>\":[\"…\"]}}；布尔类 cap（network/unsandboxed）恒为 {\"cap\":\"<cap>\",\"scope\":{}}。",
+  "pipeline": {
+    "frontend": "canonicalScopeJson(cap, scope) → sha256(utf8(json))，见 frontend/src/security/scope-hash.ts（scopeHashOf 优先 WebCrypto，非安全上下文回落自带实现 sha256Hex）",
+    "server": "validateScope(cap, scope, knownSecrets) → canonicalScopeHash(cap, validatedScope)"
+  },
+  "shared_domain": [
+    "向量的 scope 取『两侧都能接受』的交集；服务端 validateScope 会拒绝的输入不进本文件（如空数组、>32 项、含首尾空白或换行的值——looksLikeCredential 把首尾空白直接判为凭据形状、非本 cap 的键、非字符串项）",
+    "规范化的等价性：前端 normList 与服务端 validateScope 都做去重（首现序无关，因为随后都排序）；值一律按 JS 默认 sort（UTF-16 码元序，字典序，不是数值序）排序",
+    "cap 白名单：read_roots/write_roots→roots、net_hosts→hosts、tool_extra→tools、network/unsandboxed→无范围（scope 里出现任何键都被丢成 {}）"
+  ],
+  "guards": {
+    "frontend": "frontend/tools/check-scope-hash.mjs（已接进 frontend package.json 的 check/check:scope-hash）",
+    "server": "/src/celestea_studio-ts/tests/scope-hash-vectors.test.ts（vitest，含直接导入前端纯函数逐字对拍）",
+    "vectors": "本文件（单一真源）"
+  },
+  "regenerate": "改了两侧任意一处的形状/算法后，必须同时更新本文件：用服务端 pipeline 重算 canonical_json/sha256（临时脚本 import apps/studio/src/store/grants.ts + frontend/src/security/scope-hash.ts，断言两者一致后再落盘）；只改一侧会立即被两侧门禁拦住。",
+  "vectors": [
+    {
+      "name": "read_roots-single",
+      "why": "单目录：最基本的授予形状",
+      "cap": "read_roots",
+      "scope": {
+        "roots": [
+          "/srv/data"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"read_roots\",\"scope\":{\"roots\":[\"/srv/data\"]}}",
+      "sha256": "61f9ab6ed6d996c998a695d5a307a6388ad3ef94bf5ea9524cbc8bc8b247873d"
+    },
+    {
+      "name": "read_roots-normalize",
+      "why": "去重 + 排序（首现序无关）",
+      "cap": "read_roots",
+      "scope": {
+        "roots": [
+          "/srv/b",
+          "/srv/a",
+          "/srv/a"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"read_roots\",\"scope\":{\"roots\":[\"/srv/a\",\"/srv/b\"]}}",
+      "sha256": "ddd19aba92b7f8ff34fc52187b14a2ce63636bd13214840f5d032e1ddfdfb876"
+    },
+    {
+      "name": "read_roots-lexicographic-sort",
+      "why": "JS 默认 sort 是字典序：/p1 < /p10 < /p2",
+      "cap": "read_roots",
+      "scope": {
+        "roots": [
+          "/p10",
+          "/p2",
+          "/p1"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"read_roots\",\"scope\":{\"roots\":[\"/p1\",\"/p10\",\"/p2\"]}}",
+      "sha256": "70ea4de26410cb393304f973bc3889c9b62def9fec512ae267566035d2d60b3b"
+    },
+    {
+      "name": "read_roots-unicode-and-space",
+      "why": "非 ASCII 与内嵌空格按 UTF-16 码元排序",
+      "cap": "read_roots",
+      "scope": {
+        "roots": [
+          "/srv/数据 目录",
+          "/srv/aber"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"read_roots\",\"scope\":{\"roots\":[\"/srv/aber\",\"/srv/数据 目录\"]}}",
+      "sha256": "3c0be2e08adaf88350024514e69540fba5201287e34149ad3e2707521444ae83"
+    },
+    {
+      "name": "read_roots-max-32-entries",
+      "why": "MAX_SCOPE_ENTRIES=32 上边界（倒序输入）",
+      "cap": "read_roots",
+      "scope": {
+        "roots": [
+          "/srv/p32",
+          "/srv/p31",
+          "/srv/p30",
+          "/srv/p29",
+          "/srv/p28",
+          "/srv/p27",
+          "/srv/p26",
+          "/srv/p25",
+          "/srv/p24",
+          "/srv/p23",
+          "/srv/p22",
+          "/srv/p21",
+          "/srv/p20",
+          "/srv/p19",
+          "/srv/p18",
+          "/srv/p17",
+          "/srv/p16",
+          "/srv/p15",
+          "/srv/p14",
+          "/srv/p13",
+          "/srv/p12",
+          "/srv/p11",
+          "/srv/p10",
+          "/srv/p09",
+          "/srv/p08",
+          "/srv/p07",
+          "/srv/p06",
+          "/srv/p05",
+          "/srv/p04",
+          "/srv/p03",
+          "/srv/p02",
+          "/srv/p01"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"read_roots\",\"scope\":{\"roots\":[\"/srv/p01\",\"/srv/p02\",\"/srv/p03\",\"/srv/p04\",\"/srv/p05\",\"/srv/p06\",\"/srv/p07\",\"/srv/p08\",\"/srv/p09\",\"/srv/p10\",\"/srv/p11\",\"/srv/p12\",\"/srv/p13\",\"/srv/p14\",\"/srv/p15\",\"/srv/p16\",\"/srv/p17\",\"/srv/p18\",\"/srv/p19\",\"/srv/p20\",\"/srv/p21\",\"/srv/p22\",\"/srv/p23\",\"/srv/p24\",\"/srv/p25\",\"/srv/p26\",\"/srv/p27\",\"/srv/p28\",\"/srv/p29\",\"/srv/p30\",\"/srv/p31\",\"/srv/p32\"]}}",
+      "sha256": "d2fc3f17fb04097be500271a2806f0bf49d3d6cda9fdeac35ad02a693ed70611"
+    },
+    {
+      "name": "write_roots-multi-normalize",
+      "why": "多目录 + 重复项去重",
+      "cap": "write_roots",
+      "scope": {
+        "roots": [
+          "/var/log",
+          "/var/log",
+          "/tmp",
+          "/etc"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"write_roots\",\"scope\":{\"roots\":[\"/etc\",\"/tmp\",\"/var/log\"]}}",
+      "sha256": "9ffce184793f9cc38f7718372180272240ad001f5e2c9b489813156b7ac9c496"
+    },
+    {
+      "name": "write_roots-deep",
+      "why": "深路径逐字保留",
+      "cap": "write_roots",
+      "scope": {
+        "roots": [
+          "/srv/app/config"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"write_roots\",\"scope\":{\"roots\":[\"/srv/app/config\"]}}",
+      "sha256": "54e43f84a191b4ec7e76708ec6f722dca8a653e07042daa4d8cee681daad3a62"
+    },
+    {
+      "name": "net_hosts-single",
+      "why": "单站点",
+      "cap": "net_hosts",
+      "scope": {
+        "hosts": [
+          "example.com"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"net_hosts\",\"scope\":{\"hosts\":[\"example.com\"]}}",
+      "sha256": "ae80bd277d0ae244ee4ac80b770f64df5c23fd87b33ded3344e457cd80710025"
+    },
+    {
+      "name": "net_hosts-mixed-case-port",
+      "why": "大小写与端口逐字保留（大写先于小写）",
+      "cap": "net_hosts",
+      "scope": {
+        "hosts": [
+          "api.example.com:443",
+          "API.example.com",
+          "localhost:8080",
+          "10.0.0.5"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"net_hosts\",\"scope\":{\"hosts\":[\"10.0.0.5\",\"API.example.com\",\"api.example.com:443\",\"localhost:8080\"]}}",
+      "sha256": "8af30986ffefc490dc05ff9c459ab06dda8cdecd4d775b694a14a4df37aa5892"
+    },
+    {
+      "name": "net_hosts-normalize",
+      "why": "站点列表去重",
+      "cap": "net_hosts",
+      "scope": {
+        "hosts": [
+          "b.example.com",
+          "a.example.com",
+          "a.example.com"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"net_hosts\",\"scope\":{\"hosts\":[\"a.example.com\",\"b.example.com\"]}}",
+      "sha256": "80716d8bfe1026c82a1ea1972784b5e0247980d8d323cc668847f702a935af86"
+    },
+    {
+      "name": "tool_extra-single",
+      "why": "单工具",
+      "cap": "tool_extra",
+      "scope": {
+        "tools": [
+          "Bash"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"tool_extra\",\"scope\":{\"tools\":[\"Bash\"]}}",
+      "sha256": "7604f8e69fbd0c16c8a45414d469f37b380c9f9d75f9ff0e5e17ec53f833c5c2"
+    },
+    {
+      "name": "tool_extra-normalize",
+      "why": "工具名去重 + 排序",
+      "cap": "tool_extra",
+      "scope": {
+        "tools": [
+          "Read",
+          "Bash",
+          "Read",
+          "write"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"tool_extra\",\"scope\":{\"tools\":[\"Bash\",\"Read\",\"write\"]}}",
+      "sha256": "e84c5ca42efc23fa9dc9b6b6a8f55f0a31e1f157a6c5f53af2b2f45d16fd1e74"
+    },
+    {
+      "name": "tool_extra-namespaced",
+      "why": "命名空间工具名逐字保留",
+      "cap": "tool_extra",
+      "scope": {
+        "tools": [
+          "mcp__server.tool:v1",
+          "fs.read_file"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"tool_extra\",\"scope\":{\"tools\":[\"fs.read_file\",\"mcp__server.tool:v1\"]}}",
+      "sha256": "8b85802ec676aaad53bd6c68821e509fbdd118de97c63b5c09e019ebac36a66b"
+    },
+    {
+      "name": "network-bool-empty",
+      "why": "布尔类 cap：scope 必为空对象",
+      "cap": "network",
+      "scope": {},
+      "canonical_json": "{\"cap\":\"network\",\"scope\":{}}",
+      "sha256": "8993f5882b79ca21aecdd81928ee47aec19e1501c1326154d72f19a2af8c672b"
+    },
+    {
+      "name": "unsandboxed-bool-empty",
+      "why": "布尔类 cap：scope 必为空对象",
+      "cap": "unsandboxed",
+      "scope": {},
+      "canonical_json": "{\"cap\":\"unsandboxed\",\"scope\":{}}",
+      "sha256": "2767086b3cd03168816cf5effbb1fe4598301c0607767b951871bbf2432b3376"
+    },
+    {
+      "name": "network-bool-stray-scope-keys",
+      "why": "布尔类 cap 收到无关 scope 键 ⇒ 两侧都丢成 {}",
+      "cap": "network",
+      "scope": {
+        "roots": [
+          "/ignored"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"network\",\"scope\":{}}",
+      "sha256": "8993f5882b79ca21aecdd81928ee47aec19e1501c1326154d72f19a2af8c672b"
+    },
+    {
+      "name": "read_roots-stray-extra-key",
+      "why": "非本 cap 的 scope 键被白名单丢弃（两侧一致）",
+      "cap": "read_roots",
+      "scope": {
+        "roots": [
+          "/a"
+        ],
+        "hosts": [
+          "evil.example.com"
+        ]
+      },
+      "canonical_json": "{\"cap\":\"read_roots\",\"scope\":{\"roots\":[\"/a\"]}}",
+      "sha256": "881fcf621667c541723bc833b34cc96efa6961e566f2c4488eccce62e687487a"
+    }
+  ]
+}
