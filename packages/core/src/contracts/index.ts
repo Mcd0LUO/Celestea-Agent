@@ -161,6 +161,12 @@ export interface DataFilesIndex {
   files: DataFileEntry[];
   durability: Record<string, string>;
   roundTripRequirement: string;
+  /**
+   * Per-capability implementation notes (iteration E): which part of a design
+   * section is implemented and which is explicitly deferred. Optional, because
+   * a capability that added no data file has nothing to report here.
+   */
+  recovery?: { implemented: string; notImplemented: string };
 }
 
 export function loadDataFilesIndex(): DataFilesIndex {

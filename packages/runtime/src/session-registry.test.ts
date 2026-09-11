@@ -6,13 +6,30 @@
  * and reclaimed when idle — with explicit capacity instead of silent queueing.
  */
 
+import type { SessionEvent, SessionLog } from "@celestea/core";
+import { maxTurnNumber } from "@celestea/session";
 import { describe, expect, it } from "vitest";
 import { SessionCapacityError, SessionRuntimeRegistry, TurnCapacityError, keyOfSession, type SessionRuntime } from "./session-registry.js";
 import type { Runtime } from "./runtime.js";
 
-/** A stub instance: the registry only ever calls the injected `dispose`. */
-function stubRuntime(tag: string): Runtime {
-  return { tag, shutdown: () => Promise.resolve(), release: () => undefined } as unknown as Runtime;
+/**
+ * A stub instance: the registry only ever calls the injected `dispose` and reads
+ * the session log (turn-counter restoration, E §1.3 P0 ④), so the stub carries a
+ * read-only event list — empty means "a brand new session", exactly like the
+ * in-memory log of a detached generation.
+ */
+function stubRuntime(tag: string, events: readonly SessionEvent[] = []): Runtime {
+  const session = { events: (): SessionEvent[] => [...events] } as unknown as SessionLog;
+  return { tag, session, shutdown: () => Promise.resolve(), release: () => undefined } as unknown as Runtime;
+}
+
+/** One complete turn in the engine's shape (turn counter restoration fixture). */
+function turn(n: number): SessionEvent[] {
+  return [
+    { type: "turn_start", id: `turn-${n}` },
+    { type: "user_message", text: `问 ${n}` },
+    { type: "turn_end", id: `turn-${n}`, outcome: "completed" },
+  ];
 }
 
 function clock(start = 1_000): { now: () => number; advance: (ms: number) => void } {
@@ -202,5 +219,43 @@ describe("SessionRuntimeRegistry", () => {
     await registry.shutdown();
     expect(disposed.sort()).toEqual(["ws/a", "ws/b"]);
     expect(registry.size).toBe(0);
+  });
+});
+
+/**
+ * E §1.3 P0 ④: the session-local turn number is DERIVED from the log
+ * (`maxTurnNumber(events) + 1`), never from a memory counter — so a restart, a
+ * rebuild or a re-composition can neither restart it at 0 nor reuse an id.
+ */
+describe("turnNo restoration (E-P0③ A5)", () => {
+  it("A5: a new registry restores turnNo from the log instead of starting at 0", () => {
+    const events = [...turn(0), ...turn(1), ...turn(2), ...turn(3)];
+    const registry = new SessionRuntimeRegistry({ build: () => stubRuntime("ws/a", events), dispose: () => undefined });
+
+    const entry = registry.ensure("ws/a", "/tmp/a");
+    expect(entry.turnNo).toBe(maxTurnNumber(events) + 1);
+    expect(entry.turnNo).toBe(4);
+    expect(entry.turnNo).not.toBe(0);
+    // …and it keeps counting from there, in step with the log's own ids.
+    expect(registry.beginTurn(entry, controller())).toBe(5);
+
+    // A session with no events keeps the historical behaviour (0).
+    const fresh = new SessionRuntimeRegistry({ build: () => stubRuntime("ws/b"), dispose: () => undefined });
+    expect(fresh.ensure("ws/b", "/tmp/b").turnNo).toBe(0);
+  });
+
+  it("A5: a rebuild re-derives turnNo from the replayed log (never from memory)", () => {
+    let epoch = 1;
+    const events = [...turn(0), ...turn(1)];
+    const registry = new SessionRuntimeRegistry({
+      build: () => stubRuntime("ws/a", events),
+      dispose: () => undefined,
+      currentEpoch: () => epoch,
+    });
+    const entry = registry.ensure("ws/a", "/tmp/a");
+    expect(entry.turnNo).toBe(2);
+    epoch = 2;
+    registry.invalidateAll();
+    expect(registry.peek("ws/a")?.turnNo).toBe(2);
   });
 });

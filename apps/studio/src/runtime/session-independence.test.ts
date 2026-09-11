@@ -109,10 +109,13 @@ describe("session independence", () => {
     expect(activated.status).toBe(200);
     expect(activated.body).toMatchObject({ ok: true, active_session: "sample-ws/s2", runtime: "created", busy: false });
 
-    // (3) the second session runs its own turn, numbered from 1, while s1 streams.
+    // (3) the second session runs its own turn while s1 streams. `s2` is planted
+    // with ONE completed turn, so its counter CONTINUES from the log (E §1.3 P0 ④,
+    // W730): the new turn is the session's 2nd — independent numbering, never a
+    // restart at 1 that would collide with the ids already on disk.
     const second = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "B 的任务", session: "sample-ws/s2" }));
     expect(second.status).toBe(202);
-    expect(second.body).toEqual({ turn: 1, status: "started", placement: "context" });
+    expect(second.body).toEqual({ turn: 2, status: "started", placement: "context" });
     await waitIdle(h);
 
     expect(userTexts(eventsOf(h, "s2")).slice(-1)).toEqual(["B 的任务"]);

@@ -11,12 +11,24 @@
  * When nothing is active (or the id is unknown) the generation runs on an
  * in-memory log: `/api/turn` still works, and the adapter never invents a
  * directory on behalf of the operator.
+ *
+ * E §1.3 P0 ②: a persistent log is wrapped in a checkpoint decorator, so every
+ * `turn_start`/`turn_end` it records also updates `<dir>/checkpoint.json`. An
+ * in-memory (detached) session has no directory and therefore no sidecar.
  */
 
 import { InMemorySessionLog } from "@celestea/session";
 import { PersistentSessionLog } from "@celestea/session";
+import {
+  checkpointedLog,
+  CheckpointStore,
+  currentProcessIdentity,
+  writeErrorCountOf,
+  type CheckpointIdentity,
+} from "@celestea/session";
 import type { SessionLog } from "@celestea/core";
 import { createSessionBinding, type SessionBinding } from "@celestea/runtime";
+import { sessionIdOfDir } from "./engine-grants.js";
 
 /** The engine's per-session log file name. */
 export const SESSION_LOG_NAME = "cli-main.jsonl";
@@ -29,9 +41,39 @@ export interface SessionTarget {
   dir: string | null;
 }
 
-/** Open (replaying) the append-only log of a session directory. */
-export function openSessionLog(dir: string): SessionLog {
-  return PersistentSessionLog.open(dir, SESSION_LOG_ID);
+/**
+ * Checkpoint wiring of one host process. `identity` is the `pid`/`boot_id` pair
+ * written into every sidecar (E §1.2.2); tests inject a fixed one so the written
+ * file is deterministic.
+ */
+export interface CheckpointWiring {
+  identity?: CheckpointIdentity;
+  now?: () => number;
+  warn?: (message: string) => void;
+}
+
+/** `boot_id` is generated ONCE per process and never again while it lives. */
+export const PROCESS_CHECKPOINT_IDENTITY: CheckpointIdentity = currentProcessIdentity();
+
+/**
+ * Open (replaying) the append-only log of a session directory, wrapped so the
+ * turn boundaries also land in `<dir>/checkpoint.json` (E §1.3 P0 ②). The
+ * wrapper is transparent: `path`, `close()` and `writeErrorCount()` still work
+ * for the host and for the registry's turn-counter restoration.
+ */
+export function openSessionLog(dir: string, wiring: CheckpointWiring = {}): SessionLog {
+  const log = PersistentSessionLog.open(dir, SESSION_LOG_ID);
+  const store = new CheckpointStore({
+    dir,
+    // Self-description `<workspace>/<session>` — the id grants.json also uses, so
+    // a sidecar found in a renamed directory is ignored instead of trusted.
+    session: sessionIdOfDir(dir),
+    identity: wiring.identity ?? PROCESS_CHECKPOINT_IDENTITY,
+    ...(wiring.now === undefined ? {} : { now: wiring.now }),
+    ...(wiring.warn === undefined ? {} : { warn: wiring.warn }),
+    logWriteErrors: () => writeErrorCountOf(log),
+  });
+  return checkpointedLog(log, store);
 }
 
 /** One in-memory log per detached session id, reused across rebinds. */
@@ -47,10 +89,11 @@ export function bindingFor(
   sessionId: string | null,
   target: SessionTarget | null,
   logs: Map<string, SessionLog>,
+  wiring: CheckpointWiring = {},
 ): SessionBinding {
   if (sessionId === null || target === null || target.dir === null) return memoryBindingFor(logs, sessionId);
   const dir = target.dir;
-  return createSessionBinding({ sessionId, dir, open: (): SessionLog => openSessionLog(dir) });
+  return createSessionBinding({ sessionId, dir, open: (): SessionLog => openSessionLog(dir, wiring) });
 }
 
 /**

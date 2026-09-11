@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "checkpoint.json (per-session crash / shutdown sidecar)",
+  "source": {
+    "design": "/src/celestea_studio-ts/docs/iteration-e-capabilities.md §1.2.2/§1.2.3 (E-P0③)",
+    "code": "packages/session/src/checkpoint.ts, packages/session/src/checkpoint-recovery.ts, packages/runtime/src/recovery.ts"
+  },
+  "path": {
+    "default": "<session dir>/checkpoint.json (<session dir> = <workspace>/<session>)",
+    "mode": "0600",
+    "write": "<path>.tmp-<pid> -> rename (atomic), pretty-printed JSON, trailing newline",
+    "writeTimings": "turn_start (one row appended), turn_end (one row appended), clean shutdown; P1 adds the two inbox lanes"
+  },
+  "purpose": {
+    "kept": "the two facts the log cannot express: WHO was running (pid/boot_id/clean_shutdown) and WHICH turn was open (open_turn)",
+    "notKept": "everything derivable from cli-main.jsonl (turn counter, history, last outcome) — the log stays the single source of truth (K4)",
+    "neverWritten": "the sidecar never rewrites a log row; the only repair is ONE appended turn_end{outcome:\"interrupted\"}, recorded in repaired[]"
+  },
+  "failureSemantics": {
+    "missing": "no checkpoint: recovery does not touch the log at all (a dangling turn_start may belong to another live process)",
+    "unparsable": "the WHOLE file is ignored + observed on stderr; behaviour is exactly 'missing' (never read as a clean exit)",
+    "unknownVersion": "ignored + observed (same as unparsable)",
+    "sessionMismatch": "ignored + observed: the sidecar was copied/renamed and cannot describe this directory",
+    "writeFailure": "reported on stderr and swallowed: checkpointing is observation and can never fail a turn"
+  },
+  "open_turn": {
+    "meaning": "the turn THIS process started and has not closed yet (null = no turn is open)",
+    "repairCondition": "open_turn.id has a turn_start row in cli-main.jsonl AND no turn_end row for that id (double signature)",
+    "idempotency": "the second boot sees the appended turn_end and only clears open_turn: the log is byte-identical (assertion A2)"
+  },
+  "clean_shutdown": {
+    "true": "the process left through Runtime.shutdown(); the next boot repairs NOTHING, whatever the log looks like",
+    "false": "written by every activity (turn_start, turn_end); a crash therefore leaves the last value false"
+  },
+  "schema": {
+    "type": "object",
+    "required": ["version", "session", "pid", "boot_id", "updated_at", "clean_shutdown", "open_turn", "last_outcome", "degraded", "lanes", "repaired"],
+    "properties": {
+      "version": { "const": 1, "description": "sidecar schema version (NOT a data-file format version; any other value voids the file)" },
+      "session": { "type": "string", "description": "\"<workspace>/<session>\" self-description; a mismatch voids the file" },
+      "pid": { "type": "integer", "description": "process that wrote the file" },
+      "boot_id": { "type": "string", "pattern": "^b-[0-9a-f]{8}$", "description": "one id per process start (process-wide constant)" },
+      "updated_at": { "type": "integer", "description": "unix seconds of the last write" },
+      "clean_shutdown": { "type": "boolean" },
+      "open_turn": {
+        "type": ["object", "null"],
+        "required": ["id", "started_at"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^turn-\\d+$" },
+          "started_at": { "type": "integer", "description": "unix seconds" }
+        },
+        "additionalProperties": false
+      },
+      "last_outcome": { "enum": ["completed", "cancelled", "error", "step_limit", "interrupted", null], "description": "redundant with the log (operator convenience); the log wins on any conflict" },
+      "degraded": {
+        "type": "object",
+        "required": ["log_write_errors"],
+        "properties": { "log_write_errors": { "type": "integer", "minimum": 0, "description": "PersistentSessionLog.writeErrorCount() sampled at every write; non-zero means disk and memory diverged" } },
+        "additionalProperties": false
+      },
+      "lanes": {
+        "type": "object",
+        "required": ["next_turn", "next_step"],
+        "description": "P1 (inbox persistence) — declared and always empty in P0",
+        "properties": { "next_turn": { "type": "array" }, "next_step": { "type": "array" } },
+        "additionalProperties": false
+      },
+      "repaired": {
+        "type": "array",
+        "description": "every log row THIS engine appended for recovery; empty on a healthy session (assertion A2: length stays 1 after a second boot)",
+        "items": {
+          "type": "object",
+          "required": ["at", "action", "turn_id"],
+          "properties": {
+            "at": { "type": "integer" },
+            "action": { "const": "synthesize_turn_end" },
+            "turn_id": { "type": "string", "pattern": "^turn-\\d+$" }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "generatedAt": "2026-09-11T00:00:00Z"
+}

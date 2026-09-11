@@ -12,6 +12,9 @@
  *                       no-op, and a concurrent caller awaits the same promise;
  *   - **release**       explicit strong-reference drop for hot swaps (W248).
  *
+ * `shutdown` also marks the session's checkpoint sidecar as cleanly closed
+ * (E §1.3 P0 ⑤), so the next boot can tell a graceful exit from a crash.
+ *
  * [release] nulls every handle, which — together with the WeakRef the worker
  * tools hold on the registry — breaks the
  * `Runtime -> ctx -> ToolRegistry -> worker tool -> registry` cycle, so a
@@ -30,6 +33,7 @@ import type {
   TurnOutcome,
 } from "@celestea/core";
 import type { WorkerRegistry } from "@celestea/workers";
+import { markCleanShutdown } from "@celestea/session";
 import { RuntimeReleasedError, TurnBusyError } from "./errors.js";
 import type { InjectionLane } from "@celestea/core";
 import type { InboxPushOptions, InjectedMessage, SessionInbox } from "./inbox.js";
@@ -243,6 +247,11 @@ export class Runtime {
   private async doShutdown(): Promise<void> {
     const parts = this.parts;
     parts?.runner.stop();
+    // E §1.3 P0 ⑤: a graceful teardown is the ONLY thing that may claim
+    // `clean_shutdown: true` in the session's checkpoint sidecar — that flag is
+    // what tells the next boot "do not repair", so a crash (no shutdown at all)
+    // keeps it false. A log without a checkpoint (tests, embedded use) is a no-op.
+    markCleanShutdown(parts?.sessionRef.log);
     const host = parts?.workerHost ?? null;
     if (host !== null) {
       host.registry.abortAllNow();

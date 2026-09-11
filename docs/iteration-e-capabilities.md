@@ -1,9 +1,10 @@
 # 迭代方向 E · 能力深水区（断点恢复 / 可恢复多 agent / 成本账本 / 模型降级）
 
 > 状态：**设计（未实现）**。本文只描述目标契约、分期与验收标准，**不改任何代码、配置或服务**。
-> **落地进度（回填）**：能力 4 P0（W723：`LlmError.httpStatus/retryable`，`packages/llm/src/errors.ts`）与
-> 能力 3 P0（W728：append-only `usage-ledger.jsonl` + `pricing.json` + `unpriced` 显式标记，§3.7）**已实现**；
-> 1/2 两条能力与各自 P1/P2 仍为设计。
+> **落地进度（回填）**：能力 4 P0（W723：`LlmError.httpStatus/retryable`，`packages/llm/src/errors.ts`）、
+> 能力 3 P0（W728：append-only `usage-ledger.jsonl` + `pricing.json` + `unpriced` 显式标记，§3.7）与
+> 能力 1 P0（W730：`checkpoint.json` sidecar + boot 幂等合成 `turn_end: interrupted` + `turnNo` 从日志恢复，§1.7）
+> **已实现**；能力 2 与各自 P1/P2 仍为设计。
 > 范围：`packages/session`、`packages/runtime`、`packages/workers`、`packages/llm`、`apps/studio/src/runtime`、
 > `apps/studio/src/store`、`contracts/`；与仓库外 `celes-worker-spawn` 插件（`/src/dsh_plugins/celes-worker-spawn`）的协同边界。
 > 前置：`docs/ARCHITECTURE.md`（分层与 seam 纪律）、`docs/feature-session-independence.md`（W513，已实现）、
@@ -196,6 +197,42 @@
 | `packages/runtime` | `session-registry.ensure()` 恢复 `turnNo`；新增 `recovery.ts`（boot 恢复器）；`turn-runner.drive()` 三个时机写 checkpoint；`runtime.shutdown()` 置 `clean_shutdown` | 行为变更（可测） |
 | `apps/studio` | `SessionComposer.compose()` 传入 checkpoint 路径；boot 时对"上次活跃会话"跑一次恢复；`/api/status` 增 `recovery` | 装配 + 契约增字段 |
 | `contracts/` | `data-files/checkpoint.schema.json`（新）、`data-files/index.json`（计数）、`endpoints.json`（`get_status` 响应字段） | 契约变更 |
+
+---
+
+### 1.7 实现状态（W730 回填，P0）
+
+**已实现（§1.3 P0 ①–⑥ 逐条）**：
+
+| # | 设计项 | 落点 |
+|---|---|---|
+| ① | checkpoint 读写 + 原子落盘 + 容错 | `packages/session/src/checkpoint.ts`（`CheckpointStore`、`readCheckpointFile`、`writeCheckpointFile`：`tmp-<pid>` → `rename`，0600） |
+| ② | 写盘时机接入 | `packages/session/src/checkpoint-log.ts`（`checkpointedLog`：**追加后**写 `turn_start`/`turn_end` 两处；`clear()` 清 `open_turn`）；lane 变更属 P1，未接 |
+| ③ | boot 恢复器 + 幂等合成 | `packages/session/src/checkpoint-recovery.ts`（决策表，纯函数）+ `packages/runtime/src/recovery.ts`（按目录编排：不存在日志则**不创建**；torn tail 先截断）+ `apps/studio/src/runtime/boot-recovery.ts`（对 `workspaces.json.active_session` 跑一次） |
+| ④ | `turnNo` 从日志恢复 | `packages/runtime/src/session-registry.ts` 的 `turnNumberFromLog()`（`ensure` 与 `rebuild` 同源） |
+| ⑤ | `clean_shutdown` 置位 | `Runtime.doShutdown()` 调 `markCleanShutdown(log)`（优雅退出 = 唯一置 true 的路径；任何写盘动作都把它重置为 false） |
+| ⑥ | schema + 单测 | `contracts/data-files/checkpoint.schema.json` + `index.json`（10 → 11）；A1–A3/A6/A9（`packages/session/src/checkpoint.test.ts`）、A4（`turn-id.test.ts`）、A5（`session-registry.test.ts`）、A7 sidecar 半边（`checkpoint-log.test.ts`）、目录编排（`packages/runtime/src/recovery.test.ts`）、宿主端到端（`apps/studio/src/runtime/checkpoint-recovery.test.ts`） |
+
+**与设计的偏离（逐条，均为 P0 范围内的显式取舍）**：
+
+1. **接入点从 `turn-runner.drive` 改为 SessionLog 装饰器**：`turn_start`/`turn_end` 两行由 **agent-loop** 追加（它从 Context 解出日志），
+   `TurnRunner` 在调用 loop **之前**拿不到 turn id，事后写又错过崩溃窗口。装饰器是唯一能精确对齐「写盘时机 = 行落地」的接缝，且对
+   `SessionLog` 契约零改动（Proxy 透传 `path`/`close`/`writeErrorCount`）。
+2. **审计只落了「持久 + stderr」两条通道**：§1.2.3 的「审计」在 P0 落为 checkpoint 的 `repaired[]`（durable、可机械断言）+
+   `[celestea-recovery]` stderr 行；平台侧 `POST /api/audit` 的 best-effort 双写**未接**——现有 `GrantsAuditWriter` 的事件名是
+   grants 专属枚举，为恢复新增通道会引入第二份审计文件，属 §5.2③ 的 P1 议题（登记为偏离，不静默）。
+3. **恢复范围 = 「上次活跃会话」**（§1.6 原文）：boot 只处理 `workspaces.json.active_session`；其余会话在各自实例首次 compose 时按同一
+   决策表语义被「读到」——但**不会**被自动闭合（没有第二个进程知道它是否属于本次崩溃），保持 fail-safe。
+4. **缺 checkpoint + 悬空 turn 不闭合**（§1.2.3 行 1）会留下 `danglingTurns > 0`：这是设计选择而非缺陷（无法与「另一进程正在跑」区分），
+   stderr 会明确报告「left untouched — no checkpoint」。
+5. **`CheckpointStore` seam 未上提 `packages/core`**（§1.2.3 允许 P0 留在实现层）：P0 落在 `@celestea/session` 并由包 `index.ts` 导出，
+   `core` 零改动（K7/K1）。上提时机仍按 §5.3。
+6. **A7 只覆盖 sidecar 半边**：`checkpoint.degraded.log_write_errors>0` 有断言（`checkpoint-log.test.ts` 用带 `writeErrorCount()` 的假日志），
+   `/api/status.recovery.degraded` 属 P1（P0 不加端点、不改响应字段）。**A8** 同样只落了 data-files 半边（schema + index 计数），
+   `endpoints.json` 的 `get_status` 增字段属 P1。
+7. **`pid` 仅记录、不判定**：stale 单写者探测（`pid` 存活）是 §1.3 P2 项，P0 不据它做任何决策（`open_turn` + 日志双签名是唯一判据）。
+
+**未改变的正常路径**：无崩溃时只多一个 sidecar 文件；`cli-main.jsonl` 的字节、事件名、SSE 信封、端点集合（44）与 `pnpm check` 基线逐条不变。
 
 ---
 
