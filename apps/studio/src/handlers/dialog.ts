@@ -19,7 +19,8 @@
 
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { CapacityError, TurnBusyError } from "../runtime-adapter.js";
+import { TurnBusyError } from "@celestea/runtime";
+import { CapacityError } from "../runtime-adapter.js";
 import type { RouteTable } from "../routes.js";
 import type { StoreResult } from "../store/result.js";
 import { activeSession, capacityJson, errorOnly, failJson, readJsonBody, storeFail, strField, type Deps } from "./common.js";
