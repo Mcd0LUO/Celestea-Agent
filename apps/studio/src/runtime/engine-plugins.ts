@@ -23,8 +23,17 @@ import {
 } from "@celestea/core";
 import { agentLoopPlugin } from "@celestea/agent-loop";
 import { agentConfigFromProfile, type Profile } from "@celestea/runtime";
-import { assembleTools, builtinTools, PROCESS_REGISTRY_SERVICE, ProcessRegistry, userspaceSandbox } from "@celestea/tools";
+import {
+  assembleTools,
+  builtinTools,
+  httpOptions,
+  PROCESS_REGISTRY_SERVICE,
+  ProcessRegistry,
+  selectSandboxDetailed,
+  userspaceSandbox,
+} from "@celestea/tools";
 import { workerTools, type WorkerRegistry } from "@celestea/workers";
+import { EMPTY_GRANTS, type EffectiveGrants, type EngineGrantAudit } from "./engine-grants.js";
 
 /** Everything the engine context needs from the host. */
 export interface EnginePluginInput {
@@ -39,6 +48,10 @@ export interface EnginePluginInput {
   /** Guard override: `undefined` = mount the production guard, `null` = none. */
   guard?: ToolGuard | null;
   env?: NodeJS.ProcessEnv;
+  /** The session's effective grants (W516); default: none (least privilege). */
+  grants?: EffectiveGrants;
+  /** Bound audit sink for grant use / degradation events (W516 §4.4). */
+  audit?: EngineGrantAudit;
 }
 
 export interface EngineTools {
@@ -49,15 +62,22 @@ export interface EngineTools {
 
 /** The tool set: six builtins + the three worker tools (when a registry exists). */
 export function engineTools(opts: EnginePluginInput): EngineTools {
+  const env = opts.env ?? process.env;
+  const grants = opts.grants ?? EMPTY_GRANTS;
   const processes = new ProcessRegistry();
-  const sandbox = opts.sandbox ?? userspaceSandbox();
-  const tools: Tool[] = [...builtinTools({ sandbox, processes }), ...(opts.tools ?? [])];
+  const sandbox = opts.sandbox ?? sandboxForGrants(env, grants, opts.audit);
+  const http = httpOptions(env, { netHosts: grants.netHosts });
+  if (http.policy?.netHostsIneffective) {
+    opts.audit?.({ event: "net_hosts_ineffective", cap: "net_hosts", reason: "neither CELESTEA_HTTP_ALLOW nor CELESTEA_HTTP_DENY is set: the policy stays inactive" });
+  }
+  const tools: Tool[] = [...builtinTools({ sandbox, processes, http }), ...(opts.tools ?? [])];
   if (opts.workers !== null) tools.push(...workerTools(opts.workers));
   const assembly = assembleTools({
     tools,
     sandbox,
     processes,
-    env: opts.env,
+    env,
+    grants: { readRoots: grants.readRoots, writeRoots: grants.writeRoots },
     ...(opts.guard === undefined ? {} : { guard: opts.guard }),
   });
   const plugin = definePlugin("studio.engine.tools", (ctx: Context) => {
@@ -66,6 +86,32 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
     ctx.provide(PROCESS_REGISTRY_SERVICE, assembly.processes);
   });
   return { plugin, registry: assembly.registry };
+}
+
+/**
+ * W516: the session's sandbox provider.
+ *
+ * With no sandbox-related grant the answer is EXACTLY today's default
+ * (`userspaceSandbox()`), so a session without `grants.json` behaves word for
+ * word as before. When the session does hold `network` / `unsandboxed`, the
+ * provider POLICY decides: `network` ORs into `--share-net` (bwrap), and
+ * `unsandboxed` is the only way to accept the userspace provider under
+ * `CELESTEA_SANDBOX_FALLBACK=fail` — both recorded in the audit.
+ */
+function sandboxForGrants(env: NodeJS.ProcessEnv, grants: EffectiveGrants, audit?: EngineGrantAudit): Sandbox {
+  if (!grants.network && !grants.unsandboxed) return userspaceSandbox();
+  try {
+    const selection = selectSandboxDetailed({ env, grants: { network: grants.network, unsandboxed: grants.unsandboxed } });
+    if (selection.degradedByGrant) {
+      audit?.({ event: "degraded_by_grant", cap: "unsandboxed", provider: selection.provider, reason: selection.reason ?? undefined });
+    }
+    return selection.sandbox;
+  } catch (e) {
+    // The deployment refuses to run without OS isolation and the session did
+    // not grant `unsandboxed`: keep the previous provider (never crash compose).
+    audit?.({ event: "deny", cap: "network", reason: e instanceof Error ? e.message : String(e) });
+    return userspaceSandbox();
+  }
 }
 
 /** Provide the `Llm` seam (the offline engine by default). */

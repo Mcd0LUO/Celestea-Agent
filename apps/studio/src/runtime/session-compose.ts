@@ -31,7 +31,9 @@ import { join } from "node:path";
 import { CapacityError } from "../runtime-adapter.js";
 import { bindingFor, closeLog, workerSessionPrefix, type SessionTarget } from "./engine-session.js";
 import { enginePlugins } from "./engine-plugins.js";
+import { EMPTY_GRANTS } from "./engine-grants.js";
 import { createEngineLlm } from "./llm-assembly.js";
+import type { SessionGrantsReader } from "./session-grants.js";
 
 /** W510 resource caps (overridable through the adapter options or the env). */
 export const MAX_LIVE_SESSIONS = 4;
@@ -69,6 +71,12 @@ export interface SessionComposerOptions {
   resultsDir?: string;
   /** Compact summarizer override (default: the `Llm` seam). */
   summarize?: (profile: Profile) => Summarizer;
+  /**
+   * Session grants reader (W516 §4.2): read at every compose, so a grant or a
+   * revocation is visible at the session's next turn boundary and never inside
+   * a running turn. Absent = no grants at all (tests, embedded use).
+   */
+  grants?: SessionGrantsReader;
   now?: () => number;
 }
 
@@ -103,6 +111,8 @@ export class SessionComposer {
   /** Compose one session generation (the registry's build factory). */
   compose(sessionId: string | null, dir: string | null): Runtime {
     const profile = this.profileFor(sessionId);
+    const reader = this.opts.grants;
+    const read = reader?.read(sessionId, dir) ?? { grants: EMPTY_GRANTS, warnings: [] };
     const engine = enginePlugins({
       profile,
       llm: this.llmFactory()(profile),
@@ -110,8 +120,13 @@ export class SessionComposer {
       ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),
       ...(this.opts.sandbox === undefined ? {} : { sandbox: this.opts.sandbox }),
       ...(this.opts.guard === undefined ? {} : { guard: this.opts.guard }),
+      grants: read.grants,
+      ...(reader === undefined ? {} : { audit: reader.audit(sessionId) }),
       env: this.opts.env,
     });
+    // After the boundary is built: audit the generation and spend one-shots, so
+    // THIS turn keeps its grants and the next one sees the consumption.
+    reader?.onComposed(sessionId, dir, read);
     const usage = createUsageTracker();
     const hooks = this.opts.sessionHooks?.(sessionId) ?? {};
     return compose({

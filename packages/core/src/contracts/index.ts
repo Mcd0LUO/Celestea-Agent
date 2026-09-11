@@ -43,7 +43,7 @@ export interface EndpointProbe {
 }
 export interface EndpointContract {
   id: string;
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "DELETE";
   path: string;
   group: string;
   rustHandler: string;
@@ -97,6 +97,14 @@ export interface RouteSnapshot {
   apiEndpoints: number;
   staticRoutes: RouteSnapshotEntry[];
   routes: RouteSnapshotEntry[];
+  /**
+   * W516: routes that exist ONLY in the TypeScript backend (no Rust
+   * counterpart). The Rust extraction above stays intact; a contract endpoint
+   * must appear in `routes` or here.
+   */
+  tsOnlyRoutes?: RouteSnapshotEntry[];
+  tsApiEndpoints?: number;
+  tsMethodPathCombos?: number;
 }
 
 export interface ToolsContract {
@@ -110,8 +118,8 @@ function readJson<T>(...parts: string[]): T {
 
 export function loadEndpoints(): EndpointsContract {
   const c = readJson<EndpointsContract>("endpoints.json");
-  if (c.count !== 39 || c.endpoints.length !== 39) {
-    throw new Error(`endpoints contract must hold 39 endpoints, got ${c.endpoints.length}`);
+  if (c.count !== 43 || c.endpoints.length !== 43) {
+    throw new Error(`endpoints contract must hold 43 endpoints, got ${c.endpoints.length}`);
   }
   return c;
 }

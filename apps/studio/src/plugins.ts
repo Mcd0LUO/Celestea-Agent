@@ -17,7 +17,9 @@
  */
 
 import { Context, definePlugin, mountPlugins, type Plugin } from "@celestea/core";
+import { dirname } from "node:path";
 import { createStudioBus, type StudioBus } from "./sse.js";
+import { createGrantsServices, type GrantsServices } from "./store/grants-service.js";
 import { SessionOps } from "./store/session-ops.js";
 import { SessionsStore } from "./store/sessions.js";
 import { ProvidersStore } from "./store/providers.js";
@@ -57,6 +59,8 @@ export interface ComposeInput {
   config: StudioConfig;
   /** Injected engine seam, or a factory over the composed stores. */
   runtime: RuntimeAdapter | EngineFactory;
+  /** Process environment (grant audit channel, unsandboxed availability). */
+  env?: NodeJS.ProcessEnv;
   /** Deterministic clock for tests (session dir suffixes, trash stamps). */
   now?: () => number;
 }
@@ -72,6 +76,8 @@ export interface StudioServices {
   sessionOps: SessionOps;
   providers: ProvidersStore;
   prompts: PromptsStore;
+  /** W516: grant file I/O helpers, audit channel, confirm tokens, limits. */
+  grants: GrantsServices;
 }
 
 /**
@@ -120,5 +126,10 @@ export function composeStudio(input: ComposeInput): StudioServices {
   const bus = createStudioBus({ statusline: () => runtime.statusline() });
   runtime.attach(bus);
   mountPlugins(ctx, hostPlugins(runtime, bus));
-  return { ctx, config: input.config, bus, runtime, settings: ctx.require(SETTINGS_SERVICE), ...stores };
+  const grants = createGrantsServices({
+    dataDir: dirname(input.config.paths.workspacesFile),
+    ...(input.env === undefined ? {} : { env: input.env }),
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+  return { ctx, config: input.config, bus, runtime, settings: ctx.require(SETTINGS_SERVICE), grants, ...stores };
 }

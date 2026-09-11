@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (39 endpoints)",
+  "title": "Celestea Studio HTTP API contract (43 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
-    "doc": "/src/celestea_studio/docs/api-contract.md",
+    "doc": "/src/celestea_studio-ts/docs/feature-session-grants.md",
     "routes": "/src/celestea_studio/src/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
-    "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json"
+    "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json",
+    "routeTable": "W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -27,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 39,
+  "count": 43,
   "endpoints": [
     {
       "id": "get_health",
@@ -2494,6 +2495,334 @@
         "checked": true,
         "mode": "read-only GET",
         "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "get_session_grants",
+      "method": "GET",
+      "path": "/api/sessions/{id}/grants",
+      "group": "grants",
+      "rustHandler": "(none - TypeScript-only, W516)",
+      "docRef": "docs/feature-session-grants.md#61-get-apisessionsidgrants",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "grants",
+            "type": "array<{id:string,cap:string,scope:object,granted_at:integer,granted_by:string,expires_at:integer|null,uses_left:integer|null,note:string,expired:boolean}>",
+            "required": true,
+            "note": "expired is evaluated at read time; invalid/expired entries stay listed but are absent from effective"
+          },
+          {
+            "name": "effective",
+            "type": "object{network:bool,read_roots:string[],write_roots:string[],net_hosts:string[],tool_extra:string[],unsandboxed:bool}",
+            "required": true,
+            "note": "widen-only snapshot; the UI shows it verbatim before confirming"
+          },
+          {
+            "name": "max_ttl_sec",
+            "type": "object{<cap>:integer}",
+            "required": true
+          },
+          {
+            "name": "unsandboxed_available",
+            "type": "boolean",
+            "required": true,
+            "note": "CELESTEA_GRANTS_ALLOW_UNSANDBOXED=1"
+          },
+          {
+            "name": "warnings",
+            "type": "string[]",
+            "required": false,
+            "note": "W516 additive: present only when the file was unreadable or entries were ignored"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown session '<id>'"
+        }
+      ],
+      "notes": [
+        "No grants.json -> 200 with grants:[] and effective defaults (never 404).",
+        "Grants live at <session dir>/grants.json; worker:<sid> sessions have no directory and are rejected by session resolution."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/sessions/{id}/grants route"
+      }
+    },
+    {
+      "id": "post_session_grants",
+      "method": "POST",
+      "path": "/api/sessions/{id}/grants",
+      "group": "grants",
+      "rustHandler": "(none - TypeScript-only, W516)",
+      "docRef": "docs/feature-session-grants.md#62-post-apisessionsidgrants",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "cap",
+            "type": "string",
+            "required": true,
+            "note": "network|read_roots|write_roots|net_hosts|tool_extra|unsandboxed"
+          },
+          {
+            "name": "scope",
+            "type": "object",
+            "required": false,
+            "note": "roots[]|hosts[]|tools[] depending on cap"
+          },
+          {
+            "name": "ttl_sec",
+            "type": "integer",
+            "required": false,
+            "note": "default 1800, 0 = no expiry, capped per cap (network 3600, roots/hosts/tools 86400, unsandboxed 900)"
+          },
+          {
+            "name": "uses_left",
+            "type": "integer|null",
+            "required": false,
+            "note": "null = unlimited, 1 = one-shot; unsandboxed is forced to 1"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "required": false,
+            "note": "redacted before it is written"
+          }
+        ],
+        "note": "header X-Celestea-Grant-Confirm: <one-shot token> is required; it comes from GET .../grants/confirm-token only"
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "grant",
+            "type": "object{same shape as the GET entries}",
+            "required": true
+          },
+          {
+            "name": "effective",
+            "type": "object{same shape as GET effective}",
+            "required": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "invalid cap '<x>'"
+        },
+        {
+          "status": 400,
+          "error": "invalid scope for cap '<x>': <why>"
+        },
+        {
+          "status": 400,
+          "error": "ttl_sec exceeds the maximum for cap '<x>' (<n>)"
+        },
+        {
+          "status": 400,
+          "error": "value looks like a credential",
+          "note": "the rejected value is never echoed in the response, the audit or the UI"
+        },
+        {
+          "status": 403,
+          "error": "grant confirmation required",
+          "note": "missing / expired / mismatched token"
+        },
+        {
+          "status": 404,
+          "error": "unknown session '<id>'"
+        },
+        {
+          "status": 409,
+          "error": "confirmation token already used"
+        },
+        {
+          "status": 409,
+          "error": "a grant request was just denied; retry in <n>s"
+        },
+        {
+          "status": 429,
+          "error": "too many grant requests; retry in <n>s",
+          "note": "3 per session per minute"
+        },
+        {
+          "status": 500,
+          "error": "cannot persist grants: {e}"
+        }
+      ],
+      "notes": [
+        "One cap holds exactly ONE live entry: the same cap replaces (never stacks).",
+        "A grant is written atomically (mode 0600) and bumps ONLY that session instance: the change lands at its next turn boundary."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint: the retired Rust reference has no /api/sessions/{id}/grants route"
+      }
+    },
+    {
+      "id": "delete_session_grants",
+      "method": "DELETE",
+      "path": "/api/sessions/{id}/grants",
+      "group": "grants",
+      "rustHandler": "(none - TypeScript-only, W516)",
+      "docRef": "docs/feature-session-grants.md#63-delete-apisessionsidgrants",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "cap",
+            "type": "string",
+            "required": false,
+            "note": "revoke every entry of this cap"
+          },
+          {
+            "name": "grant_id",
+            "type": "string",
+            "required": false,
+            "note": "revoke this entry"
+          }
+        ],
+        "note": "both omitted = revoke everything; NO confirm token: revoking only ever narrows"
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "revoked",
+            "type": "string[]",
+            "required": true,
+            "note": "grant ids; [] when nothing matched (idempotent)"
+          },
+          {
+            "name": "effective",
+            "type": "object{same shape as GET effective}",
+            "required": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown session '<id>'"
+        },
+        {
+          "status": 500,
+          "error": "cannot persist grants: {e}"
+        }
+      ],
+      "notes": [
+        "Idempotent: revoking what is not granted answers {ok:true, revoked:[]}."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_session_grants_confirm_token",
+      "method": "GET",
+      "path": "/api/sessions/{id}/grants/confirm-token",
+      "group": "grants",
+      "rustHandler": "(none - TypeScript-only, W516)",
+      "docRef": "docs/feature-session-grants.md#64-get-apisessionsidgrantsconfirm-token",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "cap",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "scope_hash",
+            "type": "string",
+            "required": true,
+            "note": "sha256 hex of JSON.stringify({cap, scope}) with sorted keys and sorted list values"
+          }
+        ],
+        "note": "requires Sec-Fetch-Site: same-origin (or Sec-Fetch-Mode: cors with a matching/absent Origin)"
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "token",
+            "type": "string",
+            "required": true,
+            "note": "opaque, 60s TTL, one-shot, bound to (session, cap, scope_hash)"
+          },
+          {
+            "name": "expires_at",
+            "type": "integer",
+            "required": true,
+            "note": "unix seconds"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "invalid cap '<x>'"
+        },
+        {
+          "status": 400,
+          "error": "scope_hash must be a 64-char sha256 hex string"
+        },
+        {
+          "status": 403,
+          "error": "grant confirmation is not available over this transport"
+        },
+        {
+          "status": 404,
+          "error": "unknown session '<id>'"
+        }
+      ],
+      "notes": [
+        "The token is only checked when GRANTING; revoking never needs one.",
+        "A session tool cannot mint one: the endpoint refuses any request without browser same-origin evidence."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
       }
     }
   ]

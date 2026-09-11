@@ -241,6 +241,15 @@ class RealEngine implements RealRuntimeAdapter {
     };
   }
 
+  /**
+   * W516 §4.2: the session's grants were written, so ITS instance is stale. An
+   * idle instance is recomposed now, a busy one at its next turn boundary — and
+   * no other session is touched (that is why this is not `invalidateAll`).
+   */
+  invalidateSession(session: string | null): boolean {
+    return this.registry.invalidateSession(session);
+  }
+
   liveSessions(): string[] {
     return this.registry.liveSessionIds();
   }

@@ -234,6 +234,13 @@ export interface RuntimeAdapter {
   inject(req: TurnRequest): InjectOutcome;
   /** Ensure the session has a runtime instance (activate; never fails on busy). */
   ensureSession(session: string | null): SessionRuntimeInfo;
+  /**
+   * W516: this session's security boundary changed (its `grants.json` was
+   * written) — drop its instance so the next turn recomposes. The turn in
+   * flight keeps the boundary it started with; returns false when the session
+   * has no live instance (nothing to invalidate).
+   */
+  invalidateSession?(session: string | null): boolean;
   /** Session ids with a live runtime instance. */
   liveSessions(): string[];
   /** Session ids with an in-flight turn. */

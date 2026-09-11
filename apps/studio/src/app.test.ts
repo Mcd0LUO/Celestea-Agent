@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe("route table coverage", () => {
-  it("binds exactly the 39 contract endpoints with the contract method+path", () => {
+  it("binds exactly the 43 contract endpoints with the contract method+path", () => {
     const h = make();
     expect(h.studio.endpointIds).toHaveLength(API_ENDPOINT_COUNT);
     expect(new Set(h.studio.endpointIds).size).toBe(API_ENDPOINT_COUNT);
@@ -56,13 +56,33 @@ describe("health / status / tools / config", () => {
     const h = make();
     const { status, body } = await getJson(h.app, "/api/health");
     expect(status).toBe(200);
-    expect(body).toEqual({ ok: true, name: "celestea-studio", model: "test-model", base_url: "http://127.0.0.1:3001/v1", bind: "127.0.0.1:3777" });
+    expect(body).toEqual({
+      ok: true,
+      name: "celestea-studio",
+      model: "test-model",
+      base_url: "http://127.0.0.1:3001/v1",
+      bind: "127.0.0.1:3777",
+      // W516: the capability bit the frontend gates the permission panel on.
+      capabilities: { grants: true },
+    });
   });
 
   it("serves GET /api/status with the statusline + session", async () => {
     const h = make();
     const { body } = await getJson(h.app, "/api/status");
-    expect(Object.keys(body).sort()).toEqual(["busy", "context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "busy",
+      "context_usage",
+      "grants_active",
+      "model",
+      "reasoning_effort",
+      "session",
+      "steps",
+      "tokens_per_sec",
+      "usage",
+    ]);
+    // W516 §5.7: cap names only — never a path.
+    expect(body["grants_active"]).toEqual([]);
     expect(body["session"]).toBeNull();
     expect(body["busy"]).toBe(false);
     expect(body["context_usage"]).toMatchObject({ window: 1_000_000, estimated: true, method: "session_event_chars" });
