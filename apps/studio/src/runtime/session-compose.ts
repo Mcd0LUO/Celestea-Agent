@@ -15,6 +15,14 @@
 import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
 import type { Llm, PendingInjection, Sandbox, SessionLog, Tool, ToolGuard } from "@celestea/core";
 import { createSessionInbox, type SessionInbox } from "@celestea/runtime";
+import {
+  createLedgerLlm,
+  createUsageLedger,
+  hostOf,
+  HOST_SESSION_ID,
+  type UsageLedger,
+  type UsageLedgerFile,
+} from "@celestea/runtime";
 import { InMemorySessionLog } from "@celestea/session";
 import {
   compose,
@@ -30,6 +38,7 @@ import {
 import { join } from "node:path";
 import { CapacityError } from "../runtime-adapter.js";
 import { bindingFor, closeLog, workerSessionPrefix, type SessionTarget } from "./engine-session.js";
+import { sessionIdOfDir } from "./engine-grants.js";
 import { enginePlugins } from "./engine-plugins.js";
 import { EMPTY_GRANTS } from "./engine-grants.js";
 import { createEngineLlm } from "./llm-assembly.js";
@@ -77,6 +86,15 @@ export interface SessionComposerOptions {
    * a running turn. Absent = no grants at all (tests, embedded use).
    */
   grants?: SessionGrantsReader;
+  /**
+   * W728 §3 P0: the process-shared append-only usage ledger. Absent/null = this
+   * generation books nothing (tests, embedded use); the studio host creates ONE
+   * file per process (`<data dir>/usage-ledger.jsonl`) and every session
+   * instance books its own rows into it.
+   */
+  ledgerFile?: UsageLedgerFile | null;
+  /** Provider row id of the startup target, recorded as the ledger's `provider`. */
+  providerLabel?: string | null;
   now?: () => number;
 }
 
@@ -113,9 +131,11 @@ export class SessionComposer {
     const profile = this.profileFor(sessionId);
     const reader = this.opts.grants;
     const read = reader?.read(sessionId, dir) ?? { grants: EMPTY_GRANTS, warnings: [] };
+    // W728: the ledger must exist before the Llm wrapper (every step books).
+    const ledger = this.usageLedger(sessionId, dir);
     const engine = enginePlugins({
       profile,
-      llm: this.llmFactory()(profile),
+      llm: this.stepObservedLlm(this.llmFactory()(profile), profile, ledger),
       workers: null, // the workers plugin registers the three tools, in compose order
       ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),
       ...(this.opts.sandbox === undefined ? {} : { sandbox: this.opts.sandbox }),
@@ -134,6 +154,7 @@ export class SessionComposer {
       plugins: engine.plugins,
       sessionBinding: this.bindingTo(sessionId, dir),
       usage,
+      ...(ledger === null ? {} : { ledger }),
       inbox: hooks.inbox ?? createSessionInbox(),
       ...(hooks.onInjected === undefined ? {} : { onInjected: hooks.onInjected }),
       loopFactory: (bindings) =>
@@ -145,6 +166,33 @@ export class SessionComposer {
         }),
       workers: this.workerWiring(sessionId, profile),
       ...(this.opts.now === undefined ? {} : { now: this.opts.now }),
+    });
+  }
+
+  /**
+   * The session's ledger, or null when the host did not wire one. The session
+   * label is the file's self-description (`<workspace>/<session>`, §3.2.1).
+   */
+  private usageLedger(sessionId: string | null, dir: string | null): UsageLedger | null {
+    const file = this.opts.ledgerFile;
+    if (file === undefined || file === null) return null;
+    return createUsageLedger({ session: dir === null ? (sessionId ?? HOST_SESSION_ID) : sessionIdOfDir(dir), file });
+  }
+
+  /**
+   * W728 §3 P0: wrap the engine `Llm` so every model step books one ledger row
+   * (success, failure and retry alike). The wrapper lives in the composed
+   * Context, so worker-driven calls go through it as well; the summarizer path
+   * is separate (`summarizer()`, a P1 concern).
+   */
+  private stepObservedLlm(llm: Llm, profile: Profile, ledger: UsageLedger | null): Llm {
+    if (ledger === null) return llm;
+    return createLedgerLlm({
+      inner: llm,
+      sink: ledger,
+      provider: this.opts.providerLabel ?? null,
+      model: profile.model,
+      base_url_host: hostOf(profile.base_url),
     });
   }
 

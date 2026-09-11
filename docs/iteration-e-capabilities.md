@@ -1,6 +1,9 @@
 # 迭代方向 E · 能力深水区（断点恢复 / 可恢复多 agent / 成本账本 / 模型降级）
 
 > 状态：**设计（未实现）**。本文只描述目标契约、分期与验收标准，**不改任何代码、配置或服务**。
+> **落地进度（回填）**：能力 4 P0（W723：`LlmError.httpStatus/retryable`，`packages/llm/src/errors.ts`）与
+> 能力 3 P0（W728：append-only `usage-ledger.jsonl` + `pricing.json` + `unpriced` 显式标记，§3.7）**已实现**；
+> 1/2 两条能力与各自 P1/P2 仍为设计。
 > 范围：`packages/session`、`packages/runtime`、`packages/workers`、`packages/llm`、`apps/studio/src/runtime`、
 > `apps/studio/src/store`、`contracts/`；与仓库外 `celes-worker-spawn` 插件（`/src/dsh_plugins/celes-worker-spawn`）的协同边界。
 > 前置：`docs/ARCHITECTURE.md`（分层与 seam 纪律）、`docs/feature-session-independence.md`（W513，已实现）、
@@ -431,6 +434,37 @@
 | `packages/core` | **不改**（`Usage` 结构够用；价格不属于引擎语义） | — |
 | `apps/studio` | 新端点 + `/api/status.cost` + `routes.ts` 计数 + boot 时构造 ledger 单例（**进程级共享一个文件**，与会话实例解耦） | 契约变更 |
 | `contracts/` | `endpoints.json`（+1 端点、`get_status` 响应字段）、`data-files/pricing.schema.json`、`data-files/usage-ledger.schema.json`、`data-files/index.json` | 契约变更 |
+
+### 3.7 实现状态（W728 P0 回填）
+
+| 设计条目 | 状态 | 落点 / 说明 |
+|---|---|---|
+| ① step 级 append-only 账本 | **已实现（有偏离）** | `packages/runtime/src/ledger.ts`（`UsageLedgerFile` / `UsageLedger`）、`ledger-llm.ts` |
+| ② turn 汇总行 | 已实现 | `kind:"turn_total"`，含 `steps`/`attempts`/`outcome`/`cost_complete`/`unpriced_models` |
+| ③ `pricing.json` + `unpriced` | 已实现 | `packages/runtime/src/pricing.ts`；缺表/坏表 = 空表（全 `unpriced`），有 unparsable 文件时 stderr 告警 |
+| ④ `(session,turn_id,step,attempt)` 幂等 | 已实现 | 键即 `ledgerKey()`；句柄二次 `close()` 与同键 `append()` 均不落第二行 |
+| ⑤ 单测（C1–C7 单进程部分） | 已实现 | `ledger.test.ts`（C1/C2/C3/C6/C7/C8 + 并发/append-only/重启续账）、`pricing.test.ts`、`apps/studio/src/runtime/usage-ledger.test.ts`（C4 + 真实 app 装配） |
+| 契约 | 已实现 | `contracts/data-files/{usage-ledger,pricing}.schema.json` + `index.json` 8→10；`API_ENDPOINT_COUNT` **保持 44**（P0 不加端点，C9 不变） |
+| P1/P2（端点、`/api/status.cost`、sync-pricing、轮转、对账） | **未实现（有意）** | `GET /api/usage/ledger` 仍 404（有用例断言），`/api/status` 无 `cost` 块 |
+
+**偏离与理由（逐条，便于评审）**：
+
+1. **① 的"装饰既有 tracker"改为"在 `Llm` 接缝观测 step"**。`AgentLoopBindings.usage` 的静态类型是 `agent-loop` 的
+   `UsageTracker`（含 private 字段 → nominal），结构型装饰对象无法赋给它；若要按设计装饰，必须改 `packages/agent-loop`
+   的导出类型。更关键的是：本设计自己的记账规则表要求"流中途撕裂 = **1 行 `error`**（含已观测 usage）"，
+   以及 W723 的 `httpStatus`/`retryable` —— 这两件事**只有 `Llm` 接缝看得见**（turn 级看不到状态码，usage 帧看不到流终止）。
+   因此账本由 `createLedgerLlm()` 驱动：`beginStep` → 每个 usage 帧 `record` → 流终态 `close`。
+   `UsageLedger` 仍实现 runtime 的结构型 `UsageAccounting`（`record`/`latest`/`total`），且 `latest`/`total` 由**文件**派生
+   （重启不丢），`record()` 落在当前打开的 step 缓冲里。
+2. **写入时机**：设计写"每收到一个 usage 帧即写一行"，实现为"**每个 step 收尾写一行**"。行数与设计一致
+   （N 个有 usage 的 step = N 行 + 1 行 turn_total，C1 逐字成立），差别只在撕裂流那条规则要成立就必须能判定 step 收尾。
+3. **turn 归属**：`turn`/`turn_id` 取"宿主会话日志里**未闭合**的 `turn_start`"（K4：日志是唯一真源），
+   不新造计数器；turn 边界由 `TurnRunner` 经 `TurnLedgerHooks`（`beginTurn`/`endTurn`）告知，纯观测、写失败只告警。
+4. **`attempt` 维度**：字段与语义已落地（`attempt=0` = 首次；错误行携带 `http_status`/`retryable`），
+   P0 的所有行都是 `attempt=0`（重试/回退属能力 4 P1）。
+5. **已知近似（诚实登记）**：worker 驱动的模型调用与主 turn 共用同一个 `Llm` 接缝，因此 worker 的花费记在**宿主会话**名下；
+   compact 的 summarizer 走独立 `Llm`（`summarizer()`），P0 **不记账**。两者的归属细化留 P1。
+6. **`mode` 字段未落**：设计 §3.2.1 的记录形状里没有 `mode`，且引擎代码目前没有会话 mode（双模式仍是设计文档），P0 无可记之物。
 
 ---
 

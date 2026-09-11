@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pricing.json (model price snapshot for the usage ledger)",
+  "source": {
+    "design": "/src/celestea_studio-ts/docs/iteration-e-capabilities.md §3.2.2 (W728 P0)",
+    "code": "packages/runtime/src/pricing.ts",
+    "priceOfRecord": "newapi owns the price of record (LTS biz/newapi.md I1–I3); this snapshot is an engine-side ESTIMATE"
+  },
+  "path": {
+    "default": "<data dir>/pricing.json (<data dir> = dirname(workspacesFile))",
+    "envOverride": "CELESTEA_PRICING_FILE"
+  },
+  "notes": [
+    "NO version field of the data-file kind: `version` here is the PRICE SNAPSHOT version (a date/label from the price source), and it is copied into every ledger row that was priced with it — an old row is never re-priced.",
+    "A model absent from `models` is NOT priced as 0: the ledger writes priced_by=\"unpriced\" and cost.total=null (never a silent zero).",
+    "A missing or unparsable file is an EMPTY table: every model is unpriced; the reason is reported on stderr and never thrown.",
+    "The engine only computes tokens/1e6 × unit price. Group multipliers, expressions and cache-discount algebra stay on the platform side (no second billing implementation)."
+  ],
+  "schema": {
+    "type": "object",
+    "required": ["version", "currency", "models"],
+    "properties": {
+      "version": { "type": "string", "description": "price snapshot version/label, e.g. \"2026-09-11\"" },
+      "effective_from": { "type": ["integer", "null"], "description": "unix seconds the snapshot is effective from" },
+      "currency": { "type": "string", "description": "display currency of every unit price (no conversion is ever done)" },
+      "unit": { "const": "per_mtok", "description": "the only unit the engine understands (price per million tokens)" },
+      "models": {
+        "type": "object",
+        "description": "model id -> unit prices",
+        "additionalProperties": {
+          "type": "object",
+          "required": ["in", "out"],
+          "properties": {
+            "in": { "type": "number", "minimum": 0 },
+            "out": { "type": "number", "minimum": 0 },
+            "cache_read": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          "additionalProperties": true
+        }
+      },
+      "source": {
+        "type": "object",
+        "description": "where the snapshot came from (P1 sync script): kind/ref/synced_at",
+        "additionalProperties": true
+      }
+    },
+    "additionalProperties": true
+  },
+  "example": {
+    "version": "2026-09-11",
+    "effective_from": 1759968000,
+    "currency": "CNY",
+    "unit": "per_mtok",
+    "models": {
+      "deepseek-chat": { "in": 1.0, "out": 2.0, "cache_read": 0.1 },
+      "deepseek-reasoner": { "in": 2.0, "out": 8.0, "cache_read": 0.2 }
+    },
+    "source": {
+      "kind": "manual",
+      "ref": "/src/CelesteaTeamAPI/newapi-ops/PRICING-ARCHITECTURE.md",
+      "synced_at": 1760000000
+    }
+  },
+  "generatedAt": "2026-09-11T00:00:00Z"
+}

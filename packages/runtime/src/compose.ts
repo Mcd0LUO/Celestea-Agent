@@ -55,6 +55,7 @@ import type { Profile } from "./profile.js";
 import { Runtime, type RuntimeParts, type ShutdownHook } from "./runtime.js";
 import { bindSession, type SessionBinding } from "./session-binding.js";
 import { createStatusTracker, type StatusTracker } from "./status.js";
+import type { TurnLedgerHooks } from "./ledger.js";
 import { STATUS_TRACKER_SERVICE, USAGE_TRACKER_SERVICE } from "./tokens.js";
 import { TurnRunner, type LoopFactory, type PendingReceipt } from "./turn-runner.js";
 import { createUsageTracker, type UsageAccounting } from "./usage.js";
@@ -78,6 +79,12 @@ export interface ComposeConfig {
   usage?: UsageAccounting;
   /** Shared statusline tracker (steps + rate window). */
   status?: StatusTracker;
+  /**
+   * Usage ledger turn hooks (W728 §3 P0): pass the session's `UsageLedger` so
+   * every turn books a `turn_total` row. Absent = no ledgering in this
+   * generation (the default; the studio host wires one).
+   */
+  ledger?: TurnLedgerHooks;
   /** Worker orchestration wiring; `false` disables it. */
   workers?: WorkerWiring | false;
   /** Mid-turn injection queue (default: a fresh one per generation). */
@@ -135,6 +142,7 @@ export function compose(config: ComposeConfig): Runtime {
     usage,
     agentConfig,
     frameMapper: config.frameMapper ?? loopEventToFrame,
+    ...(config.ledger === undefined ? {} : { ledger: config.ledger }),
     ...(config.loopFactory === undefined ? {} : { loopFactory: config.loopFactory }),
     drainPending: () => drained([...inbox.drain("next-turn"), ...receipts()], "turn-start"),
     injections: {

@@ -53,6 +53,18 @@
       "schema": "registry-tsv.schema.json",
       "version": "4-column TSV",
       "mode": "0644"
+    },
+    {
+      "file": "pricing.json",
+      "schema": "pricing.schema.json",
+      "version": "price snapshot (its own `version` is the price source's, not a data-file format version)",
+      "mode": "0644"
+    },
+    {
+      "file": "usage-ledger.jsonl",
+      "schema": "usage-ledger.schema.json",
+      "version": "ledger v1 (per-row `v`)",
+      "mode": "0600"
     }
   ],
   "durability": {
@@ -62,7 +74,13 @@
     "cli-main.jsonl (engine)": "engine-owned",
     "cli-main.jsonl (compact rewrite)": "backup -> tmp+sync_all -> rename",
     "session.json": "plain write, NOT atomic",
-    "registry.tsv": "tmp+rename"
+    "registry.tsv": "tmp+rename",
+    "pricing.json": "read-only snapshot (never written by the engine); missing/unparsable -> empty table (every model unpriced)",
+    "usage-ledger.jsonl": "append-only, one writeSync per record on an O_APPEND fd (no fsync, no rotation in P0)"
   },
-  "roundTripRequirement": "Every file needs a read -> write -> re-read round-trip test; both implementations must agree byte-for-byte on the written form."
+  "roundTripRequirement": "Every file needs a read -> write -> re-read round-trip test; both implementations must agree byte-for-byte on the written form.",
+  "ledger": {
+    "implemented": "W728 P0 (iteration E §3): step-granular append-only ledger + pricing snapshot + unpriced marking",
+    "notImplemented": "GET /api/usage/ledger, /api/status.cost, sync-pricing script, rotation, three-way reconciliation (P1/P2)"
+  }
 }

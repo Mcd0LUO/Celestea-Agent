@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  loadDataFileSchema,
   loadDataFilesIndex,
   loadEndpoints,
   loadRouteSnapshot,
@@ -151,8 +152,8 @@ describe("contracts/session-event.schema.json", () => {
 describe("contracts/data-files", () => {
   const idx = loadDataFilesIndex();
 
-  it("freezes 8 data-file schemas and forbids a version field", () => {
-    expect(idx.files).toHaveLength(8);
+  it("freezes 10 data-file schemas and forbids a version field", () => {
+    expect(idx.files).toHaveLength(10);
     expect(idx.freezeRule).toContain("NO format changes");
     for (const f of idx.files) expect(f.schema.endsWith(".schema.json")).toBe(true);
   });
@@ -164,5 +165,24 @@ describe("contracts/data-files", () => {
 
   it("requires a round-trip test for every file", () => {
     expect(idx.roundTripRequirement).toContain("read -> write -> re-read");
+  });
+
+  // W728 §3 P0: the ledger and its price snapshot are data files, and P0 added
+  // NO endpoint — C9's `API_ENDPOINT_COUNT === 44` is the frozen count.
+  it("registers the usage ledger and the pricing snapshot (W728), still on 44 endpoints", () => {
+    const names = idx.files.map((f) => f.file);
+    expect(names).toContain("usage-ledger.jsonl");
+    expect(names).toContain("pricing.json");
+    expect(idx.files.find((f) => f.file === "usage-ledger.jsonl")?.mode).toBe("0600");
+    expect(idx.durability["usage-ledger.jsonl"]).toContain("append-only");
+
+    const ledger = loadDataFileSchema("usage-ledger.schema.json");
+    const defs = (ledger["schema"] as { $defs: Record<string, unknown> }).$defs;
+    expect(Object.keys(defs).sort()).toEqual(["cost", "price", "step", "turn_total", "usage"]);
+    const kind = (defs["step"] as { properties: Record<string, { enum?: string[] }> }).properties["kind"];
+    expect(kind?.enum).toEqual(["ok", "error"]);
+    expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
+
+    expect(loadEndpoints().count).toBe(44);
   });
 });
