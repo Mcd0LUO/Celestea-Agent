@@ -71,12 +71,19 @@
             "type": "string",
             "required": false,
             "note": "constant DEFAULT_BIND; does NOT follow STUDIO_BIND"
+          },
+          {
+            "name": "capabilities",
+            "type": "object{grants:bool,context:bool,session_mode:bool}",
+            "required": false,
+            "note": "W729: `session_mode: true` = sessions carry a mode; absent/false means the client must not offer a mode selector"
           }
         ]
       },
       "errors": [],
       "notes": [
-        "Always 200; no error branch."
+        "Always 200; no error branch.",
+        "W729: capabilities.session_mode = true (P0: read-only announcement; session_mode_tools arrives with P1)."
       ],
       "probe": {
         "checked": true,
@@ -134,12 +141,19 @@
             "type": "string|null",
             "required": false,
             "note": "from workspaces.active_session()"
+          },
+          {
+            "name": "mode",
+            "type": "\"standard\"|\"execution\"",
+            "required": false,
+            "note": "W729: mode of the QUERIED session (absent key on disk = \"standard\")"
           }
         ]
       },
       "errors": [],
       "notes": [
-        "Always 200."
+        "Always 200.",
+        "W729: `mode` is the queried session's creation-time mode; P0 has no switch endpoint, so it only ever equals what POST /api/sessions was given."
       ],
       "probe": {
         "checked": true,
@@ -556,7 +570,7 @@
         "fields": [
           {
             "name": "sessions",
-            "type": "array<{id,workspace,title,model:string|null,size:int,modified:int,active:bool,kind?:'worker'}>",
+            "type": "array<{id,workspace,title,model:string|null,mode:'standard'|'execution',size:int,modified:int,active:bool,kind?:'worker'}>",
             "required": false
           },
           {
@@ -568,7 +582,8 @@
       },
       "errors": [],
       "notes": [
-        "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending."
+        "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending.",
+        "W729: every row carries `mode` (worker rows included); a session without session.json.mode reads as \"standard\"."
       ],
       "probe": {
         "checked": true,
@@ -606,6 +621,12 @@
             "name": "prompt",
             "type": "string",
             "required": false
+          },
+          {
+            "name": "mode",
+            "type": "\"standard\"|\"execution\"",
+            "required": false,
+            "note": "W729: session working mode; omitted = standard AND not written to session.json (K8)"
           }
         ]
       },
@@ -637,6 +658,10 @@
         },
         {
           "status": 400,
+          "error": "invalid mode: {v}"
+        },
+        {
+          "status": 400,
           "error": "invalid prompt: {e}"
         },
         {
@@ -661,7 +686,8 @@
         }
       ],
       "notes": [
-        "Does NOT activate. session.json written only when model/prompt non-empty."
+        "Does NOT activate. session.json written only when model/prompt non-empty.",
+        "W729: `mode` is optional and creation-time only (运行期切换/P1); it is written to session.json only when non-default."
       ],
       "probe": {
         "checked": false,
@@ -2916,5 +2942,6 @@
         "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/sessions/{id}/context route"
       }
     }
-  ]
+  ],
+  "notes": null
 }

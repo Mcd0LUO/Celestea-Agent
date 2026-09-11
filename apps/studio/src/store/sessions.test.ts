@@ -52,7 +52,7 @@ describe("session scanner + transcript", () => {
   it("merges engine worker rows and marks the active session", () => {
     plant("alpha");
     registry.setActiveSession("sample-ws/alpha");
-    const rows = sessions.list([{ id: "worker:session-1", workspace: "engine", kind: "worker", title: "w", model: null, size: 2, modified: 0, active: false }]);
+    const rows = sessions.list([{ id: "worker:session-1", workspace: "engine", kind: "worker", title: "w", model: null, mode: "standard", size: 2, modified: 0, active: false }]);
     expect(rows.map((r) => r.id)).toEqual(["sample-ws/alpha", "worker:session-1"]);
     expect(rows[0]?.active).toBe(true);
   });
@@ -98,6 +98,39 @@ describe("session scanner + transcript", () => {
     expect(existsSync(join(ws, "ok-1700000000.0"))).toBe(false);
   });
 
+  it("M3/K8: a session created without a mode writes session.json byte-for-byte as before", () => {
+    // The frozen writer output of the pre-W729 writer, spelled out literally:
+    // the default mode must NOT appear as a key, and a session with nothing to
+    // say must not create the file at all.
+    expect(sessions.create({ workspace: "sample-ws", title: "plain", model: "m-1", prompt: "p-1" })).toEqual({
+      ok: true,
+      value: "sample-ws/plain-1700000000.0",
+    });
+    expect(readFileSync(join(ws, "plain-1700000000.0", "session.json"), "utf8")).toBe('{\n  "model": "m-1",\n  "prompt": "p-1"\n}\n');
+    expect(sessions.create({ workspace: "sample-ws", title: "bare" })).toEqual({ ok: true, value: "sample-ws/bare-1700000000.0" });
+    expect(existsSync(join(ws, "bare-1700000000.0", "session.json"))).toBe(false);
+    expect(sessions.list().find((r) => r.id === "sample-ws/plain-1700000000.0")?.mode).toBe("standard");
+    expect(sessions.list().find((r) => r.id === "sample-ws/bare-1700000000.0")?.mode).toBe("standard");
+  });
+
+  it("M1/M2: writes an explicit mode, and rejects an unknown one before touching the disk", () => {
+    expect(sessions.create({ workspace: "sample-ws", title: "exec", mode: "execution" })).toEqual({ ok: true, value: "sample-ws/exec-1700000000.0" });
+    expect(readFileSync(join(ws, "exec-1700000000.0", "session.json"), "utf8")).toBe('{\n  "mode": "execution"\n}\n');
+    expect(sessions.list()[0]).toMatchObject({ id: "sample-ws/exec-1700000000.0", mode: "execution" });
+
+    expect(sessions.create({ workspace: "sample-ws", title: "fast", mode: "fast" })).toEqual({ ok: false, status: 400, error: "invalid mode: fast" });
+    expect(existsSync(join(ws, "fast-1700000000.0"))).toBe(false);
+  });
+
+  it("reads an unknown hand-written mode as the default and keeps explicit standard", () => {
+    plant("junk", LOG, { mode: "fast" });
+    plant("std", LOG, { mode: "standard" });
+    expect(sessions.list().map((r) => [r.id, r.mode])).toEqual([
+      ["sample-ws/junk", "standard"],
+      ["sample-ws/std", "standard"],
+    ]);
+  });
+
   it("truncates the log on clear", () => {
     plant("alpha");
     const resolved = sessions.require("sample-ws/alpha");
@@ -117,12 +150,13 @@ describe("session moves", () => {
     expect(ops.rename("sample-ws/renamed-1", "renamed-1")).toEqual({ ok: true, value: "sample-ws/renamed-1" });
   });
 
-  it("branches a session into a timestamped sibling and copies the meta", () => {
-    plant("alpha", LOG, { model: "m-1" });
+  it("branches a session into a timestamped sibling and copies the meta (mode included)", () => {
+    plant("alpha", LOG, { model: "m-1", mode: "execution" });
     expect(ops.branch("sample-ws/alpha", undefined)).toEqual({ ok: true, value: "sample-ws/alpha-分支-1700000000.0" });
     const dir = join(ws, "alpha-分支-1700000000.0");
     expect(readFileSync(join(dir, "cli-main.jsonl"), "utf8")).toBe(LOG);
-    expect(JSON.parse(readFileSync(join(dir, "session.json"), "utf8"))).toEqual({ model: "m-1" });
+    // W729 §2.3: the branch copies session.json verbatim, so it inherits the mode.
+    expect(JSON.parse(readFileSync(join(dir, "session.json"), "utf8"))).toEqual({ model: "m-1", mode: "execution" });
   });
 
   it("archives into .celestea-archived and unarchives back (id preserved)", () => {

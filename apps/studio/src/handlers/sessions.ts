@@ -58,12 +58,14 @@ function registerCreate(app: Hono, deps: Deps, table: RouteTable): string {
     const workspace = strField(c, read.body, "workspace");
     const model = strField(c, read.body, "model");
     const prompt = strField(c, read.body, "prompt");
-    for (const f of [title, workspace, model, prompt]) if (!f.ok) return f.response;
+    const mode = strField(c, read.body, "mode");
+    for (const f of [title, workspace, model, prompt, mode]) if (!f.ok) return f.response;
     const res = deps.sessions.create({
       title: title.ok ? (title.value ?? "") : "",
       workspace: workspace.ok ? workspace.value : undefined,
       model: model.ok ? model.value : undefined,
       prompt: prompt.ok ? prompt.value : undefined,
+      mode: mode.ok ? mode.value : undefined,
     });
     if (!res.ok) return storeFail(c, res);
     return c.json({ ok: true, id: res.value });

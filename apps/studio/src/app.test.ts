@@ -51,6 +51,16 @@ describe("route table coverage", () => {
   });
 });
 
+describe("W729 P0 invariants", () => {
+  it("③ adds NO endpoint: API_ENDPOINT_COUNT === endpoints.json#count === 44", () => {
+    // The design's "43" was the baseline of the day it was written; the context
+    // snapshot (W725) already moved it to 44, and W729 must not move it again.
+    expect(API_ENDPOINT_COUNT).toBe(44);
+    expect(loadEndpoints().count).toBe(44);
+    expect(loadEndpoints().endpoints.map((e) => e.id)).not.toContain("post_session_mode");
+  });
+});
+
 describe("health / status / tools / config", () => {
   it("serves GET /api/health with the frozen shape", async () => {
     const h = make();
@@ -62,9 +72,9 @@ describe("health / status / tools / config", () => {
       model: "test-model",
       base_url: "http://127.0.0.1:3001/v1",
       bind: "127.0.0.1:3777",
-      // W516/W725: the capability bits the frontend gates the permission panel
-      // and the context viewer on.
-      capabilities: { grants: true, context: true },
+      // W516/W725/W729: the capability bits the frontend gates the permission
+      // panel, the context viewer and the (P1) mode selector on.
+      capabilities: { grants: true, context: true, session_mode: true },
     });
   });
 
@@ -75,6 +85,7 @@ describe("health / status / tools / config", () => {
       "busy",
       "context_usage",
       "grants_active",
+      "mode",
       "model",
       "reasoning_effort",
       "session",
@@ -82,6 +93,8 @@ describe("health / status / tools / config", () => {
       "tokens_per_sec",
       "usage",
     ]);
+    // W729: nothing is active, so the queried session's mode is the default.
+    expect(body["mode"]).toBe("standard");
     // W516 §5.7: cap names only — never a path.
     expect(body["grants_active"]).toEqual([]);
     expect(body["session"]).toBeNull();

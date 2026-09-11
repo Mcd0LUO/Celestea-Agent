@@ -48,7 +48,7 @@ export class SessionRegistry {
     const id = `${this.prefix}${this.nextId}`;
     this.nextId += 1;
     const session: WorkerSession = {
-      meta: { id, title: spec.title, workspace: spec.workspace ?? null, model: spec.model ?? null },
+      meta: { id, title: spec.title, workspace: spec.workspace ?? null, model: spec.model ?? null, mode: spec.mode ?? null },
       log: this.logFactory(),
     };
     this.byId.set(id, session);

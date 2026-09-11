@@ -13,6 +13,8 @@ import { dirname, join } from "node:path";
 import { serializeEventLog } from "@celestea/runtime";
 import type { SessionEvent } from "@celestea/core";
 import { jsonRequest, makeHarness, type StudioHarness } from "../harness.test-util.js";
+import { assembleSystemPromptFor } from "../handlers/config-shape.js";
+import type { StudioServices } from "../plugins.js";
 import { readSessionMeta } from "../store/session-meta.js";
 import type { BusFrame, BusSubscription } from "../sse.js";
 import { createOfflineLlm, type OfflineLlmOptions } from "./offline-llm.js";
@@ -23,6 +25,8 @@ export interface EngineHarnessOptions {
   sessions?: Record<string, readonly SessionEvent[]>;
   /** Offline LLM options (script / inter-frame delay) for every generation. */
   llm?: OfflineLlmOptions;
+  /** `session.json` of the planted sessions (`name` -> its keys, W729). */
+  meta?: Record<string, Record<string, string>>;
 }
 
 /** One complete turn in the engine's native JSONL shape. */
@@ -44,10 +48,11 @@ export function turns(count: number): SessionEvent[] {
 }
 
 /** Plant a session directory with `cli-main.jsonl` (returns its absolute dir). */
-export function plantSession(workspace: string, name: string, events: readonly SessionEvent[]): string {
+export function plantSession(workspace: string, name: string, events: readonly SessionEvent[], meta?: Record<string, string>): string {
   const dir = join(workspace, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "cli-main.jsonl"), serializeEventLog(events));
+  if (meta !== undefined) writeFileSync(join(dir, "session.json"), JSON.stringify(meta));
   return dir;
 }
 
@@ -131,8 +136,18 @@ export function readSessionLog(h: StudioHarness, name: string): string {
 }
 
 /** Build a host whose engine is the REAL runtime over the offline LLM. */
+/** W729/K8: scoped prompt only for a session with an explicit mode (see app.ts). */
+function promptForDeclaredMode(host: { services: StudioServices | null }, stores: { sessions: { resolve(id: string): { ok: boolean; value?: { dir: string } } } }, id: string): string | null {
+  const resolved = stores.sessions.resolve(id);
+  const declared = resolved.ok && resolved.value !== undefined ? readSessionMeta(resolved.value.dir)?.mode !== undefined : false;
+  return declared && host.services !== null ? assembleSystemPromptFor(host.services, id) : null;
+}
+
 export function makeEngineHarness(opts: EngineHarnessOptions = {}): StudioHarness {
   const resultsDirs: string[] = [];
+  // W729: the per-session prompt hook needs the host services, which exist only
+  // AFTER composition — the same late-bound ref `app.ts` uses (see HostRef).
+  const host: { services: StudioServices | null } = { services: null };
   const h = makeHarness({
     engineFactory: (stores) => {
       const wsPath = stores.workspaces.workspacePath("sample-ws");
@@ -157,20 +172,27 @@ export function makeEngineHarness(opts: EngineHarnessOptions = {}): StudioHarnes
           const resolved = stores.sessions.require(id);
           return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
         },
-        // W513: the session-level model override is applied to that session's
-        // own instance (mirrors `app.ts`).
+        // W513/W729: the session-level model AND mode-dependent prompt are
+        // applied to that session's own instance (mirrors `app.ts`).
         sessionModel: (id) => {
           const resolved = stores.sessions.resolve(id);
           return resolved.ok ? (readSessionMeta(resolved.value.dir)?.model ?? null) : null;
         },
+        sessionMode: (id) => {
+          const resolved = stores.sessions.resolve(id);
+          return resolved.ok ? (readSessionMeta(resolved.value.dir)?.mode ?? null) : null;
+        },
+        // K8 gate: only a session that DECLARED a mode gets its own assembly.
+        sessionSystemPrompt: (id) => promptForDeclaredMode(host, stores, id),
       });
     },
   });
+  host.services = h.studio.services;
   const cleanup = h.cleanup;
   h.cleanup = (): void => {
     cleanup();
     for (const dir of resultsDirs) rmSync(dir, { recursive: true, force: true });
   };
-  for (const [name, events] of Object.entries(opts.sessions ?? {})) plantSession(h.workspace, name, events);
+  for (const [name, events] of Object.entries(opts.sessions ?? {})) plantSession(h.workspace, name, events, opts.meta?.[name]);
   return h;
 }

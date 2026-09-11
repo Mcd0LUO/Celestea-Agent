@@ -25,7 +25,7 @@ describe("SessionRegistry", () => {
 
   it("registers an externally built session (the host conversation)", () => {
     const reg = new SessionRegistry();
-    reg.register({ meta: { id: "cli-main", title: "cli-main", workspace: null, model: "m" }, log: recordingSessionLog() });
+    reg.register({ meta: { id: "cli-main", title: "cli-main", workspace: null, model: "m", mode: null }, log: recordingSessionLog() });
     expect(reg.get("cli-main")?.meta.id).toBe("cli-main");
     expect(reg.resolve("cli-main").session?.meta.id).toBe("cli-main");
   });

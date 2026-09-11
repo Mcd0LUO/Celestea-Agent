@@ -9,6 +9,7 @@
  * assembly entirely — it is never a section.
  */
 
+import { DEFAULT_SESSION_MODE, type SessionMode } from "./mode.js";
 import type { PromptScope, PromptsStore } from "./prompts.js";
 import { renderTemplate, truncateToCap, type PromptVars } from "./prompts-template.js";
 
@@ -39,15 +40,23 @@ export function toPromptVars(input: PromptVarInput): PromptVars {
   };
 }
 
-/** Assemble the registry-resolved system prompt for one scope. */
+/**
+ * Assemble the registry-resolved system prompt for one scope.
+ *
+ * W729: `mode` selects the `tool_access` VARIANT (K6 — the registry stays 10
+ * rows); everything else is mode-independent, and a scope/bound override of
+ * `tool_access` still replaces the variant (R4). The default keeps every
+ * existing caller on the `standard` text.
+ */
 export function assembleSystemPrompt(
   store: PromptsStore,
   scope: PromptScope,
   boundId: string | null,
   vars: PromptVars,
+  mode: SessionMode = DEFAULT_SESSION_MODE,
 ): string {
   const parts: string[] = [];
-  for (const row of store.sections(scope, boundId)) {
+  for (const row of store.sections(scope, boundId, mode)) {
     const rendered = renderTemplate(row.template, vars).trim();
     if (rendered === "") continue;
     parts.push(rendered);

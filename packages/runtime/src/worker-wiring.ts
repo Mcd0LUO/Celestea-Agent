@@ -51,6 +51,11 @@ export interface WorkerWiring {
   sessionIdPrefix?: string;
   /** Model token recorded on the host session meta. */
   hostModel?: string | null;
+  /**
+   * W729 §2.3: the host session's mode, inherited by every spawn that does not
+   * pass one. `null` = the host declared none (the spawn then records none).
+   */
+  hostMode?: string | null;
 }
 
 export interface WorkerHost {
@@ -75,7 +80,7 @@ export function ensureWorkerWiring(ctx: Context, wiring: WorkerWiring | false | 
   const provided = ctx.get<WorkerRegistry>(WORKER_REGISTRY_SERVICE);
   const registry = provided ?? mountDefault(ctx, wiring ?? {});
   const hostSessionId = wiring?.hostSessionId ?? HOST_SESSION_ID;
-  registerHost(registry, hostSessionId, wiring?.hostModel ?? null);
+  registerHost(registry, hostSessionId, wiring?.hostModel ?? null, wiring?.hostMode ?? null);
   return {
     registry,
     hostSessionId,
@@ -93,18 +98,21 @@ function mountDefault(ctx: Context, wiring: WorkerWiring): WorkerRegistry {
     sourceLabel: wiring.sourceLabel ?? "celestea.runtime",
     logFactory: wiring.logFactory ?? ((): SessionLog => new InMemorySessionLog()),
     ...(wiring.sessionIdPrefix === undefined ? {} : { sessionIdPrefix: wiring.sessionIdPrefix }),
+    hostMode: wiring.hostMode ?? null,
   });
   mountPlugins(ctx, [workersPlugin({ registry, name: DEFAULT_WORKER_PLUGIN })]);
   return registry;
 }
 
 /** Register the host conversation so receipts can be addressed to it (W232). */
-function registerHost(registry: WorkerRegistry, hostSessionId: string, model: string | null): void {
+function registerHost(registry: WorkerRegistry, hostSessionId: string, model: string | null, mode: string | null): void {
   const host: WorkerSession = {
-    meta: { id: hostSessionId, title: hostSessionId, workspace: null, model },
+    meta: { id: hostSessionId, title: hostSessionId, workspace: null, model, mode },
     log: new InMemorySessionLog(),
   };
   registry.registerHostSession(host);
+  // The spawn default: a worker inherits the mode of its owning session (W729).
+  registry.setHostMode(mode);
 }
 
 /**

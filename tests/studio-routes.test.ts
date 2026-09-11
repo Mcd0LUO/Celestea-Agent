@@ -43,16 +43,17 @@ describe("apps/studio contract surface", () => {
 
   it("keeps the health / status / tools shapes frozen", async () => {
     const health = (await (await app.request("/api/health")).json()) as Record<string, unknown>;
-    // W516/W725: `capabilities.grants|context = true` is how the frontend knows
-    // the permission panel / context viewer exists at all (the Rust backend
-    // answered 404 on both endpoints).
+    // W516/W725/W729: `capabilities.grants|context|session_mode = true` is how
+    // the frontend knows the permission panel / context viewer / mode selector
+    // exists at all (the Rust backend answered 404 on the first two).
     expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "capabilities", "model", "name", "ok"]);
-    expect(health["capabilities"]).toEqual({ grants: true, context: true });
+    expect(health["capabilities"]).toEqual({ grants: true, context: true, session_mode: true });
     const status = (await (await app.request("/api/status")).json()) as Record<string, unknown>;
     expect(Object.keys(status).sort()).toEqual([
       "busy",
       "context_usage",
       "grants_active",
+      "mode",
       "model",
       "reasoning_effort",
       "session",
@@ -60,6 +61,7 @@ describe("apps/studio contract surface", () => {
       "tokens_per_sec",
       "usage",
     ]);
+    expect(status["mode"]).toBe("standard");
     const tools = (await (await app.request("/api/tools")).json()) as { tools: unknown[] };
     expect(Array.isArray(tools.tools)).toBe(true);
     expect(loadTools().tools).toHaveLength(10);

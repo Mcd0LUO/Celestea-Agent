@@ -13,6 +13,7 @@ import { EngineError } from "../runtime-adapter.js";
 import type { PromptScope } from "../store/prompts.js";
 import type { StoreResult } from "../store/result.js";
 import { activePromptBinding, assembleSystemPromptFor } from "./config-shape.js";
+import { DEFAULT_SESSION_MODE } from "../store/mode.js";
 import { failJson, readJsonBody, strField, storeFail, type Deps, type JsonObject } from "./common.js";
 
 /** Scope resolution result: either the scope, or the 404 workspace name. */
@@ -36,7 +37,9 @@ async function hotApply(deps: Deps, scope: PromptScope, mutate: () => StoreResul
   const res = mutate();
   if (!res.ok) return { ok: false, status: res.status, error: res.error };
   try {
-    await deps.runtime.configure({ system_prompt: assembleSystemPromptFor(deps) });
+    // W729: a prompt hot-apply primes the BASE generation, so it stays on the
+    // DEFAULT mode and can never inherit the active session's mode variant.
+    await deps.runtime.configure({ system_prompt: assembleSystemPromptFor(deps, null, DEFAULT_SESSION_MODE) });
   } catch (e) {
     deps.prompts.restore(scope, snapshot);
     return { ok: false, status: 500, error: `compose failed: ${e instanceof EngineError ? e.message : String(e)}` };

@@ -188,6 +188,7 @@ describe("GET /api/status and /api/tools", () => {
       "busy",
       "context_usage",
       "grants_active",
+      "mode",
       "model",
       "reasoning_effort",
       "session",

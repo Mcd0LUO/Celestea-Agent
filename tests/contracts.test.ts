@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   loadDataFileSchema,
@@ -8,6 +10,7 @@ import {
   loadSse,
   loadTools,
   SSE_EVENT_NAMES,
+  repoRoot,
   SESSION_EVENT_TYPES,
   TURN_OUTCOMES,
 } from "@celestea/core";
@@ -186,3 +189,64 @@ describe("contracts/data-files", () => {
     expect(loadEndpoints().count).toBe(44);
   });
 });
+
+describe("W729 session modes (P0 contract delta)", () => {
+  const c = loadEndpoints();
+  const tools = loadTools();
+
+  it("adds the mode fields to EXISTING endpoints only (44 unchanged)", () => {
+    const byId = new Map(c.endpoints.map((e) => [e.id, e]));
+    expect(byId.get("post_sessions")?.request.fields.map((f) => f.name)).toContain("mode");
+    expect(byId.get("post_sessions")?.errors).toContainEqual({ status: 400, error: "invalid mode: {v}" });
+    expect(String(byId.get("get_sessions")?.response.fields[0]?.type)).toContain("mode:");
+    expect(byId.get("get_status")?.response.fields.map((f) => f.name)).toContain("mode");
+    expect(String(byId.get("get_health")?.response.fields.find((f) => f.name === "capabilities")?.type)).toContain("session_mode");
+    expect(c.count).toBe(44);
+    expect(c.endpoints).toHaveLength(44);
+  });
+
+  it("declares spawn_worker.mode without changing the tool count", () => {
+    const spawn = tools.tools.find((t) => t.name === "spawn_worker");
+    const properties = spawn?.parameters["properties"] as Record<string, { enum?: string[] }>;
+    expect(properties["mode"]?.enum).toEqual(["standard", "execution"]);
+    // `additionalProperties: false` means an undeclared argument is a schema error.
+    expect(spawn?.parameters["additionalProperties"]).toBe(false);
+    expect(tools.count).toBe(10);
+    expect(tools.tools).toHaveLength(10);
+  });
+
+  it("freezes the session.json mode enum and keeps unknown keys tolerated", () => {
+    const schema = loadDataFileSchema("session.schema.json")["schema"] as {
+      properties: Record<string, { enum?: string[] }>;
+      additionalProperties?: boolean;
+    };
+    expect(schema.properties["mode"]?.enum).toEqual(["standard", "execution"]);
+    expect(schema.additionalProperties).toBe(true);
+    expect(loadDataFilesIndex().files).toHaveLength(10);
+  });
+
+  it("M14: one mode semantics — no host preset token in the Studio tree", () => {
+    const forbidden = /agent_?[Pp]reset/;
+    const roots = [join(repoRoot(), "apps", "studio", "src"), join(repoRoot(), "contracts")];
+    for (const pkg of readdirSync(join(repoRoot(), "packages"))) roots.push(join(repoRoot(), "packages", pkg, "src"));
+    const hits: string[] = [];
+    for (const root of roots) {
+      for (const file of walk(root)) {
+        if (!/\.(ts|json)$/.test(file)) continue;
+        if (forbidden.test(readFileSync(file, "utf8"))) hits.push(file.slice(repoRoot().length + 1));
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+});
+
+/** Every file under `dir` (the repo is small; the gate reads only ts/json). */
+function walk(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) out.push(...walk(path));
+    else out.push(path);
+  }
+  return out;
+}

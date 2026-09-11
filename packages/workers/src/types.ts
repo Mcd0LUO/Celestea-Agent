@@ -17,6 +17,14 @@ export interface WorkerSessionMeta {
   title: string;
   workspace: string | null;
   model: string | null;
+  /**
+   * W729 §2.3: the session MODE recorded at spawn — the spawning session's mode
+   * unless the spawn overrode it. Opaque here on purpose: this package is a
+   * library below the Studio host and does not own the mode vocabulary; the
+   * literal set is declared in the frozen tool contract (`contracts/tools.json`)
+   * and in the host's `store/mode.ts`. `null` = the caller declared none.
+   */
+  mode: string | null;
 }
 
 /** One addressable conversation: its meta plus the log the driver appends to. */
@@ -30,6 +38,8 @@ export interface WorkerSessionSpec {
   title: string;
   workspace?: string | null;
   model?: string | null;
+  /** W729: mode token carried into the session meta (see [WorkerSessionMeta]). */
+  mode?: string | null;
 }
 
 /** One queued mailbox message (FIFO per session). */

@@ -17,7 +17,8 @@ import { readJsonIfExists, writeJsonAtomic } from "./fs-json.js";
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { validatePromptId } from "./validate.js";
 import { ORDER_FALLBACK, validateTemplate } from "./prompts-template.js";
-import { BUILTIN_SECTIONS } from "./builtin-sections.js";
+import { builtinRowsFor } from "./builtin-sections.js";
+import { DEFAULT_SESSION_MODE, type SessionMode } from "./mode.js";
 
 export interface PromptSectionRow {
   id: string;
@@ -189,24 +190,31 @@ export class PromptsStore {
       scope: scope.kind,
       workspace: scope.workspace,
       global_file: this.globalFile,
-      sections: this.effective(scope, null).rows,
+      // The listing has no mode of its own: it shows the `standard` variant
+      // (the UI mode selector is P1, and every P0 session defaults to standard).
+      sections: this.effective(scope, null, DEFAULT_SESSION_MODE).rows,
       prompts: this.promptList(scope),
       default_prompt: this.defaultFor(scope),
       active_prompt: activePrompt,
     };
   }
 
-  private effective(scope: PromptScope, boundId: string | null): { rows: PromptSectionRow[]; templates: Map<string, string> } {
+  private effective(scope: PromptScope, boundId: string | null, mode: SessionMode): { rows: PromptSectionRow[]; templates: Map<string, string> } {
     return composeSections({
       global: scope.kind === "workspace" ? this.read(this.scopeGlobal()) : this.read(scope),
       workspace: scope.kind === "workspace" ? this.read(scope) : null,
       bound: boundId === null ? null : (this.find(scope, boundId) ?? null),
+      mode,
     });
   }
 
-  /** The registry-resolved sections (used by the sections listing). */
-  sections(scope: PromptScope, boundId: string | null = null): PromptSectionRow[] {
-    return this.effective(scope, boundId).rows;
+  /**
+   * The registry-resolved sections (used by the sections listing and by
+   * `build_gen`). `mode` swaps the `tool_access` builtin VARIANT (W729/K6); it
+   * never adds or removes a row.
+   */
+  sections(scope: PromptScope, boundId: string | null = null, mode: SessionMode = DEFAULT_SESSION_MODE): PromptSectionRow[] {
+    return this.effective(scope, boundId, mode).rows;
   }
 
   upsert(scope: PromptScope, req: PromptUpsertRequest): StoreResult<{ id: string; scope: "global" | "workspace"; hot_applied: true }> {
@@ -259,6 +267,8 @@ export interface SectionComposeInput {
   global: PromptFileData;
   workspace: PromptFileData | null;
   bound: PromptEntry | null;
+  /** Builtin `tool_access` variant to start the overlay from (default standard). */
+  mode?: SessionMode;
 }
 
 /**
@@ -280,7 +290,7 @@ export function composeSections(input: SectionComposeInput): { rows: PromptSecti
       if (source !== "builtin") row.source = source;
     }
   };
-  for (const s of builtinRows()) push(s.id, s.name, s.template, s.order, "builtin");
+  for (const s of builtinRowsFor(input.mode ?? DEFAULT_SESSION_MODE)) push(s.id, s.name, s.template, s.order, "builtin");
   for (const s of input.global.sections) push(s.id, s.name, s.template, s.order, "global");
   if (input.workspace !== null) for (const s of input.workspace.sections) push(s.id, s.name, s.template, s.order, "workspace");
   if (input.bound !== null) {
@@ -291,9 +301,4 @@ export function composeSections(input: SectionComposeInput): { rows: PromptSecti
   rows.sort((a, b) => (a.order === b.order ? (a.id < b.id ? -1 : 1) : a.order - b.order));
   const templates = new Map(rows.map((r) => [r.id, r.template]));
   return { rows, templates };
-}
-
-/** Builtin rows, copied so a caller can never mutate the frozen table. */
-function builtinRows(): Array<{ id: string; name: string; template: string; order: number }> {
-  return BUILTIN_SECTIONS.map((s) => ({ ...s }));
 }

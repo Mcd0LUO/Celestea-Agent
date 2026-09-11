@@ -44,7 +44,7 @@ import {
   type SessionRuntime,
 } from "@celestea/runtime";
 import { join } from "node:path";
-import { EngineError } from "../runtime-adapter.js";
+import { EngineError, toolSpecView } from "../runtime-adapter.js";
 import type {
   ClearOutcome,
   CompactOutcome,
@@ -180,7 +180,18 @@ class RealEngine implements RealRuntimeAdapter {
 
   /** The composed tool registry of the default instance (`GET /api/tools`). */
   tools(): ToolInfo[] {
-    return (this.registry.peek(null)?.runtime.tools?.schemas() ?? []).map((spec) => ({ name: spec.name, description: spec.description }));
+    return (this.registry.peek(null)?.runtime.tools?.schemas() ?? []).map(toolSpecView);
+  }
+
+  /**
+   * W729 (S2): the tool face of ONE session — PEEKED, never composed, because
+   * the composer calls this while building that session's own prompt. A session
+   * with no live instance reads the default generation, which in P0 exposes
+   * exactly the same 10 tools (§1.2).
+   */
+  sessionTools(session: string | null): ToolInfo[] {
+    const own = session === null ? null : this.registry.peek(session);
+    return ((own ?? this.registry.peek(null))?.runtime.tools?.schemas() ?? []).map(toolSpecView);
   }
 
   /**
@@ -369,9 +380,11 @@ class RealEngine implements RealRuntimeAdapter {
    */
   sessionContext(session: string | null): SessionContextView {
     const runtime = this.entryFor(session).runtime;
+    const profile = this.composer.profileFor(session);
     return contextViewOf(runtime, {
-      model: this.profileValue.model,
-      system: this.profileValue.system_prompt,
+      // W729: THAT session's profile (mode variant included), not the process's.
+      model: profile.model,
+      system: profile.system_prompt,
       tools: runtime.tools?.schemas() ?? [],
     });
   }
@@ -381,7 +394,7 @@ class RealEngine implements RealRuntimeAdapter {
     const entry = this.registry.peek(session ?? null);
     if (entry !== null) return entry.runtime.statusline();
     return statuslineOf({
-      model: this.profileValue.model,
+      model: this.composer.profileFor(session ?? null).model,
       reasoning_effort: this.profileValue.reasoning_effort,
       status: createStatusTracker(this.now),
       usage: createUsageTracker(),
@@ -503,18 +516,6 @@ class RealEngine implements RealRuntimeAdapter {
   private get now(): () => number {
     return this.opts.now ?? Date.now;
   }
-}
-
-/** The client-visible projection of one delivered message (W515 §2/§4). */
-function describeInjection(message: InjectedMessage): Record<string, unknown> {
-  return {
-    id: message.id,
-    kind: message.kind,
-    from: message.from,
-    lane: message.lane,
-    source: message.source,
-    summary: message.source.summary ?? message.text.slice(0, 120),
-  };
 }
 
 /** Normalize a drained message into the inbox shape the publisher expects. */

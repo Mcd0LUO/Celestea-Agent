@@ -15,6 +15,7 @@ import { parseSessionJsonl, projectMessages } from "@celestea/session";
 import type { StudioMessage } from "@celestea/core";
 import { isDirectory, isFile, listEntries, statOf, writeFileRaw, removeDir, ensureDir } from "./fs-json.js";
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
+import { DEFAULT_SESSION_MODE, parseMode, validateMode, type SessionMode } from "./mode.js";
 import { readSessionMeta, writeSessionMeta } from "./session-meta.js";
 import { sessionDirName, sanitizeComponent, workspaceBasename } from "./session-id.js";
 import { validateModelName, validatePromptId } from "./validate.js";
@@ -34,6 +35,11 @@ export interface SessionRow {
   workspace: string;
   title: string;
   model: string | null;
+  /**
+   * W729: the session's working mode. A session without `session.json.mode`
+   * (and every worker row) reads as `standard` — the P0 default (K8/M3).
+   */
+  mode: SessionMode;
   size: number;
   modified: number;
   active: boolean;
@@ -51,6 +57,8 @@ export interface SessionCreateRequest {
   title: string;
   model?: string;
   prompt?: string;
+  /** W729: optional at creation; absent = `standard` and NOT written (K8). */
+  mode?: string;
 }
 
 export class SessionsStore {
@@ -67,12 +75,14 @@ export class SessionsStore {
         const log = `${w.path}/${e.name}/${SESSION_FILE}`;
         if (!isFile(log)) continue;
         const st = statOf(log);
+        const meta = readSessionMeta(`${w.path}/${e.name}`);
         rows.push({
           id: `${name}/${e.name}`,
           workspace: name,
           kind: "session" as const,
           title: e.name,
-          model: readSessionMeta(`${w.path}/${e.name}`)?.model ?? null,
+          model: meta?.model ?? null,
+          mode: meta?.mode ?? DEFAULT_SESSION_MODE,
           size: st?.size ?? 0,
           modified: st?.modified ?? 0,
           active: active === `${name}/${e.name}`,
@@ -141,6 +151,11 @@ export class SessionsStore {
       const bad = validatePromptId(prompt);
       if (bad !== null) return badRequest(`invalid prompt: ${bad}`);
     }
+    const mode = req.mode ?? "";
+    if (mode !== "") {
+      const bad = validateMode(mode);
+      if (bad !== null) return badRequest(bad);
+    }
     const dir = this.uniqueDir(wsPath, sessionDirName(req.title, this.now()));
     try {
       ensureDir(dir);
@@ -149,7 +164,7 @@ export class SessionsStore {
       return fail(500, `create failed: ${errText(e)}`);
     }
     try {
-      writeSessionMeta(dir, { model, prompt });
+      writeSessionMeta(dir, { model, prompt, ...(mode === "" ? {} : { mode: parseMode(mode) ?? DEFAULT_SESSION_MODE }) });
     } catch (e) {
       removeDir(dir);
       return fail(500, `meta write failed: ${errText(e)}`);

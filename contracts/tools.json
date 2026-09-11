@@ -226,7 +226,7 @@
     },
     {
       "name": "spawn_worker",
-      "description": "在 harness 内拉起一个 worker 会话：创建子会话（可入工作区分组）→ 命名（标题=<wid>·<短名>）→ 指定模型 → 投递自包含简报。worker 由 harness 自己的 agent-loop 驱动；看门狗按 registry 判定存活并自动重派失败项。wid 是 worker 编号（如 W101）；brief 是自包含任务简报文本。返回 {ok, sessionId, title, wid}。协作闭环：worker 完成后引擎自动写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到 report_to 目标会话；回执到达会唤醒目标会话的新一轮处理（主 agent 读报告整合结论）。spawn 后应等待回执到达或经 worker_status 查询进度，再整合各 worker 结论。",
+      "description": "在 harness 内拉起一个 worker 会话：创建子会话（可入工作区分组）→ 命名（标题=<wid>·<短名>）→ 指定模型 → 投递自包含简报。worker 由 harness 自己的 agent-loop 驱动；看门狗按 registry 判定存活并自动重派失败项。wid 是 worker 编号（如 W101）；brief 是自包含任务简报文本。返回 {ok, sessionId, title, wid}。协作闭环：worker 完成后引擎自动写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到 report_to 目标会话；回执到达会唤醒目标会话的新一轮处理（主 agent 读报告整合结论）。spawn 后应等待回执到达或经 worker_status 查询进度，再整合各 worker 结论。 mode 是可选的工作方式（缺省继承父会话）；worker 报告头部会写明 mode。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -257,6 +257,14 @@
           "reasoning_effort": {
             "type": "string",
             "description": "推理档位（可选）"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "execution"
+            ],
+            "description": "worker 会话的会话模式（W729）：缺省继承父会话的 mode；standard=逐步直调工具，execution=优先用一个 run_code 程序完成多步依赖调用"
           },
           "report_to": {
             "type": "string",
