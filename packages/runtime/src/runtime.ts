@@ -32,7 +32,7 @@ import type {
   ToolRegistry,
   TurnOutcome,
 } from "@celestea/core";
-import type { WorkerRegistry } from "@celestea/workers";
+import type { Watchdog, WorkerRegistry } from "@celestea/workers";
 import { markCleanShutdown } from "@celestea/session";
 import { RuntimeReleasedError, TurnBusyError } from "./errors.js";
 import type { InjectionLane } from "@celestea/core";
@@ -60,6 +60,7 @@ export interface RuntimeParts {
   /** Per-session mid-turn injection queue (W513). */
   inbox: SessionInbox;
   runner: TurnRunner;
+  /** Worker wiring + the W740 watchdog mounted over it (null when off). */
   workerHost: WorkerHost | null;
   llm: LlmRegistry | null;
   tools: ToolRegistry | null;
@@ -133,6 +134,16 @@ export class Runtime {
 
   get workers(): WorkerRegistry | null {
     return this.p.workerHost?.registry ?? null;
+  }
+
+  /**
+   * W740: the liveness watchdog mounted over this generation's worker registry
+   * (null when the watchdog is off). Adjudication itself belongs to the watchdog
+   * plugin — this is only the host's handle on it (`tick()` by hand, or read
+   * `running`), never a second liveness rule.
+   */
+  get watchdog(): Watchdog | null {
+    return this.p.workerHost?.watchdog ?? null;
   }
 
   get hostSessionId(): string | null {

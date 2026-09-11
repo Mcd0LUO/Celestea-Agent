@@ -13,6 +13,9 @@
  *   4. worker wiring         mount the default workers plugin only when the host
  *                            did not provide a registry (worker tools must land
  *                            in the tool registry, hence last);
+ *   4b. watchdog             W740: mount the liveness watchdog over the resolved
+ *                            worker registry and keep its stop handle, so the
+ *                            sweep timer dies with `shutdown`/`release`;
  *   5. seam resolution       session (required) + llm / tools / agentLoop
  *                            (optional, and `null` when no plugin provides them);
  *   6. driver attach         hand Llm/ToolRegistry/AgentLoop to the worker
@@ -62,6 +65,14 @@ import { createUsageTracker, type UsageAccounting } from "./usage.js";
 import type { InjectionLane, PendingInjection } from "@celestea/core";
 import { createSessionInbox, type SessionInbox } from "./inbox.js";
 import { ensureWorkerWiring, type WorkerHost, type WorkerWiring } from "./worker-wiring.js";
+import {
+  WATCHDOG_PLUGIN_NAME,
+  celesteaWatchdogSettings,
+  mountWatchdog,
+  stopWatchdog,
+  type MountedWatchdog,
+  type WatchdogMountSettings,
+} from "./watchdog-mount.js";
 
 export interface ComposeConfig {
   profile: Profile;
@@ -87,6 +98,16 @@ export interface ComposeConfig {
   ledger?: TurnLedgerHooks;
   /** Worker orchestration wiring; `false` disables it. */
   workers?: WorkerWiring | false;
+  /**
+   * W740: the liveness watchdog over this generation's worker registry.
+   * `false` never mounts it; a partial object overrides the resolved settings
+   * (`autostart: false` mounts the sweep but leaves the cadence to the caller,
+   * which is how tests drive `tick()` by hand); omitted = the environment
+   * (`celesteaWatchdogSettings(config.env)`, on by default).
+   */
+  watchdog?: Partial<WatchdogMountSettings> | false;
+  /** Process environment the watchdog settings are read from. */
+  env?: NodeJS.ProcessEnv;
   /** Mid-turn injection queue (default: a fresh one per generation). */
   inbox?: SessionInbox;
   /**
@@ -116,6 +137,7 @@ export function compose(config: ComposeConfig): Runtime {
   mountPlugins(ctx, plugins);
 
   const workerHost = ensureWorkerWiring(ctx, config.workers);
+  const mounted = mountWatchdogOf(ctx, config, workerHost);
   const session = requireSession(ctx);
   const sessionRef = { log: session };
   const llm = ctx.get<LlmRegistry>(LLM_REGISTRY_SERVICE) ?? null;
@@ -161,21 +183,48 @@ export function compose(config: ComposeConfig): Runtime {
     usage,
     inbox,
     runner,
-    workerHost,
+    workerHost: watchdogHostOf(workerHost, mounted),
     llm,
     tools,
     agentLoop,
-    plugins: pluginNamesOf(plugins, workerHost),
-    shutdownHooks: config.shutdownHooks ?? [],
+    plugins: pluginNamesOf(plugins, workerHost, mounted),
+    shutdownHooks: [...(config.shutdownHooks ?? []), stopWatchdog(mounted)],
   };
   return new Runtime(parts);
 }
 
-/** The plugin set that was mounted, in mount order (order is contract). */
-export function pluginNamesOf(plugins: readonly Plugin[], workerHost: WorkerHost | null): string[] {
+/**
+ * The plugin set that was mounted, in mount order (order is contract): the host
+ * plugins, then the workers plugin (when this root mounted it), then the W740
+ * watchdog — which is always LAST, because it may only adjudicate rows a fully
+ * mounted worker registry already owns.
+ */
+export function pluginNamesOf(
+  plugins: readonly Plugin[],
+  workerHost: WorkerHost | null,
+  mounted: MountedWatchdog | null = null,
+): string[] {
   const names = pluginNames(plugins);
   if (workerHost !== null && workerHost.mountedPlugin !== null) names.push(workerHost.mountedPlugin);
+  if (workerHost !== null && mounted !== null) names.push(WATCHDOG_PLUGIN_NAME);
   return names;
+}
+
+/**
+ * W740: mount the watchdog over the RESOLVED registry — the host-provided one or
+ * the default this root mounted. It runs even when a host plugin provided the
+ * registry: liveness judgement is exactly what is missing there. With no worker
+ * wiring (`workers: false`) there is no registry to sweep and nothing mounts.
+ */
+function mountWatchdogOf(ctx: Context, config: ComposeConfig, workerHost: WorkerHost | null): MountedWatchdog | null {
+  if (workerHost === null || config.watchdog === false) return null;
+  const fromEnv = celesteaWatchdogSettings(config.env ?? process.env);
+  return mountWatchdog(ctx, workerHost.registry, { ...fromEnv, ...config.watchdog });
+}
+
+/** Attach the watchdog handle to the host view (services stay in the Context). */
+function watchdogHostOf(workerHost: WorkerHost | null, mounted: MountedWatchdog | null): WorkerHost | null {
+  return workerHost === null ? null : { ...workerHost, watchdog: mounted?.watchdog ?? null };
 }
 
 function requireSession(ctx: Context): SessionLog {

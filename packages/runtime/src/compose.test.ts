@@ -15,6 +15,7 @@ import { compose } from "./compose.js";
 import { ComposeError } from "./errors.js";
 import { sanitizeConfigJson, sanitizeProfile } from "./sanitize.js";
 import { fakeLlm, fakeLoop, memoryLog, memorySessionPlugin, recordingRegistryPlugin, testProfile } from "./fakes.test-util.js";
+import { WATCHDOG_PLUGIN_NAME } from "./watchdog-mount.js";
 
 /** A plugin that records its own mount and provides `value` under `token`. */
 function markerPlugin(name: string, token: string, value: unknown, log: string[]): Plugin {
@@ -50,7 +51,13 @@ describe("compose", () => {
       plugins: [memorySessionPlugin(), tools.plugin],
       workers: { tsvPath: null },
     });
-    expect(runtime.pluginNames).toEqual(["test.session", "test.tools", "celestea.runtime.workers"]);
+    // W740: the watchdog mounts LAST, after the workers plugin it adjudicates.
+    expect(runtime.pluginNames).toEqual([
+      "test.session",
+      "test.tools",
+      "celestea.runtime.workers",
+      WATCHDOG_PLUGIN_NAME,
+    ]);
     for (const name of WORKER_NAMES) expect(tools.registered).toContain(name);
     expect(runtime.workers).not.toBeNull();
     expect(tools.registry.get("worker_status")).toBeDefined();

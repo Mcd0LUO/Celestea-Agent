@@ -30,6 +30,7 @@
  */
 
 import type { InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome } from "@celestea/core";
+import type { Watchdog, WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
   createStatusTracker,
@@ -78,13 +79,14 @@ import {
   type SessionComposerOptions,
 } from "./session-compose.js";
 import {
-  aggregateWorkerStatus,
   dispatchWorkerTool,
   sendBodyOf,
   spawnOutcomeOf,
   workerMessagesOf,
   workerSessionsOf,
 } from "./worker-bridge.js";
+import { inboxMessageOf } from "./inbox-message.js";
+import { watchdogCount, watchdogOf, watchdogRunningOf, workerStatusOf } from "./watchdog-view.js";
 
 export { SESSION_LOG_ID, SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
 export { MAX_CONCURRENT_TURNS, MAX_LIVE_SESSIONS, SESSION_IDLE_TTL_MS } from "./session-compose.js";
@@ -113,6 +115,16 @@ export interface RealRuntimeAdapter extends RuntimeAdapter {
   primeSystemPrompt(prompt: string): void;
   /** The last terminal turn state over every session (diagnostics / tests). */
   lastTurnOutcome(): TurnOutcome | null;
+  /**
+   * W740: the liveness watchdog of the session's instance (null when the
+   * watchdog is off). The timer is scheduled by the composition root; this
+   * handle is how the host inspects or hand-ticks it.
+   */
+  watchdog(session?: string | null): Watchdog | null;
+  /** Is this session's sweep timer running? (no instance = false.) */
+  watchdogRunning(session?: string | null): boolean;
+  /** The session's live worker registry, or null when it has no instance. */
+  workersOf(session?: string | null): WorkerRegistry | null;
   /** Tear every live instance down (idempotent). */
   shutdown(): Promise<void>;
 }
@@ -360,6 +372,23 @@ class RealEngine implements RealRuntimeAdapter {
     return best?.lastOutcome ?? null;
   }
 
+  // --- workers: liveness (W740) ------------------------------------------
+
+  /** The session's watchdog (see `watchdog-view.ts`); unknown = null, never composed. */
+  watchdog(session?: string | null): Watchdog | null {
+    return watchdogOf(this.registry, session);
+  }
+
+  /** Is this session's sweep timer running? (no instance / watchdog off = false.) */
+  watchdogRunning(session?: string | null): boolean {
+    return watchdogRunningOf(this.registry, session);
+  }
+
+  /** The session's live worker registry, or null when it has no instance. */
+  workersOf(session?: string | null): WorkerRegistry | null {
+    return this.registry.peek(session ?? null)?.runtime.workers ?? null;
+  }
+
   private emitStatus(entry: SessionRuntime, turn: number, phase: string, error: string | null = null): void {
     const payload: Record<string, unknown> = { phase, statusline: entry.runtime.statusline() };
     if (error !== null) payload["error"] = error;
@@ -500,8 +529,13 @@ class RealEngine implements RealRuntimeAdapter {
     return last ?? { ok: false, delivered: false, error: "worker registry is not wired" };
   }
 
+  /**
+   * W740 §2: the panel/tool face is where a watchdog verdict becomes visible —
+   * `by_status` counts the registry rows, so a settle changes it, and the count of
+   * live sweepers rides along.
+   */
   workerStatus(wid?: string): WorkerStatusReport {
-    return aggregateWorkerStatus(this.workerSessions(), wid);
+    return workerStatusOf(this.workerSessions(), watchdogCount(this.registry.list()), wid);
   }
 
   // --- internals ---------------------------------------------------------
@@ -516,20 +550,6 @@ class RealEngine implements RealRuntimeAdapter {
   private get now(): () => number {
     return this.opts.now ?? Date.now;
   }
-}
-
-/** Normalize a drained message into the inbox shape the publisher expects. */
-function inboxMessageOf(message: PendingInjection): InjectedMessage {
-  return {
-    text: message.text,
-    from: message.from,
-    at: 0,
-    lane: message.lane ?? "next-turn",
-    kind: message.kind ?? "user",
-    id: message.id ?? "",
-    source: message.source ?? { kind: "user", form: "message" },
-    duplicate: false,
-  };
 }
 
 /** The frozen "nothing to compact" note (kept in sync with compact/plan.ts). */

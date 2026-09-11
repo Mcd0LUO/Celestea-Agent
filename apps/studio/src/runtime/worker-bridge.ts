@@ -14,44 +14,43 @@
  * for the host to aggregate a process-wide `worker_status`.
  */
 
-import { isRecord, type ToolRegistry, type WorkerEntry } from "@celestea/core";
+import { isRecord, type ToolRegistry } from "@celestea/core";
 import { projectMessages } from "@celestea/session";
 import { getExtra, type WorkerRegistry } from "@celestea/workers";
 import type { WorkerSessionRow, WorkerSpawnOutcome, WorkerStatusReport } from "../runtime-adapter.js";
 
-/** Registry session id -> its worker row (the `sess=` token is the link). */
-function entriesBySession(registry: WorkerRegistry): Map<string, WorkerEntry> {
-  const bySid = new Map<string, WorkerEntry>();
-  for (const entry of registry.ownEntries()) {
-    const sid = getExtra(entry, "sess");
-    if (sid !== null && sid !== "") bySid.set(sid, entry);
-  }
-  return bySid;
-}
-
-/** Engine-memory worker sessions (`worker:<sid>`, pseudo-workspace "engine"). */
+/**
+ * Engine-memory worker sessions (`worker:<sid>`, pseudo-workspace "engine").
+ *
+ * W740: the row is ENTRY-driven, not conversation-driven. A settled worker gives
+ * up its conversation (W736's receipt path; the watchdog's F2 release), so a
+ * projection that only walked `registry.sessions.metas()` dropped every
+ * DONE/FAILED worker out of the panel the moment it finished — exactly the
+ * opposite of what a status view is for. Each registry row emits a panel row,
+ * enriched with the live conversation while one still exists.
+ */
 export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId: string | null): WorkerSessionRow[] {
   if (registry === null) return [];
-  const bySid = entriesBySession(registry);
-  return registry.sessions
-    .metas()
-    .filter((m) => m.id !== hostSessionId)
-    .map((m) => {
-      const entry = bySid.get(m.id);
-      return {
-        id: `worker:${m.id}`,
-        workspace: "engine",
-        kind: "worker" as const,
-        title: m.title,
-        model: m.model,
-        // W729 §2.3: the mode recorded at spawn (parent mode unless overridden).
-        mode: m.mode ?? "standard",
-        size: registry.sessions.logOf(m.id)?.events().length ?? 0,
-        modified: 0,
-        active: false,
-        ...(entry === undefined ? {} : { wid: entry.wid, status: entry.status, state: getExtra(entry, "state") ?? "" }),
-      };
-    });
+  return registry.ownEntries().map((entry) => {
+    const sid = getExtra(entry, "sess") ?? "";
+    const meta = sid === "" ? undefined : registry.sessions.get(sid)?.meta;
+    return {
+      id: `worker:${sid === "" ? entry.wid : sid}`,
+      workspace: "engine",
+      kind: "worker" as const,
+      title: meta?.title ?? entry.wid,
+      model: meta?.model ?? getExtra(entry, "model"),
+      // W729 §2.3: the mode recorded at spawn (parent mode unless overridden).
+      mode: meta?.mode ?? getExtra(entry, "mode") ?? "standard",
+      size: registry.sessions.logOf(sid)?.events().length ?? 0,
+      modified: 0,
+      active: false,
+      wid: entry.wid,
+      status: entry.status,
+      state: getExtra(entry, "state") ?? "",
+      host_session: hostSessionId,
+    };
+  });
 }
 
 /** Process-wide `worker_status` fold over the merged rows (W513). */
