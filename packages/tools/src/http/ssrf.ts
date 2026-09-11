@@ -11,6 +11,14 @@
  * **Fail closed**: a malformed entry makes the policy deny everything until the
  * operator fixes the configuration — a typo can never silently widen access.
  *
+ * **No check-then-use (W738 P1)**: [HttpTargetPolicy.checkUrl] is a verdict only.
+ * The *authorizing* call is [HttpTargetPolicy.resolveChecked], which returns the
+ * exact addresses it approved so the transport can PIN them: between the check
+ * and the connect there is no second `getaddrinfo`, so a host name that answers
+ * with a public address during the check and with `127.0.0.1`/`169.254.169.254`
+ * at connect time (DNS rebinding) can no longer reach an address the policy
+ * refused. Never connect by name after a check.
+ *
  * W516 (session grants): a host may pass an [SsrfGrantView] with the session's
  * `net_hosts` entries. They are UNIONed into the allow side only, and only when
  * the env policy is active: neither the deny list nor the fail-closed verdict
@@ -82,32 +90,63 @@ export interface SsrfGrantView {
   netHosts?: readonly string[];
 }
 
+/**
+ * Host -> addresses resolver. Returns the address list, or a failure reason
+ * string (which becomes the denial reason). Default: `node:dns/promises`
+ * `lookup` (all families, verbatim order).
+ */
+export type HostResolver = (host: string, port: number) => Promise<readonly string[] | string>;
+
+/** Injectable seams of the policy (tests, custom DNS, W738 pinning harnesses). */
+export interface HttpTargetPolicyOptions {
+  resolver?: HostResolver;
+}
+
+/** Verdict + the exact approved addresses of ONE target. */
+export interface CheckedTarget {
+  /** `null` when the target is authorized, else the denial reason. */
+  reason: string | null;
+  /** Approved addresses to pin; empty whenever `reason !== null`. */
+  ips: string[];
+}
+
+/** Raw policy state (one object: the class has no other construction path). */
+interface PolicyState {
+  allow: readonly IpRange[];
+  deny: readonly IpRange[];
+  failClosed: boolean;
+  /** Host names a grant allows (they bypass the IP allow list, never deny). */
+  hostAllow?: readonly string[];
+  /** true = the env policy is inactive, so the grant's hosts changed nothing. */
+  hostsIneffective?: boolean;
+  resolver?: HostResolver;
+}
+
 export class HttpTargetPolicy {
   private readonly allow: readonly IpRange[];
   private readonly deny: readonly IpRange[];
   private readonly failClosed: boolean;
-  /** Host names a grant allows (they bypass the IP allow list, never deny). */
   private readonly hostAllow: readonly string[];
-  /** true = the env policy is inactive, so the grant's hosts changed nothing. */
   private readonly hostsIneffective: boolean;
+  private readonly resolver: HostResolver;
 
-  private constructor(
-    allow: readonly IpRange[],
-    deny: readonly IpRange[],
-    failClosed: boolean,
-    hostAllow: readonly string[] = [],
-    hostsIneffective = false,
-  ) {
-    this.allow = allow;
-    this.deny = deny;
-    this.failClosed = failClosed;
-    this.hostAllow = hostAllow;
-    this.hostsIneffective = hostsIneffective;
+  private constructor(state: PolicyState) {
+    this.allow = state.allow;
+    this.deny = state.deny;
+    this.failClosed = state.failClosed;
+    this.hostAllow = state.hostAllow ?? [];
+    this.hostsIneffective = state.hostsIneffective ?? false;
+    this.resolver = state.resolver ?? resolveTargets;
   }
 
   /** Parse the two lists; a malformed entry throws (see [fromEnv] for env use). */
-  static parse(allowSpec?: string | null, denySpec?: string | null): HttpTargetPolicy {
-    return new HttpTargetPolicy(parseList(allowSpec), parseList(denySpec), false);
+  static parse(allowSpec?: string | null, denySpec?: string | null, options: HttpTargetPolicyOptions = {}): HttpTargetPolicy {
+    return new HttpTargetPolicy({
+      allow: parseList(allowSpec),
+      deny: parseList(denySpec),
+      failClosed: false,
+      resolver: options.resolver,
+    });
   }
 
   /**
@@ -115,7 +154,11 @@ export class HttpTargetPolicy {
    * are merged on the allow side ONLY (see the module docs): the env policy must
    * be active for them to count at all.
    */
-  static fromEnv(env: NodeJS.ProcessEnv = process.env, grants: SsrfGrantView = {}): HttpTargetPolicy {
+  static fromEnv(
+    env: NodeJS.ProcessEnv = process.env,
+    grants: SsrfGrantView = {},
+    options: HttpTargetPolicyOptions = {},
+  ): HttpTargetPolicy {
     const allowSpec = envString(env, ENV_HTTP_ALLOW);
     const denySpec = envString(env, ENV_HTTP_DENY);
     const hosts = [...(grants.netHosts ?? [])].filter((h) => h.trim() !== "");
@@ -123,12 +166,18 @@ export class HttpTargetPolicy {
       const allow = parseList(allowSpec);
       const deny = parseList(denySpec);
       if (allowSpec === undefined && denySpec === undefined) {
-        return new HttpTargetPolicy(allow, deny, false, [], hosts.length > 0);
+        return new HttpTargetPolicy({ ...options, allow, deny, failClosed: false, hostsIneffective: hosts.length > 0 });
       }
       const merged = splitGrantHosts(hosts);
-      return new HttpTargetPolicy([...allow, ...merged.ranges], deny, false, merged.names, false);
+      return new HttpTargetPolicy({
+        ...options,
+        allow: [...allow, ...merged.ranges],
+        deny,
+        failClosed: false,
+        hostAllow: merged.names,
+      });
     } catch {
-      return new HttpTargetPolicy([], [], true, [], false);
+      return new HttpTargetPolicy({ ...options, allow: [], deny: [], failClosed: true });
     }
   }
 
@@ -147,19 +196,34 @@ export class HttpTargetPolicy {
     return this.hostsIneffective;
   }
 
-  /** `null` when the target is authorized, else the denial reason. */
+  /**
+   * Verdict only (`null` = authorized). NEVER sufficient on its own: the caller
+   * must connect to the addresses returned by [resolveChecked] instead of
+   * letting the transport resolve the name again (W738 check-then-use).
+   */
   async checkUrl(url: string): Promise<string | null> {
+    return (await this.resolveChecked(url)).reason;
+  }
+
+  /**
+   * Authorize a target and return the addresses it approved. `reason !== null`
+   * ⇒ `ips` is empty and nothing may be connected; `reason === null` ⇒ `ips` is
+   * non-empty and is the COMPLETE set of addresses the caller may use (pin them
+   * on every hop).
+   */
+  async resolveChecked(url: string): Promise<CheckedTarget> {
     const parsed = new URL(url);
     const host = parsed.hostname.replace(/^\[|\]$/g, "");
-    if (host === "") return "target url has no host";
+    if (host === "") return { reason: "target url has no host", ips: [] };
     const granted = this.hostAllow.includes(host.toLowerCase());
-    const ips = await resolveTargets(host, parsed.port === "" ? defaultPort(parsed.protocol) : Number(parsed.port));
-    if (typeof ips === "string") return ips;
+    const ips = await this.resolver(host, parsed.port === "" ? defaultPort(parsed.protocol) : Number(parsed.port));
+    if (typeof ips === "string") return { reason: ips, ips: [] };
+    if (ips.length === 0) return { reason: `host '${host}' resolves to no addresses`, ips: [] };
     for (const ip of ips) {
       const reason = this.ipAllowed(ip, granted);
-      if (reason !== null) return reason;
+      if (reason !== null) return { reason, ips: [] };
     }
-    return null;
+    return { reason: null, ips: [...ips] };
   }
 
   private ipAllowed(ip: string, hostGranted = false): string | null {
@@ -211,7 +275,7 @@ function parseList(spec: string | undefined | null): IpRange[] {
 }
 
 /** Every address a target host resolves to, or a failure reason string. */
-async function resolveTargets(host: string, port: number): Promise<string[] | string> {
+export async function resolveTargets(host: string, port: number): Promise<string[] | string> {
   if (isIP(host) !== 0) return [host];
   try {
     const addresses = await lookup(host, { all: true });

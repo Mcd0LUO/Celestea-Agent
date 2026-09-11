@@ -45,7 +45,9 @@ describe("ToolRegistryImpl.dispatch", () => {
     const registry = createToolRegistry([], [guard({ kind: "allow" }, seen)]);
     const out = await registry.dispatch(input("nope", {}));
     expect(out.error).toBe("unknown tool: nope");
-    expect(out.decision).toEqual({ kind: "allow" });
+    // W738: a call the seam REFUSED is a deny — never an `allow` (which would
+    // tell the caller and the audit log that a rejected call passed).
+    expect(out.decision).toEqual({ kind: "deny", reason: "unknown tool: nope" });
     expect(seen).toEqual([]);
   });
 
@@ -61,6 +63,8 @@ describe("ToolRegistryImpl.dispatch", () => {
     expect(out.value).toBeNull();
     expect(seen).toEqual([]);
     expect(executed).toBe(false);
+    // W738: a schema-rejected call is a deny with the very error as its reason.
+    expect(out.decision).toEqual({ kind: "deny", reason: out.error });
   });
 
   it("short-circuits on a deny before executing, keeping the contract shape", async () => {
@@ -93,6 +97,23 @@ describe("ToolRegistryImpl.dispatch", () => {
     const registry = createToolRegistry([tool("read_file", async () => "ok")], [boom]);
     const out = await registry.dispatch(input("read_file", {}));
     expect(out.error).toBe('denied: toolguard: code=guard_error msg="guard exploded"');
+  });
+
+  it("denies (never allows) a call rejected by the schema, and keeps the tool unrun", async () => {
+    let executed = false;
+    const registry = createToolRegistry([tool("write_file", async () => (executed = true), ["path"])]);
+    const out = await registry.dispatch({ call_id: "c9", name: "write_file", args: { path: 42 } });
+    expect(out.decision).toMatchObject({ kind: "deny" });
+    if (out.decision?.kind === "deny") expect(out.decision.reason).toContain("toolargs: code=schema");
+    expect(out.error?.startsWith("toolargs: code=schema")).toBe(true);
+    expect(out.value).toBeNull();
+    expect(executed).toBe(false);
+  });
+
+  it("denies (never allows) a call to a tool that is not registered", async () => {
+    const registry = createToolRegistry([tool("read_file", async () => "ok")]);
+    const out = await registry.dispatch({ call_id: "c10", name: "write_file", args: { path: "a" } });
+    expect(out.decision).toEqual({ kind: "deny", reason: "unknown tool: write_file" });
   });
 
   it("captures a tool failure instead of throwing across the seam", async () => {

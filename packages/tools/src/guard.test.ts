@@ -1,11 +1,11 @@
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import type { ToolInput } from "@celestea/core";
+import type { Tool, ToolInput } from "@celestea/core";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { cleanupTempDirs, makeDir, makeTempDir, writeFixture } from "./testing/tmp.test-util.js";
-import { mountProductionGuards, parseToolRoots, PathGuard, PathGuardPolicy } from "./guard/path-guard.js";
+import { mountProductionGuards, parseToolRoots, PATH_ACCESS, PathGuard, PathGuardPolicy } from "./guard/path-guard.js";
 import { createToolRegistry, ToolRegistryImpl } from "./registry.js";
 import { readFileTool } from "./tools/read-file.js";
 import { writeFileTool } from "./tools/write-file.js";
@@ -105,18 +105,83 @@ describe("PathGuardPolicy", () => {
 describe("PathGuard", () => {
   const guard = new PathGuard(policy);
 
-  it("arbitrates file tools and passes every other tool through", async () => {
+  it("arbitrates the declared file tools by their declared access", async () => {
     expect(await guard.check(input("read_file", join(outside, "secret.txt")))).toMatchObject({ kind: "deny" });
     expect(await guard.check(input("list_dir", join(outside, "secret.txt")))).toMatchObject({ kind: "deny" });
     expect(await guard.check(input("write_file", join(outside, "x.txt")))).toMatchObject({ kind: "deny" });
-    for (const name of ["run_shell", "process_control", "http_request", "spawn_worker"]) {
-      expect(await guard.check(input(name, "/etc/passwd"))).toEqual({ kind: "allow" });
-    }
+    // `read_file` may read a read-only root; the WRITE tool may not write it.
+    expect(await guard.check(input("read_file", join(whitelist, "shared.txt")))).toEqual({ kind: "allow" });
+    expect(await guard.check(input("write_file", join(whitelist, "shared.txt")))).toMatchObject({ kind: "deny" });
   });
 
   it("passes a missing path argument through (the tool reports it)", async () => {
     expect(await guard.check({ call_id: "c", name: "read_file", args: {} })).toEqual({ kind: "allow" });
     expect(await guard.check({ call_id: "c", name: "read_file", args: { path: 42 } })).toEqual({ kind: "allow" });
+  });
+});
+
+/**
+ * W738 P1: the guard is driven by the ARGUMENTS, not by a list of blessed tool
+ * names. A tool nobody declared must be *constrained*, never waved through.
+ */
+describe("PathGuard fail-closed default (undeclared tools)", () => {
+  const guard = new PathGuard(policy);
+
+  it("constrains a tool that is not declared anywhere (write floor)", async () => {
+    const decision = await guard.check(input("brand_new_tool", join(outside, "secret.txt")));
+    expect(decision.kind).toBe("deny");
+    if (decision.kind === "deny") expect(decision.reason).toContain("toolguard: code=path_forbidden");
+    // …and it is checked as a WRITE: a read-only root is not writable for it.
+    expect(await guard.check(input("brand_new_tool", join(whitelist, "shared.txt")))).toMatchObject({ kind: "deny" });
+    // inside the workspace it is allowed — fail-closed, not fail-everything.
+    expect(await guard.check(input("brand_new_tool", path("inside.txt")))).toEqual({ kind: "allow" });
+  });
+
+  it("constrains path-like arguments that are not literally named `path`", async () => {
+    for (const args of [{ dir: outside }, { workdir: outside }, { workspace: outside }, { paths: [path("a"), outside] }]) {
+      expect(await guard.check({ call_id: "c", name: "undeclared_tool", args })).toMatchObject({ kind: "deny" });
+    }
+    expect(await guard.check({ call_id: "c", name: "undeclared_tool", args: { files: [path("a"), path("b")] } })).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("hands a path back only to the tools that declare their own confinement layer", async () => {
+    // The `self` set is deliberate and must not grow silently: run_shell's
+    // workdir lives inside the sandbox root, spawn_worker's workspace is
+    // resolved by the host session RPC.
+    expect([...PATH_ACCESS].filter(([, access]) => access === "self").map(([name]) => name).sort()).toEqual([
+      "run_shell",
+      "spawn_worker",
+    ]);
+    expect(await guard.check({ call_id: "c", name: "run_shell", args: { command: "ls", workdir: outside } })).toEqual({
+      kind: "allow",
+    });
+    expect(await guard.check({ call_id: "c", name: "spawn_worker", args: { wid: "W1", workspace: outside } })).toEqual({
+      kind: "allow",
+    });
+    // A tool with no path-like argument is never touched.
+    expect(await guard.check({ call_id: "c", name: "process_control", args: { handle: "h", action: "poll" } })).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("denies an undeclared tool through the registry, too", async () => {
+    const registry = new ToolRegistryImpl();
+    const rogue: Tool = {
+      spec: () => ({
+        name: "rogue_tool",
+        description: "undeclared tool",
+        parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      }),
+      execute: async () => "ran",
+    };
+    registry.register(rogue);
+    registry.addGuard(new PathGuard(policy));
+    const out = await registry.dispatch(input("rogue_tool", join(outside, "secret.txt")));
+    expect(out.value).toBeNull();
+    expect(out.decision?.kind).toBe("deny");
+    expect(out.error?.startsWith("denied: toolguard: code=path_forbidden")).toBe(true);
   });
 });
 

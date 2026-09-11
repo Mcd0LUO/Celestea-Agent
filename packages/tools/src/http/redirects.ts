@@ -6,6 +6,13 @@
  * policy, so a permitted host cannot bounce the request into a denied network.
  * 301/302/303 degrade to `GET` without a body (Rust parity); the chain is
  * capped at [MAX_REDIRECT_HOPS], and a non-http(s) hop target is rejected.
+ *
+ * **Authorize then PIN (W738 P1)**: the check and the connect are one step. The
+ * policy call returns the addresses it approved ([HttpTargetPolicy.resolveChecked])
+ * and those exact addresses are handed to the transport, which connects to them
+ * without resolving again — and it is repeated for EVERY hop. A host name whose
+ * DNS answer changes between the check and the connect (rebinding) therefore
+ * cannot be used to reach an address the policy refused.
  */
 
 import { classifyTransportError, httpFailure } from "./errors.js";
@@ -31,9 +38,9 @@ export async function fetchWithPolicy(url: URL, options: FetchOptions): Promise<
   let method = options.method;
   let body = options.body;
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
-    const forbidden = await options.policy.checkUrl(current.toString());
-    if (forbidden !== null) throw httpFailure("target_forbidden", forbidden);
-    const result = await sendOnce(current, method, body, options);
+    const checked = await options.policy.resolveChecked(current.toString());
+    if (checked.reason !== null) throw httpFailure("target_forbidden", checked.reason);
+    const result = await sendOnce(current, method, body, options, checked.ips);
     if (!isRedirect(result.status) || result.location === null) return result;
     if (hop === MAX_REDIRECT_HOPS) {
       throw httpFailure("redirect", `redirect chain longer than ${MAX_REDIRECT_HOPS} hops`);
@@ -48,7 +55,13 @@ export async function fetchWithPolicy(url: URL, options: FetchOptions): Promise<
   throw httpFailure("redirect", `redirect chain longer than ${MAX_REDIRECT_HOPS} hops`);
 }
 
-async function sendOnce(url: URL, method: string, body: string | null, options: FetchOptions): Promise<TransportResult> {
+async function sendOnce(
+  url: URL,
+  method: string,
+  body: string | null,
+  options: FetchOptions,
+  pinnedIps: readonly string[],
+): Promise<TransportResult> {
   try {
     return await requestOnce({
       url,
@@ -57,6 +70,7 @@ async function sendOnce(url: URL, method: string, body: string | null, options: 
       body,
       timeoutMs: options.timeoutMs,
       maxBodyBytes: options.maxBodyBytes,
+      pinnedIps,
     });
   } catch (e) {
     throw await classifyTransportError(e, url.hostname);

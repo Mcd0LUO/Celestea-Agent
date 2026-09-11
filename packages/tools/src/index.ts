@@ -66,8 +66,11 @@ export {
   ENV_TOOL_WORKDIR,
   mountProductionGuards,
   parseToolRoots,
+  PATH_ACCESS,
+  PATH_ARG_KEYS,
   PathGuard,
   PathGuardPolicy,
+  type PathAccess,
   type PathGuardGrants,
   type PathGuardPolicyInit,
 } from "./guard/path-guard.js";
@@ -90,11 +93,16 @@ export {
   HttpTargetPolicy,
   ipInRange,
   parseIpRange,
+  resolveTargets,
+  type CheckedTarget,
+  type HostResolver,
+  type HttpTargetPolicyOptions,
   type IpRange,
   type SsrfGrantView,
 } from "./http/ssrf.js";
 export { HEADER_SUBSET, pickHeaders, validateHeaderPairs, type HeaderPairs } from "./http/headers.js";
 export { MAX_REDIRECT_HOPS } from "./http/redirects.js";
+export { pinnedLookup, requestOnce, type TransportRequest, type TransportResult } from "./http/transport.js";
 export { HTTP_ERROR_PREFIX, classifyTransportError, httpFailure, TransportError } from "./http/errors.js";
 export { MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from "./tools/http-request.js";
 
