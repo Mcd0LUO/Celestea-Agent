@@ -28,6 +28,7 @@ import type { RuntimeAdapter } from "./runtime-adapter.js";
 import { readSessionMeta } from "./store/session-meta.js";
 import { createSessionGrants } from "./runtime/session-grants.js";
 import { grantsEnv } from "./store/grants-service.js";
+import { createUsageLedgerFile } from "@celestea/runtime";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
 
 export interface StudioAppOptions {
@@ -57,13 +58,19 @@ export interface StudioApp {
  * under `<data dir>/worker-results`.
  */
 function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv): EngineFactory {
-  return (stores) =>
-    createRealRuntimeAdapter({
-      profile: startupEngineProfile(stores.providers, env, config.apiKeyEnv).profile,
+  const dataDir = dirname(config.paths.workspacesFile);
+  return (stores) => {
+    const startup = startupEngineProfile(stores.providers, env, config.apiKeyEnv);
+    return createRealRuntimeAdapter({
+      profile: startup.profile,
       env,
-      resultsDir: join(dirname(config.paths.workspacesFile), "worker-results"),
+      resultsDir: join(dataDir, "worker-results"),
       // W516: every instance reads its session's grants at compose time.
-      grants: createSessionGrants({ dataDir: dirname(config.paths.workspacesFile), env: grantsEnv(env, config.paths.workspacesFile) }),
+      grants: createSessionGrants({ dataDir, env: grantsEnv(env, config.paths.workspacesFile) }),
+      // W728 §3 P0: ONE append-only usage ledger per process (`<data dir>`),
+      // shared by every session instance; `CELESTEA_USAGE_LEDGER=off` disables.
+      ledgerFile: createUsageLedgerFile({ dataDir, env }),
+      providerLabel: startup.target.provider_id,
       resolveSession: (id) => {
         const resolved = stores.sessions.resolve(id);
         return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
@@ -75,6 +82,7 @@ function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv): EngineFac
         return resolved.ok ? (readSessionMeta(resolved.value.dir)?.model ?? null) : null;
       },
     });
+  };
 }
 
 /** Every contract endpoint must be bound exactly once, or startup fails. */

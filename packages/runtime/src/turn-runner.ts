@@ -14,6 +14,8 @@
  *      (b) provided on the turn scope under `TURN_ABORT_SERVICE`;
  *   5. **terminal state** — read back from the session log's own `turn_end`
  *      (the log is the single source of truth), never invented by the runtime.
+ *   6. **usage ledger observation** (W728) — when a ledger is wired, the turn
+ *      boundary is announced to it (pure observation; it can never throw).
  */
 
 import {
@@ -30,6 +32,7 @@ import {
 } from "@celestea/core";
 import { ComposeError, RuntimeReleasedError, TurnBusyError } from "./errors.js";
 import type { FrameMapper, LoopEventSink, TurnFrame } from "./frames.js";
+import type { TurnLedgerHooks } from "./ledger.js";
 import type { StatusTracker } from "./status.js";
 import { TURN_ABORT_SERVICE, TURN_SINK_SERVICE, USAGE_TRACKER_SERVICE } from "./tokens.js";
 import type { UsageAccounting } from "./usage.js";
@@ -68,6 +71,12 @@ export interface TurnRunnerDeps {
   usage: UsageAccounting;
   agentConfig: AgentConfig;
   frameMapper: FrameMapper;
+  /**
+   * Usage ledger hooks (W728 §3 P0): the turn boundary is only known HERE, and
+   * the ledger must not guess it from a counter. Observation only — the ledger
+   * swallows its own IO failures, so a turn cannot fail because of bookkeeping.
+   */
+  ledger?: TurnLedgerHooks;
   /** Absent = the loop is resolved from `AGENT_LOOP_SERVICE` in the Context. */
   loopFactory?: LoopFactory;
   /**
@@ -146,13 +155,23 @@ export class TurnRunner {
     this.injectReceipts(log);
     const start = log.events().length;
     const loop = this.resolveLoop(signal, sink);
+    this.deps.ledger?.beginTurn(log);
     let failure: unknown = null;
     try {
       await loop.runTurn(scope, input);
     } catch (error) {
       failure = error;
     }
-    return resolveOutcome(log.events(), start, signal, failure);
+    try {
+      const outcome = resolveOutcome(log.events(), start, signal, failure);
+      this.deps.ledger?.endTurn(outcome);
+      return outcome;
+    } catch (error) {
+      // A wiring failure still closes the ledger's turn before it propagates:
+      // the usage already booked belongs to a turn that will have no total.
+      this.deps.ledger?.endTurn("interrupted");
+      throw error;
+    }
   }
 
   /** Feed the tracker, then map the event onto one host frame. */
