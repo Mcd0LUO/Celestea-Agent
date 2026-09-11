@@ -10,6 +10,13 @@
  *
  * **Fail closed**: a malformed entry makes the policy deny everything until the
  * operator fixes the configuration — a typo can never silently widen access.
+ *
+ * W516 (session grants): a host may pass an [SsrfGrantView] with the session's
+ * `net_hosts` entries. They are UNIONed into the allow side only, and only when
+ * the env policy is active: neither the deny list nor the fail-closed verdict
+ * can be reached by a grant, and an inactive policy (both env vars unset) stays
+ * inactive — a grant must never *tighten* a deployment into a whitelist
+ * (`netHostsIneffective` reports exactly that case to the host's audit).
  */
 
 import { lookup } from "node:dns/promises";
@@ -69,15 +76,33 @@ function padV6(parts: string[]): string[] {
   return missing <= 0 ? parts : [...parts, ...Array.from({ length: missing }, () => "0")];
 }
 
+/** Session-grant view of the SSRF policy (W516): allow-side widening only. */
+export interface SsrfGrantView {
+  /** `net_hosts` scope: IP/CIDR entries and/or host names. */
+  netHosts?: readonly string[];
+}
+
 export class HttpTargetPolicy {
   private readonly allow: readonly IpRange[];
   private readonly deny: readonly IpRange[];
   private readonly failClosed: boolean;
+  /** Host names a grant allows (they bypass the IP allow list, never deny). */
+  private readonly hostAllow: readonly string[];
+  /** true = the env policy is inactive, so the grant's hosts changed nothing. */
+  private readonly hostsIneffective: boolean;
 
-  private constructor(allow: readonly IpRange[], deny: readonly IpRange[], failClosed: boolean) {
+  private constructor(
+    allow: readonly IpRange[],
+    deny: readonly IpRange[],
+    failClosed: boolean,
+    hostAllow: readonly string[] = [],
+    hostsIneffective = false,
+  ) {
     this.allow = allow;
     this.deny = deny;
     this.failClosed = failClosed;
+    this.hostAllow = hostAllow;
+    this.hostsIneffective = hostsIneffective;
   }
 
   /** Parse the two lists; a malformed entry throws (see [fromEnv] for env use). */
@@ -85,12 +110,25 @@ export class HttpTargetPolicy {
     return new HttpTargetPolicy(parseList(allowSpec), parseList(denySpec), false);
   }
 
-  /** Policy from the environment; malformed config ⇒ fail closed. */
-  static fromEnv(env: NodeJS.ProcessEnv = process.env): HttpTargetPolicy {
+  /**
+   * Policy from the environment; malformed config ⇒ fail closed. Session grants
+   * are merged on the allow side ONLY (see the module docs): the env policy must
+   * be active for them to count at all.
+   */
+  static fromEnv(env: NodeJS.ProcessEnv = process.env, grants: SsrfGrantView = {}): HttpTargetPolicy {
+    const allowSpec = envString(env, ENV_HTTP_ALLOW);
+    const denySpec = envString(env, ENV_HTTP_DENY);
+    const hosts = [...(grants.netHosts ?? [])].filter((h) => h.trim() !== "");
     try {
-      return HttpTargetPolicy.parse(envString(env, ENV_HTTP_ALLOW), envString(env, ENV_HTTP_DENY));
+      const allow = parseList(allowSpec);
+      const deny = parseList(denySpec);
+      if (allowSpec === undefined && denySpec === undefined) {
+        return new HttpTargetPolicy(allow, deny, false, [], hosts.length > 0);
+      }
+      const merged = splitGrantHosts(hosts);
+      return new HttpTargetPolicy([...allow, ...merged.ranges], deny, false, merged.names, false);
     } catch {
-      return new HttpTargetPolicy([], [], true);
+      return new HttpTargetPolicy([], [], true, [], false);
     }
   }
 
@@ -104,33 +142,64 @@ export class HttpTargetPolicy {
     return { allow: this.allow.length, deny: this.deny.length, failClosed: this.failClosed };
   }
 
+  /** true when `net_hosts` grants were dropped because the env policy is off. */
+  get netHostsIneffective(): boolean {
+    return this.hostsIneffective;
+  }
+
   /** `null` when the target is authorized, else the denial reason. */
   async checkUrl(url: string): Promise<string | null> {
     const parsed = new URL(url);
     const host = parsed.hostname.replace(/^\[|\]$/g, "");
     if (host === "") return "target url has no host";
+    const granted = this.hostAllow.includes(host.toLowerCase());
     const ips = await resolveTargets(host, parsed.port === "" ? defaultPort(parsed.protocol) : Number(parsed.port));
     if (typeof ips === "string") return ips;
     for (const ip of ips) {
-      const reason = this.ipAllowed(ip);
+      const reason = this.ipAllowed(ip, granted);
       if (reason !== null) return reason;
     }
     return null;
   }
 
-  private ipAllowed(ip: string): string | null {
+  private ipAllowed(ip: string, hostGranted = false): string | null {
     if (this.failClosed) {
       return `ssrf policy misconfigured (fail-closed): fix ${ENV_HTTP_ALLOW}/${ENV_HTTP_DENY}`;
     }
-    if (this.allow.length > 0 && !this.allow.some((range) => ipInRange(range, ip))) {
+    if (!hostGranted && this.allow.length > 0 && !this.allow.some((range) => ipInRange(range, ip))) {
       return `target ip ${ip} is not in the ${ENV_HTTP_ALLOW} allow list`;
     }
+    // Deny always wins: a granted host still has to pass the deny list.
     if (this.deny.some((range) => ipInRange(range, ip))) {
       return `target ip ${ip} is in the ${ENV_HTTP_DENY} deny list`;
     }
     return null;
   }
 }
+
+/** IP/CIDR entries -> extra allow ranges; host names -> host allow list. */
+function splitGrantHosts(hosts: readonly string[]): { ranges: IpRange[]; names: string[] } {
+  const ranges: IpRange[] = [];
+  const names: string[] = [];
+  for (const raw of hosts) {
+    const entry = raw.trim();
+    const ipLike = isIP(entry) !== 0 || /^[0-9a-fA-F:.]+\/\d+$/.test(entry);
+    if (ipLike) {
+      try {
+        ranges.push(parseIpRange(entry));
+      } catch {
+        // An unparseable grant entry is DROPPED (never fail-closed, §4.3.7).
+      }
+      continue;
+    }
+    const name = entry.toLowerCase();
+    if (HOST_NAME_RE.test(name)) names.push(name);
+  }
+  return { ranges, names };
+}
+
+/** RFC 1123 host name (no scheme, no port, no slash, no whitespace). */
+const HOST_NAME_RE = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 function parseList(spec: string | undefined | null): IpRange[] {
   if (spec === undefined || spec === null || spec.trim() === "") return [];

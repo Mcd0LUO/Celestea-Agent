@@ -28,12 +28,14 @@ import {
 } from "@celestea/core";
 
 import { builtinTools } from "./builtin.js";
-import { mountProductionGuards } from "./guard/path-guard.js";
+import { mountProductionGuards, type PathGuardGrants } from "./guard/path-guard.js";
+import { HttpTargetPolicy, type SsrfGrantView } from "./http/ssrf.js";
+import type { HttpRequestToolOptions } from "./tools/http-request.js";
 import { PROCESS_REGISTRY_SERVICE, ProcessRegistry } from "./process/registry.js";
 import { ToolRegistryImpl } from "./registry.js";
 import type { RunCodeEventSink } from "./run-code/broker.js";
 import type { RunCodeConfig } from "./run-code/limits.js";
-import { selectSandbox } from "./sandbox/provider.js";
+import { selectSandbox, type SandboxGrantView } from "./sandbox/provider.js";
 import { RegistryHandle, runCodeToolWithHandle } from "./tools/run-code.js";
 
 export const TOOLS_PLUGIN_NAME = "celestea.tools";
@@ -46,6 +48,13 @@ export interface RunCodeMount {
   events?: RunCodeEventSink;
 }
 
+/**
+ * Per-session grants (W516) reaching the assembly point. All three views are
+ * widen-only; `undefined` (no `grants.json`) reproduces the env-derived posture
+ * byte for byte.
+ */
+export interface ToolAssemblyGrants extends PathGuardGrants, SandboxGrantView, SsrfGrantView {}
+
 export interface ToolsPluginOptions {
   /** Tool set; default: the six builtins sharing [processes] + [sandbox]. */
   tools?: readonly Tool[];
@@ -54,6 +63,8 @@ export interface ToolsPluginOptions {
   /** Guard chain override: `null` disables guarding, `undefined` = env default. */
   guard?: ToolGuard | null;
   env?: NodeJS.ProcessEnv;
+  /** Session grants (W516): read from the session's `grants.json` by the host. */
+  grants?: ToolAssemblyGrants;
   /**
    * `run_code` mount: default = mounted; `false` = not registered. The tool is
    * registered *before* its registry handle is bound, so sub-calls ride this
@@ -75,10 +86,12 @@ export interface ToolAssembly {
 /** Build the tool assembly without mounting it (compose roots / tests). */
 export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
   const env = options.env ?? process.env;
+  const grants = options.grants ?? {};
   const processes = options.processes ?? new ProcessRegistry();
-  const sandbox = options.sandbox ?? selectSandbox({ env });
+  const sandbox = options.sandbox ?? selectSandbox({ env, grants });
   const registry = new ToolRegistryImpl();
-  for (const tool of options.tools ?? builtinTools({ sandbox, processes })) registry.register(tool);
+  const tools = options.tools ?? builtinTools({ sandbox, processes, http: httpOptions(env, grants) });
+  for (const tool of tools) registry.register(tool);
   const runCode = mountRunCode(registry, sandbox, options);
 
   let guardMounted = false;
@@ -86,9 +99,14 @@ export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
   else if (options.guard !== undefined) {
     registry.addGuard(options.guard);
     guardMounted = true;
-  } else guardMounted = mountProductionGuards(registry, env);
+  } else guardMounted = mountProductionGuards(registry, env, grants);
 
   return { registry, sandbox, processes, guardMounted, runCode };
+}
+
+/** The `http_request` options of this assembly (grants merged into allow). */
+export function httpOptions(env: NodeJS.ProcessEnv, grants: SsrfGrantView): HttpRequestToolOptions {
+  return { env, policy: HttpTargetPolicy.fromEnv(env, grants) };
 }
 
 /**

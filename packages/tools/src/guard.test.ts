@@ -156,3 +156,69 @@ describe("mountProductionGuards", () => {
     expect(off.guardChain()).toHaveLength(0);
   });
 });
+
+/**
+ * W516 §4.1/§5.6: session grants may only ADD writable roots. Everything the
+ * guard could be talked out of by a `grants.json` is asserted here explicitly.
+ */
+describe("write roots (session grants)", () => {
+  const granted = makeDir(makeTempDir("guard-grant"), "out");
+  writeFixture(granted, "seed.txt", "seed");
+  const grantedPolicy = new PathGuardPolicy({ workspace, readRoots: [whitelist], writeRoots: [granted] });
+
+  it("adds the granted root as writable and keeps the workspace writable", () => {
+    expect(grantedPolicy.checkWrite(join(granted, "new.txt"))).toEqual({ kind: "allow" });
+    expect(grantedPolicy.checkWrite(join(granted, "deep", "new.txt"))).toEqual({ kind: "allow" });
+    expect(grantedPolicy.checkWrite(join(workspace, "new.txt"))).toEqual({ kind: "allow" });
+    // §4.3.3: a `write_roots` root is NOT a read root — `read_roots` is its own
+    // cap, so a write-only grant cannot be used to read the tree back out.
+    expect(grantedPolicy.checkRead(join(granted, "seed.txt")).kind).toBe("deny");
+    const both = new PathGuardPolicy({ workspace, readRoots: [whitelist, granted], writeRoots: [granted] });
+    expect(both.checkRead(join(granted, "seed.txt"))).toEqual({ kind: "allow" });
+  });
+
+  it("still denies writes outside every writable root (removal = deny again)", () => {
+    expect(grantedPolicy.checkWrite(join(outside, "new.txt")).kind).toBe("deny");
+    const revoked = new PathGuardPolicy({ workspace, readRoots: [whitelist] });
+    expect(revoked.checkWrite(join(granted, "new.txt")).kind).toBe("deny");
+  });
+
+  it("never removes or demotes a root a grant could have replaced", () => {
+    expect(grantedPolicy.writeRoots[0]).toBe(workspace);
+    expect(grantedPolicy.readRoots).toContain(whitelist);
+    // read roots stay read-only, granted or not: a write root is a SEPARATE list.
+    expect(grantedPolicy.checkWrite(join(whitelist, "shared.txt")).kind).toBe("deny");
+  });
+
+  it("keeps the legacy deny message when there is no extra write root", () => {
+    const decision = policy.checkWrite(join(outside, "new.txt"));
+    if (decision.kind !== "deny") expect.unreachable("must deny");
+    expect(decision.reason).toContain(`write path '${join(outside, "new.txt")}' is outside the workspace '${workspace}'`);
+  });
+
+  it("merges grant roots through fromEnv without weakening the env fail-closed rule", () => {
+    const merged = PathGuardPolicy.fromEnv(
+      { CELESTEA_TOOL_WORKDIR: workspace, CELESTEA_TOOL_ROOTS: whitelist },
+      { readRoots: [granted], writeRoots: [granted] },
+    );
+    expect(merged.readRoots).toEqual([workspace, whitelist, granted]);
+    expect(merged.checkWrite(join(granted, "new.txt"))).toEqual({ kind: "allow" });
+    // A broken CELESTEA_TOOL_ROOTS still denies EVERYTHING: grants cannot bypass it.
+    const broken = PathGuardPolicy.fromEnv(
+      { CELESTEA_TOOL_WORKDIR: workspace, CELESTEA_TOOL_ROOTS: "/nonexistent-root-xyz" },
+      { writeRoots: [granted] },
+    );
+    expect(broken.checkWrite(join(granted, "new.txt")).kind).toBe("deny");
+    expect(broken.checkRead(join(workspace, "inside.txt")).kind).toBe("deny");
+  });
+
+  it("cannot unmount or bypass the guard chain (§5.6)", async () => {
+    const registry = new ToolRegistryImpl();
+    expect(mountProductionGuards(registry, { CELESTEA_TOOL_WORKDIR: workspace }, { writeRoots: [granted] })).toBe(true);
+    expect(registry.guardChain()).toHaveLength(1);
+    expect(registry.guardChain()[0]).toBeInstanceOf(PathGuard);
+    // A `write_file` outside the roots is still denied with the same contract code.
+    const bypass = new PathGuard(new PathGuardPolicy({ workspace, readRoots: [], writeRoots: [] }));
+    expect(await bypass.check(input("write_file", join(granted, "x.txt")))).toMatchObject({ kind: "deny" });
+  });
+})

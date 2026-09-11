@@ -68,6 +68,7 @@ export {
   parseToolRoots,
   PathGuard,
   PathGuardPolicy,
+  type PathGuardGrants,
   type PathGuardPolicyInit,
 } from "./guard/path-guard.js";
 export { absolutize, canonicalExisting, isDirectory, isInside, resolveExistingTarget, resolveWriteTarget } from "./guard/paths.js";
@@ -83,7 +84,15 @@ export { httpRequestSpec, httpRequestTool, type HttpRequestToolOptions } from ".
 export { builtinTools, type BuiltinToolsOptions } from "./builtin.js";
 
 // --- http policy + transport contract -----------------------------------------
-export { ENV_HTTP_ALLOW, ENV_HTTP_DENY, HttpTargetPolicy, ipInRange, parseIpRange, type IpRange } from "./http/ssrf.js";
+export {
+  ENV_HTTP_ALLOW,
+  ENV_HTTP_DENY,
+  HttpTargetPolicy,
+  ipInRange,
+  parseIpRange,
+  type IpRange,
+  type SsrfGrantView,
+} from "./http/ssrf.js";
 export { HEADER_SUBSET, pickHeaders, validateHeaderPairs, type HeaderPairs } from "./http/headers.js";
 export { MAX_REDIRECT_HOPS } from "./http/redirects.js";
 export { HTTP_ERROR_PREFIX, classifyTransportError, httpFailure, TransportError } from "./http/errors.js";
@@ -155,6 +164,7 @@ export {
   selectSandbox,
   selectSandboxDetailed,
   type SandboxFallbackMode,
+  type SandboxGrantView,
   type SandboxSelection,
   type SelectOptions,
 } from "./sandbox/provider.js";
@@ -177,10 +187,12 @@ export { buildSeccompFilter, instructionCount, openSeccompBlob, toBlobBytes, typ
 // --- plugin -------------------------------------------------------------------
 export {
   assembleTools,
+  httpOptions,
   TOOLS_PLUGIN_NAME,
   toolsPlugin,
   type RunCodeMount,
   type ToolAssembly,
+  type ToolAssemblyGrants,
   type ToolsPluginOptions,
 } from "./plugin.js";
 

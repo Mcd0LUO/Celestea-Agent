@@ -237,3 +237,68 @@ describe("bwrapOptionsFromEnv", () => {
     expect(() => bwrapOptionsFromEnv({ CELESTEA_SANDBOX_MASK: "home" })).toThrowError(/invalid CELESTEA_SANDBOX_MASK/);
   });
 });
+
+/**
+ * W516 §4.1/§4.3.5: what a session grant may do to the provider — share the
+ * network namespace, or override `FALLBACK=fail` with `unsandboxed`. Nothing
+ * else: `shareTmp` / `seccomp` / `maskDirs` / rlimits stay operator-only.
+ */
+describe("session grants and the provider policy", () => {
+  it("ORs the `network` grant into --share-net and leaves every other knob alone", () => {
+    expect(bwrapOptionsFromEnv({}, { network: true })).toEqual({ ...DEFAULT_BWRAP_OPTIONS, shareNet: true });
+    expect(bwrapOptionsFromEnv({ CELESTEA_SANDBOX_NET: "0" }, { network: true }).shareNet).toBe(true);
+    expect(bwrapOptionsFromEnv({ CELESTEA_SANDBOX_NET: "0" }, {}).shareNet).toBe(false);
+    expect(buildBwrapArgv(WORK, bwrapOptionsFromEnv({}, { network: true }))).toContain("--share-net");
+    expect(buildBwrapArgv(WORK, bwrapOptionsFromEnv({}, {}))).not.toContain("--share-net");
+    // the grant cannot turn OFF an operator knob, nor touch seccomp/mask/tmp.
+    const granted = bwrapOptionsFromEnv(
+      { CELESTEA_SANDBOX_SHARE_TMP: "1", CELESTEA_SANDBOX_SECCOMP: "1", CELESTEA_SANDBOX_MASK: "/home" },
+      { network: true, unsandboxed: true },
+    );
+    expect(granted).toEqual({ shareNet: true, shareTmp: true, seccomp: true, maskDirs: ["/home"] });
+  });
+
+  it("reports the granted network as a real, non-isolated bwrap session", () => {
+    const selection = selectSandboxDetailed({ env: {}, config: config(), probe: probeWith(), grants: { network: true } });
+    expect(selection.provider).toBe("bwrap");
+    expect(selection.degradedByGrant).toBe(false);
+    expect(bwrapMeta((selection.sandbox as BwrapSandbox).options).net_isolated).toBe(false);
+  });
+
+  it("ignores `unsandboxed` while bwrap works (§4.3.5: never less than the host gives)", () => {
+    const selection = selectSandboxDetailed({
+      env: { [ENV_SANDBOX_FALLBACK]: "fail" },
+      config: config(),
+      probe: probeWith(),
+      grants: { unsandboxed: true },
+    });
+    expect(selection.provider).toBe("bwrap");
+    expect(selection.degraded).toBe(false);
+    expect(selection.degradedByGrant).toBe(false);
+  });
+
+  it("uses `unsandboxed` to accept the userspace provider when the mode is fail", () => {
+    const probe = probeWith({ bwrapUsable: false, bwrapRejectReason: "injected: no bwrap" });
+    const selection = selectSandboxDetailed({
+      env: { [ENV_SANDBOX_FALLBACK]: "fail" },
+      config: config(),
+      probe,
+      grants: { unsandboxed: true },
+    });
+    expect(selection.sandbox).toBeInstanceOf(UserspaceSandbox);
+    expect(selection.provider).toBe("userspace");
+    expect(selection.degraded).toBe(true);
+    expect(selection.degradedByGrant).toBe(true);
+    expect(selection.reason).toContain("unsandboxed");
+  });
+
+  it("still refuses to run without the grant (the fail-closed default is untouched)", () => {
+    const probe = probeWith({ bwrapUsable: false, bwrapRejectReason: "injected" });
+    expect(() => selectSandboxDetailed({ env: { [ENV_SANDBOX_FALLBACK]: "fail" }, config: config(), probe })).toThrowError(
+      /sandbox_unavailable/,
+    );
+    const plain = selectSandboxDetailed({ env: {}, config: config(), probe });
+    expect(plain.provider).toBe("userspace");
+    expect(plain.degradedByGrant).toBe(false);
+  });
+});
