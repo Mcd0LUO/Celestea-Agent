@@ -15,9 +15,24 @@ import { configView } from "./config-shape.js";
 import { failJson, numField, readJsonBody, strField, type Deps, type JsonObject } from "./common.js";
 import { validateModelName } from "../store/validate.js";
 import { MIN_STEPS } from "../config.js";
-import type { ProfilePatch } from "../runtime-adapter.js";
+import type { ProfilePatch, RuntimeAdapter } from "../runtime-adapter.js";
 
 const U32_MAX = 4_294_967_295;
+
+/**
+ * W742 §1: is any live instance still driving UNSETTLED workers? Both endpoints
+ * that swap the engine profile (`POST /api/config` here and `POST
+ * /api/providers/default`) must refuse while background work is in flight,
+ * because recomposing an instance disposes the old one — which aborts its workers
+ * and drops their registry rows, i.e. a silent kill the caller never sees.
+ *
+ * This is the UP-FRONT half of the fix; the registry's `rebuildDeferred` is the
+ * second half, because a worker can also appear between this check and the bump
+ * (a turn in another session may spawn one).
+ */
+export function workersInFlight(runtime: RuntimeAdapter): boolean {
+  return runtime.workerSessions().some((row) => row.status === "RUNNING");
+}
 
 /** `reasoning_effort` handling: ""/"off" clears; free strings pass through. */
 function effortPatch(patch: ProfilePatch, raw: string | undefined): void {
@@ -53,6 +68,7 @@ export function registerConfig(app: Hono, deps: Deps, table: RouteTable): string
   const post = table.get("post_config");
   app.on(post.method, post.honoPath, async (c) => {
     if (deps.runtime.isBusy()) return failJson(c, 409, "turn in progress; config applies between turns");
+    if (workersInFlight(deps.runtime)) return failJson(c, 409, "a worker is running; config applies between turns");
     const read = await readJsonBody(c);
     if (!read.ok) return read.response;
     const body = read.body;

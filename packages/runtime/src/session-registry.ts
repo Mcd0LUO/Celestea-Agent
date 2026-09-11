@@ -20,6 +20,18 @@
  *     first and throws [SessionCapacityError] (503 + Retry-After at the host)
  *     when every instance is busy; over `maxConcurrentTurns` a NEW turn is
  *     refused with [TurnCapacityError] instead of being silently queued.
+ *
+ * W742 (the two lifecycle promises the audit found unimplemented):
+ *   - §1 REBUILD RESPECTS LIVE WORK. A rebuild disposes the old instance, which
+ *     shuts the composed runtime down — aborting in-flight workers and dropping
+ *     their registry rows. An instance that still holds live background work
+ *     (see `rebuildDeferred`) is therefore only MARKED when the epoch bumps, and
+ *     [settleDeferred] recomposes it once that work has ended. The host owns the
+ *     callback that decides what "live work" means; the registry owns the order.
+ *   - §2 THE IDLE TTL IS REAL. [startReclaimer] arms ONE low-frequency, `unref`ed
+ *     timer that runs [sweep] (deferred rebuilds + [evictIdle]), so
+ *     `CELESTEA_SESSION_IDLE_TTL_MS` actually reclaims something; [shutdown]
+ *     disarms it, so no timer outlives the engine it belongs to.
  */
 
 import type { TurnOutcome } from "@celestea/core";
@@ -68,8 +80,27 @@ export interface SessionRegistryDeps {
   maxConcurrentTurns?: number;
   /** Idle TTL for [SessionRuntimeRegistry.evictIdle]; 0 = never by TTL. */
   idleTtlMs?: number;
-  /** `true` pins an instance: never reclaimed (live background workers). */
+  /**
+   * W742 §2: reclaimer period for [SessionRuntimeRegistry.startReclaimer];
+   * <= 0 (or omitted) = derive it from `idleTtlMs` (a quarter of the TTL, at
+   * least 1s, 0 when the TTL itself is 0 = nothing to reclaim).
+   */
+  reclaimerMs?: number;
+  /**
+   * `true` pins an instance: never reclaimed and not counted against `maxLive`.
+   * The host pins the detached default instance and every session that OWNS
+   * worker rows. Whether an instance may be REBUILT is a different question, with
+   * its own callback ([SessionRegistryDeps.rebuildDeferred]).
+   */
   pinned?: (entry: SessionRuntime) => boolean;
+  /**
+   * W742 §1: `true` = disposing this instance would kill LIVE background work
+   * (unsettled workers). Its rebuild is DEFERRED, never skipped: the epoch bump
+   * only marks the instance and [SessionRuntimeRegistry.settleDeferred] (or the
+   * reclaimer's [SessionRuntimeRegistry.sweep]) recomposes it as soon as this
+   * returns false. Absent = every rebuild is allowed (tests, embedded hosts).
+   */
+  rebuildDeferred?: (entry: SessionRuntime) => boolean;
   now?: () => number;
 }
 
@@ -115,6 +146,8 @@ export class SessionRuntimeRegistry {
   private readonly entries = new Map<string, SessionRuntime>();
   private readonly deps: SessionRegistryDeps;
   private readonly now: () => number;
+  /** W742 §2: the armed low-frequency reclaimer (null = disarmed). */
+  private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(deps: SessionRegistryDeps) {
     this.deps = deps;
@@ -254,8 +287,63 @@ export class SessionRuntimeRegistry {
     return true;
   }
 
-  /** Tear every instance down (process exit / tests). */
+  /**
+   * W742 §1: recompose every marked instance whose live work has ENDED — the
+   * counterpart of the deferral in [settleEpoch]. Returns the keys that were
+   * actually rebuilt, so the host can report the generation swap it just did.
+   */
+  settleDeferred(): string[] {
+    const rebuilt: string[] = [];
+    for (const entry of this.entries.values()) {
+      if (!entry.needsRebuild || entry.inFlight || this.rebuildIsDeferred(entry)) continue;
+      this.rebuild(entry);
+      rebuilt.push(entry.key);
+    }
+    return rebuilt;
+  }
+
+  /**
+   * W742 §2: ONE reclaimer pass. The TTL is applied FIRST: a stale instance that
+   * is past its idle deadline is reclaimed, so it is never recomposed just to be
+   * thrown away a moment later; what is still warm then gets its deferred
+   * generation swap.
+   */
+  async sweep(): Promise<{ rebuilt: string[]; evicted: string[] }> {
+    const evicted = await this.evictIdle();
+    const rebuilt = this.settleDeferred();
+    return { rebuilt, evicted };
+  }
+
+  /**
+   * W742 §2: arm the low-frequency reclaimer (idempotent). Returns false when a
+   * timer is already armed or when nothing could ever be reclaimed. The timer is
+   * `unref`ed — it must never keep the process alive — and [shutdown] disarms it,
+   * so a reclaimed engine leaks no timer. A sweep failure is swallowed on
+   * purpose: a reclaimer must never take the process down (see `Watchdog`).
+   */
+  startReclaimer(intervalMs?: number): boolean {
+    const every = intervalMs ?? this.deps.reclaimerMs ?? this.reclaimerDefault();
+    if (this.timer !== null || every <= 0) return false;
+    this.timer = setInterval(() => void this.sweep().catch(() => undefined), every);
+    this.timer.unref();
+    return true;
+  }
+
+  /** Disarm the reclaimer (idempotent; [shutdown] calls it). */
+  stopReclaimer(): void {
+    if (this.timer === null) return;
+    clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /** Is the reclaimer armed? (`CELESTEA_SESSION_IDLE_TTL_MS` > 0 in the host.) */
+  get reclaimerRunning(): boolean {
+    return this.timer !== null;
+  }
+
+  /** Tear every instance down and disarm the reclaimer (process exit / tests). */
   async shutdown(): Promise<void> {
+    this.stopReclaimer();
     const entries = [...this.entries.values()];
     this.entries.clear();
     for (const entry of entries) await this.deps.dispose(entry.runtime);
@@ -276,10 +364,21 @@ export class SessionRuntimeRegistry {
     return this.deps.pinned?.(entry) === true;
   }
 
-  /** Rebuild now when idle, else mark for the next turn boundary. */
+  /** W742 §1: would a rebuild of this instance kill live background work? */
+  private rebuildIsDeferred(entry: SessionRuntime): boolean {
+    return this.deps.rebuildDeferred?.(entry) === true;
+  }
+
+  /** W742 §2: the derived period (a quarter of the TTL, floor 1s). */
+  private reclaimerDefault(): number {
+    const ttl = this.deps.idleTtlMs ?? 0;
+    return ttl <= 0 ? 0 : Math.max(1_000, Math.floor(ttl / 4));
+  }
+
+  /** Rebuild now when idle AND free of live work, else mark for a later sweep. */
   private settleEpoch(entry: SessionRuntime): void {
     if (!entry.needsRebuild && entry.profileEpoch >= this.epoch()) return;
-    if (entry.inFlight) {
+    if (entry.inFlight || this.rebuildIsDeferred(entry)) {
       entry.needsRebuild = true;
       return;
     }

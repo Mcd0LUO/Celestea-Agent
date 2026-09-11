@@ -8,6 +8,16 @@
  * current, and reclaimed when idle. There is no "global main session":
  * `workspaces.json.active_session` is only the view the UI should restore.
  *
+ * W742 lifecycle (both were documented before but not wired):
+ *   - an epoch bump (POST /api/config, POST /api/providers/default, a grant
+ *     write) NEVER tears down an instance that is still driving workers: the
+ *     registry only marks it and rebuilds it once those workers ended, so a
+ *     model switch can no longer abort a background worker and erase its rows
+ *     (the HTTP 409 guards of both endpoints close the same hole up front);
+ *   - `CELESTEA_SESSION_IDLE_TTL_MS` is real: the registry's unref'ed reclaimer
+ *     sweeps deferrable rebuilds + the idle TTL in the background, and
+ *     `shutdown()` disarms it (no timer outlives the engine).
+ *
  * Mapping (host HTTP surface -> composition / engine):
  *   POST /api/turn                  -> `startTurn` (idle) or `inject` (busy);
  *   GET  /api/events                -> `attach(bus)`, frames carry the session;
@@ -29,8 +39,8 @@
  * (`llm-assembly.ts`), i.e. production is a real model.
  */
 
-import type { InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome } from "@celestea/core";
-import type { Watchdog, WorkerRegistry } from "@celestea/workers";
+import type { InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome, WorkerEntry } from "@celestea/core";
+import { getExtra, hasInProgressTurn, type Watchdog, type WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
   createStatusTracker,
@@ -158,9 +168,17 @@ class RealEngine implements RealRuntimeAdapter {
       maxLive: opts.maxLiveSessions ?? limitFromEnv(this.env, "CELESTEA_MAX_LIVE_SESSIONS", MAX_LIVE_SESSIONS),
       maxConcurrentTurns: opts.maxConcurrentTurns ?? limitFromEnv(this.env, "CELESTEA_MAX_CONCURRENT_TURNS", MAX_CONCURRENT_TURNS),
       idleTtlMs: opts.idleTtlMs ?? limitFromEnv(this.env, "CELESTEA_SESSION_IDLE_TTL_MS", SESSION_IDLE_TTL_MS),
-      pinned: (entry) => this.isPinned(entry),
+      // The detached instance is never reclaimed (it backs `/api/tools`), nor is a
+      // session that still OWNS worker rows (W513 pin) — a settled row keeps its
+      // session's instance and its parked driver, exactly as before.
+      pinned: (entry) => entry.key === keyOfSession(null) || (entry.runtime.workers?.ownEntries().length ?? 0) > 0,
+      // W742 §1: only LIVE worker work defers a rebuild; a settled, parked worker
+      // must not block the generation swap of its session forever.
+      rebuildDeferred: (entry) => this.hasLiveWorkers(entry),
       ...(opts.now === undefined ? {} : { now: opts.now }),
     });
+    // W742 §2: arm the low-frequency reclaimer (unref'ed; `shutdown` disarms it).
+    this.registry.startReclaimer();
     this.registry.ensure(null, null);
   }
 
@@ -540,16 +558,28 @@ class RealEngine implements RealRuntimeAdapter {
 
   // --- internals ---------------------------------------------------------
 
-  /** The default (detached) instance is never reclaimed: it backs `/api/tools`. */
-  private isPinned(entry: SessionRuntime): boolean {
-    if (entry.key === keyOfSession(null)) return true;
+  /**
+   * W742 §1: does this instance still hold LIVE background work? Two things count:
+   * a RUNNING row (the brief has no terminal verdict — W736 freezes it exactly
+   * once) and a worker session with an OPEN turn (a follow-up message being
+   * answered; the row is already settled by then, so the log is the only witness).
+   * A parked, settled worker is addressable but idle: it must NOT keep its
+   * session's generation frozen, or a config change would never land there.
+   */
+  private hasLiveWorkers(entry: SessionRuntime): boolean {
     const workers = entry.runtime.workers;
-    return workers !== null && (workers.ownEntries().length > 0 || workers.backgroundLen() > 0);
+    return workers !== null && workers.ownEntries().some((row) => row.status === "RUNNING" || openTurnOf(workers, row));
   }
 
   private get now(): () => number {
     return this.opts.now ?? Date.now;
   }
+}
+
+/** W742 §1: is a turn OPEN on this worker's own session log? (W736's rule.) */
+function openTurnOf(workers: WorkerRegistry, row: WorkerEntry): boolean {
+  const log = workers.sessions.logOf(getExtra(row, "sess") ?? "");
+  return log !== undefined && hasInProgressTurn(log.events());
 }
 
 /** The frozen "nothing to compact" note (kept in sync with compact/plan.ts). */
