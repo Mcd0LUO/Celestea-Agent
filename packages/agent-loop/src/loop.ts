@@ -96,6 +96,19 @@ export class DefaultAgentLoop implements AgentLoop {
     await this.runTurnOutcome(ctx, userInput);
   }
 
+  /**
+   * W725: the EXACT request the next step would build for `ctx` — the same
+   * `buildRequest` the turn uses (system prompt + post-trim derived history +
+   * `registry.schemas()`), so a read-only context snapshot can never drift from
+   * what the model is actually sent.
+   *
+   * Read-only by construction: it never appends to the log, never dispatches a
+   * tool and never touches the step budget or the usage tracker.
+   */
+  contextSnapshot(ctx: Context): ModelRequest {
+    return this.buildRequest(resolveSeams(ctx));
+  }
+
   /** Same turn, handing the terminal state back to the caller (hosts / tests). */
   async runTurnOutcome(ctx: Context, userInput: string): Promise<TurnOutcome> {
     const seams = resolveSeams(ctx);

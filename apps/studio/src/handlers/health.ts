@@ -32,7 +32,9 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       model: deps.runtime.profile().model,
       base_url: baseUrlOf(deps),
       bind: deps.config.bind,
-      capabilities: { grants: true },
+      // W725: `context: true` gates the context-ring entry point; a client
+      // that does not see exactly `true` degrades to no context viewer.
+      capabilities: { grants: true, context: true },
     }),
   );
 

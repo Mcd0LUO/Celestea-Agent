@@ -17,6 +17,7 @@
  *   POST /api/sessions/{id}/compact    -> compact(session)
  *   GET  /api/status                   -> statusline(session?) + isBusy(session?)
  *   GET  /api/tools                    -> tools()
+ *   GET  /api/sessions/{id}/context    -> sessionContext(session)  (W725)
  *   GET+POST /api/config               -> profile() / configure(patch)
  *   POST /api/worker/{spawn,send}      -> workerSpawn() / workerSend()
  *   GET  /api/worker/status            -> workerStatus(wid?)
@@ -94,6 +95,35 @@ export interface ProfilePatch {
 export interface ToolInfo {
   name: string;
   description: string;
+}
+
+/** One model-visible message, flattened for the context viewer (W725). */
+export interface ContextMessageView {
+  role: string;
+  content: string;
+  /** Name of the tool this message calls (assistant) or answers (tool). */
+  tool_name?: string;
+  /** Provider call id, set on a `tool` result (and on the call it answers). */
+  tool_call_id?: string;
+}
+
+/** One tool schema the model is offered (W725) — `registry.schemas()` verbatim. */
+export interface ContextToolView {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+/**
+ * W725: one session's model-visible context, as the ENGINE assembles it —
+ * system prompt, the messages the next step would send (already trimmed by the
+ * loop) and the tool schemas. Read-only: taking a snapshot never drives a turn.
+ */
+export interface SessionContextView {
+  model: string;
+  system: string;
+  tools: ContextToolView[];
+  messages: ContextMessageView[];
 }
 
 export interface TurnRequest {
@@ -255,6 +285,12 @@ export interface RuntimeAdapter {
   configure(patch: ProfilePatch): Promise<EngineProfile>;
   statusline(session?: string | null): Statusline;
   tools(): ToolInfo[];
+  /**
+   * W725: the session's OWN model-visible context (`GET /api/sessions/{id}/
+   * context`). The instance is composed on demand, exactly like activate does;
+   * an unknown session is the handler's 404, never this seam's guess.
+   */
+  sessionContext(session: string | null): SessionContextView;
   workerSpawn(req: WorkerSpawnRequest): Promise<WorkerSpawnOutcome>;
   workerSend(req: WorkerSendRequest): Promise<Record<string, unknown>>;
   workerStatus(wid?: string): WorkerStatusReport;

@@ -1,5 +1,5 @@
 /**
- * Session endpoints, part 1: list / create / transcript / activate.
+ * Session endpoints, part 1: list / create / transcript / activate / context.
  *
  * `GET /api/sessions` merges two sources: session directories across every
  * registered workspace, plus the engine's in-memory worker sessions
@@ -12,6 +12,12 @@
  * HAS a runtime": it composes the instance on demand, persists the active
  * session as a view preference, and NEVER returns 409 — a session that is
  * already running is perfectly fine (that is the point of session independence).
+ *
+ * W725: `GET /api/sessions/{id}/context` is the read-only "what does the model
+ * actually see" snapshot. The body is assembled by the ENGINE (the agent loop's
+ * own `buildRequest`, reached through `runtime.sessionContext`) and the usage
+ * block is the statusline's existing `context_usage`口径 — this handler adds
+ * only the 20k-per-entry wire guard.
  */
 
 import type { Hono } from "hono";
@@ -21,6 +27,7 @@ import { readSessionMeta } from "../store/session-meta.js";
 import { validateModelName } from "../store/validate.js";
 import type { SessionRow } from "../store/sessions.js";
 import { capacityJson, failJson, readJsonBody, strField, storeFail, type Deps } from "./common.js";
+import { contextPayload, type ContextUsage } from "./context-shape.js";
 
 function workerRows(deps: Deps): SessionRow[] {
   return deps.runtime.workerSessions() as SessionRow[];
@@ -109,6 +116,42 @@ function registerActivate(app: Hono, deps: Deps, table: RouteTable): string {
   return route.id;
 }
 
+/**
+ * GET /api/sessions/{id}/context (W725) — the engine's model-visible context.
+ *
+ * A session with no live instance is composed on demand (the same `entryFor`
+ * path activate and a turn use), so the endpoint works on a cold session and
+ * never drives a turn.
+ */
+function registerContext(app: Hono, deps: Deps, table: RouteTable): string {
+  const route = table.get("get_session_context");
+  app.on(route.method, route.honoPath, (c) => {
+    const resolved = deps.sessions.require(c.req.param("id") ?? "");
+    if (!resolved.ok) return storeFail(c, resolved);
+    const session = resolved.value.id;
+    try {
+      const view = deps.runtime.sessionContext(session);
+      return c.json(contextPayload({ session, view, usage: contextUsageOf(deps, session) }));
+    } catch (e) {
+      if (e instanceof CapacityError) return capacityJson(c, e);
+      return failJson(c, 500, `context snapshot failed: ${e instanceof EngineError ? e.message : String(e)}`);
+    }
+  });
+  return route.id;
+}
+
+/** The statusline's context口径 (W263) with the `method` discriminator dropped. */
+function contextUsageOf(deps: Deps, session: string): ContextUsage {
+  const usage = deps.runtime.statusline(session).context_usage;
+  return { used: usage.used, window: usage.window, ratio: usage.ratio, estimated: usage.estimated };
+}
+
 export function registerSessions(app: Hono, deps: Deps, table: RouteTable): string[] {
-  return [registerList(app, deps, table), registerCreate(app, deps, table), registerMessages(app, deps, table), registerActivate(app, deps, table)];
+  return [
+    registerList(app, deps, table),
+    registerCreate(app, deps, table),
+    registerMessages(app, deps, table),
+    registerActivate(app, deps, table),
+    registerContext(app, deps, table),
+  ];
 }

@@ -9,6 +9,7 @@ import {
   assistantText,
   AgentError,
   Context,
+  userMessage,
   type Llm,
   type Message,
   type StreamEvent,
@@ -29,6 +30,7 @@ import {
   toolCallMessage,
   type Harness,
 } from "./fakes.test-util.js";
+import { estimateTokens, trimContext } from "./context-trim.js";
 import { createUsageTracker } from "./usage.js";
 
 /** `StreamEvent::Done(message)`. */
@@ -298,5 +300,31 @@ describe("DefaultAgentLoop — bookkeeping", () => {
     expect(makeLoop({ max_steps: 3 }, { usage: tracker }).agentConfig.max_steps).toBe(3);
     expect(makeLoop({}, { usage: tracker }).usageTracker).toBe(tracker);
     expect(makeLoop({}).usageTracker).toBeUndefined();
+  });
+});
+
+describe("contextSnapshot (W725)", () => {
+  it("is the loop's own request: system prompt, derived history and tool schemas", () => {
+    const h = harness({ llm: new ScriptLlm([]) });
+    h.session.setDerived([userMessage("hi"), assistantText("hello")]);
+    const snapshot = h.loop.contextSnapshot(h.ctx);
+    expect(snapshot.model).toBe(h.loop.agentConfig.model);
+    expect(snapshot.system).toBe(h.loop.agentConfig.system_prompt);
+    expect(snapshot.messages).toEqual(h.session.deriveMessages());
+    expect(snapshot.tools).toEqual(h.registry.schemas());
+    expect(snapshot.max_tokens).toBeNull();
+  });
+
+  it("trims exactly like the turn does, and never writes to the log", () => {
+    const config = { context_window_tokens: 100, context_trim_threshold: 1, context_keep_recent: 1 };
+    const h = harness({ llm: new ScriptLlm([]), config });
+    h.session.setDerived([userMessage("x".repeat(4_000)), userMessage("y".repeat(4_000)), userMessage("z".repeat(4_000))]);
+    const before = h.session.events().length;
+    const snapshot = h.loop.contextSnapshot(h.ctx);
+    // Read-only: taking a snapshot records no event of its own.
+    expect(h.session.events()).toHaveLength(before);
+    const expected = trimContext(h.session.deriveMessages(), estimateTokens(h.loop.agentConfig.system_prompt), 100, 1, 1);
+    expect(expected.outcome.trimmed).toBe(true);
+    expect(snapshot.messages).toEqual(expected.messages);
   });
 });

@@ -52,6 +52,7 @@ import type {
   InjectOutcome,
   ProfilePatch,
   RuntimeAdapter,
+  SessionContextView,
   SessionRuntimeInfo,
   ToolInfo,
   TurnRequest,
@@ -63,6 +64,7 @@ import type {
   WorkerStatusReport,
 } from "../runtime-adapter.js";
 import type { StudioBus } from "../sse.js";
+import { contextViewOf } from "./context-snapshot.js";
 import { applyProfilePatch, defaultEngineProfile, engineProfileOf, profileFromEngine } from "./engine-profile.js";
 import { SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
 import {
@@ -357,6 +359,21 @@ class RealEngine implements RealRuntimeAdapter {
 
   profile(): EngineProfile {
     return engineProfileOf(this.profileValue);
+  }
+
+  /**
+   * W725: the session's model-visible context (`GET /api/sessions/{id}/context`).
+   * The instance is ensured first (same path as activate / a turn), then the
+   * agent loop assembles the request — this adapter only forwards it, so the
+   * snapshot is the engine's own, never a host-side re-derivation.
+   */
+  sessionContext(session: string | null): SessionContextView {
+    const runtime = this.entryFor(session).runtime;
+    return contextViewOf(runtime, {
+      model: this.profileValue.model,
+      system: this.profileValue.system_prompt,
+      tools: runtime.tools?.schemas() ?? [],
+    });
   }
 
   /** The requested session's statusline (no instance yet = an empty one). */

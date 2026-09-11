@@ -118,8 +118,9 @@ function readJson<T>(...parts: string[]): T {
 
 export function loadEndpoints(): EndpointsContract {
   const c = readJson<EndpointsContract>("endpoints.json");
-  if (c.count !== 43 || c.endpoints.length !== 43) {
-    throw new Error(`endpoints contract must hold 43 endpoints, got ${c.endpoints.length}`);
+  // W725: 43 -> 44 (GET /api/sessions/{id}/context).
+  if (c.count !== 44 || c.endpoints.length !== 44) {
+    throw new Error(`endpoints contract must hold 44 endpoints, got ${c.endpoints.length}`);
   }
   return c;
 }
