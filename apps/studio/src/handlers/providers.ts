@@ -14,6 +14,8 @@ import { probeModels, testProvider, type ProbeCandidate, type ProbeOptions } fro
 import { REQUEST_FORMATS, type ProviderRow, type RequestFormat } from "../store/providers.js";
 import { isHttpUrl } from "../store/validate.js";
 import { baseUrlOf } from "./config-shape.js";
+// W742 §1: the same "background work in flight" guard `POST /api/config` uses.
+import { workersInFlight } from "./config.js";
 import { failJson, readJsonBody, strField, storeFail, type Deps, type JsonObject } from "./common.js";
 
 function probeOptions(deps: Deps): ProbeOptions {
@@ -121,6 +123,7 @@ function registerDefault(app: Hono, deps: Deps, table: RouteTable): string {
     const wanted = (model.value ?? "").trim();
     if (wanted === "") return failJson(c, 400, "model must not be empty");
     if (deps.runtime.isBusy()) return failJson(c, 409, "a turn is running; provider default applies between turns");
+    if (workersInFlight(deps.runtime)) return failJson(c, 409, "a worker is running; provider default applies between turns");
     const owner = deps.providers.rows().find((p) => p.models.some((m) => m.id === wanted));
     const patch = owner !== undefined && owner.request_format === "chat_completions" && owner.base_url !== "" ? { model: wanted, base_url: owner.base_url } : { model: wanted };
     try {
