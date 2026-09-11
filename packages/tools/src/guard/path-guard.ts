@@ -19,6 +19,15 @@
  *
  * `CELESTEA_TOOL_GUARD=0` skips *mounting* the chain (explicit escape hatch; it
  * never weakens the http policy or the sandbox).
+ *
+ * W516 (session grants): a host may pass a [PathGuardGrants] view with extra
+ * read/write roots read from the session's `grants.json`. Grants are strictly
+ * ADDITIVE — the workspace stays writable, env read roots stay read-only, the
+ * mount decision is untouched — and a bad grant root is dropped by the host
+ * (ignore-the-entry), the exact opposite of the env fail-closed rule above.
+ * Both policies are deliberate: env is the operator's posture (a typo must be
+ * loud), grants are a per-session widening (ignoring one falls back to least
+ * privilege, and a hard failure would only push users to `CELESTEA_TOOL_GUARD=0`).
  */
 
 import type { ToolDecision, ToolGuard, ToolInput, ToolRegistry } from "@celestea/core";
@@ -61,31 +70,57 @@ export function parseToolRoots(value: string | undefined): string[] {
 export interface PathGuardPolicyInit {
   workspace: string;
   readRoots?: readonly string[];
+  /**
+   * Extra WRITABLE roots (session grants only, W516). The workspace is always a
+   * writable root and can never be removed: grants only ADD roots.
+   */
+  writeRoots?: readonly string[];
   /** Set when the declared roots were unusable → every path call is denied. */
   failClosedReason?: string | null;
 }
 
-/** Canonical writable workspace + canonical read roots (workspace first). */
+/**
+ * Session-grant view of the path policy (W516). Structural on purpose: the
+ * tools package never imports the host's grants module. Both lists are already
+ * validated + canonicalized by the host (`effectiveGrantsOf`), and neither can
+ * *narrow* anything — they are appended to the env-derived roots.
+ */
+export interface PathGuardGrants {
+  readRoots?: readonly string[];
+  writeRoots?: readonly string[];
+}
+
+/** Canonical writable workspace + canonical read/write roots (workspace first). */
 export class PathGuardPolicy {
   readonly workspace: string;
   readonly readRoots: readonly string[];
+  /** Workspace first; grants may only append (never remove or demote). */
+  readonly writeRoots: readonly string[];
   readonly failClosedReason: string | null;
 
   constructor(init: PathGuardPolicyInit) {
     this.workspace = init.workspace;
     this.readRoots = [init.workspace, ...(init.readRoots ?? [])];
+    this.writeRoots = [init.workspace, ...(init.writeRoots ?? [])];
     this.failClosedReason = init.failClosedReason ?? null;
   }
 
   /** Policy from the environment (`CELESTEA_TOOL_WORKDIR` + `CELESTEA_TOOL_ROOTS`). */
-  static fromEnv(env: NodeJS.ProcessEnv = process.env): PathGuardPolicy {
+  static fromEnv(env: NodeJS.ProcessEnv = process.env, grants: PathGuardGrants = {}): PathGuardPolicy {
     const workspaceRaw = envString(env, ENV_TOOL_WORKDIR) ?? process.cwd();
     const workspace = resolveExistingTarget(workspaceRaw, process.cwd()) ?? resolve(workspaceRaw);
+    const grantRead = [...(grants.readRoots ?? [])];
+    const writeRoots = [...(grants.writeRoots ?? [])];
     const raw = envString(env, ENV_TOOL_ROOTS);
-    if (raw === undefined) return new PathGuardPolicy({ workspace });
+    if (raw === undefined) return new PathGuardPolicy({ workspace, readRoots: grantRead, writeRoots });
     const entries = parseToolRoots(raw);
     if (entries.length === 0) {
-      return new PathGuardPolicy({ workspace, failClosedReason: `${ENV_TOOL_ROOTS} is set but lists no directory` });
+      return new PathGuardPolicy({
+        workspace,
+        readRoots: grantRead,
+        writeRoots,
+        failClosedReason: `${ENV_TOOL_ROOTS} is set but lists no directory`,
+      });
     }
     const readRoots: string[] = [];
     let failClosedReason: string | null = null;
@@ -95,7 +130,7 @@ export class PathGuardPolicy {
       else if (!isDirectory(canonical)) failClosedReason ??= `${ENV_TOOL_ROOTS} entry '${entry}' is not a directory`;
       else readRoots.push(canonical);
     }
-    return new PathGuardPolicy({ workspace, readRoots, failClosedReason });
+    return new PathGuardPolicy({ workspace, readRoots: [...readRoots, ...grantRead], writeRoots, failClosedReason });
   }
 
   /** read/list: the canonical target must resolve inside a read root. */
@@ -111,14 +146,25 @@ export class PathGuardPolicy {
     );
   }
 
-  /** write: the canonical target must stay inside the workspace (roots are ro). */
+  /**
+   * write: the canonical target must land inside ONE writable root. The
+   * workspace is always one (§5.6: grants can only add roots); read roots are
+   * still read-only and a write root overlapping a read root is rejected by the
+   * host before it ever reaches this policy.
+   */
   checkWrite(target: string): ToolDecision {
     const blocked = this.failClosed();
     if (blocked !== null) return blocked;
     const canonical = resolveWriteTarget(target, this.workspace);
     if (canonical === null) return ALLOW;
-    if (isInside(canonical, this.workspace)) return ALLOW;
-    return deny("path_forbidden", `write path '${target}' is outside the workspace '${this.workspace}'`);
+    if (this.writeRoots.some((root) => isInside(canonical, root))) return ALLOW;
+    return deny("path_forbidden", this.writeDenyMessage(target));
+  }
+
+  /** Verbatim legacy message with no extra roots; explicit root list beyond it. */
+  private writeDenyMessage(target: string): string {
+    if (this.writeRoots.length <= 1) return `write path '${target}' is outside the workspace '${this.workspace}'`;
+    return `write path '${target}' is outside every writable root (${this.writeRoots.join(", ")})`;
   }
 
   private failClosed(): ToolDecision | null {
@@ -138,8 +184,8 @@ export class PathGuard implements ToolGuard {
     this.policy = policy;
   }
 
-  static fromEnv(env: NodeJS.ProcessEnv = process.env): PathGuard {
-    return new PathGuard(PathGuardPolicy.fromEnv(env));
+  static fromEnv(env: NodeJS.ProcessEnv = process.env, grants: PathGuardGrants = {}): PathGuard {
+    return new PathGuard(PathGuardPolicy.fromEnv(env, grants));
   }
 
   async check(input: ToolInput): Promise<ToolDecision> {
@@ -165,8 +211,12 @@ function deny(code: string, message: string): ToolDecision {
  * `CELESTEA_TOOL_GUARD=0` explicitly opts out (documented escape hatch — the
  * caller is responsible for surfacing that in its own diagnostics).
  */
-export function mountProductionGuards(registry: ToolRegistry, env: NodeJS.ProcessEnv = process.env): boolean {
+export function mountProductionGuards(
+  registry: ToolRegistry,
+  env: NodeJS.ProcessEnv = process.env,
+  grants: PathGuardGrants = {},
+): boolean {
   if (!envFlag(envString(env, ENV_TOOL_GUARD), true)) return false;
-  registry.addGuard(PathGuard.fromEnv(env));
+  registry.addGuard(PathGuard.fromEnv(env, grants));
   return true;
 }
