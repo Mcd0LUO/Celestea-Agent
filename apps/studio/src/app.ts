@@ -14,23 +14,31 @@
  * mounts the real runtime (`runtime/`) wired to the real LLM, so the default
  * deployment is the engine over a live provider, not a fake; the P4 fake stays
  * available to tests through `harness.test-util.ts`.
+ *
+ * W743 (W732 A1): the engine assembly itself lives in `createStudioEngine()`
+ * below — the ONE factory — and `defaultRuntime()` is just the production
+ * binding of its injected values. The real-engine test harness
+ * (`runtime/test-util.ts`) calls the same function, so "the tests run the real
+ * engine" now also means "the tests run the real grants boundary and the real
+ * usage ledger".
  */
 
 import { Hono } from "hono";
 import { dirname, join } from "node:path";
+import type { Llm } from "@celestea/core";
+import { createUsageLedgerFile, type Profile } from "@celestea/runtime";
 import { API_ENDPOINT_COUNT, routeTable, type RegisteredRoute } from "./routes.js";
 import { loadStudioConfig, type StudioConfig } from "./config.js";
 import { composeStudio, type EngineFactory, type StudioServices } from "./plugins.js";
 import { registerHandlers } from "./handlers/index.js";
 import { assembleSystemPromptFor } from "./handlers/config-shape.js";
 import { registerStatic } from "./static.js";
-import type { RuntimeAdapter } from "./runtime-adapter.js";
+import type { EngineProfile, RuntimeAdapter } from "./runtime-adapter.js";
 import type { StoreServices } from "./plugins.js";
 import { DEFAULT_SESSION_MODE } from "./store/mode.js";
 import { readSessionMeta, type SessionMeta } from "./store/session-meta.js";
 import { createSessionGrants } from "./runtime/session-grants.js";
 import { grantsEnv } from "./store/grants-service.js";
-import { createUsageLedgerFile } from "@celestea/runtime";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
 import { recoverActiveSessionOnBoot } from "./runtime/boot-recovery.js";
 
@@ -53,27 +61,69 @@ export interface StudioApp {
 }
 
 /**
- * The production engine: the real runtime over the REAL provider. The factory
- * form is what makes that possible — providers.json is composed before the
- * engine, so the startup profile (model / base_url / api key channel) is
- * resolved from the operator's provider registry, with the host's env and
- * constants as the fallback chain (`startupEngineProfile`). Worker receipts land
- * under `<data dir>/worker-results`.
+ * Everything ONE engine build needs, resolved from the composed stores.
+ *
+ * W743 (closes W732 A1): this is the SINGLE engine assembly. The production app
+ * and the real-engine test harness both call it, so the two can no longer drift
+ * apart — the only thing a caller injects is PATHS, ENV and the LLM/profile
+ * seam; grants, the usage ledger, the worker receipt dir, session resolution and
+ * the three per-session profile hooks are assembled here exactly once.
+ *
+ * Note on placement: the factory cannot live in `packages/runtime` because it
+ * builds the HOST's adapter (`real-runtime-adapter.ts`, an L3 module) and needs
+ * the composed stores — `packages/*` must never depend on `apps/*`
+ * (ARCHITECTURE.md §1, K1/K2). It therefore stays in the L3 composition root and
+ * every other assembly (tests included) reuses THIS function.
+ *
+ * The dependency is a FUNCTION of `stores` because the engine factory runs
+ * INSIDE `composeStudio`: the test harness only learns its throwaway data dir
+ * once the workspace it registered is mounted.
  */
-function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv, host: HostRef): EngineFactory {
-  const dataDir = dirname(config.paths.workspacesFile);
+export interface StudioEngineInput {
+  /** The data file the host ACTUALLY composed (`<data dir>/workspaces.json`). */
+  workspacesFile: string;
+  /** Process environment (provider keys, tool roots, resource caps, grants). */
+  env: NodeJS.ProcessEnv;
+  /** Startup engine profile. */
+  profile: EngineProfile;
+  /** Provider row the profile came from, recorded as the ledger's `provider`. */
+  providerLabel: string | null;
+  /** Late-bound host services (per-session prompt assembly; see [HostRef]). */
+  host: HostRef;
+  /**
+   * LLM seam override. Absent = the live provider assembled from the profile
+   * (production); the real-engine tests inject the deterministic OFFLINE engine.
+   */
+  llm?: (profile: Profile) => Llm;
+}
+
+/** Resolves the injected values of one engine build from the composed stores. */
+export type StudioEngineDeps = (stores: StoreServices) => StudioEngineInput;
+
+/**
+ * The ONE engine factory. The factory form is what makes the production path
+ * possible — providers.json is composed before the engine, so the startup
+ * profile is resolved from the operator's provider registry — and it is also
+ * what the test harness reuses. Worker receipts land under
+ * `<data dir>/worker-results`.
+ */
+export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
   return (stores) => {
-    const startup = startupEngineProfile(stores.providers, env, config.apiKeyEnv);
+    const input = deps(stores);
+    const dataDir = dirname(input.workspacesFile);
     return createRealRuntimeAdapter({
-      profile: startup.profile,
-      env,
+      profile: input.profile,
+      env: input.env,
       resultsDir: join(dataDir, "worker-results"),
-      // W516: every instance reads its session's grants at compose time.
-      grants: createSessionGrants({ dataDir, env: grantsEnv(env, config.paths.workspacesFile) }),
+      // W516: every instance reads its session's grants at compose time. The env
+      // is pinned to the workspaces file the host ACTUALLY composed, so the
+      // fail-closed root rules resolve the same data dir (grants-service.ts).
+      grants: createSessionGrants({ dataDir, env: grantsEnv(input.env, input.workspacesFile) }),
       // W728 §3 P0: ONE append-only usage ledger per process (`<data dir>`),
       // shared by every session instance; `CELESTEA_USAGE_LEDGER=off` disables.
-      ledgerFile: createUsageLedgerFile({ dataDir, env }),
-      providerLabel: startup.target.provider_id,
+      ledgerFile: createUsageLedgerFile({ dataDir, env: input.env }),
+      providerLabel: input.providerLabel,
+      ...(input.llm === undefined ? {} : { llm: input.llm }),
       resolveSession: (id) => {
         const resolved = stores.sessions.resolve(id);
         return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
@@ -86,9 +136,23 @@ function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv, host: Host
       // read `session.json` of the session being composed, so a standard and an
       // execution session in the same process get their own system prompt.
       sessionMode: (id) => sessionMetaAt(stores, id)?.mode ?? null,
-      sessionSystemPrompt: (id) => sessionPromptAt(host, stores, id),
+      sessionSystemPrompt: (id) => sessionPromptAt(input.host, stores, id),
     });
   };
+}
+
+/** The production engine: [createStudioEngine] over the REAL provider registry. */
+function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv, host: HostRef): EngineFactory {
+  return createStudioEngine((stores) => {
+    const startup = startupEngineProfile(stores.providers, env, config.apiKeyEnv);
+    return {
+      workspacesFile: config.paths.workspacesFile,
+      env,
+      profile: startup.profile,
+      providerLabel: startup.target.provider_id,
+      host,
+    };
+  });
 }
 
 /** `session.json` of one session (null when the id does not resolve). */
@@ -116,7 +180,7 @@ function sessionPromptAt(host: HostRef, stores: StoreServices, id: string): stri
  * only ever called while composing a NAMED session, which happens on the first
  * turn / activate — long after startup filled the ref in.
  */
-interface HostRef {
+export interface HostRef {
   services: StudioServices | null;
 }
 
