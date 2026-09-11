@@ -233,11 +233,15 @@ class RealEngine implements RealRuntimeAdapter {
 
   ensureSession(session: string | null): SessionRuntimeInfo {
     const before = this.registry.peek(session);
+    // The registry rebuilds an instance IN PLACE (the entry object survives), so
+    // the comparison has to be on the runtime, not on the entry (W516: a grant
+    // invalidates exactly one session, and `rebuilt` is how the host sees it).
+    const previous = before?.runtime;
     const entry = this.entryFor(session);
     return {
       runtime: before === null ? "created" : "reused",
       busy: entry.inFlight,
-      rebuilt: before !== null && before.runtime !== entry.runtime,
+      rebuilt: previous !== undefined && previous !== entry.runtime,
     };
   }
 

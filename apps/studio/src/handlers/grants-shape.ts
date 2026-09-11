@@ -15,6 +15,7 @@ import {
   MAX_TTL_SEC,
   canonicalScopeHash,
   knownSecretsOf,
+  looksLikeCredential,
   validateScope,
   type GrantCap,
   type GrantRecord,
@@ -35,23 +36,33 @@ export interface GrantRequest {
   scopeHash: string;
 }
 
-export type GrantRequestBody = { ok: true; value: GrantRequest } | { ok: false; response: Response };
+/** A refused body: the response to send plus the SANITIZED reason to audit. */
+export type GrantRequestBody = { ok: true; value: GrantRequest } | { ok: false; response: Response; reason: string };
 
 /** §6.2 body: `{cap, scope?, ttl_sec?, uses_left?, note?}` + the frozen 400s. */
 export function parseGrantRequest(c: Context, body: JsonObject, env: NodeJS.ProcessEnv): GrantRequestBody {
+  const known = knownSecretsOf(env);
   const cap = strField(c, body, "cap");
-  if (!cap.ok) return { ok: false, response: cap.response };
+  if (!cap.ok) return { ok: false, response: cap.response, reason: "field 'cap' must be a string" };
   const raw = cap.value ?? "";
   const chosen = offeredCap(raw, env);
-  if (chosen === null) return { ok: false, response: failJson(c, 400, `invalid cap '${raw}'`) };
+  if (chosen === null) {
+    const shown = looksLikeCredential(raw, known) ? "<redacted>" : raw;
+    return { ok: false, response: failJson(c, 400, `invalid cap '${shown}'`), reason: `invalid cap '${shown}'` };
+  }
   const ttl = readTtl(c, body, chosen);
-  if (typeof ttl !== "number") return { ok: false, response: ttl };
-  const scope = readScope(c, body, chosen, env);
-  if (!scope.ok) return { ok: false, response: scope.response };
+  if (typeof ttl !== "number") return { ok: false, response: ttl, reason: "ttl_sec out of range" };
+  const scope = readScope(c, body, chosen, known);
+  if (!scope.ok) return { ok: false, response: scope.response, reason: scope.reason };
   const uses = readUses(c, body, chosen);
-  if (typeof uses === "string") return { ok: false, response: failJson(c, 400, uses) };
+  if (typeof uses === "string") return { ok: false, response: failJson(c, 400, uses), reason: uses };
   const note = strField(c, body, "note");
-  if (!note.ok) return { ok: false, response: note.response };
+  if (!note.ok) return { ok: false, response: note.response, reason: "field 'note' must be a string" };
+  // §5.4 + scenario 15: a note is user text, but a credential shape is refused
+  // outright (the frozen 400 string) and is never echoed back anywhere.
+  if (note.value !== undefined && looksLikeCredential(note.value, known)) {
+    return { ok: false, response: failJson(c, 400, "value looks like a credential"), reason: "value looks like a credential" };
+  }
   return {
     ok: true,
     value: {
@@ -91,12 +102,15 @@ function readScope(
   c: Context,
   body: JsonObject,
   cap: GrantCap,
-  env: NodeJS.ProcessEnv,
-): { ok: true; value: GrantScope } | { ok: false; response: Response } {
+  known: readonly string[],
+): { ok: true; value: GrantScope } | { ok: false; response: Response; reason: string } {
   const field = objectField(c, body, "scope");
-  if (!field.ok) return { ok: false, response: field.response };
-  const scope = validateScope(cap, field.value, knownSecretsOf(env));
-  if (!scope.ok) return { ok: false, response: failJson(c, 400, `invalid scope for cap '${cap}': ${scope.error}`) };
+  if (!field.ok) return { ok: false, response: field.response, reason: "field 'scope' must be an object" };
+  const scope = validateScope(cap, field.value, known);
+  if (!scope.ok) {
+    const reason = `invalid scope for cap '${cap}': ${scope.error}`;
+    return { ok: false, response: failJson(c, 400, reason), reason };
+  }
   return { ok: true, value: scope.scope };
 }
 

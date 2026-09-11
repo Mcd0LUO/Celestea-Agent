@@ -29,8 +29,18 @@ export interface GrantsServicesInput {
   post?: (url: string, body: string, headers: Record<string, string>) => Promise<{ ok: boolean; status: number }>;
 }
 
-export function createGrantsServices(input: GrantsServicesInput): GrantsServices {
-  const env = input.env ?? process.env;
+/**
+ * The env every grants reader sees. `CELESTEA_WORKSPACES_FILE` is pinned to the
+ * file the host ACTUALLY composed, so `effectiveGrantsOf` (which takes only an
+ * env, §4.1) resolves the same `<data dir>` the studio is using — not whatever
+ * a stale process env happens to say.
+ */
+export function grantsEnv(env: NodeJS.ProcessEnv, workspacesFile: string): NodeJS.ProcessEnv {
+  return { ...env, CELESTEA_WORKSPACES_FILE: workspacesFile };
+}
+
+export function createGrantsServices(input: GrantsServicesInput & { workspacesFile?: string }): GrantsServices {
+  const env = input.workspacesFile === undefined ? (input.env ?? process.env) : grantsEnv(input.env ?? process.env, input.workspacesFile);
   const services: GrantsServices = {
     dataDir: input.dataDir,
     env,

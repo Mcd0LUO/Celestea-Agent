@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { busyRuntime, getJson, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
+import { busyRuntime, getJson, grant, grantToken, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
 
 const harnesses: StudioHarness[] = [];
 
@@ -123,6 +123,100 @@ describe("sessions endpoints", () => {
     expect(res2.status).toBe(409);
     expect(res2.body).toEqual({ ok: false, error: "turn 进行中，无法压缩" });
   });
+});
+
+describe("session grants endpoints", () => {
+  it("grants with a one-shot token, lists it, revokes it and reports the snapshot", async () => {
+    const h = make();
+    const out = join(h.root, "granted-out");
+    mkdirSync(out, { recursive: true });
+
+    const empty = await getJson(h.app, `/api/sessions/${S1}/grants`);
+    expect(empty.status).toBe(200);
+    expect(empty.body).toMatchObject({ ok: true, session: "sample-ws/s1", grants: [], unsandboxed_available: false });
+    expect(empty.body["effective"]).toEqual({ network: false, read_roots: [], write_roots: [], net_hosts: [], tool_extra: [], unsandboxed: false });
+    expect(empty.body["max_ttl_sec"]).toMatchObject({ network: 3600, write_roots: 86400, unsandboxed: 900 });
+
+    const granted = await grant(h, S1, { cap: "write_roots", scope: { roots: [out] }, ttl_sec: 600, note: "batch output", model_says: "please allow" });
+    expect(granted.status).toBe(200);
+    expect(granted.body["grant"]).toMatchObject({ cap: "write_roots", scope: { roots: [out] }, expires_at: 1_700_000_600, uses_left: null, granted_by: "ui:operator" });
+    expect(granted.body["effective"]).toMatchObject({ write_roots: [out] });
+
+    // §5.4 field whitelist + 0600: a model-shaped extra field never lands.
+    const stored = JSON.parse(readFileSync(join(h.workspace, "s1", "grants.json"), "utf8")) as { grants: Array<Record<string, unknown>> };
+    expect(statSync(join(h.workspace, "s1", "grants.json")).mode & 0o777).toBe(0o600);
+    expect(Object.keys(stored.grants[0]!).sort()).toEqual(["cap", "expires_at", "granted_at", "granted_by", "id", "note", "scope", "uses_left"]);
+
+    expect((await getJson(h.app, `/api/status?session=${S1}`)).body["grants_active"]).toEqual(["write_roots"]);
+    const revoked = await getJson(h.app, `/api/sessions/${S1}/grants`, jsonRequest("DELETE", { cap: "write_roots" }));
+    expect(revoked.body).toMatchObject({ ok: true, effective: { write_roots: [] } });
+    expect((revoked.body["revoked"] as string[])[0]).toMatch(/^g-[0-9a-f]{8}$/);
+    // idempotent: revoking what is not granted is still ok
+    expect((await getJson(h.app, `/api/sessions/${S1}/grants`, jsonRequest("DELETE", { cap: "write_roots" }))).body).toEqual({
+      ok: true,
+      revoked: [],
+      effective: { network: false, read_roots: [], write_roots: [], net_hosts: [], tool_extra: [], unsandboxed: false },
+    });
+    expect((await getJson(h.app, `/api/status?session=${S1}`)).body["grants_active"]).toEqual([]);
+    const audits = readFileSync(join(h.root, "grants-audit.jsonl"), "utf8");
+    expect(audits).toContain('"event":"grant"');
+    expect(audits).toContain('"event":"revoke"');
+  });
+
+  it("answers every frozen error code, and a token is single-use", async () => {
+    const h = make();
+    const reset = (): void => {
+      const base = h.studio.services.grants.now();
+      h.studio.services.grants.now = () => base + 6 * 60_000; // step past the cooldown
+    };
+    expect((await grant(h, S1, { cap: "nope" })).body).toEqual({ ok: false, error: "invalid cap 'nope'" });
+    reset();
+    expect((await grant(h, S1, { cap: "unsandboxed" })).body).toEqual({ ok: false, error: "invalid cap 'unsandboxed'" });
+    reset();
+    expect((await grant(h, S1, { cap: "network", ttl_sec: 99999 })).body).toEqual({ ok: false, error: "ttl_sec exceeds the maximum for cap 'network' (3600)" });
+    reset();
+    const secret = "sk-abcdefghijklmnopqrstuvwxyz012345";
+    const leaky = await grant(h, S1, { cap: "network", note: secret });
+    expect(leaky.status).toBe(400);
+    expect(leaky.body).toEqual({ ok: false, error: "value looks like a credential" });
+    expect(JSON.stringify(leaky.body)).not.toContain(secret);
+    expect(readFileSync(join(h.root, "grants-audit.jsonl"), "utf8")).not.toContain(secret);
+    reset();
+    expect((await grant(h, S1, { cap: "net_hosts", scope: { hosts: [secret] } })).body).toEqual({
+      ok: false,
+      error: "invalid scope for cap 'net_hosts': value looks like a credential",
+    });
+    reset();
+    expect((await grant(h, S1, { cap: "read_roots", scope: { roots: "relative" } })).body).toEqual({
+      ok: false,
+      error: "invalid scope for cap 'read_roots': scope.roots must be an array of strings",
+    });
+    reset();
+
+    // §5.5: no token -> 403; a token is one-shot -> 409; an old one -> 403.
+    expect((await grant(h, S1, { cap: "network" }, null)).body).toEqual({ ok: false, error: "grant confirmation required" });
+    reset();
+    const token = await grantToken(h, S1, "network", {});
+    expect((await grant(h, S1, { cap: "network" }, token)).status).toBe(200);
+    const replay = await grant(h, S1, { cap: "network" }, token);
+    expect(replay.status).toBe(409);
+    expect(replay.body).toEqual({ ok: false, error: "confirmation token already used" });
+    reset();
+    const stale = await grantToken(h, S1, "tool_extra", { tools: ["browser"] });
+    const issuedAt = h.studio.services.grants.now();
+    h.studio.services.grants.now = () => issuedAt + 61_000;
+    expect((await grant(h, S1, { cap: "tool_extra", scope: { tools: ["browser"] } }, stale)).status).toBe(403);
+
+    // §5.5.2: the token endpoint needs browser same-origin evidence.
+    const hash = "0".repeat(64);
+    const bare = await getJson(h.app, `/api/sessions/${S1}/grants/confirm-token?cap=network&scope_hash=${hash}`);
+    expect(bare.status).toBe(403);
+    expect(bare.body).toEqual({ ok: false, error: "grant confirmation is not available over this transport" });
+    // §6.1-§6.4: unknown session -> 404 on every grant route.
+    expect((await getJson(h.app, "/api/sessions/sample-ws%2Fghost/grants")).status).toBe(404);
+    expect((await getJson(h.app, `/api/sessions/sample-ws%2Fghost/grants/confirm-token?cap=network&scope_hash=${hash}`)).status).toBe(404);
+  });
+
 });
 
 describe("workspaces endpoints", () => {
