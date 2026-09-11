@@ -13,6 +13,16 @@
  *                the Llm/ToolRegistry/AgentLoop services exist (so a spawn is
  *                background-driven instead of merely registered).
  *
+ * Lifecycle (W736): a row is born RUNNING and is settled exactly once, by
+ * [finalize] — the single terminal write point (DONE / FAILED plus `ended_at`
+ * and, on failure, `fail=<reason>`), reached through the same atomic tmp+rename
+ * path as every other row write. The in-band writers are the receipt protocol
+ * ([closeLoop]: the brief turn's verdict), the driver's exit ([driverExited]:
+ * the session vanished or the loop was stopped) and a stopping host
+ * ([shutdown]); the out-of-band adjudicator for rows that have no driver left is
+ * the independent watchdog (`watchdog.ts`, the sole owner of liveness
+ * judgement). A terminal row is frozen.
+ *
  * No strong cycle: the three worker tools hold a [WeakRef] to this registry
  * (tools.ts), the drivers hold only core seams, and [release] drops everything —
  * so a hot-swapped generation can actually be collected (W248).
@@ -22,14 +32,14 @@
 
 import { readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { SessionLog, WorkerEntry } from "@celestea/core";
-import { runDriverLoop, type WorkerDrivers } from "./driver.js";
-import { executeReceipt, lastAssistantSummary, type ReceiptRequest } from "./receipt.js";
+import type { SessionLog, WorkerEntry, WorkerStatus } from "@celestea/core";
+import { runDriverLoop, type DriverExit, type WorkerDrivers } from "./driver.js";
+import { executeReceipt, lastAssistantSummary, type ReceiptRequest, type ReceiptResult } from "./receipt.js";
 import { SessionMailbox } from "./mailbox.js";
 import { SessionRegistry } from "./sessions.js";
 import type { SessionLogFactory } from "./log.js";
-import { REGISTRY_TSV_PATH, getExtra, parseRegistryTsv, serializeRegistryTsv, summarize } from "./registry-tsv.js";
-import { sanitizeExtra, truncateChars, utcNow, type WorkerSession } from "./types.js";
+import { REGISTRY_TSV_PATH, getExtra, parseRegistryTsv, serializeRegistryTsv, summarize, workerRetries } from "./registry-tsv.js";
+import { sanitizeExtra, truncateChars, utcNow, type WorkerSession, type WorkerVerdict } from "./types.js";
 
 export const RESULTS_DIR_DEFAULT = "results";
 export const WORKER_REGISTRY_SERVICE = "celestea.workers.WorkerRegistry";
@@ -136,6 +146,80 @@ export class WorkerRegistry {
     if (wid === null || entry === undefined || entry.status !== "RUNNING") return;
     this.rows.set(wid, withState(entry, state));
     void this.persist();
+  }
+
+  /**
+   * W736: the terminal write point of the state machine — a RUNNING row becomes
+   * DONE / FAILED (plus `ended_at`, and `fail=<reason>` on failure), written
+   * through the same atomic tmp+rename path as every other row write. A terminal
+   * row is frozen: a second verdict, and any verdict about a foreign row, are
+   * ignored (null).
+   */
+  finalize(wid: string, verdict: WorkerVerdict): WorkerEntry | null {
+    const entry = this.rows.get(wid);
+    if (entry === undefined || !isOwn(entry, this.ownPid) || entry.status !== "RUNNING") return null;
+    const settled = terminalEntry(entry, verdict, this.now());
+    this.rows.set(wid, settled);
+    void this.persist();
+    return { ...settled };
+  }
+
+  /** [finalize] addressed by session id — the driver's view of its own worker. */
+  finalizeSession(sid: string, verdict: WorkerVerdict): WorkerEntry | null {
+    const wid = this.widForSession(sid);
+    return wid === null ? null : this.finalize(wid, verdict);
+  }
+
+  /** Is a driver task alive for this session? (the watchdog's liveness signal.) */
+  isDriving(sid: string): boolean {
+    return this.stops.has(sid);
+  }
+
+  /** Rust `release_session` (W224 F2): drop the session, its queue and its driver. */
+  releaseSession(sid: string): void {
+    this.sessionRegistry.remove(sid);
+    this.mailboxRegistry.purge(sid);
+    this.stopDriver(sid);
+  }
+
+  /**
+   * W186/W736: re-dispatch a RUNNING row whose session ended without a
+   * deliverable — a fresh session for the remembered brief, `retries+1`,
+   * `started_at` refreshed, then driven again. The readable brief lives in the
+   * in-memory spawn facts (the `brief=` tsv token is lossy by construction), so
+   * a row with no remembered brief cannot be re-dispatched: null is returned and
+   * the caller settles the row as FAILED instead.
+   */
+  respawn(wid: string): string | null {
+    const entry = this.rows.get(wid);
+    if (entry === undefined || !isOwn(entry, this.ownPid) || entry.status !== "RUNNING") return null;
+    const oldSid = getExtra(entry, "sess");
+    const remembered = oldSid === null ? undefined : this.spawns.get(oldSid);
+    if (remembered === undefined || remembered.brief === "") return null;
+    if (oldSid !== null && oldSid !== "") this.releaseSession(oldSid);
+    const mode = remembered.mode ?? getExtra(entry, "mode");
+    const session = this.sessionRegistry.create({
+      title: `${wid}·${truncateChars(remembered.short, 20)}`,
+      workspace: getExtra(entry, "workspace"),
+      model: getExtra(entry, "model"),
+      mode,
+    });
+    const extra = setTokens(dropTokens(entry.extra, ["fail", "ended_at"]), {
+      sess: session.meta.id,
+      retries: String(workerRetries(entry) + 1),
+      driven: this.canDrive() ? "yes" : "no",
+    });
+    this.rows.set(wid, { ...entry, started_at: utcNow(this.now()), extra });
+    this.rememberSpawn(session.meta.id, {
+      wid,
+      short: remembered.short,
+      brief: remembered.brief,
+      reportTo: remembered.reportTo,
+      mode,
+    });
+    void this.persist();
+    if (this.canDrive()) this.driveIfPossible(session.meta.id, remembered.brief);
+    return session.meta.id;
   }
 
   /** `worker_status` payload: whole-table summary, or one worker when filtered. */
@@ -256,6 +340,7 @@ export class WorkerRegistry {
       mailbox: this.mailboxRegistry,
       signal: controller.signal,
       onState: (id, state) => this.setWorkerState(id, state),
+      onExit: (id, reason) => this.driverExited(id, reason),
       ...(receipt ? { receipt: (id, failure) => this.closeLoop(id, failure) } : {}),
     }).finally(() => this.stops.delete(sid));
     this.pending.add(task);
@@ -286,9 +371,14 @@ export class WorkerRegistry {
     return this.pending.size;
   }
 
-  /** Idempotent teardown: stop drivers, purge queues, drop sessions and rows. */
+  /**
+   * Idempotent teardown: stop drivers, settle the rows they were driving, purge
+   * queues, drop sessions and rows. A stopping host leaves no RUNNING row behind
+   * (W736) — an abandoned row would otherwise read as RUNNING forever.
+   */
   shutdown(): void {
     this.abortAllNow();
+    this.settleOpenRows("registry-shutdown");
     this.mailboxRegistry.purgeAll();
     this.sessionRegistry.clear();
     this.rows.clear();
@@ -328,7 +418,33 @@ export class WorkerRegistry {
     return null;
   }
 
-  /** W235: write the report and enqueue the receipt, once, after the brief turn. */
+  /**
+   * W736: the driver loop ended without a receipt verdict for a still-RUNNING
+   * row — the worker never delivered. A row already settled (or already
+   * replaced) is left alone, which is what makes a late exit harmless during
+   * shutdown.
+   */
+  private driverExited(sid: string, reason: DriverExit): void {
+    this.finalizeSession(sid, { ok: false, reason: `driver exited: ${reason}` });
+  }
+
+  /** W736: abandon every still-RUNNING own row as FAILED (see [shutdown]). */
+  private settleOpenRows(reason: string): void {
+    let touched = false;
+    for (const entry of this.ownEntries()) {
+      if (entry.status !== "RUNNING") continue;
+      this.rows.set(entry.wid, terminalEntry(entry, { ok: false, reason }, this.now()));
+      touched = true;
+    }
+    if (touched) void this.persist();
+  }
+
+  /**
+   * W235/W736: the receipt protocol — write the report, settle the row from the
+   * same verdict, then enqueue the receipt (once, Ok or Err alike). The row is
+   * settled even without a `report_to` target: a finished brief is a finished
+   * worker, and `worker_status` must not keep calling it RUNNING.
+   */
   private closeLoop(sid: string, failure: string | null): void {
     const wid = this.widForSession(sid);
     if (wid === null) return;
@@ -336,7 +452,10 @@ export class WorkerRegistry {
     if (entry === undefined) return;
     const remembered = this.spawns.get(sid);
     const reportTo = remembered?.reportTo ?? getExtra(entry, "report_to");
-    if (reportTo === null || reportTo === "") return;
+    if (reportTo === null || reportTo === "") {
+      this.finalize(wid, verdictOf(failure, null));
+      return;
+    }
     const req: ReceiptRequest = {
       wid,
       short: remembered?.short ?? getExtra(entry, "title") ?? wid,
@@ -352,6 +471,7 @@ export class WorkerRegistry {
       failure,
     };
     const result = executeReceipt(req);
+    this.finalize(wid, verdictOf(failure, result));
     // W515 §4: the settlement notice carries its own envelope, so the host can
     // tell it apart from a relay message the worker sent on purpose.
     this.mailboxRegistry.send(reportTo, result.content, sid, {
@@ -359,6 +479,35 @@ export class WorkerRegistry {
       source: { kind: "subagent-settled", form: "notice", summary: receiptSummary(req, result.content), senderSessionId: sid },
     });
   }
+}
+
+/**
+ * W736: the receipt verdict of one brief turn. A turn error fails the worker; so
+ * does a receipt whose report could not be written, because then no deliverable
+ * exists for the coordinator to read (stricter than Rust, which only warns).
+ */
+function verdictOf(failure: string | null, result: ReceiptResult | null): WorkerVerdict {
+  if (failure !== null) return { ok: false, reason: failure };
+  if (result !== null && result.warn !== "") return { ok: false, reason: `receipt not written:${result.warn}` };
+  return { ok: true };
+}
+
+/**
+ * W736: the terminal row of a verdict — status, `ended_at`, the `fail=<reason>`
+ * token of a failure and `state=idle` (the driver's mailbox loop is at rest; a
+ * stale `in-turn` on a frozen row would read as a turn still running). Pure, so
+ * every terminal writer produces byte-identical rows.
+ */
+export function terminalEntry(entry: WorkerEntry, verdict: WorkerVerdict, nowMs: number): WorkerEntry {
+  const status: WorkerStatus = verdict.ok ? "DONE" : "FAILED";
+  const tokens: Record<string, string> = { ended_at: utcNow(nowMs), state: "idle" };
+  if (!verdict.ok) tokens["fail"] = oneToken(truncateChars(sanitizeExtra(verdict.reason ?? "unspecified failure"), 200));
+  return { ...entry, status, extra: setTokens(entry.extra, tokens) };
+}
+
+/** Fold whitespace so a value stays ONE `extra` token (the row format needs it). */
+function oneToken(value: string): string {
+  return value.replace(/\s+/g, "-");
 }
 
 /** One-line summary of a settlement notice (the DSH `source.summary` field). */
@@ -386,10 +535,24 @@ export function withState(entry: WorkerEntry, state: string): WorkerEntry {
   return { ...entry, extra: setToken(entry.extra, "state", sanitizeExtra(state)) };
 }
 
-function setToken(extra: string, key: string, value: string): string {
-  const tokens = extra.split(/\s+/).filter((tok) => tok !== "" && !tok.startsWith(`${key}=`));
-  tokens.push(`${key}=${value}`);
+/** Replace/insert several `k=v` tokens in one pass (every other token kept). */
+function setTokens(extra: string, values: Record<string, string>): string {
+  const keys = Object.keys(values);
+  const tokens = dropTokens(extra, keys).split(/\s+/).filter((tok) => tok !== "");
+  for (const key of keys) tokens.push(`${key}=${values[key]}`);
   return tokens.join(" ");
+}
+
+/** Remove every `k=v` token of the given keys. */
+function dropTokens(extra: string, keys: readonly string[]): string {
+  return extra
+    .split(/\s+/)
+    .filter((tok) => tok !== "" && !keys.some((k) => tok.startsWith(`${k}=`)))
+    .join(" ");
+}
+
+function setToken(extra: string, key: string, value: string): string {
+  return setTokens(extra, { [key]: value });
 }
 
 /** The AI-facing view of one row (Rust `WorkerEntry::to_json`). */
@@ -404,6 +567,9 @@ function entryView(entry: WorkerEntry): Record<string, unknown> {
     title: getExtra(entry, "title") ?? "",
     driven: getExtra(entry, "driven") ?? "",
     state: getExtra(entry, "state") ?? "",
+    // W736: the terminal stamp of the state machine (null while RUNNING).
+    ended_at: getExtra(entry, "ended_at"),
+    fail: getExtra(entry, "fail"),
     proc: proc === null ? null : Number.parseInt(proc, 10),
     extra: entry.extra,
   };

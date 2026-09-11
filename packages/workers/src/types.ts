@@ -33,6 +33,17 @@ export interface WorkerSession {
   log: SessionLog;
 }
 
+/**
+ * W736: the terminal verdict of one worker — the value that drives the
+ * `RUNNING -> DONE | FAILED` transition of its `registry.tsv` row. `reason` is
+ * only meaningful for a failure and is persisted as the `fail=<reason>` token,
+ * so `worker_status` can report WHY a worker stopped, not merely that it did.
+ */
+export interface WorkerVerdict {
+  ok: boolean;
+  reason?: string | null;
+}
+
 /** `SessionSpec` of the Rust session registry. */
 export interface WorkerSessionSpec {
   title: string;

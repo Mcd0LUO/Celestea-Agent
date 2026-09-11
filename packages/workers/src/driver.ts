@@ -10,7 +10,10 @@
  *      arriving message becomes the input of a new serial turn (so the same
  *      worker never runs two turns at once), then park again;
  *   4. **exit** — the session was removed, or the stop signal fired. Exiting
- *      always releases the park, which is what makes shutdown bounded.
+ *      always releases the park, which is what makes shutdown bounded, and
+ *      reports the reason through `onExit` so the registry can settle the row
+ *      (W736): a loop that ends without a verdict means the worker never
+ *      delivered.
  *
  * The driver resolves the three driver seams (`Llm`, `ToolRegistry`,
  * `AgentLoop`) from the host and re-provides them into a FRESH per-worker
@@ -51,6 +54,9 @@ export function workerContext(session: WorkerSession, drivers: WorkerDrivers): C
 
 export type WorkerState = "idle" | "in-turn";
 
+/** Why a driver loop ended (W736: `onExit` reports it to the registry). */
+export type DriverExit = "session-gone" | "stopped";
+
 export interface DriverLoopOptions {
   sid: string;
   brief: string;
@@ -63,16 +69,31 @@ export interface DriverLoopOptions {
   onState: (sid: string, state: WorkerState) => void;
   /** Receipt protocol closure; runs once after the brief turn. */
   receipt?: (sid: string, failure: string | null) => void;
+  /**
+   * W736: the loop ended without settling its own row (session vanished, or the
+   * stop signal fired). The registry turns a still-RUNNING row into FAILED —
+   * a row already settled by its receipt is left untouched.
+   */
+  onExit?: (sid: string, reason: DriverExit) => void;
 }
 
 /** Drive one worker until its session disappears or the stop signal fires. */
 export async function runDriverLoop(opts: DriverLoopOptions): Promise<void> {
   const session = opts.sessions.get(opts.sid);
-  if (session === undefined) return;
+  if (session === undefined) {
+    opts.onExit?.(opts.sid, "session-gone");
+    return;
+  }
   const ctx = workerContext(session, opts.drivers);
   const failure = await runBriefTurn(opts, ctx);
   opts.receipt?.(opts.sid, failure);
   await runMailboxLoop(opts, ctx);
+  opts.onExit?.(opts.sid, exitReason(opts));
+}
+
+/** A removed session is the crash path; anything else is a deliberate stop. */
+function exitReason(opts: DriverLoopOptions): DriverExit {
+  return opts.sessions.get(opts.sid) === undefined ? "session-gone" : "stopped";
 }
 
 async function runBriefTurn(opts: DriverLoopOptions, ctx: Context): Promise<string | null> {

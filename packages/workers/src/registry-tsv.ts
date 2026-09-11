@@ -75,6 +75,13 @@ export function workerProc(entry: WorkerEntry): number | null {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+/** W186/W736: the watchdog's re-dispatch counter (`retries=`; absent = 0). */
+export function workerRetries(entry: WorkerEntry): number {
+  const raw = getExtra(entry, "retries");
+  const n = raw === null ? 0 : Number.parseInt(raw, 10);
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
 export function workerReportTo(entry: WorkerEntry): string | null {
   return getExtra(entry, "report_to");
 }
