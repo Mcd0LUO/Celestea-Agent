@@ -18,11 +18,12 @@
  * swapped-out generation can actually be collected.
  */
 
-import { EVENT_BUS_SERVICE, createEventBus } from "@celestea/core";
+import { EVENT_BUS_SERVICE, contextSnapshotOf, createEventBus } from "@celestea/core";
 import type {
   AgentConfig,
   Context,
   LlmRegistry,
+  ModelRequest,
   SessionLog,
   Statusline,
   ToolRegistry,
@@ -176,6 +177,18 @@ export class Runtime {
   /** The frozen `/api/status` payload for this generation. */
   statusline(): Statusline {
     return statuslineOf(this.statusView());
+  }
+
+  /**
+   * W725: this generation's model-visible context, exactly as the loop would
+   * build it for the NEXT step (system + trimmed history + tool schemas), or
+   * null when the mounted loop has no snapshot capability (a test double).
+   *
+   * The assembly is the agent loop's, never this layer's: runtime only forwards
+   * the Context, so the read-only snapshot cannot drift from the real request.
+   */
+  contextSnapshot(): ModelRequest | null {
+    return contextSnapshotOf(this.p.agentLoop, this.p.ctx);
   }
 
   /** Pending host receipts (worker -> host) that the next turn will inject. */

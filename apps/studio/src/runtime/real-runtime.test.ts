@@ -220,3 +220,42 @@ describe("GET /api/status and /api/tools", () => {
     expect(names).toEqual([...names].sort());
   });
 });
+
+describe("GET /api/sessions/{id}/context over the real engine", () => {
+  it("serves the engine's own assembly: system prompt, history and tool schemas", async () => {
+    const h = make({ sessions: { s1: [] } });
+    await activate(h, "sample-ws/s1");
+    await runTurnWithFrames(h, "hi");
+
+    const { body } = await getJson(h.app, "/api/sessions/sample-ws%2Fs1/context");
+    expect(body["ok"]).toBe(true);
+    expect(body["session"]).toBe("sample-ws/s1");
+    expect(body["model"]).toBe("offline-model");
+    // The system prompt is the loop's config one (the host primes it), verbatim.
+    expect(body["system"]).toBe(engineOf(h).profile().system_prompt);
+    const tools = (body["tools"] as Array<{ name: string; parameters: Record<string, unknown> }>).map((t) => t.name);
+    expect(tools).toContain("read_file");
+    expect(tools).toEqual([...tools].sort());
+
+    const messages = body["messages"] as Array<Record<string, unknown>>;
+    expect(messages.map((m) => m["role"])).toEqual(["user", "assistant"]);
+    expect(messages.map((m) => m["content"])).toEqual(["hi", "echo: hi"]);
+    expect(body["counts"]).toEqual({ system_chars: String(body["system"]).length, tool_count: tools.length, message_count: 2 });
+    expect(body["truncated"]).toBe(false);
+
+    // The usage block is the statusline's existing口径, not a second accounting.
+    const status = await getJson(h.app, "/api/status");
+    const usage = status.body["context_usage"] as Record<string, unknown>;
+    expect(body["context"]).toEqual({ used: usage["used"], window: 1_000_000, ratio: usage["ratio"], estimated: usage["estimated"] });
+    expect(body["context"]).toMatchObject({ estimated: false, window: 1_000_000 });
+    expect(usage["used"]).toBe((status.body["usage"] as { prompt_tokens: number }).prompt_tokens);
+  });
+
+  it("404s an unknown session without composing an instance", async () => {
+    const h = make();
+    const res = await getJson(h.app, "/api/sessions/sample-ws%2Fghost/context");
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ ok: false, error: "unknown session 'sample-ws/ghost'" });
+    expect(engineOf(h).liveSessions()).not.toContain("sample-ws/ghost");
+  });
+});

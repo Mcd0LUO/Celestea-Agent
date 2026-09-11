@@ -264,9 +264,14 @@
       "method": "GET",
       "path": "/api/sessions/{id}/grants/confirm-token",
       "rustHandler": "(none - TypeScript-only, W516)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{id}/context",
+      "rustHandler": "(none - TypeScript-only, W725)"
     }
   ],
-  "tsApiEndpoints": 43,
-  "tsMethodPathCombos": 47,
-  "tsOnlyNote": "W516: sessions grants endpoints exist ONLY in the TypeScript backend. The Rust extraction above is kept verbatim; a contract endpoint must appear in `routes` or in `tsOnlyRoutes`."
+  "tsApiEndpoints": 44,
+  "tsMethodPathCombos": 48,
+  "tsOnlyNote": "W516/W725: the sessions grants endpoints and GET /api/sessions/{id}/context exist ONLY in the TypeScript backend. The Rust extraction above is kept verbatim; a contract endpoint must appear in `routes` or in `tsOnlyRoutes`."
 }

@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   const tools = loadTools();
 
   // ---- 0. contract self-consistency ---------------------------------------
-  pass("contracts/endpoints.json", "contract-count", `${contract.endpoints.length} endpoints (expected 43)`, undefined);
+  pass("contracts/endpoints.json", "contract-count", `${contract.endpoints.length} endpoints (expected 44)`, undefined);
   pass("contracts/sse-events.json", "contract-count", `${sse.events.length} SSE events (expected 8)`, undefined);
   pass("contracts/tools.json", "contract-count", `${tools.tools.length} tool specs (expected 10)`, undefined);
 

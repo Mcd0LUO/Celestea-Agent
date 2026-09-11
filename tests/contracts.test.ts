@@ -14,9 +14,9 @@ import {
 describe("contracts/endpoints.json", () => {
   const c = loadEndpoints();
 
-  it("holds exactly 43 API endpoints (W516 added the four grants endpoints)", () => {
-    expect(c.count).toBe(43);
-    expect(c.endpoints).toHaveLength(43);
+  it("holds exactly 44 API endpoints (W725 added the context snapshot)", () => {
+    expect(c.count).toBe(44);
+    expect(c.endpoints).toHaveLength(44);
   });
 
   it("every endpoint is an /api/* route with a method, a response and a doc ref", () => {
@@ -42,13 +42,14 @@ describe("contracts/endpoints.json", () => {
     expect(snap.staticRoutes).toHaveLength(4);
     const api = snap.routes.filter((r) => r.path.startsWith("/api/"));
     expect(api).toHaveLength(39);
-    // W516: the Rust extraction stays verbatim; the four grants endpoints are
-    // declared as a TypeScript-only delta instead of being written into it.
-    expect(snap.tsOnlyRoutes).toHaveLength(4);
-    expect(snap.tsApiEndpoints).toBe(43);
-    expect(snap.tsMethodPathCombos).toBe(47);
+    // W516/W725: the Rust extraction stays verbatim; the four grants endpoints
+    // and the context snapshot are declared as a TypeScript-only delta instead
+    // of being written into it.
+    expect(snap.tsOnlyRoutes).toHaveLength(5);
+    expect(snap.tsApiEndpoints).toBe(44);
+    expect(snap.tsMethodPathCombos).toBe(48);
     const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
-    expect(fromSnapshot.size).toBe(43);
+    expect(fromSnapshot.size).toBe(44);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (43 endpoints)",
+  "title": "Celestea Studio HTTP API contract (44 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -8,7 +8,7 @@
     "routes": "/src/celestea_studio/src/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json",
-    "routeTable": "W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes)."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 43,
+  "count": 44,
   "endpoints": [
     {
       "id": "get_health",
@@ -2823,6 +2823,97 @@
       "probe": {
         "checked": false,
         "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_session_context",
+      "method": "GET",
+      "path": "/api/sessions/{id}/context",
+      "group": "sessions",
+      "rustHandler": "(none - TypeScript-only, W725)",
+      "docRef": "docs/feature-session-context.md#1-端点",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": true,
+            "note": "canonical '<workspace>/<session>'"
+          },
+          {
+            "name": "model",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "system",
+            "type": "string",
+            "required": true,
+            "note": "the config.system_prompt the loop sends, verbatim"
+          },
+          {
+            "name": "tools",
+            "type": "array<{name:string,description:string,parameters:object}>",
+            "required": true,
+            "note": "registry.schemas() verbatim, in engine order"
+          },
+          {
+            "name": "messages",
+            "type": "array<{role:string,content:string,tool_name?:string,tool_call_id?:string,truncated?:true}>",
+            "required": true,
+            "note": "the post-trim history the next step would send; see docs/feature-session-context.md §2"
+          },
+          {
+            "name": "counts",
+            "type": "object{system_chars:int,tool_count:int,message_count:int}",
+            "required": true,
+            "note": "describes the payload AS SENT (post-truncation)"
+          },
+          {
+            "name": "context",
+            "type": "object{used:int,window:int,ratio:number,estimated:bool}",
+            "required": true,
+            "note": "the statusline's context_usage口径 minus its `method` discriminator"
+          },
+          {
+            "name": "truncated",
+            "type": "boolean",
+            "required": true,
+            "note": "true when any entry hit the 20000-char cap (system included)"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown session '<id>'"
+        },
+        {
+          "status": 503,
+          "error": "too many live sessions (limit N)"
+        }
+      ],
+      "notes": [
+        "Read-only: it composes the session's instance when none is live and never drives a turn.",
+        "The body is the ENGINE's assembly (agent-loop buildRequest: system + trimContext(deriveMessages()) + registry.schemas()), never a host-side re-derivation.",
+        "Per-entry cap: a message or the system text longer than 20000 chars is cut to 20000 and marked (message: `truncated:true`; system: top-level flag only).",
+        "`role` is the verbatim engine role, so a trimmed-history marker message can appear as `system` (user|assistant|tool otherwise).",
+        "`worker:<sid>` sessions have no directory and are rejected by session resolution (404)."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/sessions/{id}/context route"
       }
     }
   ]

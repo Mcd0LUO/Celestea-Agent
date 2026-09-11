@@ -2,7 +2,7 @@
  * Handler registry — the ONLY place that knows every endpoint group.
  *
  * Each `registerXxx` returns the contract ids it bound, and `app.ts` asserts
- * the union equals the frozen 43. A route can therefore never be silently
+ * the union equals the frozen 44. A route can therefore never be silently
  * dropped: adding an endpoint to `contracts/endpoints.json` without a handler
  * fails at startup with the missing id.
  *
@@ -12,7 +12,8 @@
  *   health.ts        GET  /api/health | /api/status | /api/tools
  *   dialog.ts        GET  /api/events (SSE) | POST /api/turn | /api/cancel | /api/clear
  *   config.ts        GET+POST /api/config
- *   sessions.ts      GET+POST /api/sessions | {id}/messages | {id}/activate
+ *   sessions.ts      GET+POST /api/sessions | {id}/messages | {id}/activate | {id}/context
+ *   context-shape.ts the context snapshot body + the 20k-per-entry wire guard
  *   session-move.ts  {id}/rename | {id}/branch | {id}/compact | archive | unarchive | batch-*
  *   workspaces.ts    /api/workspaces (+rename/delete/batch-delete)
  *   fs.ts            GET /api/fs/browse
@@ -20,6 +21,9 @@
  *   prompts.ts       /api/prompts (+delete/default)
  *   worker.ts        /api/worker/spawn | send | status
  *   grants.ts        GET+POST+DELETE /api/sessions/{id}/grants | grants/confirm-token
+ *
+ * W725: the context endpoint (44th) lives in sessions.ts; its shaping is in
+ * context-shape.ts.
  */
 
 import type { Hono } from "hono";

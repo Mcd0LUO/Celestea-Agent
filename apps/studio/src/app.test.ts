@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe("route table coverage", () => {
-  it("binds exactly the 43 contract endpoints with the contract method+path", () => {
+  it("binds exactly the 44 contract endpoints with the contract method+path", () => {
     const h = make();
     expect(h.studio.endpointIds).toHaveLength(API_ENDPOINT_COUNT);
     expect(new Set(h.studio.endpointIds).size).toBe(API_ENDPOINT_COUNT);
@@ -62,8 +62,9 @@ describe("health / status / tools / config", () => {
       model: "test-model",
       base_url: "http://127.0.0.1:3001/v1",
       bind: "127.0.0.1:3777",
-      // W516: the capability bit the frontend gates the permission panel on.
-      capabilities: { grants: true },
+      // W516/W725: the capability bits the frontend gates the permission panel
+      // and the context viewer on.
+      capabilities: { grants: true, context: true },
     });
   });
 

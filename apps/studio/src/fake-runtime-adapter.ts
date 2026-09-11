@@ -19,6 +19,9 @@ import type { SseEventName, Statusline } from "@celestea/core";
 import {
   TurnBusyError,
   type ClearOutcome,
+  type ContextMessageView,
+  type ContextToolView,
+  type SessionContextView,
   type CompactOutcome,
   type EngineProfile,
   type InjectOutcome,
@@ -41,6 +44,12 @@ export interface FakeRuntimeOptions {
   tools?: readonly ToolInfo[];
   /** Yield between scripted frames so a test can observe the stream. */
   stepDelayMs?: number;
+  /**
+   * W725: scripted context snapshot. The fake owns no session log, so the
+   * "model-visible context" is whatever the test plants; absent = the profile's
+   * system prompt with no history.
+   */
+  context?: { system?: string; messages?: readonly ContextMessageView[] };
 }
 
 /** `RuntimeAdapter` plus the test hook that waits for a scripted turn to end. */
@@ -98,6 +107,8 @@ class FakeRuntime implements FakeRuntimeAdapter {
   private readonly workers = new Map<string, FakeWorker>();
   private readonly transcripts = new Map<string, unknown[]>();
   private readonly delay: number;
+  /** W725: the scripted model-visible context of `sessionContext()`. */
+  private readonly context: { system?: string; messages?: readonly ContextMessageView[] };
   private bus: StudioBus | null = null;
   private busy = false;
   private turn = 0;
@@ -113,6 +124,7 @@ class FakeRuntime implements FakeRuntimeAdapter {
     this.engineProfile = defaultProfile(opts.profile ?? {});
     this.toolList = opts.tools ?? DEFAULT_TOOLS;
     this.delay = opts.stepDelayMs ?? 0;
+    this.context = opts.context ?? {};
   }
 
   attach(next: StudioBus): void {
@@ -164,6 +176,16 @@ class FakeRuntime implements FakeRuntimeAdapter {
 
   tools(): ToolInfo[] {
     return [...this.toolList];
+  }
+
+  /** W725: the scripted context snapshot (this fake owns no engine log). */
+  sessionContext(_session: string | null): SessionContextView {
+    return {
+      model: this.engineProfile.model,
+      system: this.context.system ?? this.engineProfile.system_prompt,
+      tools: this.toolList.map(toolView),
+      messages: [...(this.context.messages ?? [])],
+    };
   }
 
   statusline(): Statusline {
@@ -288,6 +310,11 @@ class FakeRuntime implements FakeRuntimeAdapter {
     const sid = sessionId.startsWith("worker:") ? sessionId.slice("worker:".length) : sessionId;
     return this.transcripts.get(sid) ?? null;
   }
+}
+
+/** The five scripted tools carry no schema of their own: an empty object one. */
+function toolView(tool: ToolInfo): ContextToolView {
+  return { name: tool.name, description: tool.description, parameters: { type: "object", properties: {} } };
 }
 
 export function createFakeRuntimeAdapter(opts: FakeRuntimeOptions = {}): FakeRuntimeAdapter {

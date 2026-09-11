@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createFakeRuntimeAdapter } from "./fake-runtime-adapter.js";
 import { busyRuntime, getJson, grant, grantToken, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
 
 const harnesses: StudioHarness[] = [];
@@ -122,6 +123,59 @@ describe("sessions endpoints", () => {
     const res2 = await getJson(busy.app, `/api/sessions/${S1}/compact`, jsonRequest("POST"));
     expect(res2.status).toBe(409);
     expect(res2.body).toEqual({ ok: false, error: "turn 进行中，无法压缩" });
+  });
+});
+
+describe("session context snapshot endpoint", () => {
+  it("serves the assembled context in the frozen 200 shape (and advertises the capability)", async () => {
+    const h = make({
+      runtime: createFakeRuntimeAdapter({
+        profile: { model: "test-model", context_window: 1_000_000 },
+        context: {
+          system: "sys",
+          messages: [
+            { role: "user", content: "hello" },
+            { role: "assistant", content: "[tool_call] read_file {}", tool_name: "read_file", tool_call_id: "c1" },
+            { role: "tool", content: '{"stdout":"hi"}', tool_name: "read_file", tool_call_id: "c1" },
+          ],
+        },
+      }),
+    });
+    const res = await getJson(h.app, `/api/sessions/${S1}/context`);
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(["context", "counts", "messages", "model", "ok", "session", "system", "tools", "truncated"]);
+    expect(res.body).toMatchObject({ ok: true, session: "sample-ws/s1", model: "test-model", system: "sys", truncated: false });
+    expect(res.body["messages"]).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "[tool_call] read_file {}", tool_name: "read_file", tool_call_id: "c1" },
+      { role: "tool", content: '{"stdout":"hi"}', tool_name: "read_file", tool_call_id: "c1" },
+    ]);
+    const tools = res.body["tools"] as Array<Record<string, unknown>>;
+    expect(tools[0]).toHaveProperty("parameters");
+    expect(res.body["counts"]).toEqual({ system_chars: 3, tool_count: tools.length, message_count: 3 });
+    expect(res.body["context"]).toEqual({ used: 0, window: 1_000_000, ratio: 0, estimated: true });
+    const health = await getJson(h.app, "/api/health");
+    expect((health.body["capabilities"] as Record<string, unknown>)["context"]).toBe(true);
+  });
+
+  it("404s an unknown session and marks every over-long entry", async () => {
+    const missing = await getJson(make().app, "/api/sessions/sample-ws%2Fmissing/context");
+    expect(missing.status).toBe(404);
+    expect(missing.body).toEqual({ ok: false, error: "unknown session 'sample-ws/missing'" });
+
+    const long = make({
+      runtime: createFakeRuntimeAdapter({
+        context: { system: "s".repeat(20_001), messages: [{ role: "user", content: "x".repeat(20_001) }, { role: "assistant", content: "short" }] },
+      }),
+    });
+    const res = await getJson(long.app, `/api/sessions/${S1}/context`);
+    expect(String(res.body["system"])).toHaveLength(20_000);
+    const messages = res.body["messages"] as Array<Record<string, unknown>>;
+    expect(messages[0]).toMatchObject({ truncated: true });
+    expect(String(messages[0]?.["content"])).toHaveLength(20_000);
+    expect(messages[1]).not.toHaveProperty("truncated");
+    expect(res.body["truncated"]).toBe(true);
+    expect(res.body["counts"]).toMatchObject({ system_chars: 20_000, message_count: 2 });
   });
 });
 

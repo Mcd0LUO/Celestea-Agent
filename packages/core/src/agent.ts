@@ -7,6 +7,7 @@
  */
 
 import type { Context } from "./context.js";
+import type { ModelRequest } from "./stream.js";
 
 export interface AgentConfig {
   model: string;
@@ -44,6 +45,29 @@ export class AgentError extends Error {
 export interface AgentLoop {
   /** Drive one user turn; rejects with [AgentError] on a terminal failure. */
   runTurn(ctx: Context, userInput: string): Promise<void>;
+}
+
+/**
+ * Optional `AgentLoop` capability (W725): hand back the EXACT request the next
+ * step would build for `ctx` — system prompt, post-trim history and tool
+ * schemas, i.e. the very object the loop hands to `Llm.generate`.
+ *
+ * It exists so a read-only context viewer (the host's "what does the model see
+ * right now" pane) reads the engine's own assembly instead of re-deriving it:
+ * a second trim/derive implementation would drift from the loop.
+ */
+export interface AgentLoopContextSnapshot {
+  contextSnapshot(ctx: Context): ModelRequest;
+}
+
+/**
+ * `contextSnapshot()` of a loop, or null when it does not implement the
+ * capability (test doubles / scripted loops). Never throws: a missing
+ * capability is a "no snapshot available", not a broken turn.
+ */
+export function contextSnapshotOf(loop: unknown, ctx: Context): ModelRequest | null {
+  const fn = (loop as Partial<AgentLoopContextSnapshot> | null | undefined)?.contextSnapshot;
+  return typeof fn === "function" ? fn.call(loop, ctx) : null;
 }
 
 /** Well-known token for the agent loop service in a Context. */

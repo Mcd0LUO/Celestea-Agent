@@ -1,5 +1,5 @@
 /**
- * Cross-package contract test (P4): every one of the 43 frozen endpoints is
+ * Cross-package contract test (P4): every one of the 44 frozen endpoints is
  * bound to the contract method+path and is reachable — none of them falls
  * through to the static/SPA handler.
  *
@@ -16,7 +16,7 @@ const harness = makeHarness({ session: { name: "sample-session", log: `${JSON.st
 const { app } = harness;
 
 describe("apps/studio contract surface", () => {
-  it("binds the 43 contract endpoints exactly once each", () => {
+  it("binds the 44 contract endpoints exactly once each", () => {
     const contract = loadEndpoints().endpoints.map((e) => `${e.method} ${e.path}`);
     const bound = harness.studio.routes.map((r) => `${r.method} ${r.contractPath}`);
     expect(bound).toHaveLength(API_ENDPOINT_COUNT);
@@ -43,10 +43,11 @@ describe("apps/studio contract surface", () => {
 
   it("keeps the health / status / tools shapes frozen", async () => {
     const health = (await (await app.request("/api/health")).json()) as Record<string, unknown>;
-    // W516: `capabilities.grants = true` is how the frontend knows the
-    // permission panel exists at all (the Rust backend answered 404 here).
+    // W516/W725: `capabilities.grants|context = true` is how the frontend knows
+    // the permission panel / context viewer exists at all (the Rust backend
+    // answered 404 on both endpoints).
     expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "capabilities", "model", "name", "ok"]);
-    expect(health["capabilities"]).toEqual({ grants: true });
+    expect(health["capabilities"]).toEqual({ grants: true, context: true });
     const status = (await (await app.request("/api/status")).json()) as Record<string, unknown>;
     expect(Object.keys(status).sort()).toEqual([
       "busy",
