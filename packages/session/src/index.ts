@@ -20,6 +20,9 @@
  *   messages.ts        Studio projection + deriveMessages facade
  *   turn-id.ts         turn id math + audit
  *   replay.ts          replay analysis + SSE transcript derivation
+ *   checkpoint.ts      checkpoint.json sidecar: shape + atomic read/write
+ *   checkpoint-log.ts  SessionLog decorator: turn boundary -> checkpoint
+ *   checkpoint-recovery.ts  boot decision table (§1.2.3), append-only repair
  */
 
 export * from "./log/derive.js";
@@ -31,3 +34,6 @@ export * from "./jsonl.js";
 export * from "./messages.js";
 export * from "./turn-id.js";
 export * from "./replay.js";
+export * from "./checkpoint.js";
+export * from "./checkpoint-log.js";
+export * from "./checkpoint-recovery.js";

@@ -23,6 +23,7 @@
  */
 
 import type { TurnOutcome } from "@celestea/core";
+import { nextTurnNumber } from "@celestea/session";
 import type { Runtime } from "./runtime.js";
 
 /** Registry key of the "no session" runtime (turns without an active session). */
@@ -38,7 +39,10 @@ export interface SessionRuntime {
   /** Profile epoch the instance was composed from. */
   profileEpoch: number;
   runtime: Runtime;
-  /** Turns started on THIS session (per-session numbering, contract §4.1). */
+  /**
+   * Turns started on THIS session (per-session numbering, contract §4.1),
+   * seeded from the session log at `ensure` / `rebuild` (E §1.3 P0 ④).
+   */
   turnNo: number;
   /** In-flight turn's cancel handle (null between turns). */
   controller: AbortController | null;
@@ -89,6 +93,17 @@ export class TurnCapacityError extends Error {
     this.name = "TurnCapacityError";
     this.limit = limit;
   }
+}
+
+/**
+ * The session-local turn number, restored FROM THE LOG (E §1.3 P0 ④): the log
+ * owns the `turn-<n>` counter, so `maxTurnNumber(events)+1` is the next number
+ * this session would have used and the counter can never restart at 0 across a
+ * process restart (`POST /api/turn`'s `turn` stays comparable with the ids in
+ * `cli-main.jsonl`). A brand new session has no events -> 0, exactly as before.
+ */
+function turnNumberFromLog(runtime: Runtime): number {
+  return nextTurnNumber(runtime.session.events());
 }
 
 /** Key of a session id (`null` = the detached instance). */
@@ -152,13 +167,14 @@ export class SessionRuntimeRegistry {
     }
     this.makeRoom(key, key === DETACHED_SESSION_KEY);
     const epoch = this.epoch();
+    const runtime = this.deps.build(sessionId, dir, epoch);
     const entry: SessionRuntime = {
       key,
       sessionId,
       dir,
       profileEpoch: epoch,
-      runtime: this.deps.build(sessionId, dir, epoch),
-      turnNo: 0,
+      runtime,
+      turnNo: turnNumberFromLog(runtime),
       controller: null,
       inFlight: false,
       lastOutcome: null,
@@ -275,7 +291,7 @@ export class SessionRuntimeRegistry {
     entry.runtime = this.deps.build(entry.sessionId, entry.dir, this.epoch());
     entry.profileEpoch = this.epoch();
     entry.needsRebuild = false;
-    entry.turnNo = 0;
+    entry.turnNo = turnNumberFromLog(entry.runtime);
     entry.lastOutcome = null;
     void this.deps.dispose(previous);
   }

@@ -37,7 +37,7 @@ import {
 } from "@celestea/runtime";
 import { join } from "node:path";
 import { CapacityError } from "../runtime-adapter.js";
-import { bindingFor, closeLog, workerSessionPrefix, type SessionTarget } from "./engine-session.js";
+import { bindingFor, closeLog, workerSessionPrefix, type CheckpointWiring, type SessionTarget } from "./engine-session.js";
 import { sessionIdOfDir } from "./engine-grants.js";
 import { enginePlugins } from "./engine-plugins.js";
 import { EMPTY_GRANTS } from "./engine-grants.js";
@@ -108,6 +108,12 @@ export interface SessionComposerOptions {
   ledgerFile?: UsageLedgerFile | null;
   /** Provider row id of the startup target, recorded as the ledger's `provider`. */
   providerLabel?: string | null;
+  /**
+   * E §1.3 P0 ②: checkpoint sidecar wiring. A persistent session log is always
+   * checkpointed; this only overrides the process identity (`boot_id`/`pid`) and
+   * the clock, which tests pin to keep the written file deterministic.
+   */
+  checkpoint?: CheckpointWiring;
   now?: () => number;
 }
 
@@ -268,6 +274,6 @@ export class SessionComposer {
 
   private bindingTo(sessionId: string | null, dir: string | null): SessionBinding {
     const target = dir === null || sessionId === null ? null : { sessionId, dir };
-    return bindingFor(sessionId, target, this.memoryLogs);
+    return bindingFor(sessionId, target, this.memoryLogs, this.opts.checkpoint ?? {});
   }
 }

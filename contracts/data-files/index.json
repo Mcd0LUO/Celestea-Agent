@@ -65,6 +65,12 @@
       "schema": "usage-ledger.schema.json",
       "version": "ledger v1 (per-row `v`)",
       "mode": "0600"
+    },
+    {
+      "file": "checkpoint.json",
+      "schema": "checkpoint.schema.json",
+      "version": "sidecar v1 (its own `version: 1` is the SIDECAR schema, not a data-file format version)",
+      "mode": "0600"
     }
   ],
   "durability": {
@@ -76,11 +82,16 @@
     "session.json": "plain write, NOT atomic",
     "registry.tsv": "tmp+rename",
     "pricing.json": "read-only snapshot (never written by the engine); missing/unparsable -> empty table (every model unpriced)",
-    "usage-ledger.jsonl": "append-only, one writeSync per record on an O_APPEND fd (no fsync, no rotation in P0)"
+    "usage-ledger.jsonl": "append-only, one writeSync per record on an O_APPEND fd (no fsync, no rotation in P0)",
+    "checkpoint.json": "tmp-<pid> + rename, mode 0600, no fsync (observation only: a lost sidecar reads as 'no checkpoint', which is fail-safe)"
   },
   "roundTripRequirement": "Every file needs a read -> write -> re-read round-trip test; both implementations must agree byte-for-byte on the written form.",
   "ledger": {
     "implemented": "W728 P0 (iteration E §3): step-granular append-only ledger + pricing snapshot + unpriced marking",
     "notImplemented": "GET /api/usage/ledger, /api/status.cost, sync-pricing script, rotation, three-way reconciliation (P1/P2)"
+  },
+  "recovery": {
+    "implemented": "E-P0③ (§1.3 P0): checkpoint.json sidecar + idempotent boot synthesis of `turn_end: interrupted` + turnNo restored from the log; API_ENDPOINT_COUNT stays 44 (no endpoint in P0)",
+    "notImplemented": "inbox/lane + delivered_ids persistence, GET /api/status.recovery, step-level resume and the tool side-effect table (P1/P2)"
   }
 }

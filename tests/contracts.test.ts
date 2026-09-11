@@ -155,8 +155,8 @@ describe("contracts/session-event.schema.json", () => {
 describe("contracts/data-files", () => {
   const idx = loadDataFilesIndex();
 
-  it("freezes 10 data-file schemas and forbids a version field", () => {
-    expect(idx.files).toHaveLength(10);
+  it("freezes 11 data-file schemas and forbids a version field", () => {
+    expect(idx.files).toHaveLength(11);
     expect(idx.freezeRule).toContain("NO format changes");
     for (const f of idx.files) expect(f.schema.endsWith(".schema.json")).toBe(true);
   });
@@ -187,6 +187,44 @@ describe("contracts/data-files", () => {
     expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
 
     expect(loadEndpoints().count).toBe(44);
+  });
+});
+
+describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
+  const idx = loadDataFilesIndex();
+
+  it("registers checkpoint.json as a data file and keeps the endpoint count frozen", () => {
+    const entry = idx.files.find((f) => f.file === "checkpoint.json");
+    expect(entry?.schema).toBe("checkpoint.schema.json");
+    expect(entry?.mode).toBe("0600");
+    expect(idx.durability["checkpoint.json"]).toContain("tmp-<pid> + rename");
+    expect(idx.recovery?.implemented).toContain("turn_end: interrupted");
+    // P0 adds NO endpoint: /api/status.recovery is P1 and stays out.
+    expect(loadEndpoints().count).toBe(44);
+    expect(loadEndpoints().endpoints).toHaveLength(44);
+  });
+
+  it("freezes the sidecar shape (version, open_turn, repaired[])", () => {
+    const schema = loadDataFileSchema("checkpoint.schema.json")["schema"] as {
+      required: string[];
+      additionalProperties: boolean;
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(["version", "session", "pid", "boot_id", "updated_at", "clean_shutdown", "open_turn", "last_outcome", "degraded", "lanes", "repaired"]);
+    expect(schema.properties["version"]?.["const"]).toBe(1);
+    expect(schema.properties["boot_id"]?.["pattern"]).toBe("^b-[0-9a-f]{8}$");
+    expect(schema.properties["open_turn"]?.["type"]).toEqual(["object", "null"]);
+    const repaired = schema.properties["repaired"] as { items: { properties: Record<string, { const?: string }> } };
+    expect(repaired.items.properties["action"]?.["const"]).toBe("synthesize_turn_end");
+  });
+
+  it("keeps the session-event contract untouched (interrupted is a legal outcome)", () => {
+    const s = loadSessionEventSchema();
+    const defs = s["$defs"] as Record<string, { oneOf: Array<{ const?: string }> }>;
+    expect(TURN_OUTCOMES).toContain("interrupted");
+    expect(defs["TurnOutcome"]?.oneOf).toHaveLength(5);
+    expect(defs["SessionEvent"]?.oneOf).toHaveLength(7);
   });
 });
 
@@ -222,7 +260,7 @@ describe("W729 session modes (P0 contract delta)", () => {
     };
     expect(schema.properties["mode"]?.enum).toEqual(["standard", "execution"]);
     expect(schema.additionalProperties).toBe(true);
-    expect(loadDataFilesIndex().files).toHaveLength(10);
+    expect(loadDataFilesIndex().files).toHaveLength(11);
   });
 
   it("M14: one mode semantics — no host preset token in the Studio tree", () => {

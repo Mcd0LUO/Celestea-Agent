@@ -32,6 +32,7 @@ import { createSessionGrants } from "./runtime/session-grants.js";
 import { grantsEnv } from "./store/grants-service.js";
 import { createUsageLedgerFile } from "@celestea/runtime";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
+import { recoverActiveSessionOnBoot } from "./runtime/boot-recovery.js";
 
 export interface StudioAppOptions {
   cwd?: string;
@@ -156,6 +157,11 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   const app = new Hono();
 
   primeEnginePrompt(services);
+  // E §1.3 P0 ③: close the turn the previous process died inside — BEFORE any
+  // instance of the active session is composed, because composing one replays the
+  // log and takes its turn counter from it. A clean log, a missing checkpoint or
+  // an unresolvable active session are all no-ops (fail-safe).
+  recoverActiveSessionOnBoot({ workspaces: services.workspaces, sessions: services.sessions });
   const endpointIds = registerHandlers(app, services, table);
   assertCoverage(table.routes, endpointIds);
 
