@@ -16,6 +16,13 @@
  *
  * Errors are captured, never thrown across the seam (Rust parity:
  * `crates/tools/src/registry.rs`).
+ *
+ * **The verdict never lies (W738 P1)**: `decision` describes what the seam did
+ * with the call, so a call the seam REFUSED to run (unknown tool, schema
+ * rejection) is a `deny`, never an `allow` — an `allow` there would tell the
+ * caller (and the audit log) that a rejected call passed every check. A tool that
+ * did run and then failed keeps `allow`: the guards really did allow it and the
+ * verdict is not a success flag.
  */
 
 import type { Tool, ToolDecision, ToolGuard, ToolInput, ToolOutput, ToolRegistry, ToolSpec } from "@celestea/core";
@@ -57,11 +64,11 @@ export class ToolRegistryImpl implements ToolRegistry {
 
   async dispatch(input: ToolInput): Promise<ToolOutput> {
     const tool = this.tools.get(input.name);
-    if (tool === undefined) return failure(input.call_id, `unknown tool: ${input.name}`);
+    if (tool === undefined) return refused(input.call_id, `unknown tool: ${input.name}`);
 
     const invalid = validateArgs(tool.spec().parameters, input.args);
     if (invalid !== null) {
-      return failure(input.call_id, contractError(TOOLARG_ERROR_PREFIX, "schema", invalid.message));
+      return refused(input.call_id, contractError(TOOLARG_ERROR_PREFIX, "schema", invalid.message));
     }
 
     const decision = await this.runGuards(input);
@@ -103,8 +110,21 @@ export class ToolRegistryImpl implements ToolRegistry {
   }
 }
 
+/**
+ * A call that ran and then failed: the guards allowed it, so the verdict is
+ * `allow` — `error` carries the failure (`decision` is not a success flag).
+ */
 function failure(callId: string, error: string): ToolOutput {
   return { call_id: callId, value: null, render: null, error, decision: ALLOW };
+}
+
+/**
+ * A call the seam REFUSED before execution (unknown tool / invalid args): the
+ * verdict is a `deny` whose reason is the very error the caller sees, so
+ * "refused" can never be reported as "allowed" (W738 P1).
+ */
+function refused(callId: string, error: string): ToolOutput {
+  return { call_id: callId, value: null, render: null, error, decision: { kind: "deny", reason: error } };
 }
 
 function decisionFailure(callId: string, kind: "deny" | "ask", reason: string): ToolOutput {
