@@ -27,6 +27,12 @@ export interface EngineHarnessOptions {
   llm?: OfflineLlmOptions;
   /** `session.json` of the planted sessions (`name` -> its keys, W729). */
   meta?: Record<string, Record<string, string>>;
+  /**
+   * Environment for the HOST and for the engine this harness builds: the app's
+   * config and the real adapter's own knobs (`CELESTEA_WATCHDOG*`, tool roots,
+   * resource caps) both read it (W740).
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** One complete turn in the engine's native JSONL shape. */
@@ -165,7 +171,9 @@ export function makeEngineHarness(opts: EngineHarnessOptions = {}): StudioHarnes
           context_window: 1_000_000,
           system_prompt: "engine identity prompt",
         },
-        env: { ...process.env, ...(wsPath === undefined ? {} : { CELESTEA_TOOL_ROOTS: wsPath }) },
+        // W740: the real adapter reads the watchdog cadence from ITS env, so the
+        // harness env has to travel here as well (not only to the app).
+        env: { ...process.env, ...(wsPath === undefined ? {} : { CELESTEA_TOOL_ROOTS: wsPath }), ...(opts.env ?? {}) },
         llm: () => createOfflineLlm(opts.llm ?? {}),
         resultsDir,
         resolveSession: (id) => {

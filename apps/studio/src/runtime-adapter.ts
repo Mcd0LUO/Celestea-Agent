@@ -231,6 +231,11 @@ export interface WorkerStatusReport {
   workers: unknown[];
   wid?: string;
   error?: string;
+  /**
+   * W740: how many live instances are sweeping their worker rows (the count of
+   * RUNNING watchdog timers). Absent from an engine that mounts no watchdog.
+   */
+  watchdogs?: number;
 }
 
 /** Engine-memory worker session row (`kind: "worker"`, workspace "engine"). */

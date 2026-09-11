@@ -33,6 +33,7 @@ import {
   type Runtime,
   type SessionBinding,
   type Summarizer,
+  type WatchdogMountSettings,
   type WorkerWiring,
 } from "@celestea/runtime";
 import { join } from "node:path";
@@ -89,6 +90,13 @@ export interface SessionComposerOptions {
   guard?: ToolGuard | null;
   /** Disable worker orchestration wiring entirely. */
   workers?: false;
+  /**
+   * W740: the liveness watchdog over this session's worker registry. Omitted =
+   * the environment decides (`compose()` reads it); `false` never mounts it.
+   * The sweep timer dies with the instance (the runtime's shutdown hook), so a
+   * reclaimed session leaks nothing.
+   */
+  watchdog?: Partial<WatchdogMountSettings> | false;
   /** Worker receipt/report directory (default `<cwd>/worker-results`). */
   resultsDir?: string;
   /** Compact summarizer override (default: the `Llm` seam). */
@@ -184,6 +192,10 @@ export class SessionComposer {
           ...(bindings.injections === undefined ? {} : { injections: bindings.injections }),
         }),
       workers: this.workerWiring(sessionId, profile),
+      // W740: the watchdog settings come from the process environment; the
+      // composition root reads them and registers the stop hook with the sweep.
+      env: this.opts.env,
+      ...(this.opts.watchdog === undefined ? {} : { watchdog: this.opts.watchdog }),
       ...(this.opts.now === undefined ? {} : { now: this.opts.now }),
     });
   }

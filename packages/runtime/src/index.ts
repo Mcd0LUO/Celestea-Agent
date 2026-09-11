@@ -28,6 +28,7 @@
  *   inbox.ts           per-session mid-turn injection queue      (W513)
  *   session-registry.ts session id -> independent Runtime        (W513)
  *   worker-wiring.ts   worker driver seams + host receipt drain  (compose.rs:148-193)
+ *   watchdog-mount.ts  W740: mount the liveness watchdog (workers/watchdog.ts)
  *   runtime.ts         Runtime handles + lifecycle               (compose.rs:44-281)
  *   recovery.ts        boot recovery: close a turn a crash left open (E §1.3)
  *   gen.ts             Gen + GenerationHub (hot swap)            (studio/main.rs:340-420)
@@ -56,6 +57,7 @@ export * from "./inbox.js";
 export * from "./session-registry.js";
 export * from "./recovery.js";
 export * from "./worker-wiring.js";
+export * from "./watchdog-mount.js";
 export * from "./runtime.js";
 export * from "./gen.js";
 export * from "./compose.js";

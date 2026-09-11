@@ -20,6 +20,7 @@ import {
   WORKER_REGISTRY_SERVICE,
   workersPlugin,
   type SessionLogFactory,
+  type Watchdog,
   type WorkerDrivers,
   type WorkerSession,
 } from "@celestea/workers";
@@ -69,6 +70,13 @@ export interface WorkerHost {
   pending: () => number;
   /** Attach driver seams so a spawn is driven, not merely registered. */
   attach: (drivers: WorkerDrivers | null) => boolean;
+  /**
+   * W740: the liveness watchdog mounted over THIS registry by the composition
+   * root (`compose()` attaches it after this wiring ran), or null when the
+   * watchdog is off. The service itself also lives in the Context under
+   * `WATCHDOG_SERVICE`; this handle is what a host ticks by hand.
+   */
+  watchdog?: Watchdog | null;
 }
 
 /**
