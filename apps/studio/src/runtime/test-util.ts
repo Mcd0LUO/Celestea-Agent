@@ -6,19 +6,22 @@
  * `harness.runtime` IS the engine (`RealRuntimeAdapter`), never a proxy. The
  * engine's tool roots are pinned to the temp workspace, so the production path
  * guard stays mounted and read-only tool calls are allowed inside it.
+ *
+ * W743: the engine is built by `createStudioEngine` (app.ts) — the SAME factory
+ * production uses. This file injects only paths/env/profile/LLM and must never
+ * grow a second assembly of its own (see `composition-root.test.ts`).
  */
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { serializeEventLog } from "@celestea/runtime";
 import type { SessionEvent } from "@celestea/core";
+import { createStudioEngine, type HostRef, type StudioEngineDeps } from "../app.js";
 import { jsonRequest, makeHarness, type StudioHarness } from "../harness.test-util.js";
-import { assembleSystemPromptFor } from "../handlers/config-shape.js";
-import type { StudioServices } from "../plugins.js";
-import { readSessionMeta } from "../store/session-meta.js";
 import type { BusFrame, BusSubscription } from "../sse.js";
+import type { EngineProfile } from "../runtime-adapter.js";
+import type { RealRuntimeAdapter } from "./real-runtime-adapter.js";
 import { createOfflineLlm, type OfflineLlmOptions } from "./offline-llm.js";
-import { createRealRuntimeAdapter, type RealRuntimeAdapter } from "./real-runtime-adapter.js";
 
 export interface EngineHarnessOptions {
   /** Sessions to plant: `name` -> events (written as cli-main.jsonl). */
@@ -141,66 +144,55 @@ export function readSessionLog(h: StudioHarness, name: string): string {
   return readFileSync(join(h.workspace, name, "cli-main.jsonl"), "utf8");
 }
 
-/** Build a host whose engine is the REAL runtime over the offline LLM. */
-/** W729/K8: scoped prompt only for a session with an explicit mode (see app.ts). */
-function promptForDeclaredMode(host: { services: StudioServices | null }, stores: { sessions: { resolve(id: string): { ok: boolean; value?: { dir: string } } } }, id: string): string | null {
-  const resolved = stores.sessions.resolve(id);
-  const declared = resolved.ok && resolved.value !== undefined ? readSessionMeta(resolved.value.dir)?.mode !== undefined : false;
-  return declared && host.services !== null ? assembleSystemPromptFor(host.services, id) : null;
+/** The startup profile of the OFFLINE engine (no provider registry involved). */
+const OFFLINE_PROFILE: EngineProfile = {
+  model: "offline-model",
+  base_url: "http://127.0.0.1:9/v1",
+  api_key_env: "CELESTEA_API_KEY",
+  reasoning_effort: null,
+  max_steps: 4096,
+  max_parallel_tool_calls: 4,
+  max_output_tokens: null,
+  context_window: 1_000_000,
+  system_prompt: "engine identity prompt",
+};
+
+/**
+ * The injected values of the harness engine (W743).
+ *
+ * W732 A1: this harness used to carry its OWN hand-copied copy of the engine
+ * assembly, and that copy had drifted — it never passed `grants` (so the W516
+ * boundary was composed as "no grants at all") and never passed `ledgerFile`
+ * (so no HTTP-layer test ever saw a usage row). It now injects PATHS/ENV/PROFILE
+ * only and reuses `createStudioEngine` (app.ts), the very function production
+ * runs: one assembly, two call sites.
+ */
+function offlineEngineDeps(opts: EngineHarnessOptions, host: HostRef): StudioEngineDeps {
+  return (stores) => {
+    const wsPath = stores.workspaces.workspacePath("sample-ws");
+    const dataRoot = wsPath === undefined ? process.cwd() : dirname(wsPath);
+    return {
+      // The harness data root IS the directory of the workspace just mounted
+      // (`makeHarness` composes cwd = <root>), so the grants audit channel, the
+      // usage ledger and the fail-closed root rules agree with the HTTP layer.
+      workspacesFile: join(dataRoot, "workspaces.json"),
+      // W740: the real adapter reads the watchdog cadence from ITS env, so the
+      // harness env has to travel here as well (not only to the app).
+      env: { ...process.env, ...(wsPath === undefined ? {} : { CELESTEA_TOOL_ROOTS: wsPath }), ...(opts.env ?? {}) },
+      profile: OFFLINE_PROFILE,
+      providerLabel: null,
+      host,
+      llm: () => createOfflineLlm(opts.llm ?? {}),
+    };
+  };
 }
 
 export function makeEngineHarness(opts: EngineHarnessOptions = {}): StudioHarness {
-  const resultsDirs: string[] = [];
   // W729: the per-session prompt hook needs the host services, which exist only
   // AFTER composition — the same late-bound ref `app.ts` uses (see HostRef).
-  const host: { services: StudioServices | null } = { services: null };
-  const h = makeHarness({
-    engineFactory: (stores) => {
-      const wsPath = stores.workspaces.workspacePath("sample-ws");
-      const resultsDir = join(wsPath === undefined ? process.cwd() : dirname(wsPath), "worker-results");
-      resultsDirs.push(resultsDir);
-      return createRealRuntimeAdapter({
-        profile: {
-          model: "offline-model",
-          base_url: "http://127.0.0.1:9/v1",
-          api_key_env: "CELESTEA_API_KEY",
-          reasoning_effort: null,
-          max_steps: 4096,
-          max_parallel_tool_calls: 4,
-          max_output_tokens: null,
-          context_window: 1_000_000,
-          system_prompt: "engine identity prompt",
-        },
-        // W740: the real adapter reads the watchdog cadence from ITS env, so the
-        // harness env has to travel here as well (not only to the app).
-        env: { ...process.env, ...(wsPath === undefined ? {} : { CELESTEA_TOOL_ROOTS: wsPath }), ...(opts.env ?? {}) },
-        llm: () => createOfflineLlm(opts.llm ?? {}),
-        resultsDir,
-        resolveSession: (id) => {
-          const resolved = stores.sessions.require(id);
-          return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
-        },
-        // W513/W729: the session-level model AND mode-dependent prompt are
-        // applied to that session's own instance (mirrors `app.ts`).
-        sessionModel: (id) => {
-          const resolved = stores.sessions.resolve(id);
-          return resolved.ok ? (readSessionMeta(resolved.value.dir)?.model ?? null) : null;
-        },
-        sessionMode: (id) => {
-          const resolved = stores.sessions.resolve(id);
-          return resolved.ok ? (readSessionMeta(resolved.value.dir)?.mode ?? null) : null;
-        },
-        // K8 gate: only a session that DECLARED a mode gets its own assembly.
-        sessionSystemPrompt: (id) => promptForDeclaredMode(host, stores, id),
-      });
-    },
-  });
+  const host: HostRef = { services: null };
+  const h = makeHarness({ engineFactory: createStudioEngine(offlineEngineDeps(opts, host)) });
   host.services = h.studio.services;
-  const cleanup = h.cleanup;
-  h.cleanup = (): void => {
-    cleanup();
-    for (const dir of resultsDirs) rmSync(dir, { recursive: true, force: true });
-  };
   for (const [name, events] of Object.entries(opts.sessions ?? {})) plantSession(h.workspace, name, events, opts.meta?.[name]);
   return h;
 }
