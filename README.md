@@ -3,8 +3,16 @@
 Celestea Studio 后端的 **TypeScript 全量重构**（W268 评估报告 §10 场景 B）。
 本仓当前处于 **P0：契约冻结 + 骨架 + 黄金样本对拍工具链**。
 
-> 依据：`/src/celestea_studio/docs/backend-ts-rewrite-eval.md` §10 P0、§13.2 三条不可妥协前置。
+> 依据（已归档）：`/src/celestea_studio/docs/archive/backend-ts-rewrite-eval.md` §10 P0、§13.2 三条不可妥协前置（Rust → TypeScript 迁移评估；迁移已完成）。
 > 本仓是**独立 git 仓**（无 remote）。P0 不触碰生产：`/src/celestea_studio` 与 `/src/celestea_harness` 全程只读。
+
+## 文档与仓库角色
+
+- **[`docs/README.md`](docs/README.md)** — 本仓 `docs/` 全量索引：每份文档的**状态（当前 / 设计）**、一句话与权威入口。**找文档先看它。**
+- **本仓角色**：Studio **后端**（TypeScript）。现状（2026-09-11）：`celestea-studio-ts.service` 跑在 127.0.0.1:3777，是**生产**后端（文首「P0」段与 §8 是立项时口径，落地进展见 §8 与 §P4）。后端开发只在本仓。
+- **线上前端 + 共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）在 [`/src/celestea_studio`](/src/celestea_studio/docs/README.md)（该仓 Rust 后端已退役，见其 `LEGACY-RUST-BACKEND.md`）。
+- **Rust 引擎**参考实现在 [`/src/celestea_harness`](/src/celestea_harness/docs/README.md)。
+- 本仓 `docs/` **不含归档**（全部为当前 / 设计）；Rust 期的语言切换、迁移计划、旧 API 契约、旧部署等历史文档在 [`/src/celestea_studio/docs/archive/`](/src/celestea_studio/docs/README.md)。
 
 ---
 
@@ -171,7 +179,7 @@ pnpm check
 ## P4: apps/studio（Hono HTTP 层 + 数据存储）
 
 > 契约真源：`contracts/endpoints.json`（39 端点）、`contracts/sse-events.json`、
-> `contracts/data-files/`、`/src/celestea_studio/docs/api-contract.md`。
+> `contracts/data-files/`、`/src/celestea_studio/docs/archive/api-contract.md`（旧 Rust 后端契约，已归档）。
 
 ### 一句话
 
