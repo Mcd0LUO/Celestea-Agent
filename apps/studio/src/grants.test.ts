@@ -270,13 +270,15 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     const base = effectiveGrantsOf(dir, env, NOW).grants;
     const granted = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants: { ...base, network: true } });
     const plain = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants: base });
-    // No grant = EXACTLY today's provider (userspace-lite), whatever the host can do.
-    expect(plain.registry).toBeDefined();
-    // With `network` the deployment's provider policy decides: bwrap + --share-net
-    // where bwrap works, the userspace fallback otherwise (never a crash).
+    // W741: no grant is no bypass — the SAME provider policy decides, so the
+    // provider is bwrap wherever the host can give it (`userspace` otherwise).
+    expect(plain.decision.source).toBe("policy");
+    expect(["bwrap", "userspace"]).toContain(plain.decision.provider);
+    // With `network` the policy still decides: bwrap + --share-net where bwrap
+    // works, the explicit userspace fallback otherwise (never a crash).
     const selection = selectSandboxDetailed({ env, grants: { network: true } });
     expect(bwrapOptionsFromEnv(env, { network: true }).shareNet).toBe(true);
-    expect(granted.registry).toBeDefined();
+    expect(granted.decision.provider).toBe(plain.decision.provider);
     expect([BwrapSandbox, UserspaceSandbox].some((cls) => selection.sandbox instanceof cls)).toBe(true);
   });
 
