@@ -2942,6 +2942,5 @@
         "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/sessions/{id}/context route"
       }
     }
-  ],
-  "notes": null
+  ]
 }
