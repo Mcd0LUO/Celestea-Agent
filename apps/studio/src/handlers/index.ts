@@ -2,7 +2,7 @@
  * Handler registry — the ONLY place that knows every endpoint group.
  *
  * Each `registerXxx` returns the contract ids it bound, and `app.ts` asserts
- * the union equals the frozen 39. A route can therefore never be silently
+ * the union equals the frozen 43. A route can therefore never be silently
  * dropped: adding an endpoint to `contracts/endpoints.json` without a handler
  * fails at startup with the missing id.
  *
@@ -19,6 +19,7 @@
  *   providers.ts     /api/providers (+delete/test/models fetch/default)
  *   prompts.ts       /api/prompts (+delete/default)
  *   worker.ts        /api/worker/spawn | send | status
+ *   grants.ts        GET+POST+DELETE /api/sessions/{id}/grants | grants/confirm-token
  */
 
 import type { Hono } from "hono";
@@ -26,6 +27,7 @@ import type { RouteTable } from "../routes.js";
 import { registerConfig } from "./config.js";
 import { registerDialog } from "./dialog.js";
 import { registerFs } from "./fs.js";
+import { registerGrants } from "./grants.js";
 import { registerHealth } from "./health.js";
 import { registerPrompts } from "./prompts.js";
 import { registerProviders } from "./providers.js";
@@ -47,6 +49,7 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     ...registerProviders(app, deps, table),
     ...registerPrompts(app, deps, table),
     ...registerWorker(app, deps, table),
+    ...registerGrants(app, deps, table),
   ];
 }
 

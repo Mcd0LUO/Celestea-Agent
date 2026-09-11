@@ -16,7 +16,7 @@
       "endpoint": "contracts/endpoints.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "39 endpoints (expected 39)"
+      "detail": "43 endpoints (expected 43)"
     },
     {
       "endpoint": "contracts/sse-events.json",

@@ -14,15 +14,15 @@ import {
 describe("contracts/endpoints.json", () => {
   const c = loadEndpoints();
 
-  it("holds exactly 39 API endpoints", () => {
-    expect(c.count).toBe(39);
-    expect(c.endpoints).toHaveLength(39);
+  it("holds exactly 43 API endpoints (W516 added the four grants endpoints)", () => {
+    expect(c.count).toBe(43);
+    expect(c.endpoints).toHaveLength(43);
   });
 
   it("every endpoint is an /api/* route with a method, a response and a doc ref", () => {
     for (const e of c.endpoints) {
       expect(e.path.startsWith("/api/")).toBe(true);
-      expect(["GET", "POST"]).toContain(e.method);
+      expect(["GET", "POST", "DELETE"]).toContain(e.method);
       expect(e.id).toMatch(/^[a-z0-9_]+$/);
       expect(e.response.status).toBeGreaterThanOrEqual(200);
       expect(e.docRef.length).toBeGreaterThan(0);
@@ -35,14 +35,20 @@ describe("contracts/endpoints.json", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("matches the Rust route table snapshot exactly (39 api + 4 static = 43)", () => {
+  it("matches the Rust route table snapshot plus the declared TS-only delta", () => {
     const snap = loadRouteSnapshot();
     expect(snap.routeDeclarations).toBe(38);
     expect(snap.methodPathCombos).toBe(43);
     expect(snap.staticRoutes).toHaveLength(4);
     const api = snap.routes.filter((r) => r.path.startsWith("/api/"));
     expect(api).toHaveLength(39);
-    const fromSnapshot = new Set(api.map((r) => `${r.method} ${r.path}`));
+    // W516: the Rust extraction stays verbatim; the four grants endpoints are
+    // declared as a TypeScript-only delta instead of being written into it.
+    expect(snap.tsOnlyRoutes).toHaveLength(4);
+    expect(snap.tsApiEndpoints).toBe(43);
+    expect(snap.tsMethodPathCombos).toBe(47);
+    const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
+    expect(fromSnapshot.size).toBe(43);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });

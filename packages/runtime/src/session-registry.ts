@@ -201,6 +201,21 @@ export class SessionRuntimeRegistry {
     }
   }
 
+  /**
+   * ONE session's generation changed (W516: its `grants.json` was written).
+   * The security boundary of a session instance is fixed for the whole turn, so
+   * an idle instance is recomposed immediately while a busy one is marked and
+   * rebuilds at its next turn boundary — exactly like a config epoch bump, but
+   * scoped: neighbours keep their instances and their own boundaries.
+   */
+  invalidateSession(sessionId: string | null): boolean {
+    const entry = this.entries.get(keyOfSession(sessionId));
+    if (entry === undefined) return false;
+    entry.needsRebuild = true;
+    this.settleEpoch(entry);
+    return true;
+  }
+
   /** Reclaim idle instances past the TTL; returns the reclaimed keys. */
   async evictIdle(): Promise<string[]> {
     const ttl = this.deps.idleTtlMs ?? 0;

@@ -184,7 +184,17 @@ describe("GET /api/status and /api/tools", () => {
   it("reports steps, usage, cache_hit_ratio and context_usage from the live trackers", async () => {
     const h = make();
     const before = await getJson(h.app, "/api/status");
-    expect(Object.keys(before.body).sort()).toEqual(["busy", "context_usage", "model", "reasoning_effort", "session", "steps", "tokens_per_sec", "usage"]);
+    expect(Object.keys(before.body).sort()).toEqual([
+      "busy",
+      "context_usage",
+      "grants_active",
+      "model",
+      "reasoning_effort",
+      "session",
+      "steps",
+      "tokens_per_sec",
+      "usage",
+    ]);
     expect(before.body["context_usage"]).toMatchObject({ estimated: true, method: "session_event_chars" });
 
     await runTurnWithFrames(h, "hi");

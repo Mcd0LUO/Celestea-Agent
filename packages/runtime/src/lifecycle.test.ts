@@ -6,6 +6,7 @@ import { TurnBusyError } from "./errors.js";
 import { GenerationHub, createGen, migrateReceipts } from "./gen.js";
 import { RuntimeReleasedError } from "./errors.js";
 import { createSessionBinding, type SessionBinding } from "./session-binding.js";
+import { SessionRuntimeRegistry } from "./session-registry.js";
 import { fakeLoop, memoryLog, memorySessionPlugin, testProfile, tick } from "./fakes.test-util.js";
 
 function cfg(overrides: Partial<ComposeConfig> = {}): ComposeConfig {
@@ -236,5 +237,56 @@ describe("generation swap", () => {
     expect(migrateReceipts(runtime, compose(cfg()), "cli-main")).toBe(0);
     expect(runtime.pendingReceipts()).toBe(0);
     runtime.release();
+  });
+});
+
+/**
+ * W516 §4.2: a session's `grants.json` changing invalidates THAT session's
+ * instance only — idle instances rebuild at once, busy ones at their next turn
+ * boundary, and the turn in flight keeps the boundary it started with.
+ */
+describe("session-scoped invalidation (session grants)", () => {
+  function registryOf(built: string[]): SessionRuntimeRegistry {
+    const epoch = 0;
+    return new SessionRuntimeRegistry({
+      build: (sessionId) => {
+        built.push(sessionId ?? "<detached>");
+        return compose(cfg());
+      },
+      dispose: (runtime) => void runtime.release(),
+      currentEpoch: () => epoch,
+    });
+  }
+
+  it("recomposes only the granted session, at the next turn boundary when busy", async () => {
+    const built: string[] = [];
+    const registry = registryOf(built);
+    const a = registry.ensure("ws/a", "/tmp/a").runtime;
+    const b = registry.ensure("ws/b", "/tmp/b").runtime;
+    expect(built).toEqual(["ws/a", "ws/b"]);
+
+    // An IDLE session rebuilds immediately (nothing in flight to protect).
+    expect(registry.invalidateSession("ws/a")).toBe(true);
+    expect(built).toEqual(["ws/a", "ws/b", "ws/a"]);
+    expect(registry.peek("ws/a")?.runtime).not.toBe(a);
+    expect(registry.peek("ws/b")?.runtime).toBe(b);
+
+    // A BUSY session is marked and rebuilds at its next boundary (ensure).
+    const busy = registry.peek("ws/a")!;
+    const running = registry.beginTurn(busy, new AbortController());
+    expect(running).toBe(1);
+    const inFlight = busy.runtime;
+    expect(registry.invalidateSession("ws/a")).toBe(true);
+    expect(registry.peek("ws/a")?.runtime).toBe(inFlight); // the running turn keeps its boundary
+    expect(registry.peek("ws/a")?.needsRebuild).toBe(true);
+    registry.endTurn(busy, null);
+    const rebuilt = registry.ensure("ws/a", "/tmp/a");
+    expect(rebuilt.runtime).not.toBe(inFlight);
+    expect(built.length).toBe(4);
+    expect(registry.peek("ws/b")?.runtime).toBe(b);
+
+    // An unknown / never-composed session is a no-op (nothing to invalidate).
+    expect(registry.invalidateSession("ws/ghost")).toBe(false);
+    await registry.shutdown();
   });
 });

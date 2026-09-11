@@ -26,6 +26,7 @@ import { assembleSystemPromptFor } from "./handlers/config-shape.js";
 import { registerStatic } from "./static.js";
 import type { RuntimeAdapter } from "./runtime-adapter.js";
 import { readSessionMeta } from "./store/session-meta.js";
+import { createSessionGrants } from "./runtime/session-grants.js";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
 
 export interface StudioAppOptions {
@@ -60,6 +61,8 @@ function defaultRuntime(config: StudioConfig, env: NodeJS.ProcessEnv): EngineFac
       profile: startupEngineProfile(stores.providers, env, config.apiKeyEnv).profile,
       env,
       resultsDir: join(dirname(config.paths.workspacesFile), "worker-results"),
+      // W516: every instance reads its session's grants at compose time.
+      grants: createSessionGrants({ dataDir: dirname(config.paths.workspacesFile), env }),
       resolveSession: (id) => {
         const resolved = stores.sessions.resolve(id);
         return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
@@ -96,7 +99,7 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   const env = opts.env ?? process.env;
   const config = opts.config ?? loadStudioConfig({ cwd: opts.cwd, env });
   const runtime = opts.runtime ?? defaultRuntime(config, env);
-  const services = composeStudio({ config, runtime, now: opts.now });
+  const services = composeStudio({ config, runtime, env, now: opts.now });
   const table = routeTable();
   const app = new Hono();
 

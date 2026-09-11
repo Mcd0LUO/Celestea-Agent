@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   const tools = loadTools();
 
   // ---- 0. contract self-consistency ---------------------------------------
-  pass("contracts/endpoints.json", "contract-count", `${contract.endpoints.length} endpoints (expected 39)`, undefined);
+  pass("contracts/endpoints.json", "contract-count", `${contract.endpoints.length} endpoints (expected 43)`, undefined);
   pass("contracts/sse-events.json", "contract-count", `${sse.events.length} SSE events (expected 8)`, undefined);
   pass("contracts/tools.json", "contract-count", `${tools.tools.length} tool specs (expected 10)`, undefined);
 
@@ -78,7 +78,10 @@ async function main(): Promise<void> {
   const sampleSessionId =
     ((sessionList.json as { sessions?: Array<{ id?: string }> }).sessions ?? []).find((x) => typeof x.id === "string")?.id ?? "sample-ws/sample-session";
 
-  for (const e of contract.endpoints.filter((x) => x.method === "GET" && x.id !== "get_events")) {
+  // W516: the four grant endpoints are TypeScript-only (probe.checked === false
+  // points at the retired Rust reference) — they are not probed here.
+  const probeable = contract.endpoints.filter((x) => x.probe?.checked !== false);
+  for (const e of probeable.filter((x) => x.method === "GET" && x.id !== "get_events")) {
     const probePath = concreteProbePath(e.path, sampleSessionId);
     const res = await probe(STUDIO, probePath, { timeoutMs: TIMEOUT });
     if (res.status !== e.response.status) {
