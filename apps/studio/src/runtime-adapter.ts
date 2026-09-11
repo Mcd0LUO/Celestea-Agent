@@ -107,6 +107,11 @@ export interface ContextMessageView {
   tool_call_id?: string;
 }
 
+/** `registry.schemas()` row -> the two-field view the host exposes (W729). */
+export function toolSpecView(spec: { name: string; description: string }): ToolInfo {
+  return { name: spec.name, description: spec.description };
+}
+
 /** One tool schema the model is offered (W725) — `registry.schemas()` verbatim. */
 export interface ContextToolView {
   name: string;
@@ -227,6 +232,8 @@ export interface WorkerSessionRow {
   size: number;
   modified: number;
   active: boolean;
+  /** W729: the mode the worker inherited (or was spawned with). */
+  mode: string;
   /** Worker id (`W513`) — the same `wid` the registry row carries. */
   wid?: string;
   /** Registry status: `RUNNING` / `DONE` / `FAILED`. */
@@ -285,6 +292,14 @@ export interface RuntimeAdapter {
   configure(patch: ProfilePatch): Promise<EngineProfile>;
   statusline(session?: string | null): Statusline;
   tools(): ToolInfo[];
+  /**
+   * W729 (S2): the tool face of ONE session, used to render the `{{tools}}`
+   * variable of that session's own system prompt. Optional: an adapter without
+   * per-session generations falls back to [tools]. The real adapter answers from
+   * the session's LIVE instance and never composes one (the composer calls this
+   * while composing that very session — peeking keeps that non-recursive).
+   */
+  sessionTools?(session: string | null): ToolInfo[];
   /**
    * W725: the session's OWN model-visible context (`GET /api/sessions/{id}/
    * context`). The instance is composed on demand, exactly like activate does;

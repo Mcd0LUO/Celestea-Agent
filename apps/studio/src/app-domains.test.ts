@@ -436,7 +436,8 @@ describe("worker endpoints", () => {
 
     const sessions = await getJson(h.app, "/api/sessions");
     const worker = (sessions.body["sessions"] as Array<Record<string, unknown>>).find((s) => s["kind"] === "worker");
-    expect(worker).toMatchObject({ id: "worker:session-1", workspace: "engine" });
+    // W729: worker rows carry a mode too (the fake declares no session meta).
+    expect(worker).toMatchObject({ id: "worker:session-1", workspace: "engine", mode: "standard" });
 
     const messages = await getJson(h.app, "/api/sessions/worker%3Asession-1/messages");
     expect(messages.body).toMatchObject({ ok: true, session: "worker:session-1" });

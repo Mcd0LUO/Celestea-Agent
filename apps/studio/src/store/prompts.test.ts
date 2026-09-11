@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BUILTIN_SECTIONS } from "./builtin-sections.js";
+import { BUILTIN_SECTIONS, TOOL_ACCESS_VARIANTS, builtinRowsFor } from "./builtin-sections.js";
+import { SESSION_MODES } from "./mode.js";
 import { assembleSystemPrompt, resolveActivePrompt, toPromptVars } from "./prompts-compose.js";
 import { PromptsStore } from "./prompts.js";
 import { PROMPT_MAX_LEN, renderTemplate, validateTemplate } from "./prompts-template.js";
@@ -175,5 +176,66 @@ describe("build_gen assembly", () => {
     expect(resolveActivePrompt(s, s.scopeGlobal(), "bound")).toBe("bound");
     expect(resolveActivePrompt(s, s.scopeGlobal(), "gone")).toBeNull();
     expect(resolveActivePrompt(s, s.scopeGlobal(), null)).toBe("fallback");
+  });
+});
+
+describe("W729 tool_access variants (P0, §1.3)", () => {
+  it("M4: picks variant A for standard and variant B for execution, both with {{tools}}", () => {
+    const s = store();
+    const standard = assembleSystemPrompt(s, s.scopeGlobal(), null, VARS, "standard");
+    const execution = assembleSystemPrompt(s, s.scopeGlobal(), null, VARS, "execution");
+
+    expect(standard).toContain("stepping through the tools one at a time is the normal path here");
+    expect(standard).not.toContain("Execution mode");
+    expect(standard).not.toContain("ToolCallError");
+
+    expect(execution).toContain("Execution mode — prefer one program over many round trips");
+    expect(execution).toContain("ToolCallError");
+    expect(execution).toContain("≤20 sub-calls");
+    expect(execution).not.toBe(standard);
+
+    // Both expand the SAME variable with the tools the caller passed in (S2).
+    for (const out of [standard, execution]) expect(out).toContain(`call tools directly (${VARS.tools})`);
+    // The hardcoded name list is gone: the list can only come from {{tools}}.
+    expect(execution).not.toContain("(read_file / write_file / list_dir");
+  });
+
+  it("M13/K6: the registry stays 10 rows in both modes and every variant validates", () => {
+    expect(BUILTIN_SECTIONS).toHaveLength(10);
+    expect(BUILTIN_SECTIONS.map((s) => s.order)).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]);
+    for (const mode of SESSION_MODES) {
+      const rows = builtinRowsFor(mode);
+      expect(rows).toHaveLength(10);
+      expect(rows.map((r) => r.order)).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]);
+      for (const row of rows) expect(validateTemplate(row.template), `${mode}:${row.id}`).toBeNull();
+    }
+    // Only `tool_access` differs between the two modes.
+    const diff = builtinRowsFor("standard").filter((row, i) => row.template !== builtinRowsFor("execution")[i]?.template);
+    expect(diff.map((r) => r.id)).toEqual(["tool_access"]);
+  });
+
+  it("M6: both variants fit the byte budget (cap and the ~1 KB soft guard)", () => {
+    const s = store();
+    for (const mode of SESSION_MODES) {
+      const out = assembleSystemPrompt(s, s.scopeGlobal(), null, VARS, mode);
+      expect(Buffer.byteLength(out, "utf8"), mode).toBeLessThanOrEqual(PROMPT_MAX_LEN);
+    }
+    // Frozen byte sizes: A shrinks the old text by ~264 B, B grows it by ~451 B.
+    expect(Buffer.byteLength(TOOL_ACCESS_VARIANTS.standard, "utf8")).toBe(353);
+    expect(Buffer.byteLength(TOOL_ACCESS_VARIANTS.execution, "utf8")).toBe(1068);
+  });
+
+  it("R4: a user override of tool_access still wins over the mode variant", () => {
+    const s = store();
+    s.upsert(s.scopeGlobal(), { id: "fixed", name: "Fixed", section_overrides: { tool_access: "OVERRIDDEN {{tools}}" } });
+    const out = assembleSystemPrompt(s, s.scopeGlobal(), "fixed", VARS, "execution");
+    expect(out).toContain("OVERRIDDEN read_file, write_file");
+    expect(out).not.toContain("Execution mode");
+  });
+
+  it("spells the mode vocabulary exactly once (parseMode/effectiveMode)", () => {
+    expect(SESSION_MODES).toEqual(["standard", "execution"]);
+    expect(assembleSystemPrompt(store(), store().scopeGlobal(), null, VARS, "execution")).toContain("Execution mode");
+    expect(assembleSystemPrompt(store(), store().scopeGlobal(), null, VARS)).toContain("the normal path here");
   });
 });

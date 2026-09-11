@@ -74,8 +74,32 @@ describe("spawn_worker", () => {
       short: "Do the thing",
       brief: "# Do the thing",
       reportTo: "cli-main",
+      // W729: this registry declares no host mode and the spawn passed none.
+      mode: null,
     });
     expect(registry.sessions.get("session-0")?.meta.title).toBe("W101·Do the thing");
+  });
+
+  it("W729: records the mode (explicit argument, else the owning session's)", async () => {
+    const hinted = new WorkerRegistry({ tsvPath: null, logFactory: recordingSessionLog, now: () => 1_700_000_000_000, pid: 1, hostMode: "execution" });
+    const hintedTools = new Map(workerTools(hinted).map((t) => [t.spec().name, t]));
+
+    // 1. no argument: the worker inherits the spawning session's mode.
+    await call(hintedTools, "spawn_worker", { wid: "W1", brief: "b" });
+    expect(hinted.sessions.get("session-0")?.meta.mode).toBe("execution");
+    expect(hinted.spawnInfo("session-0")?.mode).toBe("execution");
+    expect(getExtra(hinted.getEntry("W1")!, "mode")).toBe("execution");
+
+    // 2. an explicit mode overrides the inherited one (D3).
+    await call(hintedTools, "spawn_worker", { wid: "W2", brief: "b", mode: "standard" });
+    expect(hinted.sessions.get("session-1")?.meta.mode).toBe("standard");
+    expect(getExtra(hinted.getEntry("W2")!, "mode")).toBe("standard");
+
+    // 3. a registry whose session declared no mode records none (no token).
+    const { registry, tools } = harness();
+    await call(tools, "spawn_worker", { wid: "W3", brief: "b" });
+    expect(registry.sessions.get("session-0")?.meta.mode).toBeNull();
+    expect(getExtra(registry.getEntry("W3")!, "mode")).toBeNull();
   });
 
   it("rejects a duplicate wid in any state", async () => {

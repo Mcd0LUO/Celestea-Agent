@@ -8,6 +8,10 @@
  * active session when the query is absent — and reports that session's `busy`
  * slot alongside the (unchanged) 7 statusline fields.
  *
+ * W729: `/api/status` adds `mode` (the queried session's mode) and
+ * `/api/health` advertises `capabilities.session_mode = true` (P0: the mode is
+ * fixed at creation, so the capability is a read-only announcement).
+ *
  * W516: `/api/health` advertises `capabilities.grants = true` (the frontend
  * hides the permission panel when it is not exactly `true`, so the retired Rust
  * backend cannot show a panel that does nothing), and `/api/status` adds
@@ -18,7 +22,7 @@
 
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
-import { activeSession, type Deps } from "./common.js";
+import { activeSession, modeOfSession, type Deps } from "./common.js";
 import { baseUrlOf } from "./config-shape.js";
 import { effectiveGrantsOf, grantsActiveCaps } from "../runtime/engine-grants.js";
 import { nowSec } from "../store/grants-service.js";
@@ -34,7 +38,9 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       bind: deps.config.bind,
       // W725: `context: true` gates the context-ring entry point; a client
       // that does not see exactly `true` degrades to no context viewer.
-      capabilities: { grants: true, context: true },
+      // W729: `session_mode: true` gates the (P1) mode selector; a client that
+      // does not see exactly `true` must not offer to set a session mode.
+      capabilities: { grants: true, context: true, session_mode: true },
     }),
   );
 
@@ -45,6 +51,8 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
     return c.json({
       ...deps.runtime.statusline(session),
       session,
+      // W729: the mode of the QUERIED session (absent = standard, K8).
+      mode: modeOfSession(deps, session),
       busy: deps.runtime.isBusy(session),
       grants_active: activeGrantCaps(deps, session),
     });

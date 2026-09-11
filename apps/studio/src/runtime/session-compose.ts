@@ -67,6 +67,19 @@ export interface SessionComposerOptions {
   resolveSession?: (id: string) => SessionTarget | null;
   /** Session-level model override (`session.json`), applied per instance. */
   sessionModel?: (id: string) => string | null;
+  /**
+   * W729: session-level mode (`session.json.mode`; null = the session never
+   * declared one). Consumed by the worker wiring, so a worker's row/receipt can
+   * record the mode of the session that spawned it (§2.3).
+   */
+  sessionMode?: (id: string) => string | null;
+  /**
+   * W729 (§5.1 #4, R3): the session's OWN system prompt. Without this hook the
+   * process would assemble ONE prompt at startup and every session would share
+   * it — the mode would then only hold for the focused session. `null` = "use
+   * the base profile prompt" (a session with no declared mode, K8).
+   */
+  sessionSystemPrompt?: (id: string) => string | null;
   /** LLM seam factory; default = the assembled engine LLM (live provider). */
   llm?: (profile: Profile) => Llm;
   /** Extra tools registered after the six builtins. */
@@ -196,11 +209,27 @@ export class SessionComposer {
     });
   }
 
-  /** Base profile + the session's own `session.json` model override, if any. */
+  /**
+   * Base profile + the session's own `session.json` overrides (model AND, since
+   * W729, the mode-dependent system prompt). This is the ONE place a session's
+   * instance profile is decided, so two sessions in the same process can differ
+   * in prompt without either one seeing the other's.
+   */
   profileFor(sessionId: string | null): Profile {
     const base = this.opts.baseProfile();
-    const model = sessionId === null ? null : (this.opts.sessionModel?.(sessionId) ?? null);
-    return model === null || model === "" ? base : { ...base, model };
+    const overrides = this.sessionOverrides(sessionId);
+    return overrides === null ? base : { ...base, ...overrides };
+  }
+
+  /** The session's profile overrides; `null` when it declares none. */
+  private sessionOverrides(sessionId: string | null): Partial<Profile> | null {
+    if (sessionId === null) return null;
+    const out: Partial<Profile> = {};
+    const model = this.opts.sessionModel?.(sessionId) ?? "";
+    if (model !== "") out.model = model;
+    const prompt = this.opts.sessionSystemPrompt?.(sessionId) ?? "";
+    if (prompt !== "") out.system_prompt = prompt;
+    return Object.keys(out).length === 0 ? null : out;
   }
 
   /** The compact summarizer of the CURRENT base profile. */
@@ -228,6 +257,8 @@ export class SessionComposer {
       hostSessionId: sessionId ?? "cli-main",
       sessionIdPrefix: workerSessionPrefix(sessionId),
       hostModel: profile.model,
+      // W729 §2.3: workers inherit the spawning session's mode by default.
+      hostMode: sessionId === null ? null : (this.opts.sessionMode?.(sessionId) ?? null),
     };
   }
 

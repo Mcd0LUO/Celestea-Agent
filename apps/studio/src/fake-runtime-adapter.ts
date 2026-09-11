@@ -178,6 +178,12 @@ class FakeRuntime implements FakeRuntimeAdapter {
     return [...this.toolList];
   }
 
+  /** W729: the fake owns no per-session generation, so every session sees the
+   *  same scripted face (P0: identical in both modes, §1.2). */
+  sessionTools(_session: string | null): ToolInfo[] {
+    return this.tools();
+  }
+
   /** W725: the scripted context snapshot (this fake owns no engine log). */
   sessionContext(_session: string | null): SessionContextView {
     return {
@@ -266,6 +272,8 @@ class FakeRuntime implements FakeRuntimeAdapter {
       kind: "worker" as const,
       title: w.title,
       model: null,
+      // The fake keeps no session metadata: a scripted worker is `standard`.
+      mode: "standard",
       size: this.transcripts.get(w.sessionId)?.length ?? 0,
       modified: 0,
       active: false,

@@ -44,6 +44,8 @@ export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId:
         kind: "worker" as const,
         title: m.title,
         model: m.model,
+        // W729 §2.3: the mode recorded at spawn (parent mode unless overridden).
+        mode: m.mode ?? "standard",
         size: registry.sessions.logOf(m.id)?.events().length ?? 0,
         modified: 0,
         active: false,

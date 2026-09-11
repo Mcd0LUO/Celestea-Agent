@@ -32,6 +32,12 @@ export interface ReceiptRequest {
   log: SessionLog | undefined;
   /** Turn verdict: null = ok, otherwise the failure text. */
   failure: string | null;
+  /**
+   * W729 §2.3: the worker's working mode, rendered as a `- mode: <mode>` line in
+   * the report header (plain text — the receipt protocol itself is unchanged).
+   * `null` = the caller declared none, so no line is written.
+   */
+  mode?: string | null;
 }
 
 export interface ReceiptResult {
@@ -94,10 +100,13 @@ function summarySuffix(log: SessionLog): string {
 }
 
 function renderWorkerReport(req: ReceiptRequest, status: string, relPath: string): string {
+  // W729 §2.3: the worker's working mode is a plain header line (the rest of
+  // the receipt protocol is untouched); `null` = the caller declared none.
+  const mode = req.mode === undefined || req.mode === null || req.mode === "" ? "" : `- mode: ${req.mode}\n`;
   const head =
     `# Worker ${req.wid} 完成报告\n\n` +
     `- wid: ${req.wid}\n- title: ${req.short}\n- status: ${status}\n` +
-    `- started_at: ${req.startedAt}\n- report: ${relPath}\n\n` +
+    `- started_at: ${req.startedAt}\n${mode}- report: ${relPath}\n\n` +
     `## 简报摘要\n\n${truncateChars(req.brief.trim(), 200)}\n\n## 会话尾记录\n\n`;
   return head + renderTail(req.log);
 }

@@ -73,6 +73,38 @@ describe("receipt protocol helpers", () => {
     expect(result.content).toContain("答复: did the thing");
   });
 
+  it("W729: renders the worker's mode as a header line, and nothing when unknown", () => {
+    const results = resultsDir();
+    const withMode = executeReceipt({
+      wid: "W3",
+      short: "t",
+      startedAt: "t",
+      brief: "b",
+      reportTo: "cli-main",
+      sid: "session-2",
+      resultsDir: results,
+      log: undefined,
+      failure: null,
+      mode: "execution",
+    });
+    const body = readFileSync(withMode.absPath, "utf8");
+    expect(body).toContain("- started_at: t\n- mode: execution\n- report: results/W3-t.md");
+    // Absent / empty mode keeps the pre-W729 header exactly (no empty line).
+    const without = executeReceipt({
+      wid: "W4",
+      short: "t",
+      startedAt: "t",
+      brief: "b",
+      reportTo: "cli-main",
+      sid: "session-3",
+      resultsDir: results,
+      log: undefined,
+      failure: null,
+      mode: null,
+    });
+    expect(readFileSync(without.absPath, "utf8")).toContain("- started_at: t\n- report: results/W4-t.md");
+  });
+
   it("reports a failure receipt and warns instead of throwing on a bad path", () => {
     // The results dir sits under a regular FILE, so mkdir fails fast (ENOTDIR).
     const file = join(mkdtempSync(join(tmpdir(), "celestea-bad-")), "not-a-dir");

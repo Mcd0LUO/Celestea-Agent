@@ -40,6 +40,8 @@ export interface SpawnInfo {
   short: string;
   brief: string;
   reportTo: string | null;
+  /** W729: the working mode recorded at spawn (null = the caller declared none). */
+  mode: string | null;
 }
 
 export interface WorkerRegistryOptions {
@@ -50,6 +52,11 @@ export interface WorkerRegistryOptions {
   logFactory?: SessionLogFactory;
   /** Id prefix of the worker sessions this registry mints (`session-`). */
   sessionIdPrefix?: string;
+  /**
+   * W729: the mode of the session this registry belongs to. A spawn without an
+   * explicit `mode` argument inherits it (§2.3: worker defaults to parent mode).
+   */
+  hostMode?: string | null;
   now?: () => number;
   pid?: number;
 }
@@ -68,12 +75,14 @@ export class WorkerRegistry {
   private drivers: WorkerDrivers | null = null;
   private resultsDirValue: string;
   private sourceLabelValue: string;
+  private hostModeValue: string | null;
   private released = false;
 
   constructor(opts: WorkerRegistryOptions = {}) {
     this.path = opts.tsvPath === undefined ? REGISTRY_TSV_PATH : opts.tsvPath;
     this.resultsDirValue = opts.resultsDir ?? RESULTS_DIR_DEFAULT;
     this.sourceLabelValue = opts.sourceLabel ?? "unknown";
+    this.hostModeValue = opts.hostMode ?? null;
     this.now = opts.now ?? Date.now;
     this.ownPid = opts.pid ?? process.pid;
     this.sessionRegistry = new SessionRegistry({
@@ -166,6 +175,19 @@ export class WorkerRegistry {
 
   get sourceLabel(): string {
     return this.sourceLabelValue;
+  }
+
+  /**
+   * W729: the mode a spawn inherits when it does not pass one — the mode of the
+   * session that owns this registry (the composition sets it once, from
+   * `session.json.mode`).
+   */
+  get hostMode(): string | null {
+    return this.hostModeValue;
+  }
+
+  setHostMode(mode: string | null): void {
+    this.hostModeValue = mode;
   }
 
   setSourceLabel(label: string): void {
@@ -320,6 +342,9 @@ export class WorkerRegistry {
       short: remembered?.short ?? getExtra(entry, "title") ?? wid,
       startedAt: entry.started_at,
       brief: remembered?.brief ?? getExtra(entry, "brief") ?? "",
+      // W729: the mode line of the report header (in-memory fact first, then
+      // the tsv token, so a row written by another process still reports one).
+      mode: remembered?.mode ?? getExtra(entry, "mode"),
       reportTo,
       sid,
       resultsDir: this.resultsDirValue,

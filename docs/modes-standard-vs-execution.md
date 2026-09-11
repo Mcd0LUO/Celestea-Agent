@@ -1,7 +1,8 @@
 # 特性设计 · 会话双模式（标准模式 / 执行模式 · DSH PTC 对应物）
 
-> 状态：**设计（未实现）**。本文只描述目标契约、分期与可机械检验的验收标准，
-> **不改任何代码、配置或服务**，不 commit、不 push。
+> 状态：**P0 已实现（W729），P1/P2 仍是设计**。见文末 §10「P0 落地状态」逐条对照与偏离。
+> 本文其余部分保持设计原文（含写文档当日的行号与基线数字），**不回改历史结论**；
+> 与落地实现冲突的两处口径以 §10 的裁决为准。
 > 范围：`packages/core`（无改动，见 §4）、`packages/tools`、`packages/runtime`、`apps/studio/src/{store,handlers,runtime}`、
 > `contracts/`、共用前端 `/src/celestea_studio/frontend/src/**`；仓库外 `celes-worker-spawn` 插件（`/src/dsh_plugins/celes-worker-spawn`）只作为**映射边界**出现。
 > 前置阅读：`docs/ARCHITECTURE.md`（分层/seam 纪律）、`docs/feature-session-independence.md`（W513，已实现：每会话实例 + SSE `v:2` 信封）、
@@ -384,3 +385,50 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 - 不做 per-turn 模式（D2）、不做全局模式（§2.1 方案 C）、不做 PTC_ONLY 式禁令（§1.1）；
 - 不解决 8KB 静态预算的结构问题（R5，属 W253 §5-S5 的范围）；
 - 本文所有 token/墙钟数字均为**静态测算或转引估值**，不是实测；任何允许写入产品文案的数字必须来自 M15 的 A/B 报告。
+
+---
+
+## 10. P0 落地状态（W729，2026-09-11 实读代码回填）
+
+### 10.1 两处口径订正（先修，见 §10.2 的 D6/§5.1 冲突）
+
+| # | 设计原文 | 落地口径（以此为准） | 依据 |
+|---|---|---|---|
+| C1 | D6/§5.1：P0 `API_ENDPOINT_COUNT` **保持 43** | **44**（`GET /api/sessions/{id}/context` 已在 W725 上线，43 是写文档当日的基线）。P0 **零新端点**，44 不变 | 本仓 `apps/studio/src/routes.ts:49`、`tests/contracts.test.ts` |
+| C2 | §5.1 #6「`POST /api/sessions.mode`」在 P0 表内 | P0 的 mode **只在创建时设定**：`POST /api/sessions` 收可选 `mode`；运行期切换端点 `POST /api/sessions/{id}/mode` 属 **P1** | D6「零新端点」优先 |
+
+### 10.2 §5.1 逐条对照
+
+| §5.1 # | 内容 | 状态 | 落点 |
+|---|---|---|---|
+| 1 | `SessionMode` / `DEFAULT_SESSION_MODE` / `parseMode()`（表外提，K3） | ✅ | `apps/studio/src/store/mode.ts`（另有 `effectiveMode`/`validateMode`/`isSessionMode`） |
+| 2 | `SessionMeta.mode`；写盘空值不写键 | ✅ | `store/session-meta.ts`（读盘非法值丢弃 = 缺键） |
+| 3 | `tool_access` 变体 A/B；`assembleSystemPrompt(..., mode)` | ✅ | `store/builtin-sections.ts`（`TOOL_ACCESS_VARIANTS` + `builtinRowsFor`）、`store/prompts.ts`、`store/prompts-compose.ts` |
+| 4 | 提示词装配下沉到会话（R3） | ✅ | `runtime/session-compose.ts`（`sessionMode`/`sessionSystemPrompt` 钩子 + `profileFor` 覆盖 `model` 与 `system_prompt`）、`app.ts`（宿主注入，`HostRef` 晚绑定） |
+| 5 | `{{tools}}` 与 scope/vars 按传入会话解析（S1/S2） | ✅ | `handlers/config-shape.ts`（`assembleSystemPromptFor(deps, sessionId?, mode?)`）、`RuntimeAdapter.sessionTools`（peek，不递归组装） |
+| 6 | `POST /api/sessions.mode` + 行/status/health 字段 | ✅（无切换端点，见 C2） | `handlers/sessions.ts`、`handlers/health.ts`、`store/sessions.ts` |
+| 7 | `spawn_worker.mode` + 回执 `- mode:` 行 | ✅ | `packages/workers/src/{tools,registry,receipt,sessions,types}.ts`、`packages/runtime/src/worker-wiring.ts` |
+| 8 | 契约与测试 | ✅ | `contracts/{data-files/session.schema.json,endpoints.json,tools.json}`、`prompts.test.ts`、`sessions.test.ts`、`app-modes.test.ts`、`runtime/session-modes.test.ts`、`packages/workers/*.test.ts`、`tests/contracts.test.ts` |
+
+### 10.3 P0 三条不变量（都是测试名）
+
+| 不变量 | 断言 | 测试 |
+|---|---|---|
+| ① 无 `session.json.mode` 的会话行为逐字节等同今天 | 写入器输出与 W729 前的字面量逐字节相同（无 `mode` 键；无内容则不建文件）；无 mode 的会话**不做任何按会话覆盖**，其 `profile.system_prompt` 就是进程基线提示词 | `store/sessions.test.ts > M3/K8…`、`runtime/session-modes.test.ts > P0 invariant ①…` |
+| ② 两模式在 P0 的 `registry.schemas()` 名字集合相同 | 两会话的 `names().sort()` 相等且为 10 个契约工具 | `runtime/session-modes.test.ts > P0 invariant ②…` |
+| ③ `API_ENDPOINT_COUNT` 仍 44 | 常量 == `contracts/endpoints.json#count` == 44，且无 `post_session_mode` | `app.test.ts > W729 P0 invariants ③…`、`tests/contracts.test.ts` |
+
+### 10.4 与设计文本的三处偏离（诚实登记）
+
+| # | 设计原文 | 落地 | 理由 |
+|---|---|---|---|
+| D-a | M4：「`standard` 组装结果**不含** `run_code`」 | 变体 A 含 `` `run_code` `` 一词（"…is available when a task needs several dependent calls…"），因此断言改为「不含 `Execution mode` / `ToolCallError` / `≤20 sub-calls`」 | §1.3 的变体 A 正文与 M4 自相矛盾；本仓以 §1.3 的落地级文本为准（任务书亦如此要求） |
+| D-b | M6：两变体「各 ≤ 1024 B」 | A = **353 B**、B = **1068 B**（B 超软上限 44 B）；合并总长 3571 B / 4286 B，均远低于 `PROMPT_MAX_LEN = 8192` | §1.3 的 B 文本自身就有 1068 B（与其"+450 B"的估算一致），改文本会偏离 §1.3 |
+| D-c | §1.3/P1：变体 B 加一句「这 4 个工具不可直调」 | **未加**（P0 暴露面相同，加了就与事实不符） | §1.3 自己规定该句「必须与实际暴露面一致」，故与 §5.2 #4 一起推到 P1 |
+
+### 10.5 P0 的已知深度限制（P1/P2 待办）
+
+1. **`spawn_worker.mode` 在 P0 只影响元数据与回执**：`worker:<sid>` 的轮次仍由宿主会话那一个 generation 的 loop/profile 驱动（`engine-plugins.ts` 的 `engineLoopPlugin(input.profile)`），所以显式 `mode:"standard"` 覆盖**不会**改变该 worker 的提示词，只改变它的会话元数据、`GET /api/sessions` 行与报告头。默认继承（不带参数）在效果与标注上都是一致的。
+2. **`{{tools}}` 在装配期用 peek 取值**：`sessionTools()` 读该会话**已有**实例的 `schemas()`，没有实例时退回默认 generation。P0 两模式暴露面相同（§1.2），故当前值恒等；P1 引入 `exposedRegistry` 后必须在重建前重新取值（否则会用到上一代的暴露面）。
+3. **无 mode 的会话不做按会话装配**（K8 的取舍）：`sessionSystemPrompt` 钩子在**已声明 mode** 时才返回该会话的组装结果，其余会话继续用进程基线提示词。代价是老会话的 `{{session}}`/`{{workspace}}` 仍来自基线（今天的既有事实）；收益是「无 mode 键 = 逐字节等同今天」这条不变量可断言。
+4. **`GET /api/config` 的口径**：作用域/绑定/mode 取被聚焦会话（S1），但 `{{model}}`/`{{tools}}` 仍走历史口径（进程模型 + 默认 generation），以免改变无 mode 会话的既有输出；引擎侧（会话实例）用的是该会话自己的模型与工具面。

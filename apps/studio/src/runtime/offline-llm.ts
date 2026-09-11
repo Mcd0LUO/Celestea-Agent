@@ -58,6 +58,12 @@ export interface OfflineLlmOptions {
   chunkChars?: number;
   /** Summary text override for compaction requests. */
   summary?: (transcript: string) => string;
+  /**
+   * W729: every request the engine actually sent (`system` + messages), so a
+   * test can assert WHICH system prompt each session's turn carried instead of
+   * re-deriving it. Shared across instances when the caller passes one array.
+   */
+  onRequest?: (req: ModelRequest) => void;
 }
 
 export interface OfflineLlm extends Llm {
@@ -157,6 +163,7 @@ export function createOfflineLlm(opts: OfflineLlmOptions = {}): OfflineLlm {
     },
     generate(req: ModelRequest): Promise<LlmStream> {
       calls += 1;
+      opts.onRequest?.(req);
       return Promise.resolve(emit(stepFrames(stepFor(req), req, chunk), delayMs));
     },
   };

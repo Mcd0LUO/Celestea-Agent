@@ -9,6 +9,8 @@
 
 import type { Context } from "hono";
 import { CapacityError } from "../runtime-adapter.js";
+import { effectiveMode } from "../store/mode.js";
+import { readSessionMeta } from "../store/session-meta.js";
 import type { StudioServices } from "../plugins.js";
 import type { StoreResult } from "../store/result.js";
 
@@ -105,4 +107,16 @@ export function objectField(c: Context, body: JsonObject, name: string): FieldRe
 /** The active session id, or null (used by /api/status, /api/clear, prompts). */
 export function activeSession(deps: Deps): string | null {
   return deps.workspaces.activeSession();
+}
+
+/**
+ * W729: the mode of one session (`session.json.mode`; absent/unknown = the
+ * default `standard`, so a session created before this feature reads exactly as
+ * it always behaved). An unresolvable id also reads as the default — the
+ * endpoint that asked owns the 404.
+ */
+export function modeOfSession(deps: Deps, session: string | null): string {
+  if (session === null || session === "") return effectiveMode(null);
+  const resolved = deps.sessions.resolve(session);
+  return effectiveMode(resolved.ok ? readSessionMeta(resolved.value.dir)?.mode : null);
 }

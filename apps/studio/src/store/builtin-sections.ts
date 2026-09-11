@@ -5,7 +5,32 @@
  * of GET /api/prompts), which mirrors `src/prompts.rs:89-99` BUILTIN_SECTIONS.
  * These are DATA, not logic: the registry stores them as `source: "builtin"`
  * and a global/workspace row with the same id only swaps the template.
+ *
+ * W729 (P0, K6/D6): the registry is still exactly 10 rows with the SAME order
+ * array; the session mode is expressed as a TEMPLATE VARIANT of `tool_access`
+ * (order 300), never as an 11th section. `BUILTIN_SECTIONS` carries variant A
+ * (the `standard` text) and [TOOL_ACCESS_VARIANTS] carries both, so the
+ * mode-aware assembly picks one and every other consumer still sees a
+ * 10-row table.
  */
+
+import { DEFAULT_SESSION_MODE, type SessionMode } from "./mode.js";
+
+/**
+ * The `tool_access` (order 300) template variants — `docs/modes-standard-vs-execution.md`
+ * §1.3, verbatim. K3: the variant table is module-level data, never inlined at a
+ * call site; K6: it is the ONLY difference between the two mode assemblies.
+ *
+ *   A `standard`  — direct calls are the normal path; `run_code` is available.
+ *   B `execution` — one program per dependent sequence + the hard limits.
+ *
+ * Byte budget: A = 353 B, B = 1068 B (the frozen 10-section assembly is 3835 B
+ * before this change, PROMPT_MAX_LEN is 8192 B — both variants stay far below).
+ */
+export const TOOL_ACCESS_VARIANTS: Readonly<Record<SessionMode, string>> = {
+  standard: "Tool access: call tools directly ({{tools}}); never wrap tool calls in prose; one message may contain several tool calls.\n\nFor a single lookup or a single change, just call the tool. `run_code` (a Python program in the sandbox) is available when a task needs several dependent calls, but stepping through the tools one at a time is the normal path here.",
+  execution: "Tool access: call tools directly ({{tools}}); never wrap tool calls in prose; one message may contain several tool calls.\n\nExecution mode — prefer one program over many round trips. When a task needs more than one dependent call (read several files, filter, then write or run something), write ONE Python program for `run_code` and return only the value you need. Inside the program `tools.read_file(path=...)` / `tools.write_file(path=..., content=...)` / `tools.list_dir(path=...)` / `tools.run_shell(command=...)` are dispatched through the same guarded pipeline as a direct call; a denied or failed sub-call raises `ToolCallError` — catch it and continue. Intermediate sub-call results are recorded in the session log but do NOT enter the conversation: `print` nothing you do not need, and return the final value from `main()`.\nHard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, program logs ≤64 KiB. If the program fails, read the error, fix the program and retry — fall back to one-by-one calls only if the program cannot work.",
+};
 
 export interface BuiltinSection {
   id: string;
@@ -31,7 +56,10 @@ export const BUILTIN_SECTIONS: readonly BuiltinSection[] = [
     id: "tool_access",
     name: "Tool Access",
     order: 300,
-    template: "Tool access: call tools directly (read_file / write_file / list_dir / run_shell / run_code / http_request / process_control / spawn_worker / session_send_message / worker_status); never wrap tool calls in prose; one message may contain several tool calls.\n\nrun_code runs a Python program in the sandbox that may call read_file / write_file / list_dir / run_shell as often as it needs and returns one final JSON value in a single round trip — prefer it when a task needs several dependent calls. Its sub-calls are logged but only the final value enters the conversation (limits: ≤20 sub-calls, ≤120s, ≤256KiB).",
+    // Variant A (`standard`) — see [TOOL_ACCESS_VARIANTS]. The hardcoded tool
+    // name list is gone on purpose: the list belongs to `{{tools}}`, which is
+    // rendered from the session's own registry (S2/M4), so it can never drift.
+    template: TOOL_ACCESS_VARIANTS.standard,
   },
   {
     id: "paths",
@@ -77,7 +105,19 @@ export const BUILTIN_SECTIONS: readonly BuiltinSection[] = [
   },
 ];
 
-/** Section id -> builtin template (the last-resort fallback). */
-export function builtinTemplate(id: string): string | undefined {
-  return BUILTIN_SECTIONS.find((s) => s.id === id)?.template;
+/**
+ * Section id -> builtin template (the last-resort fallback) under one mode: the
+ * `tool_access` row is swapped for that mode's variant, every other row is the
+ * frozen template. A user override (global/workspace/bound) still wins,
+ * because the overlay replaces the template this function produced (R4).
+ */
+export function builtinTemplate(id: string, mode: SessionMode = DEFAULT_SESSION_MODE): string | undefined {
+  const row = BUILTIN_SECTIONS.find((s) => s.id === id);
+  if (row === undefined) return undefined;
+  return id === "tool_access" ? TOOL_ACCESS_VARIANTS[mode] : row.template;
+}
+
+/** The builtin rows of one mode, copied (a caller can never mutate the table). */
+export function builtinRowsFor(mode: SessionMode): Array<{ id: string; name: string; template: string; order: number }> {
+  return BUILTIN_SECTIONS.map((s) => ({ ...s, template: builtinTemplate(s.id, mode) ?? s.template }));
 }

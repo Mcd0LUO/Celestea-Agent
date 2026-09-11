@@ -14,7 +14,10 @@
     "Written with a plain std::fs::write (NOT atomic, no fsync).",
     "Missing/corrupt -> None (tolerated).",
     "Copied by branch; follows a rename because the whole directory moves.",
-    "POST /api/config does NOT write it back: the session-level model is decided at creation time."
+    "POST /api/config does NOT write it back: the session-level model is decided at creation time.",
+    "W729: `mode` (standard|execution) is fixed at creation; DEFAULT = standard and it is NOT written (a session without the key behaves exactly as before).",
+    "W729: an unknown `mode` value is ignored on read (behaves like a missing key); POST /api/sessions rejects it with 400 `invalid mode: <v>` before anything is created.",
+    "additionalProperties: true is kept: a hand-written unknown key never breaks a session."
   ],
   "schema": {
     "type": "object",
@@ -26,6 +29,14 @@
       "prompt": {
         "type": "string",
         "description": "bound prompt id (section_overrides of that prompt are applied last)"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "standard",
+          "execution"
+        ],
+        "description": "session working mode (W729): standard = call tools directly; execution = prefer one run_code program per dependent sequence. Absent = standard; the default is never written."
       }
     },
     "additionalProperties": true

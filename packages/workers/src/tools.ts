@@ -74,19 +74,23 @@ async function spawnWorker(registry: WorkerRegistry, args: Record<string, unknow
   const short = optionalArg(args, "title") ?? deriveShort(brief, wid);
   const fullTitle = `${wid}·${truncateChars(short, 20)}`;
   const reportTo = optionalArg(args, "report_to");
+  // W729 §2.3: an explicit `mode` wins; otherwise the worker inherits the mode
+  // of the session that owns this registry (its own host conversation).
+  const mode = optionalArg(args, "mode") ?? registry.hostMode;
   const driven = registry.canDrive();
   const session = registry.sessions.create({
     title: fullTitle,
     workspace: optionalArg(args, "workspace"),
     model: optionalArg(args, "model"),
+    mode,
   });
   const injected = reportTo === null ? brief : `${brief}\n\n${completionFeedback()}`;
-  registry.rememberSpawn(session.meta.id, { wid, short, brief, reportTo });
+  registry.rememberSpawn(session.meta.id, { wid, short, brief, reportTo, mode });
   const warn = registry.upsert({
     wid,
     started_at: utcNow(),
     status: "RUNNING",
-    extra: extraTokens(args, { sid: session.meta.id, short, driven, reportTo, injected }),
+    extra: extraTokens(args, { sid: session.meta.id, short, driven, reportTo, injected, mode }),
   });
   const actuallyDriven = driven ? registry.driveIfPossible(session.meta.id, injected) : false;
   const result: Record<string, unknown> = {
@@ -111,6 +115,8 @@ interface SpawnTokens {
   driven: boolean;
   reportTo: string | null;
   injected: string;
+  /** W729: already resolved (explicit argument, else the owning session's mode). */
+  mode: string | null;
 }
 
 function extraTokens(args: Record<string, unknown>, t: SpawnTokens): string {
@@ -127,6 +133,7 @@ function extraTokens(args: Record<string, unknown>, t: SpawnTokens): string {
     if (value !== null) tokens.push([key === "reasoning_effort" ? "effort" : key, value]);
   }
   if (t.reportTo !== null) tokens.push(["report_to", t.reportTo]);
+  if (t.mode !== null) tokens.push(["mode", t.mode]);
   tokens.push(["brief", truncateChars(sanitizeExtra(t.injected), 300)]);
   return tokens.map(([k, v]) => `${k}=${sanitizeExtra(v)}`).join(" ");
 }
