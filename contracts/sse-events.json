@@ -26,6 +26,19 @@
       "seq": "u64 (global atomic counter, monotonic across the process)",
       "payload": "object"
     },
+    "envelopeExtensions": {
+      "note": "W513 per-session envelope: the TypeScript host adds these two keys to the frozen `{turn,seq,payload}` envelope (apps/studio/src/sse.ts: createStudioBus). The W744 parity test validates a real frame against `envelopeSchema` widened by exactly these keys, so an undeclared envelope key is a failure instead of an unnoticed drift.",
+      "v": {
+        "type": "integer",
+        "const": 2
+      },
+      "session": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
     "envelopeSchema": {
       "type": "object",
       "required": [
@@ -60,6 +73,17 @@
     },
     "semantics": "the stream does NOT close; the client receives one lagged status and continues consuming. Skipped events are NOT replayed.",
     "codeRef": "src/main.rs:883-892"
+  },
+  "payloadExtensions": {
+    "note": "Keys the TypeScript host adds to an event payload beyond the frozen Rust table above (W513 per-session frames + W515 injection placements). They are contract too: `payloadExtensions.<event>` is the ONLY place a host-only payload key may be declared, and the W744 parity test fails on any produced key that appears in neither the event's `payload` table nor here.",
+    "status": {
+      "session": "string|null (the session the frame belongs to; null = process-level)",
+      "dropped": "integer (per-session bucket overflow counter, lagged frames only)",
+      "hint": "string (the lagged hint, equal to `lagged.payload.hint`)",
+      "placement": "'queued'|'steering'|'context' (W515 injection placement)",
+      "boundary": "'turn-start'|'step'? (the boundary that consumed an injected message)",
+      "message": "object (the injected-message view {id,kind,from,lane,source,summary})"
+    }
   },
   "count": 8,
   "events": [
