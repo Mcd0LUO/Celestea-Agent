@@ -344,7 +344,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | R4 | **用户 override 遮蔽模式差异**：`tool_access` 被 global/workspace/prompt 覆盖时，模式只剩预算/暴露面差异（四层优先级，`prompts.ts:1-13` 的注册表层级注释） | 文档化 + 前端在设置页提示"该段已被覆盖，模式提示词不生效"；不改优先级 |
 | R5 | **8KB 预算**：现 3835 B / 8192 B，余量约 4.3 KB；变体 B 若继续加长会挤占 `environment`（1106 B），最终触发**尾部静默截断**（`context` 段最先被砍） | 变体文本硬约束 ≤1 KB（M6）；后续若需长文本，先做分段预算（W253 §5-S5），本文不解决 |
 | R6 | **两个 spawn 平面混淆**：引擎内 `worker:<sid>`（Studio）与 DSH 外部 fleet（`celes-worker-spawn`）都有"spawn_worker" | 命名区分：Studio 侧参数叫 `mode`；`agentPreset` 只出现在 DSH 适配层；M14 门禁 |
-| R7 | **`agentPreset` 映射的宿主可用性未知**（是否 0.1.5 宿主、预设 id 是否为 `code`） | 映射表 `null` 兜底（不传 + 审计），P1 前用 `GET {prefix}/presets` / `agentPreset.list` 实测（U1/U2） |
+| R7 | **`agentPreset` 映射的宿主可用性**（预设 id 已核实为 `ptc`；宿主是否暴露 `agentPresets` 服务仍待实测） | 映射表 `null` 兜底（不传 + 审计），P1 前用 `GET {prefix}/presets` / `agentPreset.list` 实测（U2） |
 | R8 | **收益被夸大**：执行模式的 token 收益来自往返折叠而非 schema 折叠（§1.2），而 `p` 未实测 | P2 前**禁止**在文档/UI 里宣称收益数字；M15 用实测替换估值 |
 | R9 | **切换模式后的历史合法性**（历史里有已隐藏工具名） | U3 探针；失败则 E2 形态；**永不重写日志**（K4） |
 
@@ -352,7 +352,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 
 | ID | 项 | 状态 | 影响 |
 |---|---|---|---|
-| U1 | **DSH 宿主 PTC 预设的实际 id**（`code` vs `ptc`） | **未验证**：W253 评估记的是 preset 目录 `ptc` + `tool-presentation(mode: ptc)`；`celes-worker-spawn/HANDOFF.md:123` 记的是 `standard/code/cordis/minimal`。本会话**无法读安装树核实**——`ls /opt/dsh/profiles/web/` 返回 `Permission denied`（当前执行身份 `celestea`） | 只影响 §3.3 的映射表取值；映射表 `null` 兜底 + 运行时枚举校验，不阻塞 P0/P1 主体 |
+| U1 | **DSH 宿主 PTC 预设的实际 id** | **已核实（架构师 2026-09-11，sudo 读安装树）**：内建预设 = `standard` / `ptc` / `minimal` / `cordis`（`@deepseek-ai/dsh-agent-presets/lib/types/display.js` 的 `BUILT_IN_PRESET_KEYS`）；`/opt/dsh/.agent-presets/code` 自述是 builtin `standard` 的 0.1.2 兼容别名（**不是 PTC**）；`/opt/dsh/settings.yaml` 的 `agent-presets.default = ptc` | 映射已定：`standard→standard`、`execution→ptc`；`code` 禁止用于执行模式 |
 | U2 | **DSH 0.1.5 宿主是否暴露 `agentPresets` 服务/RPC**（插件 README 提到 0.1.1 回退 `apiProxy`） | **未验证**（同上，无安装树读权限） | 同上；外部 fleet 的 mode 传递可延后 |
 | U3 | **上游 provider 对"历史中出现已不在 `tools` 列表里的工具名"的容忍度** | **未验证**（未做探针） | P1 暴露差异的**前置门禁**（G-P1）；失败 → E2 形态 |
 | U4 | **模型在 Celestea 工具面上写 Python 程序的一次成功率 `p`** | **未实测**；W254 §5 的 `pro 0.85–0.93 / flash 0.70–0.85` 是**估值** | 决定 P2 去留；P2 的 A/B 是唯一定价手段 |
