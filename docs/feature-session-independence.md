@@ -1,8 +1,8 @@
 # 特性设计 · 会话独立性（每会话独立 runtime + 会话标识 SSE）
 
-> 状态：**设计（未实现）**。本文只描述目标设计与契约影响，不改任何代码。
+> 状态：**已实现**（2026-09-11 核实）。本文是实现依据与契约记录；落地见 `packages/runtime/src/session-registry.ts`、`apps/studio/src/runtime/real-runtime-adapter.ts`。
 > 范围：`packages/runtime`、`apps/studio`（宿主 HTTP 层）、共用前端 `/src/celestea_studio/frontend/src/**`。
-> 参照实现：Rust 版 `/src/celestea_studio`（当前生产）。
+> 参照实现：Rust 版 `/src/celestea_studio`（**已退役**，见其 `LEGACY-RUST-BACKEND.md`）。
 > 一句话目标：**会话就是会话**——任意时刻可打开任意会话视图，后台会话继续跑，互不串台；不存在"全局主会话"。
 
 ---
