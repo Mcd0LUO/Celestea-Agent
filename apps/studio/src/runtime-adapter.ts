@@ -34,6 +34,13 @@
  */
 
 import type { InjectionPlacement, Statusline } from "@celestea/core";
+/**
+ * W737: the busy-slot error is part of the ENGINE contract, so it has exactly
+ * one definition — `packages/runtime/src/errors.ts`. It is imported (never
+ * redefined) here and re-exported, so every studio-side import of
+ * `TurnBusyError` resolves to the very class object the real engine throws.
+ */
+import { TurnBusyError } from "@celestea/runtime";
 import type { StudioBus } from "./sse.js";
 
 /** Verbatim engine error text (Rust `{e}` placeholders). */
@@ -45,14 +52,18 @@ export class EngineError extends Error {
   }
 }
 
-/** Thrown by `startTurn` when the single-concurrency slot is occupied (409). */
-export class TurnBusyError extends Error {
-  readonly kind = "busy";
-  constructor(message = "a turn is already running") {
-    super(message);
-    this.name = "TurnBusyError";
-  }
-}
+/**
+ * Thrown by `startTurn` when the single-concurrency slot is occupied, and by
+ * `clear` while the target session's turn is in flight (409).
+ *
+ * W737: SINGLE SOURCE — `@celestea/runtime`'s `errors.ts` (`StudioError`
+ * subclass: `status: 409`, `kind: "turn_busy"`). This file used to declare a
+ * second, `extends Error` copy; the handlers branched on that copy, so the real
+ * engine's error failed `instanceof` and the busy race surfaced as a 500
+ * instead of a 409 / an interjection. Only the fake adapter threw the copy,
+ * which is what kept the contract tests green. Do not redeclare it here.
+ */
+export { TurnBusyError };
 
 /** Thrown when the live-session / concurrent-turn cap is reached (503). */
 export class CapacityError extends Error {
