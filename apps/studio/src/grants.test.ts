@@ -207,6 +207,24 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     expect(existsSync(join(out, "third.txt"))).toBe(false);
   });
 
+  it("keeps a mid-turn grant out of the running boundary and applies it next turn", async () => {
+    const dir = sessionDir("midturn");
+    const dataDir = tempDir("data");
+    const out = join(dataDir, "out");
+    mkdirSync(out, { recursive: true });
+    const env = envOf(dataDir, { CELESTEA_TOOL_WORKDIR: dir });
+    // Turn N: composed BEFORE the grant — the boundary is fixed for the turn.
+    const running = assemblyOf(dir, effectiveGrantsOf(dir, env, NOW).grants, env);
+    writeFile(dir, [grantEntry("write_roots", { roots: [out] })]);
+    const sameTurn = await running.registry.dispatch({ call_id: "w1", name: "write_file", args: { path: join(out, "in-turn.txt"), content: "x" } });
+    expect(String(sameTurn.error)).toContain("path_forbidden");
+    expect(existsSync(join(out, "in-turn.txt"))).toBe(false);
+    // Turn N+1: composed AFTER the grant — allowed.
+    const next = assemblyOf(dir, effectiveGrantsOf(dir, env, NOW).grants, env);
+    expect(await next.registry.dispatch({ call_id: "w2", name: "write_file", args: { path: join(out, "next-turn.txt"), content: "x" } })).toMatchObject({ error: null });
+    expect(existsSync(join(out, "next-turn.txt"))).toBe(true);
+  });
+
   it("lets the session read an extra root without ever touching the guard chain", () => {
     const dir = sessionDir("read");
     const dataDir = tempDir("data");
@@ -267,15 +285,32 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     const dataDir = tempDir("data");
     const env = envOf(dataDir, { CELESTEA_GRANTS_ALLOW_UNSANDBOXED: "1" });
     writeFile(dir, [grantEntry("unsandboxed", {}, { id: "g-once", uses_left: 1, expires_at: NOW + 600 })]);
-    const reader = createSessionGrants({ dataDir, env: { ...env, CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json") }, now: () => NOW * 1000 });
+    const reader = createSessionGrants({ dataDir, env, now: () => NOW * 1000 });
     const read = reader.read("ws/s1", dir);
     expect(read.grants.unsandboxed).toBe(true);
     reader.onComposed("ws/s1", dir, read);
     const audit = readFileSync(join(dataDir, "grants-audit.jsonl"), "utf8");
     expect(audit).toContain('"event":"use"');
     expect(audit).toContain("g-once");
+    expect(audit).toContain("one-shot grant spent");
     // the one-shot is gone, so the NEXT turn composes without it
     expect(effectiveGrantsOf(dir, env, NOW).grants.unsandboxed).toBe(false);
+  });
+
+  it("audits an ignored entry as a denial and a void file as grants_unreadable (§4.3)", () => {
+    const dir = sessionDir("warnaudit");
+    const dataDir = tempDir("data");
+    const env = envOf(dataDir);
+    const reader = createSessionGrants({ dataDir, env, now: () => NOW * 1000 });
+    writeFile(dir, [grantEntry("read_roots", { roots: ["/"] })]);
+    reader.onComposed("ws/s1", dir, reader.read("ws/s1", dir));
+    writeFileSync(join(dir, "grants.json"), "{ broken");
+    reader.onComposed("ws/s1", dir, reader.read("ws/s1", dir));
+    const audit = readFileSync(join(dataDir, "grants-audit.jsonl"), "utf8");
+    expect(audit).toContain('"event":"deny"');
+    expect(audit).toContain("filesystem root");
+    expect(audit).toContain('"event":"grants_unreadable"');
+    expect(audit).not.toContain("undefined");
   });
 });
 
