@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { recordingSessionLog } from "./log.js";
+import { getExtra } from "./registry-tsv.js";
 import { WorkerRegistry } from "./registry.js";
 import { executeReceipt, lastAssistantSummary, reportRelPath, sanitizeFileStem } from "./receipt.js";
 import { workerTools } from "./tools.js";
@@ -139,6 +140,9 @@ describe("driver receipt loop", () => {
     expect(receipt.content).toContain("答复:");
     expect(receipt.from_label).toBe("session-0");
     expect(readFileSync(join(results, "W101-the-work.md"), "utf8")).toContain("## 简报摘要");
+    // W736: the receipt closes the state machine too — the row is no longer RUNNING.
+    expect(registry.getEntry("W101")!.status).toBe("DONE");
+    expect(getExtra(registry.getEntry("W101")!, "ended_at")).toBe("2023-11-14_22:13:20Z");
     registry.shutdown();
     await registry.joinDrivers();
   });
@@ -150,6 +154,32 @@ describe("driver receipt loop", () => {
     await tools.get("spawn_worker")!({ wid: "W102", brief: "b", report_to: "cli-main" });
     await waitUntil(() => registry.mailbox.pending("cli-main") === 1);
     expect(registry.mailbox.poll("cli-main")[0]?.content).toContain("WORKER_W102_FAILED ERR no llm");
+    expect(registry.getEntry("W102")!.status).toBe("FAILED");
+    expect(getExtra(registry.getEntry("W102")!, "fail")).toBe("no-llm");
+    registry.shutdown();
+    await registry.joinDrivers();
+  });
+
+  it("fails the row when the receipt report cannot be written", async () => {
+    // The results dir sits under a regular FILE, so no deliverable can exist:
+    // W736 settles the row as FAILED (stricter than Rust, which only warns).
+    const file = join(mkdtempSync(join(tmpdir(), "celestea-bad-results-")), "not-a-dir");
+    writeFileSync(file, "x", "utf8");
+    const registry = new WorkerRegistry({
+      tsvPath: null,
+      logFactory: recordingSessionLog,
+      now: () => 1_700_000_000_000,
+      pid: 4242,
+      resultsDir: join(file, "results"),
+    });
+    const tools = new Map(workerTools(registry).map((t) => [t.spec().name, (args: unknown) => t.execute(args) as Promise<unknown>]));
+    registry.attachDrivers(scriptedDrivers(scriptedLoop()));
+
+    await tools.get("spawn_worker")!({ wid: "W106", brief: "b", report_to: "cli-main" });
+    await waitUntil(() => registry.mailbox.pending("cli-main") === 1);
+    const row = registry.getEntry("W106")!;
+    expect(row.status).toBe("FAILED");
+    expect(getExtra(row, "fail")?.startsWith("receipt-not-written:")).toBe(true);
     registry.shutdown();
     await registry.joinDrivers();
   });
@@ -163,6 +193,7 @@ describe("driver receipt loop", () => {
     await waitUntil(() => registry.getEntry("W103")?.extra.includes("state=idle") === true);
     expect(registry.mailbox.pending("cli-main")).toBe(0);
     expect(existsSync(join(results, "W103-b.md"))).toBe(false);
+    expect(registry.getEntry("W103")!.status).toBe("DONE");
     registry.shutdown();
     await registry.joinDrivers();
   });

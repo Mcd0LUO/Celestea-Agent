@@ -177,3 +177,91 @@ describe("WorkerRegistry lifecycle", () => {
     expect(reg.mailbox.pendingTotal()).toBe(0);
   });
 });
+
+describe("WorkerRegistry state machine (W736)", () => {
+  it("settles a RUNNING row to DONE on disk, with the terminal stamp", () => {
+    const path = tmpTsv();
+    const reg = registry(path);
+    reg.upsert({ wid: "W1", started_at: "2026-09-10_11:00:00Z", status: "RUNNING", extra: "sess=session-0 state=in-turn" });
+
+    const settled = reg.finalize("W1", { ok: true });
+    expect(settled?.status).toBe("DONE");
+    // A frozen row is at rest: a stale `in-turn` would read as a running turn.
+    expect(getExtra(settled!, "state")).toBe("idle");
+    expect(getExtra(settled!, "ended_at")).toBe("2026-09-10_12:00:00Z");
+    expect(getExtra(settled!, "fail")).toBeNull();
+    expect(parseRegistryTsv(readFileSync(path, "utf8")).entries[0]?.status).toBe("DONE");
+    // W736: worker_status explains the terminal row (stamp + reason).
+    const view = reg.status("W1")["worker"] as Record<string, unknown>;
+    expect(view["status"]).toBe("DONE");
+    expect(view["ended_at"]).toBe("2026-09-10_12:00:00Z");
+  });
+
+  it("settles to FAILED with the reason, then freezes the row", () => {
+    const reg = registry(null);
+    reg.upsert({ wid: "W2", started_at: "t", status: "RUNNING", extra: "sess=session-1" });
+
+    expect(reg.finalize("W2", { ok: false, reason: "no llm" })?.status).toBe("FAILED");
+    expect(getExtra(reg.getEntry("W2")!, "fail")).toBe("no-llm");
+    expect(reg.finalize("W2", { ok: true })).toBeNull();
+    expect(reg.finalize("W404", { ok: true })).toBeNull();
+    expect(reg.getEntry("W2")!.status).toBe("FAILED");
+  });
+
+  it("finalizes by session id and never rewrites a foreign row", () => {
+    const path = tmpTsv();
+    writeFileSync(path, "W9\t2026-09-10_11:00:00Z\tRUNNING\tproc=999\n", "utf8");
+    const reg = registry(path);
+    reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=session-0" });
+
+    expect(reg.finalize("W9", { ok: true })).toBeNull();
+    expect(reg.finalizeSession("session-0", { ok: true })?.wid).toBe("W1");
+    expect(reg.finalizeSession("session-404", { ok: true })).toBeNull();
+    expect(parseRegistryTsv(readFileSync(path, "utf8")).entries[0]?.status).toBe("RUNNING");
+  });
+
+  it("counts the REAL statuses in worker_status (never a permanent RUNNING)", () => {
+    const reg = registry(null);
+    reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=session-0" });
+    reg.upsert({ wid: "W2", started_at: "t", status: "RUNNING", extra: "sess=session-1" });
+    reg.upsert({ wid: "W3", started_at: "t", status: "RUNNING", extra: "sess=session-2" });
+    reg.finalizeSession("session-0", { ok: true });
+    reg.finalizeSession("session-1", { ok: false, reason: "boom" });
+
+    const all = reg.status();
+    expect(all["total"]).toBe(3);
+    expect(all["by_status"]).toEqual({ RUNNING: 1, DONE: 1, FAILED: 1 });
+    expect(all["by_state"]).toEqual({ idle: 0, "in-turn": 0, running: 1 });
+    expect((reg.status("W2")["worker"] as Record<string, unknown>)["fail"]).toBe("boom");
+  });
+
+  it("fails a still-RUNNING row when its driver exits (session gone)", async () => {
+    const reg = registry(null);
+    const scripted = scriptedLoop();
+    reg.attachDrivers(scriptedDrivers(scripted));
+    const session = reg.sessions.create({ title: "W1·t" });
+    reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: `sess=${session.meta.id}` });
+    // No receipt protocol: only the driver exit can settle this row.
+    reg.driveIfPossible(session.meta.id, "brief", false);
+    await waitUntil(() => scripted.inputs.length === 1);
+
+    reg.sessions.remove(session.meta.id);
+    reg.stopDriver(session.meta.id);
+    await reg.joinDrivers();
+    const row = reg.getEntry("W1")!;
+    expect(row.status).toBe("FAILED");
+    expect(getExtra(row, "fail")).toBe("driver-exited:-session-gone");
+  });
+
+  it("settles the rows a stopping host abandons", () => {
+    const path = tmpTsv();
+    const reg = registry(path);
+    reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=session-0" });
+    reg.upsert({ wid: "W2", started_at: "t", status: "DONE", extra: "sess=session-1" });
+
+    reg.shutdown();
+    const rows = parseRegistryTsv(readFileSync(path, "utf8")).entries;
+    expect(rows.map((r) => `${r.wid}:${r.status}`)).toEqual(["W1:FAILED", "W2:DONE"]);
+    expect(getExtra(rows[0]!, "fail")).toBe("registry-shutdown");
+  });
+});
