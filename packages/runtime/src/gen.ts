@@ -141,11 +141,17 @@ export class GenerationHub {
   }
 }
 
-/** Move pending host receipts from one generation's mailbox onto the next. */
+/**
+ * Move pending host receipts from one generation's mailbox onto the next.
+ *
+ * `== null` on purpose (W769): a generation composed without worker wiring has no
+ * `workers` at all, and the W769 caller runs inside a session rebuild where a
+ * missing wiring must be a no-op, never a crash.
+ */
 export function migrateReceipts(from: Runtime, to: Runtime, hostSessionId: string): number {
   const source = from.workers;
   const target = to.workers;
-  if (source === null || target === null) return 0;
+  if (source == null || target == null) return 0;
   const pending = source.mailbox.poll(hostSessionId);
   for (const msg of pending) target.mailbox.send(hostSessionId, msg.content, msg.from_label);
   return pending.length;

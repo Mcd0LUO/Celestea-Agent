@@ -158,7 +158,11 @@ export function assembleSystemPromptFor(deps: Deps, sessionId: string | null = n
   // The session's own model wins for a scoped assembly; the process model stays
   // the source for the legacy (null) reading, so a no-mode session's prompt is
   // byte-for-byte what it was before W729 (K8).
-  const model = (scoped === null ? null : meta?.model ?? null) ?? profile.model;
+  // TS 6.0 (TS2871, new syntactic nullish check): the inner `?? null` was
+  // redundant anyway — `meta?.model` is `string | undefined` and the outer `??`
+  // already covers both nullish cases, so the result type and behaviour are
+  // unchanged while the `?? null ?? x` pattern the new check rejects is gone.
+  const model = (scoped === null ? null : meta?.model) ?? profile.model;
   const scope = scopeOf(deps, resolved);
   // W768: the prompt's workspace NAME and ROOT PATH come from the ONE projector
   // the composer also uses for the sandbox cwd (`sessionWorkspaceOf`) — a prompt

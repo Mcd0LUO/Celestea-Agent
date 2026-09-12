@@ -33,6 +33,7 @@ import { serve } from "@hono/node-server";
 import { createStudioApp } from "./app.js";
 import { engineLlmView } from "./runtime/llm-assembly.js";
 import type { RealRuntimeAdapter } from "./runtime/real-runtime-adapter.js";
+import { autowakeEnabled, ENV_AUTOWAKE } from "@celestea/runtime";
 
 const port = Number.parseInt(process.env["STUDIO_TS_PORT"] ?? "3778", 10);
 const hostname = process.env["STUDIO_TS_BIND"] ?? "127.0.0.1";
@@ -54,6 +55,13 @@ const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
   );
   console.log(`[celestea-studio-ts] reasoning_effort=${view.reasoningEffort ?? "off"} max_output_tokens=${view.maxOutputTokens ?? "off"}`);
   console.log(`[celestea-studio-ts] api_key_env=${profile.api_key_env} (key read from the environment only)`);
+  // W769: the operator must be able to see at a glance whether receipts wake
+  // their host session by themselves.
+  console.log(
+    autowakeEnabled(process.env)
+      ? `[celestea-studio-ts] autowake: enabled (a worker receipt wakes its host session; ${ENV_AUTOWAKE}=0 disables)`
+      : `[celestea-studio-ts] autowake: disabled by ${ENV_AUTOWAKE}`,
+  );
 });
 
 /** The real engine's lifecycle handles (absent on an injected non-real adapter). */

@@ -173,7 +173,11 @@ describe("session independence", () => {
 
   it("publishes placement (queued/steering/context) and the receipt envelope (W515 §2/§4)", async () => {
     const script: OfflineStep[] = [];
-    const h = make({ sessions: { s1: [] }, llm: { script } });
+    // W769: this test pins the W515 placement publishing of a receipt that a
+    // MANUAL turn drains at its start, so the host must be left alone until then
+    // — `CELESTEA_AUTOWAKE=0` is that switch (the idle-host wake has its own
+    // test: `autowake-host.test.ts`).
+    const h = make({ sessions: { s1: [] }, llm: { script }, env: { CELESTEA_AUTOWAKE: "0" } });
     await activate(h, "sample-ws/s1");
     const log = collect(h.studio.services.bus.subscribe());
 
