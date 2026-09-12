@@ -44,10 +44,10 @@
         "type": ["object", "null"],
         "required": ["in", "out", "cache", "total"],
         "properties": {
-          "in": { "type": "number" },
-          "out": { "type": "number" },
-          "cache": { "type": "number" },
-          "total": { "type": "number" }
+          "in": { "type": "number", "description": "cost of the UNCACHED input only: max(0, prompt_tokens - cache_read) x the `in` price. prompt_tokens already contains the cache-hit region, so this is NOT prompt_tokens x `in`" },
+          "out": { "type": "number", "description": "completion_tokens x the `out` price" },
+          "cache": { "type": "number", "description": "cache_read x the `cache_read` price; the hit region is charged HERE only, never also at the `in` price" },
+          "total": { "type": "number", "description": "in + out + cache (each component rounded to 6 decimals)" }
         },
         "additionalProperties": false
       },

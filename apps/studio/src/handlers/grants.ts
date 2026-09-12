@@ -15,7 +15,7 @@
 
 import type { Context, Hono } from "hono";
 import type { RouteTable } from "../routes.js";
-import { effectiveGrantsOf, sessionIdOfDir, unsandboxedAvailable, type EffectiveGrants } from "../runtime/engine-grants.js";
+import { effectiveGrantsOf, netHostsEffective, sessionIdOfDir, unsandboxedAvailable, type EffectiveGrants } from "../runtime/engine-grants.js";
 import { MAX_TTL_SEC, emptyGrantsFile, newGrantId, readGrantsFile, writeGrantsFile, type GrantCap, type GrantRecord, type GrantsFile } from "../store/grants.js";
 import { CONFIRM_HEADER, SEC_FETCH_MODE, SEC_FETCH_SITE, ORIGIN_HEADER } from "../store/grants-tokens.js";
 import { nowSec, type GrantsServices } from "../store/grants-service.js";
@@ -25,6 +25,16 @@ import { failJson, readJsonBody, strField, storeFail, type Deps } from "./common
 
 const NOT_SAME_ORIGIN_TOO = "grant confirmation is not available over this transport";
 const CONFIRM_REQUIRED = "grant confirmation required";
+
+/**
+ * W757: the readable half of `net_hosts_effective: false`. `net_hosts` entries
+ * are UNIONed into the allow side and only ever count while the env policy is
+ * active, so on a deployment that sets neither `CELESTEA_HTTP_ALLOW` nor
+ * `CELESTEA_HTTP_DENY` such a grant changes nothing — and must not be read as
+ * "this session is limited to those sites".
+ */
+const NET_HOSTS_INEFFECTIVE =
+  "net_hosts_ineffective: 当前部署未设置站点策略（CELESTEA_HTTP_ALLOW / CELESTEA_HTTP_DENY 均未设置），列出的站点不会改变可访问范围 —— 该授权不生效";
 
 /** GET /api/sessions/{id}/grants (§6.1). */
 function registerList(app: Hono, deps: Deps, table: RouteTable): string {
@@ -36,6 +46,10 @@ function registerList(app: Hono, deps: Deps, table: RouteTable): string {
     const read = readGrantsFile(resolved.value.dir, resolved.value.id);
     const effective = effectiveGrantsOf(resolved.value.dir, deps.grants.env, seconds);
     const grants = (read.file?.grants ?? []).map((grant) => entryJson(grant, seconds));
+    // W757 (§6.1): report the DEPLOYMENT fact as well as the readable warning —
+    // the verdict comes from the very policy the engine mounts its tools with.
+    const netHosts = netHostsEffective(deps.grants.env, effective.grants);
+    const warnings = netHosts ? effective.warnings : [...effective.warnings, NET_HOSTS_INEFFECTIVE];
     return c.json({
       ok: true,
       session: resolved.value.id,
@@ -43,7 +57,8 @@ function registerList(app: Hono, deps: Deps, table: RouteTable): string {
       effective: effectiveJson(effective.grants),
       max_ttl_sec: MAX_TTL_SEC,
       unsandboxed_available: unsandboxedAvailable(deps.grants.env),
-      ...(effective.warnings.length === 0 ? {} : { warnings: effective.warnings }),
+      net_hosts_effective: netHosts,
+      ...(warnings.length === 0 ? {} : { warnings }),
     });
   });
   return route.id;

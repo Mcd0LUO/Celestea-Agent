@@ -1,0 +1,534 @@
+{
+  "schema": "celestea-studio-ts.bench-baseline/1",
+  "version": "v2.6.0",
+  "generated_at": "2026-09-12T04:35:19.791Z",
+  "command": "pnpm bench",
+  "unit": "ms",
+  "duration_ms": 29485,
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
+    "cores": 28,
+    "total_memory_bytes": 32548388864,
+    "total_memory_gib": 30.31,
+    "node": "v24.19.0",
+    "platform": "linux",
+    "kernel": "7.0.0-30-generic",
+    "arch": "x64",
+    "commit": "ce93982"
+  },
+  "fixtures": [
+    {
+      "scale": 1000,
+      "label": "1k events (1,001)",
+      "events": 1001,
+      "messages": 572,
+      "estimate_tokens": 10153,
+      "loop_events": 1001,
+      "appended_events": 0,
+      "amplification_turns": 0,
+      "build_ms": 133,
+      "loop_ms": 129
+    },
+    {
+      "scale": 10000,
+      "label": "10k events (10,003)",
+      "events": 10003,
+      "messages": 5716,
+      "estimate_tokens": 102700,
+      "loop_events": 1001,
+      "appended_events": 9002,
+      "amplification_turns": 1286,
+      "build_ms": 102,
+      "loop_ms": 93
+    },
+    {
+      "scale": 50000,
+      "label": "50k events (50,001)",
+      "events": 50001,
+      "messages": 28572,
+      "estimate_tokens": 514108,
+      "loop_events": 1001,
+      "appended_events": 49000,
+      "amplification_turns": 7000,
+      "build_ms": 165,
+      "loop_ms": 118
+    }
+  ],
+  "cases": [
+    {
+      "name": "contextSnapshot()",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 77,
+      "rounds": 5,
+      "median_ms": 0.4175,
+      "min_ms": 0.4075,
+      "ops_per_s": 2395.13,
+      "note": "W755: the request the next step would build (system + derived history + tool schemas)",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153,
+        "amplification_turns": 0
+      }
+    },
+    {
+      "name": "statusline()",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 73,
+      "rounds": 5,
+      "median_ms": 0.603,
+      "min_ms": 0.59,
+      "ops_per_s": 1658.51,
+      "note": "the real public tick: statusView() + statuslineOf() (includes the snapshot above)",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "snapshot_share_pct": 69.2
+      }
+    },
+    {
+      "name": "statusline() [no snapshot]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 14433,
+      "rounds": 5,
+      "median_ms": 0.0003757,
+      "min_ms": 0.0003229,
+      "ops_per_s": 2661425.81,
+      "note": "A/B baseline: the same payload with assembled:()=>null; tick - this = the W755 overhead",
+      "extra": {
+        "events": 1001,
+        "w755_overhead_ms": 0.603,
+        "snapshot_share_pct": 69.2
+      }
+    },
+    {
+      "name": "contextSnapshot()",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 13,
+      "rounds": 5,
+      "median_ms": 4.026,
+      "min_ms": 3.983,
+      "ops_per_s": 248.39,
+      "note": "W755: the request the next step would build (system + derived history + tool schemas)",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700,
+        "amplification_turns": 1286
+      }
+    },
+    {
+      "name": "statusline()",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 9,
+      "rounds": 5,
+      "median_ms": 5.745,
+      "min_ms": 5.633,
+      "ops_per_s": 174.08,
+      "note": "the real public tick: statusView() + statuslineOf() (includes the snapshot above)",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "snapshot_share_pct": 70.1
+      }
+    },
+    {
+      "name": "statusline() [no snapshot]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 18755,
+      "rounds": 5,
+      "median_ms": 0.0004196,
+      "min_ms": 0.0003404,
+      "ops_per_s": 2383442,
+      "note": "A/B baseline: the same payload with assembled:()=>null; tick - this = the W755 overhead",
+      "extra": {
+        "events": 10003,
+        "w755_overhead_ms": 5.745,
+        "snapshot_share_pct": 70.1
+      }
+    },
+    {
+      "name": "contextSnapshot()",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 2,
+      "rounds": 5,
+      "median_ms": 25.9,
+      "min_ms": 20.51,
+      "ops_per_s": 38.61,
+      "note": "W755: the request the next step would build (system + derived history + tool schemas)",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "estimate_tokens": 514108,
+        "amplification_turns": 7000
+      }
+    },
+    {
+      "name": "statusline()",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 1,
+      "rounds": 5,
+      "median_ms": 32.61,
+      "min_ms": 28.01,
+      "ops_per_s": 30.66,
+      "note": "the real public tick: statusView() + statuslineOf() (includes the snapshot above)",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "snapshot_share_pct": 79.4
+      }
+    },
+    {
+      "name": "statusline() [no snapshot]",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 18489,
+      "rounds": 5,
+      "median_ms": 0.0004338,
+      "min_ms": 0.0003732,
+      "ops_per_s": 2305338.31,
+      "note": "A/B baseline: the same payload with assembled:()=>null; tick - this = the W755 overhead",
+      "extra": {
+        "events": 50001,
+        "w755_overhead_ms": 32.61,
+        "snapshot_share_pct": 79.4
+      }
+    },
+    {
+      "name": "contextSnapshot() [over budget]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 4,
+      "rounds": 5,
+      "median_ms": 12.7,
+      "min_ms": 12.31,
+      "ops_per_s": 78.75,
+      "note": "context_window=2,000 tokens: the trim pass dominates the tick (see trimContext rows)",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153
+      }
+    },
+    {
+      "name": "contextSnapshot() [over budget]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 1,
+      "rounds": 5,
+      "median_ms": 1232,
+      "min_ms": 1217,
+      "ops_per_s": 0.81,
+      "note": "context_window=2,000 tokens: the trim pass dominates the tick (see trimContext rows)",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700
+      }
+    },
+    {
+      "name": "estimateTokens() ASCII",
+      "scale": "4,000 chars",
+      "unit": "ms",
+      "iterations": 14789,
+      "rounds": 5,
+      "median_ms": 0.001395,
+      "min_ms": 0.001379,
+      "ops_per_s": 716901.44,
+      "note": "UTF-8 bytes / 4, rounded up",
+      "extra": {
+        "chars": 4000,
+        "bytes": 4000,
+        "tokens": 1000,
+        "chars_per_token": 4,
+        "bytes_per_token": 4
+      }
+    },
+    {
+      "name": "estimateTokens() CJK",
+      "scale": "4,000 chars",
+      "unit": "ms",
+      "iterations": 4642,
+      "rounds": 5,
+      "median_ms": 0.005551,
+      "min_ms": 0.005355,
+      "ops_per_s": 180144.18,
+      "note": "same estimator on 3-byte characters: chars/token > 1 means it under-counts",
+      "extra": {
+        "chars": 4000,
+        "bytes": 12000,
+        "tokens": 3000,
+        "chars_per_token": 1.333,
+        "bytes_per_token": 4
+      }
+    },
+    {
+      "name": "estimateMessagesTokens() ASCII",
+      "scale": "200 messages",
+      "unit": "ms",
+      "iterations": 2599,
+      "rounds": 5,
+      "median_ms": 0.02786,
+      "min_ms": 0.02509,
+      "ops_per_s": 35899.77,
+      "note": "content + per-message overhead",
+      "extra": {
+        "chars": 40000,
+        "bytes": 40000,
+        "tokens": 10800,
+        "chars_per_token": 4,
+        "bytes_per_token": 4,
+        "messages": 200
+      }
+    },
+    {
+      "name": "estimateMessagesTokens() CJK",
+      "scale": "200 messages",
+      "unit": "ms",
+      "iterations": 819,
+      "rounds": 5,
+      "median_ms": 0.07194,
+      "min_ms": 0.07042,
+      "ops_per_s": 13899.63,
+      "note": "same list in CJK",
+      "extra": {
+        "chars": 40000,
+        "bytes": 120000,
+        "tokens": 30800,
+        "chars_per_token": 1.333,
+        "bytes_per_token": 4,
+        "messages": 200
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "1,000 messages",
+      "unit": "ms",
+      "iterations": 1,
+      "rounds": 3,
+      "median_ms": 37.97,
+      "min_ms": 37.56,
+      "ops_per_s": 26.34,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 1000,
+        "kept": 10
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "2,000 messages",
+      "unit": "ms",
+      "iterations": 1,
+      "rounds": 3,
+      "median_ms": 151.4,
+      "min_ms": 150.8,
+      "ops_per_s": 6.6,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 2000,
+        "kept": 10
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "4,000 messages",
+      "unit": "ms",
+      "iterations": 1,
+      "rounds": 3,
+      "median_ms": 599.6,
+      "min_ms": 599.4,
+      "ops_per_s": 1.67,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 4000,
+        "kept": 10
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "5,000 messages",
+      "unit": "ms",
+      "iterations": 1,
+      "rounds": 3,
+      "median_ms": 945,
+      "min_ms": 944.9,
+      "ops_per_s": 1.06,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 5000,
+        "kept": 10,
+        "growth_exponent_loglog": 2
+      }
+    },
+    {
+      "name": "trimContext() [disabled]",
+      "scale": "28,572 messages",
+      "unit": "ms",
+      "iterations": 280,
+      "rounds": 5,
+      "median_ms": 0.2535,
+      "min_ms": 0.2482,
+      "ops_per_s": 3945.07,
+      "note": "window=0 disables trimming: the O(n) estimate only — the cheap regime",
+      "extra": {
+        "messages": 28572
+      }
+    },
+    {
+      "name": "SessionLog.deriveMessages()",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 294,
+      "rounds": 5,
+      "median_ms": 0.2043,
+      "min_ms": 0.2019,
+      "ops_per_s": 4894.42,
+      "note": "replays the whole event log and re-balances tool calls",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "events_per_message": 1.75
+      }
+    },
+    {
+      "name": "SessionLog.events()",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 16371,
+      "rounds": 5,
+      "median_ms": 0.001823,
+      "min_ms": 0.001805,
+      "ops_per_s": 548567.71,
+      "note": "the defensive copy a statusline read used to pay for",
+      "extra": {
+        "events": 1001
+      }
+    },
+    {
+      "name": "SessionLog.deriveMessages()",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 30,
+      "rounds": 5,
+      "median_ms": 2.217,
+      "min_ms": 2.205,
+      "ops_per_s": 451.04,
+      "note": "replays the whole event log and re-balances tool calls",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "events_per_message": 1.75
+      }
+    },
+    {
+      "name": "SessionLog.events()",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 2015,
+      "rounds": 5,
+      "median_ms": 0.02537,
+      "min_ms": 0.02486,
+      "ops_per_s": 39422.56,
+      "note": "the defensive copy a statusline read used to pay for",
+      "extra": {
+        "events": 10003
+      }
+    },
+    {
+      "name": "SessionLog.deriveMessages()",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 4,
+      "rounds": 5,
+      "median_ms": 13,
+      "min_ms": 12.21,
+      "ops_per_s": 76.95,
+      "note": "replays the whole event log and re-balances tool calls",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "events_per_message": 1.75
+      }
+    },
+    {
+      "name": "SessionLog.events()",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 164,
+      "rounds": 5,
+      "median_ms": 0.4365,
+      "min_ms": 0.4313,
+      "ops_per_s": 2291.14,
+      "note": "the defensive copy a statusline read used to pay for",
+      "extra": {
+        "events": 50001
+      }
+    },
+    {
+      "name": "SessionLog.append() replay",
+      "scale": "1,000 events",
+      "unit": "ms",
+      "iterations": 1097,
+      "rounds": 5,
+      "median_ms": 0.05225,
+      "min_ms": 0.05159,
+      "ops_per_s": 19138.54,
+      "note": "fresh in-memory store per replay (real projectingSessionLog + memoryEventStore)",
+      "extra": {
+        "events": 1000,
+        "per_event_ms": 0.000052
+      }
+    },
+    {
+      "name": "SSE frame encode",
+      "scale": "1 frame",
+      "unit": "ms",
+      "iterations": 12161,
+      "rounds": 5,
+      "median_ms": 0.001004,
+      "min_ms": 0.0009318,
+      "ops_per_s": 996363.33,
+      "note": "loopEventToFrame + envelope + JSON + wire block (apps/studio createStudioBus + parseWire)",
+      "extra": {
+        "impl": "apps/studio createStudioBus + parseWire"
+      }
+    },
+    {
+      "name": "SSE wire decode",
+      "scale": "200 frames",
+      "unit": "ms",
+      "iterations": 114,
+      "rounds": 5,
+      "median_ms": 0.437,
+      "min_ms": 0.4301,
+      "ops_per_s": 2288.08,
+      "note": "parseWire over one 29,018-byte document",
+      "extra": {
+        "impl": "apps/studio createStudioBus + parseWire",
+        "frames": 200,
+        "frames_per_ms": 457.67
+      }
+    },
+    {
+      "name": "LoopEvent -> SSE name/payload",
+      "scale": "1 event",
+      "unit": "ms",
+      "iterations": 61538,
+      "rounds": 5,
+      "median_ms": 0.00006685,
+      "min_ms": 0.00005928,
+      "ops_per_s": 14958078.83,
+      "note": "the contract mapping alone (no envelope, no JSON), cycling all 6 event kinds",
+      "extra": {}
+    }
+  ]
+}

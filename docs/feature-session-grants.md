@@ -81,14 +81,16 @@
 | `network` | `{}` | 允许本会话 `run_shell`/`process_control` 拉起的子进程**保留宿主网络**（等价 `CELESTEA_SANDBOX_NET=1`） | 关 | **高** |
 | `read_roots` | `{roots: string[]}` | 追加**只读**根（等价扩展 `CELESTEA_TOOL_ROOTS`） | `[]` | 中 |
 | `write_roots` | `{roots: string[]}` | 追加**可写**根（workspace 之外也能写） | `[]` | **高** |
-| `net_hosts` | `{hosts: string[]}` | 放宽 `http_request` 的目标策略：把列出的主机/IP 段加入 **allow** | `[]` | 中 |
+| `net_hosts` | `{hosts: string[]}` | 放宽 `http_request` 的目标策略：把列出的主机/IP 段**并入 allow**（并集放宽，永不收窄；且仅在进程级站点策略已启用时才生效，见下注 2 / §6.1） | `[]` | 中 |
 | `tool_extra` | `{tools: string[]}` | 启用**默认未挂载的额外工具**（为将来的 browser/net 工具预留；**不是**用来放行被 guard 拒绝的工具） | `[]` | 中 |
 | `unsandboxed` | `{}` | 允许在**无 OS 隔离**（`userspace`）下执行，即使 provider 策略是 `fail` | 关 | **最高** |
 
 **明确说明三点**：
 
 1. `network` 在 v1 是**布尔**（全有或全无）。原因：`bwrap --share-net` 是命名空间级开关，无法按 host 过滤；真正的 host 级网络控制需要 v2（netns + 用户态 DNS/proxy）。想按站点控制网络请用 `net_hosts`（只约束 `http_request`，而 `http_request` 是唯一"按 URL"的出网通道）。
-2. `net_hosts` 与进程级策略的关系：进程级 `CELESTEA_HTTP_ALLOW` **未设**时策略是 inactive（全放行）——此时 `net_hosts` **不会**把策略收紧成白名单（收紧不是 grants 的职责）。进程级 `DENY` 恒优先，grants 无法覆盖。
+2. `net_hosts` 与进程级策略的关系：**它是并集放宽，不是白名单**。进程级 `CELESTEA_HTTP_ALLOW` / `CELESTEA_HTTP_DENY` **两者都未设**时策略是 inactive（全放行）——此时 `net_hosts` **不会**把策略收紧成白名单（收紧不是 grants 的职责），而且**它自己也完全不生效**：清单被并进一个不被使用的策略里，会话可访问的范围一个字节都没变。进程级 `DENY` 恒优先，grants 无法覆盖。
+   - 换言之：`net_hosts` 的真实语义是"把下列站点加入放行清单"，**不是**"只允许访问下列站点"；在未配置站点策略的部署下它等于空操作。
+   - 这个部署事实由 `GET /api/sessions/{id}/grants` 如实报告：结构化字段 `net_hosts_effective`（false = 会话确实带着清单，但本部署会整份忽略它）+ `warnings` 里一条可读条目（`net_hosts_ineffective: …`）。判定复用引擎挂载工具时的同一条构造路径（`HttpTargetPolicy.fromEnv` → `netHostsIneffective`），不另写一套判断；权限面板在 `net_hosts` 行标「当前部署下不生效」。
 3. `unsandboxed` 建议**默认在 UI 中隐藏**，需运维设 `CELESTEA_GRANTS_ALLOW_UNSANDBOXED=1` 才出现（§8 开放问题）。
 
 ### 2.3 有效期与一次性
@@ -224,7 +226,7 @@ export function effectiveGrantsOf(sessionDir: string | null, env: NodeJS.Process
 |---|---|
 | `PathGuardPolicy` 只有 `workspace` + `readRoots`，`checkWrite` 硬编码只允许 workspace（`path-guard.ts:104-111`） | 增加 `writeRoots` 字段（`[workspace, ...grants.writeRoots]`）；`checkWrite` 改为"在任一可写根内"。`readRoots = [workspace, ...envRoots, ...grants.readRoots]` |
 | `bwrapOptionsFromEnv(env)` 只读 env（`provider.ts:107-114`） | `shareNet = envFlag(env[ENV_SANDBOX_NET]) \|\| grants.network`；`fallbackMode` 在 `grants.unsandboxed` 生效且 env 为 `fail` 时降级为 `userspace`（**并记录一条 `degraded_by_grant` 审计**） |
-| `HttpTargetPolicy.fromEnv(env)`（`http-request.ts:36`） | allow 列表 = env allow ∪ `grants.netHosts`；**deny 不变、恒优先**；当 env 两者都未设（策略 inactive）且 grants 有 hosts 时，仍维持 inactive（放宽不收紧），但在审计里记一次 `net_hosts_ineffective` |
+| `HttpTargetPolicy.fromEnv(env)`（`http-request.ts:36`） | allow 列表 = env allow ∪ `grants.netHosts`；**deny 不变、恒优先**；当 env 两者都未设（策略 inactive）且 grants 有 hosts 时，仍维持 inactive（放宽不收紧），但在审计里记一次 `net_hosts_ineffective`；**同一个判定**（`netHostsEffective`，`engine-grants.ts`）也被 `GET /api/sessions/{id}/grants` 用来报告 `net_hosts_effective`（§6.1）——一处判定，两处消费，不复制逻辑 |
 
 ### 4.2 生效时机
 
@@ -308,9 +310,10 @@ export function effectiveGrantsOf(sessionDir: string | null, env: NodeJS.Process
 | 项 | 内容 |
 |---|---|
 | 请求 | 无 body。 |
-| 200 响应 | `{ok:true, session:"<ws>/<sess>", grants:[{id,cap,scope,granted_at,granted_by,expires_at,uses_left,note,expired:bool}], effective:{network:bool, read_roots:[], write_roots:[], net_hosts:[], tool_extra:[], unsandboxed:bool}, max_ttl_sec:{<cap>:<n>}, unsandboxed_available:bool}` |
+| 200 响应 | `{ok:true, session:"<ws>/<sess>", grants:[{id,cap,scope,granted_at,granted_by,expires_at,uses_left,note,expired:bool}], effective:{network:bool, read_roots:[], write_roots:[], net_hosts:[], tool_extra:[], unsandboxed:bool}, max_ttl_sec:{<cap>:<n>}, unsandboxed_available:bool, net_hosts_effective:bool, warnings?:string[]}` |
 | 404 | `{"ok":false,"error":"unknown session '<id>'"}` |
 | 备注 | 无文件时返回 `grants: []` + `effective` = 默认值（**200，不是 404**） |
+| W757 增量（additive，无破坏性） | `net_hosts_effective:boolean`：`effective.net_hosts` 为空 ⇒ `true`（没有可被丢弃的清单）；非空时由 `netHostsEffective(env, effective)` 判定，`false` = 本部署未设 `CELESTEA_HTTP_ALLOW`/`CELESTEA_HTTP_DENY`，该清单**整份不生效**。此时 `warnings` 追加一条 `net_hosts_ineffective: …`（与既有形如 `grants_unreadable: …` / `… — ignored` 的条目同列）。该字段只做**报告**：不改变授权结果、不改变 `ssrf.ts` 的并集语义、不触碰令牌/同源/限流/审计任何一环 |
 
 ### 6.2 `POST /api/sessions/{id}/grants`
 
@@ -370,11 +373,12 @@ export function effectiveGrantsOf(sessionDir: string | null, env: NodeJS.Process
 | 11 | 授予 `unsandboxed` 且 env 是 `fail` → 下一轮 `run_shell` | 以 `userspace` 执行成功，`SandboxMeta.provider="userspace"`，审计记 `use` + `degraded_by_grant` |
 | 12 | 授予 `network` → `run_shell` 内 `curl` 外网 | 在 `bwrap` 下成功（`net_isolated:false`） |
 | 13 | 授予 `net_hosts` 但 env `DENY` 含该段 | 仍被拒（deny 恒优先） |
+| 13b | 授予 `net_hosts` 但部署 `CELESTEA_HTTP_ALLOW`/`DENY` 都没设（W757） | 授权**不生效**（清单并进一个 inactive 策略里，可访问范围不变）；`GET …/grants` 回 `net_hosts_effective:false` + 一条 `net_hosts_ineffective` 告警，面板在 `net_hosts` 行标「当前部署下不生效」 |
 | 14 | 每会话 1 分钟内第 4 次授予请求 | `429` |
 | 15 | `note` 里塞 `sk-abcdef…` | `400 … looks like a credential`，且响应/审计/UI 均不回显该值 |
 | 16 | 授予 `read_roots=/`（或 `$HOME`、`<data dir>`） | 该条被忽略 + 告警 |
 
-**单测落点**（沿用现有，不新造框架）：`packages/tools/src/guard.test.ts`（`writeRoots` 增量、忽略非法条、fail-closed 边界）、`packages/tools/src/sandbox/bwrap.test.ts`（`network` 与 `unsandboxed` 对 argv/fallback 的影响）、`apps/studio/src/app-domains.test.ts`（4 个端点 + 全部错误码 + 令牌一次性）、`packages/runtime/src/lifecycle.test.ts`（grant 变更 → bump epoch → 下一轮实例重建）。
+**单测落点**（沿用现有，不新造框架）：`packages/tools/src/guard.test.ts`（`writeRoots` 增量、忽略非法条、fail-closed 边界）、`packages/tools/src/sandbox/bwrap.test.ts`（`network` 与 `unsandboxed` 对 argv/fallback 的影响）、`apps/studio/src/app-domains.test.ts`（4 个端点 + 全部错误码 + 令牌一次性）、`apps/studio/src/grants-net-hosts.test.ts`（W757：`net_hosts_effective` 的判定与响应契约）、`packages/runtime/src/lifecycle.test.ts`（grant 变更 → bump epoch → 下一轮实例重建）。
 
 ---
 

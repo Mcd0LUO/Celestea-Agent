@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "tsx scripts/bench/index.ts",
     "contracts:verify": "tsx scripts/verify-contracts.ts",
     "golden:export": "tsx scripts/export-golden.ts",
     "replay:compare": "tsx scripts/compare-replay.ts",
