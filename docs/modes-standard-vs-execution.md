@@ -7,7 +7,7 @@
 > `contracts/`、共用前端 `/src/celestea_studio/frontend/src/**`；仓库外 `celes-worker-spawn` 插件（`/src/dsh_plugins/celes-worker-spawn`）只作为**映射边界**出现。
 > 前置阅读：`docs/ARCHITECTURE.md`（分层/seam 纪律）、`docs/feature-session-independence.md`（W513，已实现：每会话实例 + SSE `v:2` 信封）、
 > `docs/feature-session-grants.md`（W516，已实现：会话级配置与审计先例）、`docs/iteration-e-capabilities.md`（§5.3 契约清单写法）、
-> `/src/celestea_harness/docs/archive/dsh-ptc-mode-eval.md`（W253，PTC 三层拆解，已归档）、`/src/celestea_harness/docs/archive/run-code-mode-eval.md`（W254，run_code 折叠评估，已归档）、`/src/celestea_harness/docs/run-code-sdk.md`（W255，已落地 SDK 契约）。
+> `/src/celestea_studio/docs/archive/harness/archive/dsh-ptc-mode-eval.md`（W253，PTC 三层拆解，已归档）、`/src/celestea_studio/docs/archive/harness/archive/run-code-mode-eval.md`（W254，run_code 折叠评估，已归档）、`/src/celestea_studio/docs/archive/harness/run-code-sdk.md`（W255，已落地 SDK 契约）。
 > 一句话目标：**同一份引擎，两种会话工作方式**——标准模式按今天的方式逐步调用工具；执行模式把多步依赖调用折叠进 `run_code` 程序里，并以**会话元数据**固定下来，而不是每轮改口径。
 >
 > **术语**：`<session dir>` = `<workspace>/<session>/`；`mode` 只有两个字面量 —— **`standard`**（标准模式）与 **`execution`**（执行模式，文档/UI 里括号注明「PTC 对应物」）。
@@ -63,8 +63,8 @@
 | 运行期重建 | 配置变更 → `bumpEpoch()` + `registry.invalidateAll()`，实例在**下一轮边界**惰性重建 | `real-runtime-adapter.ts:384-387`、`feature-session-independence.md` §2.2 |
 | 能力位 | `/api/health.capabilities = {grants:true}` 已是既有先例 | `apps/studio/src/handlers/health.ts:35` |
 | DSH 侧 | `celes-worker-spawn` 支持 `agentPreset` 透传（`session.create` 原生字段）；宿主预设**仅 blank 会话可切**，否则 `agent-preset-locked`；`GET {prefix}/presets` 可枚举 | `/src/dsh_plugins/celes-worker-spawn/README.md:58-76`、`HANDOFF.md:123-126`、`lib/index.js:227-282` |
-| DSH PTC 语义 | `ptc` preset = standard 减 `workflow` + `tool-presentation(mode:ptc)`；呈现层把整张注册表折叠成 `run_code` 单工具，规则段 `PTC_ONLY` 禁止直调 | `/src/celestea_harness/docs/archive/dsh-ptc-mode-eval.md` §1.1-1.2（已归档） |
-| W254 的既有结论 | Celestea 的 `run_code` 应是**并存模式**而非唯一入口；不抄 `collapses()` 禁令；P0 验收门槛 `p≥0.8` 且 token 节省 ≥60% 才上 P1 | `/src/celestea_harness/docs/archive/run-code-mode-eval.md` §9、§10（已归档） |
+| DSH PTC 语义 | `ptc` preset = standard 减 `workflow` + `tool-presentation(mode:ptc)`；呈现层把整张注册表折叠成 `run_code` 单工具，规则段 `PTC_ONLY` 禁止直调 | `/src/celestea_studio/docs/archive/harness/archive/dsh-ptc-mode-eval.md` §1.1-1.2（已归档） |
+| W254 的既有结论 | Celestea 的 `run_code` 应是**并存模式**而非唯一入口；不抄 `collapses()` 禁令；P0 验收门槛 `p≥0.8` 且 token 节省 ≥60% 才上 P1 | `/src/celestea_studio/docs/archive/harness/archive/run-code-mode-eval.md` §9、§10（已归档） |
 
 **一句话现状**：`run_code` 的能力**已经全在**（W255），缺的是**「让它成为一个可选择的会话工作方式」**这件事本身——以及支撑它的**每会话提示词/工具面**这条通路。
 

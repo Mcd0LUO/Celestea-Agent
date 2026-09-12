@@ -11,7 +11,7 @@ Celestea Studio 后端的 **TypeScript 全量重构**（W268 评估报告 §10 �
 - **[`docs/README.md`](docs/README.md)** — 本仓 `docs/` 全量索引：每份文档的**状态（当前 / 设计）**、一句话与权威入口。**找文档先看它。**
 - **本仓角色**：Studio **后端**（TypeScript）。现状（2026-09-11）：`celestea-studio-ts.service` 跑在 127.0.0.1:3777，是**生产**后端（文首「P0」段与 §8 是立项时口径，落地进展见 §8 与 §P4）。后端开发只在本仓。
 - **线上前端 + 共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）在 [`/src/celestea_studio`](/src/celestea_studio/docs/README.md)（该仓 Rust 后端已退役，见其 `LEGACY-RUST-BACKEND.md`）。
-- **Rust 引擎**参考实现在 [`/src/celestea_harness`](/src/celestea_harness/docs/README.md)。
+- **Rust 引擎**参考实现在 [`/src/celestea_harness`](/src/celestea_studio/docs/archive/harness/README.md)。
 - 本仓 `docs/` **不含归档**（全部为当前 / 设计）；Rust 期的语言切换、迁移计划、旧 API 契约、旧部署等历史文档在 [`/src/celestea_studio/docs/archive/`](/src/celestea_studio/docs/README.md)。
 
 ---
