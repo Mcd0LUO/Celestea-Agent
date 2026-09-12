@@ -43,10 +43,28 @@ export const SESSION_LOG_NAME = "cli-main.jsonl";
 /** The session id the log is opened under (keeps the file name cli-main.jsonl). */
 export const SESSION_LOG_ID = "cli-main";
 
+/**
+ * W768: a session's workspace as ONE value — the display NAME the system prompt
+ * renders and the ROOT PATH the tools/sandbox must run in.
+ *
+ * They travel together because they are the same fact seen twice: two
+ * independent lookups (a prompt that says "CelesteaTeamAPI" and a shell that
+ * starts in whatever the process was launched from) drifted apart into a bug the
+ * model then reasoned from. A caller that needs either one resolves this value.
+ */
+export interface SessionWorkspace {
+  /** Workspace key: the basename of `path` (`CelesteaTeamAPI`). */
+  name: string;
+  /** Absolute workspace root — the session's cwd and containment root. */
+  path: string;
+}
+
 /** Where an active session lives (the host resolves the id; dir may be null). */
 export interface SessionTarget {
   sessionId: string;
   dir: string | null;
+  /** W768: the session's workspace, resolved by the host alongside `dir`. */
+  workspace?: SessionWorkspace | null;
 }
 
 /**

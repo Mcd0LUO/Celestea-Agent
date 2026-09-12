@@ -238,6 +238,9 @@ describe("GET /api/status and /api/tools", () => {
   });
 });
 
+/** The `standard` tool-access variant text (the default mode's prompt). */
+const STANDARD_TOOL_ACCESS_MARK = "stepping through the tools one at a time is the normal path here";
+
 describe("GET /api/sessions/{id}/context over the real engine", () => {
   it("serves the engine's own assembly: system prompt, history and tool schemas", async () => {
     const h = make({ sessions: { s1: [] } });
@@ -248,8 +251,14 @@ describe("GET /api/sessions/{id}/context over the real engine", () => {
     expect(body["ok"]).toBe(true);
     expect(body["session"]).toBe("sample-ws/s1");
     expect(body["model"]).toBe("offline-model");
-    // The system prompt is the loop's config one (the host primes it), verbatim.
-    expect(body["system"]).toBe(engineOf(h).profile().system_prompt);
+    // The system prompt is the loop's config one, assembled for THIS session
+    // (W768: every session resolves its own workspace/session variables; before
+    // that, a session without a mode inherited the startup-primed prompt, which
+    // named whichever workspace happened to be active then).
+    const system = String(body["system"]);
+    expect(system).toContain("the active session is sample-ws/s1");
+    expect(system).toContain(`workspace directory, ${h.workspace}`);
+    expect(system).toContain(STANDARD_TOOL_ACCESS_MARK);
     const tools = (body["tools"] as Array<{ name: string; parameters: Record<string, unknown> }>).map((t) => t.name);
     expect(tools).toContain("read_file");
     expect(tools).toEqual([...tools].sort());

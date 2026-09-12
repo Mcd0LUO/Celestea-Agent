@@ -11,7 +11,7 @@
  *     per-session override at all: it keeps the base prompt; its meta file is
  *     byte-identical — `store/sessions.test.ts`);
  *   ② both modes expose the SAME tool face in P0 (`registry.schemas()` names);
- *   ③ `API_ENDPOINT_COUNT` is still 44 (`app.test.ts`, `tests/contracts.test.ts`).
+ *   ③ `API_ENDPOINT_COUNT` is unchanged by this work (44 on that day; 47 since W767).
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -122,13 +122,18 @@ describe("W729 per-session mode prompts (real engine, one process)", () => {
     expect(faceOf("sample-ws/std")).toHaveLength(10);
   });
 
-  it("P0 invariant ①: a session WITHOUT session.json.mode keeps the base prompt", async () => {
+  it("P0 invariant ①: a session WITHOUT session.json.mode keeps the DEFAULT mode prompt", async () => {
     const h = twoModes();
     await activate(h, "sample-ws/plain");
-    // No per-session override happened: the session's instance prompt IS the
-    // process-primed one, i.e. exactly the pre-W729 code path (K8/M3).
-    expect(systemOf(h, "sample-ws/plain")).toBe(engineOf(h).profile().system_prompt);
+    // W768: "no mode key" still means the default (standard) mode text, but the
+    // prompt is assembled for THIS session — its own workspace/session/工具面 —
+    // instead of being inherited from whichever session was active at startup
+    // (that inheritance is what let a prompt name a workspace the tools do not
+    // run in).
     expect(systemOf(h, "sample-ws/plain")).toContain(STANDARD_MARK);
+    expect(systemOf(h, "sample-ws/plain")).not.toContain(EXECUTION_MARK);
+    expect(systemOf(h, "sample-ws/plain")).toContain("the active session is sample-ws/plain");
+    expect(systemOf(h, "sample-ws/plain")).not.toBe(engineOf(h).profile().system_prompt);
     const rows = (await getJson(h.app, "/api/sessions")).body["sessions"] as Array<Record<string, unknown>>;
     expect(rows.find((r) => r["id"] === "sample-ws/plain")?.["mode"]).toBe("standard");
   });

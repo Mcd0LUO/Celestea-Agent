@@ -17,7 +17,10 @@ export interface PromptVarInput {
   model: string;
   provider: string;
   base_url: string;
+  /** W768: the workspace NAME (`CelesteaTeamAPI`). */
   workspace: string;
+  /** W768: the workspace ROOT PATH — the same value the tools run in. */
+  workspace_dir: string;
   session: string;
   tools: string;
   context_window: number;
@@ -32,6 +35,7 @@ export function toPromptVars(input: PromptVarInput): PromptVars {
     provider: input.provider,
     base_url: input.base_url,
     workspace: input.workspace,
+    workspace_dir: input.workspace_dir,
     session: input.session,
     tools: input.tools,
     context_window: String(input.context_window),

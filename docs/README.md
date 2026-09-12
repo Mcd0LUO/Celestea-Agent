@@ -12,12 +12,13 @@
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 当前 | 本仓**架构契约（规则正文）**：分包层级与依赖方向、seam 纪律、例外登记表；`eslint.config.js` + `.dependency-cruiser.cjs` 是它的机械实现，违反会在 `pnpm check` 被拦下 | 本文（`docs/ARCHITECTURE.md` 即唯一权威） |
 | [`feature-session-independence.md`](./feature-session-independence.md) | 当前（已实现） | 特性设计：**每会话独立 runtime 实例 + 会话标识 SSE**（信封 `v:2`）；文首「设计（未实现）」状态行是写作时口径 | [`ARCHITECTURE.md`](./ARCHITECTURE.md)、`packages/runtime/src/session-registry.ts` |
 | [`feature-session-grants.md`](./feature-session-grants.md) | 当前（已实现） | 特性设计：**前端点按钮授予当前会话临时能力**（提权通道）：默认最小权限、可撤销、全程审计、永不可由模型自触发；文首状态行同上为写作时口径 | [`ARCHITECTURE.md`](./ARCHITECTURE.md)、`apps/studio/src/store/grants-service.ts` |
+| [`feature-studio-auth.md`](./feature-studio-auth.md) | 当前（已实现，W767） | 特性设计：**Studio 自己的登录 cookie 门**——后端自渲染 `/login`、`POST /auth/login`（`htpasswd -vbi` 校验 + 30 天 HMAC cookie）、`GET /auth/check` 供 nginx `auth_request`；含 nginx 配置与回滚命令 | 本文；[`contracts/endpoints.json`](../contracts/endpoints.json) `get_login` / `post_auth_login` / `get_auth_check` |
 | [`feature-session-context.md`](./feature-session-context.md) | 当前（已实现） | 特性设计：**只读上下文快照** `GET /api/sessions/{id}/context`（W725）——模型实际看到的系统提示词 / 工具面 / 消息流的按需组装口径（不起 turn、不写日志、不耗步骤预算） | [`contracts/endpoints.json`](../contracts/endpoints.json) `get_session_context`；本文 |
 | [`iteration-e-capabilities.md`](./iteration-e-capabilities.md) | 设计 | 迭代方向 E（能力深水区）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | 本文；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见 `/src/celestea_studio/docs/archive/harness/archive/dsh-ptc-mode-eval.md` |
 | [`ui-copy-tech-notes.md`](./ui-copy-tech-notes.md) | 当前（审计清单） | 共用前端「面向用户可见的技术文案」只读审计：27 个文件 + `index.html` 的问题清单与建议改法 | 本文；前端规则见 `/src/celestea_studio/frontend/FRONTEND-RULES.md` |
 
-上表与本目录**一一对应**（7 篇文档 + 本索引）；**新增文档必须在上表登记**。
+上表与本目录**一一对应**（8 篇文档 + 本索引）；**新增文档必须在上表登记**。
 契约类真源不在 `docs/`，而在
 [`../contracts/`](../contracts/)（`endpoints.json` 44 端点、`sse-events.json`、`tools.json`、`data-files/`）——
 它们的 `docRef` 若指向旧 Rust 契约，路径已更新为

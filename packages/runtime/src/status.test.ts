@@ -22,6 +22,7 @@ import {
   GAP_MS,
   StatusTracker,
   activeSpanMs,
+  assembledContextOf,
   createStatusTracker,
   estimatedContextChars,
   estimatedContextTokens,
@@ -108,7 +109,7 @@ describe("context usage + statusline", () => {
     const chars = estimatedContextChars(bigLog);
     expect(chars).toBe(80_000);
     const request: ModelRequest = { ...systemOnly(400), messages: [userMessage("u".repeat(1_000))] };
-    const line = statuslineOf(viewOf({ events: () => bigLog, assembled: () => request }));
+    const line = statuslineOf(viewOf({ events: () => bigLog, assembled: () => assembledContextOf(request) }));
     expect(line.context_usage.method).toBe("assembled_estimate");
     expect(line.context_usage.used * 4).toBeLessThanOrEqual(chars);
     expect(line.context_usage.used).toBeLessThan(chars / 4);
@@ -155,7 +156,7 @@ describe("context usage + statusline", () => {
       estimateMessagesTokens(request.messages) +
       estimateTokens(request.system ?? "") +
       estimateTokens(JSON.stringify(request.tools));
-    const cu = statuslineOf(viewOf({ assembled: () => request })).context_usage;
+    const cu = statuslineOf(viewOf({ assembled: () => assembledContextOf(request) })).context_usage;
     expect(cu.method).toBe("assembled_estimate");
     expect(cu.estimated).toBe(true);
     expect(cu.projected).toBe(false);
@@ -182,7 +183,8 @@ describe("context usage projection (W755 Fix B)", () => {
     const usage = new UsageTracker();
     const pressure = new ContextPressure();
     let systemChars = 4_000;
-    const view = (): StatusView => viewOf({ usage, pressure, assembled: () => systemOnly(systemChars) });
+    const view = (): StatusView =>
+      viewOf({ usage, pressure, assembled: () => assembledContextOf(systemOnly(systemChars)) });
 
     usage.record(usageOf({ prompt_tokens: 5_000, total_tokens: 5_000 }));
     const sampled = estimatedContextTokens(systemOnly(systemChars));
@@ -208,7 +210,8 @@ describe("context usage projection (W755 Fix B)", () => {
   it("never decreases inside a turn and never drops below the latest real prompt (W755 Fix B)", () => {
     const usage = new UsageTracker();
     const pressure = new ContextPressure();
-    const view = (): StatusView => viewOf({ usage, pressure, assembled: () => systemOnly(systemChars) });
+    const view = (): StatusView =>
+      viewOf({ usage, pressure, assembled: () => assembledContextOf(systemOnly(systemChars)) });
     // One provider sample per step, and the visible surface grows in between (the
     // step's tool results / injected receipts) exactly as a real turn does.
     const samples = [5_000, 8_000, 9_500, 14_500];
@@ -249,11 +252,12 @@ describe("context usage projection (W755 Fix B)", () => {
       workers: false,
     });
     log.append({ type: "user_message", text: "hello" });
-    const request = runtime.statusView().assembled();
-    expect(request).not.toBeNull();
+    const assembled = runtime.statusView().assembled();
+    expect(assembled).not.toBeNull();
     const line = runtime.statusline();
     expect(line.context_usage.method).toBe("assembled_estimate");
-    expect(line.context_usage.used).toBe(estimatedContextTokens(request!));
+    expect(line.context_usage.used).toBe(assembled!.tokens);
+    expect(assembled!.tokens).toBe(estimatedContextTokens(assembled!.request));
     expect(line.context_usage).toMatchObject({ window: 65_536, window_source: "profile", projected: false, estimated: true });
     // Growing the log grows the number, with no usage frame anywhere.
     log.append({ type: "user_message", text: "x".repeat(4_000) });

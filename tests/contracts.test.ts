@@ -18,14 +18,18 @@ import {
 describe("contracts/endpoints.json", () => {
   const c = loadEndpoints();
 
-  it("holds exactly 44 API endpoints (W725 added the context snapshot)", () => {
-    expect(c.count).toBe(44);
-    expect(c.endpoints).toHaveLength(44);
+  it("holds exactly 47 endpoints (W725 added the context snapshot; W767 the cookie gate)", () => {
+    expect(c.count).toBe(47);
+    expect(c.endpoints).toHaveLength(47);
   });
 
-  it("every endpoint is an /api/* route with a method, a response and a doc ref", () => {
+  // W767: Studio's own login-cookie gate is served on `/login` + `/auth/*` — the
+  // ONE documented exception to "every contract endpoint lives under /api/".
+  const NON_API_PATHS = ["/login", "/auth/login", "/auth/check"];
+
+  it("every endpoint is an /api/* route (or one of the W767 auth paths) with a method, a response and a doc ref", () => {
     for (const e of c.endpoints) {
-      expect(e.path.startsWith("/api/")).toBe(true);
+      expect(e.path.startsWith("/api/") || NON_API_PATHS.includes(e.path)).toBe(true);
       expect(["GET", "POST", "DELETE"]).toContain(e.method);
       expect(e.id).toMatch(/^[a-z0-9_]+$/);
       expect(e.response.status).toBeGreaterThanOrEqual(200);
@@ -46,14 +50,14 @@ describe("contracts/endpoints.json", () => {
     expect(snap.staticRoutes).toHaveLength(4);
     const api = snap.routes.filter((r) => r.path.startsWith("/api/"));
     expect(api).toHaveLength(39);
-    // W516/W725: the Rust extraction stays verbatim; the four grants endpoints
-    // and the context snapshot are declared as a TypeScript-only delta instead
-    // of being written into it.
-    expect(snap.tsOnlyRoutes).toHaveLength(5);
-    expect(snap.tsApiEndpoints).toBe(44);
-    expect(snap.tsMethodPathCombos).toBe(48);
+    // W516/W725/W767: the Rust extraction stays verbatim; the four grants
+    // endpoints, the context snapshot and the three login-cookie endpoints are
+    // declared as a TypeScript-only delta instead of being written into it.
+    expect(snap.tsOnlyRoutes).toHaveLength(8);
+    expect(snap.tsApiEndpoints).toBe(47);
+    expect(snap.tsMethodPathCombos).toBe(51);
     const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
-    expect(fromSnapshot.size).toBe(44);
+    expect(fromSnapshot.size).toBe(47);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });
@@ -170,9 +174,9 @@ describe("contracts/data-files", () => {
     expect(idx.roundTripRequirement).toContain("read -> write -> re-read");
   });
 
-  // W728 §3 P0: the ledger and its price snapshot are data files, and P0 added
-  // NO endpoint — C9's `API_ENDPOINT_COUNT === 44` is the frozen count.
-  it("registers the usage ledger and the pricing snapshot (W728), still on 44 endpoints", () => {
+  // W728 §3 P0: the ledger and its price snapshot are data files and added no
+  // endpoint of their own; the frozen count is W767's 47 (`API_ENDPOINT_COUNT`).
+  it("registers the usage ledger and the pricing snapshot (W728), still on 47 endpoints", () => {
     const names = idx.files.map((f) => f.file);
     expect(names).toContain("usage-ledger.jsonl");
     expect(names).toContain("pricing.json");
@@ -186,7 +190,7 @@ describe("contracts/data-files", () => {
     expect(kind?.enum).toEqual(["ok", "error"]);
     expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
 
-    expect(loadEndpoints().count).toBe(44);
+    expect(loadEndpoints().count).toBe(47);
   });
 });
 
@@ -200,8 +204,8 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     expect(idx.durability["checkpoint.json"]).toContain("tmp-<pid> + rename");
     expect(idx.recovery?.implemented).toContain("turn_end: interrupted");
     // P0 adds NO endpoint: /api/status.recovery is P1 and stays out.
-    expect(loadEndpoints().count).toBe(44);
-    expect(loadEndpoints().endpoints).toHaveLength(44);
+    expect(loadEndpoints().count).toBe(47);
+    expect(loadEndpoints().endpoints).toHaveLength(47);
   });
 
   it("freezes the sidecar shape (version, open_turn, repaired[])", () => {
@@ -232,15 +236,15 @@ describe("W729 session modes (P0 contract delta)", () => {
   const c = loadEndpoints();
   const tools = loadTools();
 
-  it("adds the mode fields to EXISTING endpoints only (44 unchanged)", () => {
+  it("adds the mode fields to EXISTING endpoints only (47 unchanged by W729)", () => {
     const byId = new Map(c.endpoints.map((e) => [e.id, e]));
     expect(byId.get("post_sessions")?.request.fields.map((f) => f.name)).toContain("mode");
     expect(byId.get("post_sessions")?.errors).toContainEqual({ status: 400, error: "invalid mode: {v}" });
     expect(String(byId.get("get_sessions")?.response.fields[0]?.type)).toContain("mode:");
     expect(byId.get("get_status")?.response.fields.map((f) => f.name)).toContain("mode");
     expect(String(byId.get("get_health")?.response.fields.find((f) => f.name === "capabilities")?.type)).toContain("session_mode");
-    expect(c.count).toBe(44);
-    expect(c.endpoints).toHaveLength(44);
+    expect(c.count).toBe(47);
+    expect(c.endpoints).toHaveLength(47);
   });
 
   it("declares spawn_worker.mode without changing the tool count", () => {

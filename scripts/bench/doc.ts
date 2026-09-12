@@ -12,7 +12,7 @@ import { BASELINE_SCHEMA, renderMarkdownTable, type Baseline } from "./report.js
 import type { BenchCase } from "./timing.js";
 
 /** Default artifact paths (relative to the repo root, the cwd of `pnpm bench`). */
-export const BASELINE_PATH = "benchmarks/baseline-v2.6.1.json";
+export const BASELINE_PATH = "benchmarks/baseline-v2.6.2.json";
 export const DOC_PATH = "docs/performance-baseline.md";
 
 function find(baseline: Baseline, name: string, scalePart?: string): BenchCase | undefined {
@@ -62,7 +62,8 @@ function findings(baseline: Baseline): string[] {
   if (largest !== undefined) {
     lines.push(
       `- **Trim pass**: over budget, \`trimContext()\` costs **${largest.median_ms.toFixed(3)} ms** at ${largest.scale} with a measured log-log growth exponent of ` +
-        `**${Number(largest.extra?.["growth_exponent_loglog"] ?? 0).toFixed(2)}** — the pass re-estimates the whole suffix per candidate cut, so an over-budget session pays that on every statusline tick.`,
+        `**${Number(largest.extra?.["growth_exponent_loglog"] ?? 0).toFixed(2)}** — since W762 the pass is a single O(n) suffix-sum walk (it used to re-estimate the whole suffix per candidate cut, exponent 2.00). ` +
+        "An over-budget session pays it only when the log CHANGED; an unchanged log hits the W762 cache.",
     );
   }
   const tight = findLast(baseline, "contextSnapshot() [over budget, assembly]");
@@ -114,6 +115,21 @@ const METHOD = [
 ].join("\n");
 
 /**
+ * What each archived baseline measured — the engine work that moved the numbers.
+ *
+ * Kept next to the generator so a regenerated document always carries the
+ * history it belongs to (a hand-edited history would be overwritten by the next
+ * `pnpm bench`). The archive itself is `benchmarks/baseline-v<version>.json`.
+ */
+const CHANGE_LOG = [
+  "| version | engine change | baseline |",
+  "| --- | --- | --- |",
+  "| v2.6.2 | **W766**: the statusline's context estimate rides in the W762 snapshot cache (`{request, tokens}` per log state), so an unchanged-log tick is a lookup instead of an O(bytes) walk of the messages. | `benchmarks/baseline-v2.6.2.json` |",
+  "| v2.6.1 | **W762**: `trimContext()` de-quadraticised (single-pass suffix sums) + `contextSnapshot()` memoized on the log state; the token rate averages over ACTIVE intervals. | `benchmarks/baseline-v2.6.1.json` |",
+  "| v2.6.0 | **W761**: the benchmark suite itself + the W755 context-usage口径 (the statusline now reads the loop's own assembly, which is what made the tick measurable). | `benchmarks/baseline-v2.6.0.json` |",
+];
+
+/**
  * The full markdown document (the human twin of the JSON baseline).
  *
  * `baselinePath` is the file this run WROTE, so the doc always names the
@@ -147,10 +163,14 @@ export function renderDoc(baseline: Baseline, baselinePath: string): string {
     "",
     ...findings(baseline),
     "",
+    "## Change log",
+    "",
+    ...CHANGE_LOG,
+    "",
     "## Known noise and limitations",
     "",
     "- Single machine, single process, no CPU pinning: absolute numbers move with turbo/thermal state; the **median of 5 slices** plus the min column is what to compare, not a single run.",
-    "- The 50k-event tick is allocation/GC dominated (it rebuilds ~28.6k `Message` objects per call): across runs of this same suite it measured 25-39 ms for the same code, so only a change outside that band means anything at that scale.",
+    "- The 50k-event ASSEMBLY rows (`contextSnapshot() [assembly]`, `statusline() [cold]`) are allocation/GC dominated (each rebuilds ~28.6k `Message` objects): they measured 25-39 ms for the same code across runs, so only a change outside that band means anything at that scale. The warmed rows (`[repeat read]`, `[tick]`) allocate nothing and are correspondingly stable.",
     "- The fixtures are synthetic conversations (one tool step + one answer per turn): real sessions mix long tool outputs, retries and compactions, so the per-event cost is representative but the event mix is not universal.",
     "- Amplified scales repeat engine-emitted turns, so a 50k-event log is a replay of ~1,000 real events rather than 50k independently generated ones; the projection/estimate cost depends on the event SHAPES and count, which the amplitude preserves.",
     "- The over-budget trim rows slice a real projected history; the cut-boundary structure (user/assistant alternation) is genuine, but a pathological all-tool history would cut differently.",

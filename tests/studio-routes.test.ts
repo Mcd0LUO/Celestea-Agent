@@ -1,5 +1,5 @@
 /**
- * Cross-package contract test (P4): every one of the 44 frozen endpoints is
+ * Cross-package contract test (P4): every one of the 47 frozen endpoints is
  * bound to the contract method+path and is reachable — none of them falls
  * through to the static/SPA handler.
  *
@@ -16,7 +16,7 @@ const harness = makeHarness({ session: { name: "sample-session", log: `${JSON.st
 const { app } = harness;
 
 describe("apps/studio contract surface", () => {
-  it("binds the 44 contract endpoints exactly once each", () => {
+  it("binds the 47 contract endpoints exactly once each", () => {
     const contract = loadEndpoints().endpoints.map((e) => `${e.method} ${e.path}`);
     const bound = harness.studio.routes.map((r) => `${r.method} ${r.contractPath}`);
     expect(bound).toHaveLength(API_ENDPOINT_COUNT);

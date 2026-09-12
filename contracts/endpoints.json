@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (44 endpoints)",
+  "title": "Celestea Studio HTTP API contract (47 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 44,
+  "count": 47,
   "endpoints": [
     {
       "id": "get_health",
@@ -2972,6 +2972,145 @@
         "checked": false,
         "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/sessions/{id}/context route"
       }
+    },
+    {
+      "id": "get_login",
+      "method": "GET",
+      "path": "/login",
+      "group": "auth",
+      "rustHandler": "(none - TypeScript-only, W767)",
+      "docRef": "docs/feature-studio-auth.md#1-三个端点",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "html",
+        "contentType": "text/html; charset=utf-8",
+        "fields": [
+          {
+            "name": "body",
+            "type": "string",
+            "required": true,
+            "note": "Studio's OWN self-contained login page (inline CSS, no Vite build dependency); Cache-Control: no-store"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "W767: exempt from the cookie gate in nginx (`location = /login`); the only unauthenticated HTML page Studio serves.",
+        "Rendered by the backend, so it keeps working while the SPA build is being rebuilt."
+      ]
+    },
+    {
+      "id": "post_auth_login",
+      "method": "POST",
+      "path": "/auth/login",
+      "group": "auth",
+      "rustHandler": "(none - TypeScript-only, W767)",
+      "docRef": "docs/feature-studio-auth.md#1-三个端点",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "username",
+            "type": "string",
+            "required": true,
+            "note": "the name is checked against Studio's own read-only password file (`htpasswd -vbi`, argv-safe charset)"
+          },
+          {
+            "name": "password",
+            "type": "string",
+            "required": true,
+            "note": "verified through `htpasswd -vbi` on STDIN — never in argv, never logged"
+          }
+        ],
+        "note": "application/x-www-form-urlencoded (browser form post) or application/json (API client); a browser gets a page back, a JSON client gets JSON"
+      },
+      "response": {
+        "status": 200,
+        "shape": "object|html",
+        "contentType": "application/json; charset=utf-8 (JSON client) | text/html; charset=utf-8 (form post)",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false,
+            "note": "true — JSON form only"
+          },
+          {
+            "name": "user",
+            "type": "string",
+            "required": false,
+            "note": "the verified username — JSON form only"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 401,
+          "error": "invalid username or password",
+          "note": "a wrong password and an unknown user are indistinguishable (the helper is run either way)"
+        },
+        {
+          "status": 429,
+          "error": "too many failed login attempts",
+          "note": "5 failures per 60 s window, counted per username AND per client IP"
+        },
+        {
+          "status": 500,
+          "error": "credential store unavailable",
+          "note": "the helper or the password file is unusable — never reported as a wrong password"
+        }
+      ],
+      "notes": [
+        "W767: success = 200 + `Set-Cookie: studio_auth=<token>; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax` AND the navigation (a page with `location.replace('/')`, or `{ok:true,user}` for JSON clients) in the SAME response.",
+        "Deliberately NOT a 302: a redirect response is allowed to drop Set-Cookie on some mobile clients.",
+        "Token = `<b64url(user)>.<b64url(rand16)>.<expUnix>.<b64url(HMAC-SHA256(secret, first three parts))>`; the secret is `<data dir>/studio-auth.secret` (0600, created on first use)."
+      ]
+    },
+    {
+      "id": "get_auth_check",
+      "method": "GET",
+      "path": "/auth/check",
+      "group": "auth",
+      "rustHandler": "(none - TypeScript-only, W767)",
+      "docRef": "docs/feature-studio-auth.md#1-三个端点",
+      "request": {
+        "kind": "none",
+        "fields": [],
+        "note": "the cookie arrives in the `Cookie:` header (nginx proxies `$http_cookie` into the auth_request subrequest)"
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "contentType": "application/json; charset=utf-8",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "user",
+            "type": "string",
+            "required": false,
+            "note": "the username carried by a valid cookie"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 401,
+          "error": "unauthorized",
+          "note": "missing, tampered or expired cookie — nginx turns this into a redirect to /login"
+        }
+      ],
+      "notes": [
+        "W767: consumed by nginx `auth_request` only (proxied as the internal location `/__auth_check`); it is not part of the UI surface.",
+        "Checks shape, HMAC signature (constant-time) and expiry; the secret is never sent to a client."
+      ]
     }
   ]
 }

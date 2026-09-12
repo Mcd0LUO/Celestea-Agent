@@ -144,8 +144,10 @@ export {
   gitToplevelOr,
   sandboxConfigFromEnv,
   sanitizedEnv,
+  sessionSandboxConfig,
   shellInvocation,
   type SandboxConfigOverrides,
+  type SessionFsScope,
 } from "./sandbox/config.js";
 export { USERSPACE_META, UserspaceSandbox, userspaceSandbox, userspaceSandboxWith } from "./sandbox/userspace.js";
 export { readCapped, REAP_GRACE_MS, type CappedText } from "./sandbox/launch.js";

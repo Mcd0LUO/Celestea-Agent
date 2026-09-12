@@ -46,6 +46,8 @@ import {
   PROCESS_REGISTRY_SERVICE,
   ProcessRegistry,
   sandboxConfigFromEnv,
+  sessionSandboxConfig,
+  type SessionFsScope,
   selectSandboxDetailed,
   type HostProbe,
   type SandboxFallbackMode,
@@ -76,6 +78,13 @@ export interface EnginePluginInput {
   audit?: EngineGrantAudit;
   /** Injected host probe (tests / diagnostics); default: the memoized host probe. */
   probe?: HostProbe;
+  /**
+   * W768: the composing SESSION's workspace (see `SessionFsScope`). The host
+   * resolves it from the session's own record — the very same value its system
+   * prompt renders — so the sandbox cwd/root and the guard's writable workspace
+   * follow the session, not the process. `null`/absent = the env posture.
+   */
+  workspace?: SessionFsScope | null;
 }
 
 export interface EngineTools {
@@ -92,8 +101,9 @@ export interface EngineTools {
 export function engineTools(opts: EnginePluginInput): EngineTools {
   const env = opts.env ?? process.env;
   const grants = opts.grants ?? EMPTY_GRANTS;
+  const scope = opts.workspace ?? null;
   const processes = new ProcessRegistry();
-  const choice = opts.sandbox === undefined ? chooseSandbox(env, grants, opts.audit, opts.probe) : injectedChoice(opts.sandbox, env);
+  const choice = opts.sandbox === undefined ? chooseSandbox(env, grants, opts.audit, opts.probe, scope) : injectedChoice(opts.sandbox, env);
   const sandbox = choice.sandbox;
   const http = httpOptions(env, { netHosts: grants.netHosts });
   if (http.policy?.netHostsIneffective) {
@@ -106,6 +116,7 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
     sandbox,
     processes,
     env,
+    scope,
     grants: { readRoots: grants.readRoots, writeRoots: grants.writeRoots },
     ...(opts.guard === undefined ? {} : { guard: opts.guard }),
   });
@@ -224,13 +235,24 @@ class RefusingSandbox implements Sandbox {
  * userspace provider under `fail`), and nothing here degrades silently: a policy
  * refusal (or an unreadable policy) becomes a [RefusingSandbox].
  */
-function chooseSandbox(env: NodeJS.ProcessEnv, grants: EffectiveGrants, audit?: EngineGrantAudit, probe?: HostProbe): SandboxChoice {
+function chooseSandbox(
+  env: NodeJS.ProcessEnv,
+  grants: EffectiveGrants,
+  audit?: EngineGrantAudit,
+  probe?: HostProbe,
+  scope: SessionFsScope | null = null,
+): SandboxChoice {
   let selection: SandboxSelection;
   try {
     const view = { network: grants.network, unsandboxed: grants.unsandboxed };
-    selection = selectSandboxDetailed({ env, grants: view, ...(probe === undefined ? {} : { probe }) });
+    selection = selectSandboxDetailed({
+      env,
+      grants: view,
+      config: sessionSandboxConfig(scope, env),
+      ...(probe === undefined ? {} : { probe }),
+    });
   } catch (error) {
-    return refusedChoice(env, error, audit);
+    return refusedChoice(env, error, audit, scope);
   }
   const decision: SandboxDecision = {
     provider: selection.provider,
@@ -246,7 +268,12 @@ function chooseSandbox(env: NodeJS.ProcessEnv, grants: EffectiveGrants, audit?: 
 }
 
 /** Policy refused (or could not be read): refuse to execute, never degrade. */
-function refusedChoice(env: NodeJS.ProcessEnv, error: unknown, audit?: EngineGrantAudit): SandboxChoice {
+function refusedChoice(
+  env: NodeJS.ProcessEnv,
+  error: unknown,
+  audit?: EngineGrantAudit,
+  scope: SessionFsScope | null = null,
+): SandboxChoice {
   const reason = refusalReason(error);
   const decision: SandboxDecision = { provider: "none", degraded: false, reason, mode: modeOrNull(env), source: "refused" };
   audit?.({
@@ -256,7 +283,7 @@ function refusedChoice(env: NodeJS.ProcessEnv, error: unknown, audit?: EngineGra
     reason,
     detail: "the sandbox provider policy refuses to execute: no OS isolation and no degradation allowed (an 'unsandboxed' session grant is the only override)",
   });
-  return { sandbox: new RefusingSandbox(sandboxConfigFromEnv(env), decision), decision };
+  return { sandbox: new RefusingSandbox(sessionSandboxConfig(scope, env), decision), decision };
 }
 
 /** Explicit host injection: the policy is bypassed ON PURPOSE, and says so. */

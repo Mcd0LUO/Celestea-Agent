@@ -36,6 +36,7 @@ import { registerStatic } from "./static.js";
 import type { EngineProfile, RuntimeAdapter } from "./runtime-adapter.js";
 import type { StoreServices } from "./plugins.js";
 import { DEFAULT_SESSION_MODE } from "./store/mode.js";
+import { sessionWorkspaceOf } from "./store/sessions.js";
 import { readSessionMeta, type SessionMeta } from "./store/session-meta.js";
 import { createSessionGrants } from "./runtime/session-grants.js";
 import { grantsEnv } from "./store/grants-service.js";
@@ -126,7 +127,11 @@ export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
       ...(input.llm === undefined ? {} : { llm: input.llm }),
       resolveSession: (id) => {
         const resolved = stores.sessions.resolve(id);
-        return resolved.ok ? { sessionId: id, dir: resolved.value.dir } : null;
+        // W768: the workspace travels with the session target, so the tools'
+        // cwd/root and the prompt's `{{workspace}}` come from THIS resolution.
+        return resolved.ok
+          ? { sessionId: id, dir: resolved.value.dir, workspace: sessionWorkspaceOf(resolved.value) }
+          : null;
       },
       // W513: the session-level model override is applied to that session's own
       // instance (it no longer rewrites a global engine profile).
@@ -136,7 +141,7 @@ export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
       // read `session.json` of the session being composed, so a standard and an
       // execution session in the same process get their own system prompt.
       sessionMode: (id) => sessionMetaAt(stores, id)?.mode ?? null,
-      sessionSystemPrompt: (id) => sessionPromptAt(input.host, stores, id),
+      sessionSystemPrompt: (id) => sessionPromptAt(input.host, id),
     });
   };
 }
@@ -162,14 +167,19 @@ function sessionMetaAt(stores: StoreServices, id: string): SessionMeta | null {
 }
 
 /**
- * W729/K8: the per-session prompt override applies ONLY to a session that
- * DECLARED a mode. A session without `session.json.mode` keeps the primed base
- * prompt — the exact pre-W729 code path — so "no mode key" really is
- * byte-for-byte the old behaviour, while every mode-bearing session gets its own
- * assembly (which is the whole point of R3).
+ * W729/K8: every named session's prompt is assembled for THAT session. A session
+ * without `session.json.mode` gets the DEFAULT (standard) mode's text — the
+ * pre-W729 behaviour for the mode dimension — and its **own** identity variables.
+ *
+ * W768 (amends K8's "keeps the primed base prompt"): the primed base prompt was
+ * assembled ONCE at startup against whichever session was active then, so every
+ * other session received a prompt naming a workspace it is not in. With the
+ * tools now running in the session's own workspace, inheriting another session's
+ * prompt is precisely the "prompt says A, `pwd` says B" bug — so the assembly is
+ * per session for ALL sessions, and the mode gate no longer decides it.
  */
-function sessionPromptAt(host: HostRef, stores: StoreServices, id: string): string | null {
-  if (sessionMetaAt(stores, id)?.mode === undefined || host.services === null) return null;
+function sessionPromptAt(host: HostRef, id: string): string | null {
+  if (host.services === null) return null;
   return assembleSystemPromptFor(host.services, id);
 }
 

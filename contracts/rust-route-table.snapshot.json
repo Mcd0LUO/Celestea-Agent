@@ -269,9 +269,24 @@
       "method": "GET",
       "path": "/api/sessions/{id}/context",
       "rustHandler": "(none - TypeScript-only, W725)"
+    },
+    {
+      "method": "GET",
+      "path": "/login",
+      "rustHandler": "(none - TypeScript-only, W767)"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "rustHandler": "(none - TypeScript-only, W767)"
+    },
+    {
+      "method": "GET",
+      "path": "/auth/check",
+      "rustHandler": "(none - TypeScript-only, W767)"
     }
   ],
-  "tsApiEndpoints": 44,
-  "tsMethodPathCombos": 48,
-  "tsOnlyNote": "W516/W725: the sessions grants endpoints and GET /api/sessions/{id}/context exist ONLY in the TypeScript backend. The Rust extraction above is kept verbatim; a contract endpoint must appear in `routes` or in `tsOnlyRoutes`."
+  "tsApiEndpoints": 47,
+  "tsMethodPathCombos": 51,
+  "tsOnlyNote": "W516/W725/W767: the sessions grants endpoints, GET /api/sessions/{id}/context and the three W767 login-cookie endpoints (/login, /auth/login, /auth/check) exist ONLY in the TypeScript backend. The Rust extraction above is kept verbatim; a contract endpoint must appear in `route"
 }

@@ -14,7 +14,7 @@ import { canonicalScopeHash } from "./store/grants.js";
 import type { Hono } from "hono";
 import { createStudioApp, type StudioApp, type StudioAppOptions } from "./app.js";
 import { createFakeRuntimeAdapter, type FakeRuntimeAdapter } from "./fake-runtime-adapter.js";
-import { loadStudioConfig } from "./config.js";
+import { loadStudioConfig, type StudioPaths } from "./config.js";
 import type { EngineFactory } from "./plugins.js";
 import type { InjectOutcome, RuntimeAdapter } from "./runtime-adapter.js";
 
@@ -61,6 +61,11 @@ export interface HarnessOptions extends Omit<StudioAppOptions, "runtime"> {
   engineFactory?: EngineFactory;
   /** Files planted before the app composes (e.g. a providers.json secret). */
   files?: Record<string, unknown>;
+  /**
+   * Path overrides merged over the throwaway root (W767: the auth password file
+   * and secret file, which must point at a test-controlled location).
+   */
+  paths?: Partial<StudioPaths>;
   /** Create a session dir in the workspace holding `log` lines. */
   session?: { name: string; log?: string; meta?: Record<string, string> };
 }
@@ -96,7 +101,7 @@ export function makeHarness(opts: HarnessOptions = {}): StudioHarness {
   const config = loadStudioConfig({
     cwd: root,
     env: {},
-    paths: { staticRoot, ...(opts.config?.paths ?? {}) },
+    paths: { staticRoot, ...(opts.paths ?? {}), ...(opts.config?.paths ?? {}) },
   });
   const runtime = opts.runtime ?? createFakeRuntimeAdapter({ profile: { model: "test-model" } });
   const studio = createStudioApp({

@@ -13,6 +13,7 @@
 import { readFileSync } from "node:fs";
 import { parseSessionJsonl, projectMessages } from "@celestea/session";
 import type { StudioMessage } from "@celestea/core";
+import type { SessionWorkspace } from "@celestea/runtime";
 import { isDirectory, isFile, listEntries, statOf, writeFileRaw, removeDir, ensureDir } from "./fs-json.js";
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { DEFAULT_SESSION_MODE, parseMode, validateMode, type SessionMode } from "./mode.js";
@@ -28,6 +29,24 @@ export interface ResolvedSession {
   id: string;
   wsPath: string;
   dir: string;
+}
+
+/**
+ * W768 — THE single resolution of a session's workspace.
+ *
+ * Everything that needs to know "which workspace is this session in" goes
+ * through here: the system prompt's `{{workspace}}` / `{{workspace_dir}}`
+ * variables AND the per-session sandbox cwd / path-guard root. They used to be
+ * two independent derivations (a store lookup for the prompt, a process-wide env
+ * knob for the tools), which is exactly how the prompt ended up naming one
+ * workspace while `pwd` reported another.
+ *
+ * Pure projection of the store's own record: no second lookup, no re-parsing of
+ * the session id, nothing that could disagree with `resolve()`.
+ */
+export function sessionWorkspaceOf(resolved: ResolvedSession | null): SessionWorkspace | null {
+  if (resolved === null) return null;
+  return { name: resolved.workspace, path: resolved.wsPath };
 }
 
 export interface SessionRow {

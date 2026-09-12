@@ -3,7 +3,9 @@
  *
  * Policy:
  * - the **workspace** (`CELESTEA_TOOL_WORKDIR`, default: process cwd) is the
- *   only writable root;
+ *   only writable root — W768: for a composed SESSION it is that session's own
+ *   workspace root (passed as a [SessionFsScope]), because a process serves many
+ *   sessions and one env knob cannot be all of their workspaces;
  * - `CELESTEA_TOOL_ROOTS` is a comma-separated list of extra READ roots
  *   (whitelist roots are read-only: the workspace is the writable subset);
  * - **argument-driven, never a name whitelist (W738 P1)**: the guard inspects the
@@ -43,6 +45,7 @@ import { resolve } from "node:path";
 
 import { envFlag, envString } from "../env.js";
 import { contractError } from "../errors.js";
+import type { SessionFsScope } from "../sandbox/config.js";
 import { isDirectory, isInside, resolveExistingTarget, resolveWriteTarget } from "./paths.js";
 
 export const ENV_TOOL_ROOTS = "CELESTEA_TOOL_ROOTS";
@@ -145,9 +148,18 @@ export class PathGuardPolicy {
     this.failClosedReason = init.failClosedReason ?? null;
   }
 
-  /** Policy from the environment (`CELESTEA_TOOL_WORKDIR` + `CELESTEA_TOOL_ROOTS`). */
-  static fromEnv(env: NodeJS.ProcessEnv = process.env, grants: PathGuardGrants = {}): PathGuardPolicy {
-    const workspaceRaw = envString(env, ENV_TOOL_WORKDIR) ?? process.cwd();
+  /**
+   * Policy from the environment (`CELESTEA_TOOL_WORKDIR` + `CELESTEA_TOOL_ROOTS`).
+   *
+   * W768: `scope` replaces the WORKSPACE with the session's own root. That is the
+   * one thing a session may move, and it moves only the writable root plus the
+   * implicit read root ([PathGuardPolicy] always lists the workspace first in
+   * both) — `CELESTEA_TOOL_ROOTS` keeps contributing exactly the read roots the
+   * operator declared, and grants keep appending. No env entry is dropped, so a
+   * session cannot end up narrower than the posture it was composed under.
+   */
+  static fromEnv(env: NodeJS.ProcessEnv = process.env, grants: PathGuardGrants = {}, scope: SessionFsScope | null = null): PathGuardPolicy {
+    const workspaceRaw = scope?.workspace ?? envString(env, ENV_TOOL_WORKDIR) ?? process.cwd();
     const workspace = resolveExistingTarget(workspaceRaw, process.cwd()) ?? resolve(workspaceRaw);
     const grantRead = [...(grants.readRoots ?? [])];
     const writeRoots = [...(grants.writeRoots ?? [])];
@@ -234,8 +246,9 @@ export class PathGuard implements ToolGuard {
     env: NodeJS.ProcessEnv = process.env,
     grants: PathGuardGrants = {},
     access: ReadonlyMap<string, PathAccess> = PATH_ACCESS,
+    scope: SessionFsScope | null = null,
   ): PathGuard {
-    return new PathGuard(PathGuardPolicy.fromEnv(env, grants), access);
+    return new PathGuard(PathGuardPolicy.fromEnv(env, grants, scope), access);
   }
 
   async check(input: ToolInput): Promise<ToolDecision> {
@@ -282,8 +295,9 @@ export function mountProductionGuards(
   registry: ToolRegistry,
   env: NodeJS.ProcessEnv = process.env,
   grants: PathGuardGrants = {},
+  scope: SessionFsScope | null = null,
 ): boolean {
   if (!envFlag(envString(env, ENV_TOOL_GUARD), true)) return false;
-  registry.addGuard(PathGuard.fromEnv(env, grants));
+  registry.addGuard(PathGuard.fromEnv(env, grants, PATH_ACCESS, scope));
   return true;
 }

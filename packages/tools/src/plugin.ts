@@ -35,6 +35,7 @@ import { PROCESS_REGISTRY_SERVICE, ProcessRegistry } from "./process/registry.js
 import { ToolRegistryImpl } from "./registry.js";
 import type { RunCodeEventSink } from "./run-code/broker.js";
 import type { RunCodeConfig } from "./run-code/limits.js";
+import { sessionSandboxConfig, type SessionFsScope } from "./sandbox/config.js";
 import { selectSandbox, type SandboxGrantView } from "./sandbox/provider.js";
 import { RegistryHandle, runCodeToolWithHandle } from "./tools/run-code.js";
 
@@ -66,6 +67,12 @@ export interface ToolsPluginOptions {
   /** Session grants (W516): read from the session's `grants.json` by the host. */
   grants?: ToolAssemblyGrants;
   /**
+   * W768: the composing SESSION's own workspace (cwd + containment root for the
+   * default sandbox, writable root for the path guard). Omitted/null = the
+   * process-wide env posture, which is what a detached or legacy session keeps.
+   */
+  scope?: SessionFsScope | null;
+  /**
    * `run_code` mount: default = mounted; `false` = not registered. The tool is
    * registered *before* its registry handle is bound, so sub-calls ride this
    * assembly's exact pipeline (Rust runtime compose parity).
@@ -87,8 +94,12 @@ export interface ToolAssembly {
 export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
   const env = options.env ?? process.env;
   const grants = options.grants ?? {};
+  const scope = options.scope ?? null;
   const processes = options.processes ?? new ProcessRegistry();
-  const sandbox = options.sandbox ?? selectSandbox({ env, grants });
+  // W768: ONE scope feeds both halves of the boundary — the sandbox's cwd/root
+  // and the guard's writable workspace — so "where the shell starts" and "what
+  // the path tools may touch" are the same directory by construction.
+  const sandbox = options.sandbox ?? selectSandbox({ env, grants, config: sessionSandboxConfig(scope, env) });
   const registry = new ToolRegistryImpl();
   const tools = options.tools ?? builtinTools({ sandbox, processes, http: httpOptions(env, grants) });
   for (const tool of tools) registry.register(tool);
@@ -99,7 +110,7 @@ export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
   else if (options.guard !== undefined) {
     registry.addGuard(options.guard);
     guardMounted = true;
-  } else guardMounted = mountProductionGuards(registry, env, grants);
+  } else guardMounted = mountProductionGuards(registry, env, grants, scope);
 
   return { registry, sandbox, processes, guardMounted, runCode };
 }

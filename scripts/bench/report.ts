@@ -15,7 +15,7 @@ import { scaleLabel } from "./fixtures.js";
 /** Baseline schema id (bump when the shape changes; compare.ts reads it). */
 export const BASELINE_SCHEMA = "celestea-studio-ts.bench-baseline/1";
 /** The release these numbers are the baseline FOR. */
-export const BASELINE_VERSION = "v2.6.0";
+export const BASELINE_VERSION = "v2.6.2";
 /** Command a reproduction has to run. */
 export const BENCH_COMMAND = "pnpm bench";
 
