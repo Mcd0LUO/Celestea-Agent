@@ -7,6 +7,16 @@
  * used to bill or to report usage. Real numbers come from the provider
  * (`core.Usage`) and are handled by [UsageTracker].
  *
+ * W762: the trim pass is O(n). It used to score EVERY candidate cut with
+ * `estimateMessagesTokens(rest.slice(candidate))` — an O(n) estimate plus an
+ * array allocation per candidate, i.e. O(n²) time and O(n) allocations for one
+ * pass, which the statusline paid on every tick once a session went over budget
+ * (measured: 5k messages ≈ 0.8 s, 10k-event session ≈ 1.0 s per tick). The pass
+ * now pre-computes suffix token sums once (`suffix[i] = Σ_{j>=i} tokens`) and
+ * scores each candidate in O(1); `removedTokens` is a suffix difference instead
+ * of a second full estimate. `pickCut` / `safeCutPositions` are unchanged, so
+ * the chosen cut is bit-for-bit the same as before.
+ *
  * Contract notes (all mirrored by unit tests, same as the Rust module):
  *   - `contextWindowTokens === 0` disables trimming entirely;
  *   - over budget, the `contextKeepRecent` most-recent messages survive, plus
@@ -133,36 +143,72 @@ export function trimContext(
 ): TrimResult {
   if (contextWindowTokens === 0) return { messages: [...messages], outcome: NOT_TRIMMED };
   const budget = Math.max(1, Math.floor(contextWindowTokens * Math.min(Math.max(threshold, 0), 1)));
+  // Unchanged fast path: one O(n) estimate, no split, no suffix (the common case
+  // of a session inside its budget must not pay for the trim machinery).
   if (systemTokens + estimateMessagesTokens(messages) <= budget) {
     return { messages: [...messages], outcome: NOT_TRIMMED };
   }
 
-  const systems: Message[] = [];
-  const rest: Message[] = [];
-  for (const msg of messages) {
-    if (msg.role === "system") systems.push(msg);
-    else rest.push(msg);
-  }
+  const split = splitHistory(messages);
+  const systems = split.systems;
+  const rest = split.rest;
   if (rest.length === 0) return { messages: [...systems], outcome: NOT_TRIMMED };
 
   const cuts = safeCutPositions(rest);
   // No safe boundary: refuse to risk breaking the tool-call protocol.
   if (cuts.length === 0) return { messages: [...systems, ...rest], outcome: NOT_TRIMMED };
 
+  // W762: one O(n) pass, then every `fits(candidate)` is an O(1) array read.
+  const suffix = suffixTokenSums(split.restTokens);
   const keep = Math.max(1, keepRecent);
   const cut = pickCut(cuts, Math.max(0, rest.length - keep), (candidate) => {
-    return systemTokens + estimateMessagesTokens(rest.slice(candidate)) <= budget;
+    return systemTokens + (suffix[candidate] ?? 0) <= budget;
   });
 
-  const removed = rest.slice(0, cut);
-  const outcome: TrimOutcome = {
-    removedMessages: removed.length,
-    removedTokens: estimateMessagesTokens(removed),
-    trimmed: removed.length > 0,
-  };
+  // `suffix[0] - suffix[cut]` IS `estimateMessagesTokens(rest.slice(0, cut))`:
+  // both are the sum of the same per-message estimates (W762).
+  const removedTokens = (suffix[0] ?? 0) - (suffix[cut] ?? 0);
+  const outcome: TrimOutcome = { removedMessages: cut, removedTokens, trimmed: cut > 0 };
   if (!outcome.trimmed) return { messages: [...systems, ...rest], outcome: NOT_TRIMMED };
   return {
     messages: [...systems, trimmedMarkerMessage(outcome.removedMessages, outcome.removedTokens), ...rest.slice(cut)],
     outcome,
   };
+}
+
+/** The non-system history plus the per-message estimates the suffix needs. */
+interface HistorySplit {
+  systems: Message[];
+  rest: Message[];
+  /** `estimateMessageTokens` of every `rest` entry, in order. */
+  restTokens: number[];
+}
+
+/** Split the history in ONE pass, estimating each non-system message once. */
+function splitHistory(messages: readonly Message[]): HistorySplit {
+  const systems: Message[] = [];
+  const rest: Message[] = [];
+  const restTokens: number[] = [];
+  for (const msg of messages) {
+    if (msg.role === "system") systems.push(msg);
+    else {
+      rest.push(msg);
+      restTokens.push(estimateMessageTokens(msg));
+    }
+  }
+  return { systems, rest, restTokens };
+}
+
+/**
+ * W762: suffix token sums — `suffix[i]` is the estimated size of `tokens[i..]`,
+ * with `suffix[tokens.length] === 0`. Token counts are non-negative, so the sum
+ * is non-increasing in `i`: "does this cut fit?" is monotone, and scoring a
+ * candidate costs one array read instead of a full re-estimate.
+ */
+function suffixTokenSums(tokens: readonly number[]): number[] {
+  const suffix = new Array<number>(tokens.length + 1).fill(0);
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    suffix[i] = (suffix[i + 1] ?? 0) + (tokens[i] ?? 0);
+  }
+  return suffix;
 }

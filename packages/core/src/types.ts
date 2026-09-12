@@ -180,6 +180,17 @@ export interface Statusline {
   model: string;
   reasoning_effort: string | null;
   steps: number;
+  /**
+   * W218/W754/W763 throughput estimate, in CHARACTERS per second (the frozen
+   * field name is historical; the UI shows it as an approximate ~1:1 token rate).
+   * The mean over "active" intervals only — no-flow breaks (> `GAP_MS` = 1s
+   * between deltas: long tool calls, stalls, the idle tail of a finished turn)
+   * never enter the denominator. It is the responsive 5s window rate while that
+   * window still carries output, and the whole TURN's active-interval mean once
+   * the window empties, so it stays a stable positive number after a stall or
+   * after the turn ends. 0 means exactly one thing: this turn has produced no
+   * text/thinking delta yet (TTFT). Reset by the next turn.
+   */
   tokens_per_sec: number;
   context_usage: {
     used: number;

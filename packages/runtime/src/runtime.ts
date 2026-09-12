@@ -27,6 +27,7 @@ import type {
   Context,
   LlmRegistry,
   ModelRequest,
+  SessionEvent,
   SessionLog,
   Statusline,
   ToolRegistry,
@@ -83,6 +84,11 @@ export class Runtime {
    * session, so the anchor survives it exactly like the usage tracker's does.
    */
   private readonly pressure = new ContextPressure();
+  /**
+   * W762: the last assembly handed out, with the log state it was built from.
+   * One slot, per generation (never a module singleton, never a timer).
+   */
+  private snapshotCache: SnapshotCache | null = null;
 
   constructor(parts: RuntimeParts) {
     this.parts = parts;
@@ -221,9 +227,33 @@ export class Runtime {
    *
    * The assembly is the agent loop's, never this layer's: runtime only forwards
    * the Context, so the read-only snapshot cannot drift from the real request.
+   *
+   * W762: the result is memoized on the LOG STATE it was derived from, because
+   * the statusline reads it on every 2s tick and the context viewer on every
+   * refresh, while a session log only changes when the engine appends to it.
+   * The key is `(log identity, event count, last event reference)`, all three
+   * cheap to obtain, and it is COMPLETE within one generation: the profile /
+   * trim config is fixed at compose (a config change swaps the generation, not
+   * this object) and the tool surface is mounted at compose too, so
+   * `registry.schemas()` cannot drift under the cache. A rebind swaps the log,
+   * and the identity term catches it even when the new log has the same length.
+   *
+   * Consumers are read-only by construction (`contextViewOf` maps messages into
+   * fresh view rows; `estimatedContextTokens` only reads), so the cached object
+   * is shared rather than copied. A MISS costs one extra `events()` copy (the
+   * key) on top of the assembly: ~0.35ms at 50k events against an 18ms
+   * assembly. A HIT costs only that copy — ~2 orders of magnitude less.
    */
   contextSnapshot(): ModelRequest | null {
-    return contextSnapshotOf(this.p.agentLoop, this.p.ctx);
+    const log = this.p.sessionRef.log;
+    const last = lastEventOf(log);
+    const cached = this.snapshotCache;
+    if (cached !== null && cached.log === log && cached.events === last.count && cached.last === last.event) {
+      return cached.request;
+    }
+    const request = contextSnapshotOf(this.p.agentLoop, this.p.ctx);
+    this.snapshotCache = { log, events: last.count, last: last.event, request };
+    return request;
   }
 
   /** Pending host receipts (worker -> host) that the next turn will inject. */
@@ -262,6 +292,8 @@ export class Runtime {
     const log = bindSession(this.p.ctx, binding);
     this.p.sessionRef.log = log;
     this.binding = binding;
+    // W762: the cached assembly belonged to the log that was just swapped out.
+    this.snapshotCache = null;
     return log;
   }
 
@@ -310,6 +342,7 @@ export class Runtime {
       parts.workerHost.registry.release();
     }
     this.parts = null;
+    this.snapshotCache = null;
     this.released = true;
   }
 
@@ -325,6 +358,25 @@ async function runHook(hook: ShutdownHook): Promise<void> {
     // A failing teardown hook must not stop the remaining ones: shutdown is the
     // last thing a generation does, and it has to reach the end.
   }
+}
+
+/**
+ * W762: one memoized assembly — the request plus the log state it was built
+ * from. `events` is the event COUNT and `last` the last event REFERENCE (not an
+ * index): a log that grew and then got trimmed back to the same length would
+ * still be caught by the reference.
+ */
+interface SnapshotCache {
+  log: SessionLog;
+  events: number;
+  last: SessionEvent | undefined;
+  request: ModelRequest | null;
+}
+
+/** `(count, last event)` of a log — the cache key half that changes on append. */
+function lastEventOf(log: SessionLog): { count: number; event: SessionEvent | undefined } {
+  const events = log.events();
+  return { count: events.length, event: events[events.length - 1] };
 }
 
 /** Host-facing convenience: a sink that only collects frames (tests / CLI). */

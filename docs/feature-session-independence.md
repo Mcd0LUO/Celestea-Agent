@@ -391,7 +391,7 @@ sse.onFrame((env, name, payload) => {
 |---|---|
 | 请求 | **兼容增 query**：`?session=<id>`（缺省 = `active_session`）。 |
 | 响应 | **兼容增字段**：`live_sessions: string[]`、`busy_sessions: string[]`、`turn_scope: "session"`（能力位，§4.10）。现有 7 个字段（含 `session`）逐字不变。 |
-| 语义 | `session` 字段 = 被查询的会话；`steps/tokens_per_sec/usage/context_usage` = **该会话实例**的 tracker。 |
+| 语义 | `session` 字段 = 被查询的会话；`steps/tokens_per_sec/usage/context_usage` = **该会话实例**的 tracker。`tokens_per_sec` 是该实例本轮「有流时段」的均值（W754 + W763：> 1s 的间断不计入分母；窗口空了回落到本轮活动区间均值，只有本轮还没流过才是 0），按会话各自独立、`beginTurn()` 时重置。 |
 
 ### 4.9 `GET|POST /api/config`
 

@@ -5,16 +5,25 @@
  *   - `steps`     one per tool CALL (its `tool_result` closes that step, so a
  *                 result never doubles the count — W263 semantics, equal to the
  *                 frontend's per-turn tool counter);
- *   - `rate`      a sliding-window char rate over text/thinking deltas (the
- *                 `tokens_per_sec` estimate), window 5s (W754).
+ *   - `rate`      the `tokens_per_sec` estimate over text/thinking deltas: the
+ *                 5s sliding-window rate (W754) while the window still carries
+ *                 output, else the mean over the turn's ACTIVE intervals (W763).
  *
- * W754 rate semantics: the rate averages over ACTIVE intervals only. Two deltas
- * farther apart than `GAP_MS` (1s) bound a no-flow break (long tool call, rate
- * limit stall, idle tail of a finished turn), and that break is NOT part of the
- * denominator — a wall-clock span over the whole window would otherwise dilute
- * the rate towards zero. The denominator is the sum of the per-interval spans,
- * each floored at `MIN_ACTIVE_MS` (1s) so a lone burst cannot report a silly
- * rate. Pure idleness (no sample left inside the window) reports 0.
+ * W754 rate semantics (the window half): the rate averages over ACTIVE intervals
+ * only. Two deltas farther apart than `GAP_MS` (1s) bound a no-flow break (long
+ * tool call, rate limit stall, idle tail of a finished turn), and that break is
+ * NOT part of the denominator — a wall-clock span over the whole window would
+ * otherwise dilute the rate towards zero. The denominator is the sum of the
+ * per-interval spans, each floored at `MIN_ACTIVE_MS` (1s) so a lone burst
+ * cannot report a silly rate.
+ *
+ * W763 turn semantics (the fallback half): the window answer is the responsive
+ * one (an observed stream read 570 -> 1003 -> 760 tok/s), but an EMPTY window —
+ * a stall longer than 5s, or the plain end of a turn — used to report 0 and stay
+ * there, which the operator rejected. So the window rate is reported only while
+ * it is positive; otherwise the rate is the mean over the whole TURN's active
+ * intervals ([turnRate]), a stable positive number until the next `beginTurn()`.
+ * 0 therefore means exactly one thing: this turn has produced no delta yet (TTFT).
  *
  * Unit note: what is computed here is CHARACTERS per second, not tokens. The
  * field has always been named `tokens_per_sec` (frozen contract) and the
@@ -61,16 +70,19 @@ export interface RateSample {
 export class StatusTracker {
   private steps = 0;
   private samples: RateSample[] = [];
+  /** W763: the turn's COMPRESSED activity intervals (grows with stoppages, never with deltas). */
+  private segments: TurnSegment[] = [];
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
     this.now = now;
   }
 
-  /** New-turn baseline: clear the step counter and the rate window. */
+  /** New-turn baseline: clear the step counter, the rate window and the turn's intervals (W763). */
   beginTurn(): void {
     this.steps = 0;
     this.samples = [];
+    this.segments = [];
   }
 
   /** Record one step (one tool call). */
@@ -78,11 +90,21 @@ export class StatusTracker {
     this.steps += 1;
   }
 
-  /** Record one output delta (text/thinking) into the rate window. */
+  /** Record one output delta (text/thinking) into the rate window and the turn's intervals (W763). */
   addChars(chars: number): void {
     const at = this.now();
-    this.samples.push({ at, chars: Math.max(0, Math.trunc(chars)) });
+    const n = Math.max(0, Math.trunc(chars));
+    this.samples.push({ at, chars: n });
     this.trim(at);
+    pushTurnDelta(this.segments, at, n);
+  }
+
+  /**
+   * W763: activity intervals held for the current turn. Diagnostic/test hook —
+   * an uninterrupted stream is ONE segment no matter how many deltas it carries.
+   */
+  get turnSegmentCount(): number {
+    return this.segments.length;
   }
 
   /** Steps recorded in the current turn. */
@@ -91,17 +113,15 @@ export class StatusTracker {
   }
 
   /**
-   * Current chars-per-second estimate: the window's characters divided by the
-   * ACTIVE time inside the window (W754), i.e. the mean over intervals that
-   * actually carried output. Returns 0 when the window holds no sample.
+   * Chars-per-second estimate (W754 + W763): the responsive window rate while
+   * the 5s window still carries output, otherwise the turn's active-interval
+   * mean. 0 only while this turn has not produced a single delta (TTFT).
    */
   rate(): number {
     const now = this.now();
     this.trim(now);
-    if (this.samples.length === 0) return 0;
-    let chars = 0;
-    for (const s of this.samples) chars += s.chars;
-    return (chars / activeSpanMs(this.samples, now)) * 1_000;
+    const window = windowRateOf(this.samples, now);
+    return window > 0 ? window : turnRate(this.segments, now);
   }
 
   private trim(now: number): void {
@@ -138,6 +158,70 @@ export function activeSpanMs(samples: readonly RateSample[], now: number): numbe
   const tail = now - prev;
   const end = tail >= 0 && tail <= GAP_MS ? now : prev;
   return span + Math.max(end - segStart, MIN_ACTIVE_MS);
+}
+
+/**
+ * W763: one COMPRESSED activity interval of the current turn. Consecutive deltas
+ * closer than `GAP_MS` collapse into a single record, so this list grows with
+ * the number of stoppages — never with the number of deltas (10k deltas without
+ * a pause is ONE segment), which is what keeps the whole turn in O(pauses)
+ * memory instead of O(deltas).
+ */
+export interface TurnSegment {
+  /** Wall clock of the interval's first delta (ms). */
+  start: number;
+  /** Wall clock of the interval's last delta (ms) — the segment's live edge. */
+  at: number;
+  /** Characters carried by every delta of this interval. */
+  chars: number;
+}
+
+/** W763: fold one delta into the turn's segments (O(1); allocates only when a pause opens a new interval). */
+export function pushTurnDelta(segments: TurnSegment[], at: number, chars: number): void {
+  const last = segments[segments.length - 1];
+  if (last === undefined || at - last.at > GAP_MS) {
+    segments.push({ start: at, at, chars });
+    return;
+  }
+  last.at = at;
+  last.chars += chars;
+}
+
+/**
+ * W763: Σ ACTIVE ms over the turn's segments — the same flooring rule as
+ * [activeSpanMs] (every interval ≥ `MIN_ACTIVE_MS`) and the same guard that only
+ * extends the OPEN interval while the stream is still alive, so neither a stall
+ * nor a finished turn can inflate the denominator.
+ */
+export function turnSpanMs(segments: readonly TurnSegment[], now: number): number {
+  let ms = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    const seg = segments[i];
+    if (seg === undefined) continue;
+    const tail = now - seg.at;
+    const open = i === segments.length - 1 && tail >= 0 && tail <= GAP_MS;
+    ms += Math.max((open ? now : seg.at) - seg.start, MIN_ACTIVE_MS);
+  }
+  return ms;
+}
+
+/**
+ * W763: chars/s averaged over the turn's ACTIVE intervals — the "有流时段均值" the
+ * operator asked for. 0 iff the turn has produced no delta at all yet.
+ */
+export function turnRate(segments: readonly TurnSegment[], now: number): number {
+  if (segments.length === 0) return 0;
+  let chars = 0;
+  for (const seg of segments) chars += seg.chars;
+  return (chars / turnSpanMs(segments, now)) * 1_000;
+}
+
+/** W754 window half: the 5s-window rate, 0 when the window holds no char-carrying sample. */
+function windowRateOf(samples: readonly RateSample[], now: number): number {
+  let chars = 0;
+  for (const s of samples) chars += s.chars;
+  if (chars === 0) return 0;
+  return (chars / activeSpanMs(samples, now)) * 1_000;
 }
 
 /** Factory form (ARCHITECTURE.md §6.1). */

@@ -1,0 +1,671 @@
+{
+  "schema": "celestea-studio-ts.bench-baseline/1",
+  "version": "v2.6.0",
+  "generated_at": "2026-09-12T04:55:02.139Z",
+  "command": "pnpm bench",
+  "unit": "ms",
+  "duration_ms": 10169,
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
+    "cores": 28,
+    "total_memory_bytes": 32548388864,
+    "total_memory_gib": 30.31,
+    "node": "v24.19.0",
+    "platform": "linux",
+    "kernel": "7.0.0-30-generic",
+    "arch": "x64",
+    "commit": "d8fadfc"
+  },
+  "fixtures": [
+    {
+      "scale": 1000,
+      "label": "1k events (1,001)",
+      "events": 1001,
+      "messages": 572,
+      "estimate_tokens": 10153,
+      "loop_events": 1001,
+      "appended_events": 0,
+      "amplification_turns": 0,
+      "build_ms": 127,
+      "loop_ms": 124
+    },
+    {
+      "scale": 10000,
+      "label": "10k events (10,003)",
+      "events": 10003,
+      "messages": 5716,
+      "estimate_tokens": 102700,
+      "loop_events": 1001,
+      "appended_events": 9002,
+      "amplification_turns": 1286,
+      "build_ms": 81,
+      "loop_ms": 72
+    },
+    {
+      "scale": 50000,
+      "label": "50k events (50,001)",
+      "events": 50001,
+      "messages": 28572,
+      "estimate_tokens": 514108,
+      "loop_events": 1001,
+      "appended_events": 49000,
+      "amplification_turns": 7000,
+      "build_ms": 132,
+      "loop_ms": 89
+    }
+  ],
+  "cases": [
+    {
+      "name": "contextSnapshot() [assembly]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 135,
+      "rounds": 5,
+      "median_ms": 0.3564,
+      "min_ms": 0.3435,
+      "ops_per_s": 2806.23,
+      "note": "W755: the request the next step would build (system + derived history + tool schemas), reached through the loop so the W762 cache is out of the way",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153
+      }
+    },
+    {
+      "name": "contextSnapshot() [repeat read]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 10986,
+      "rounds": 5,
+      "median_ms": 0.001593,
+      "min_ms": 0.00152,
+      "ops_per_s": 627611.69,
+      "note": "W762: the runtime entry with the log unchanged since the last read — a memoized hit (key = log identity + event count + last event reference)",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153
+      }
+    },
+    {
+      "name": "statusline() [cold]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 116,
+      "rounds": 5,
+      "median_ms": 0.5141,
+      "min_ms": 0.511,
+      "ops_per_s": 1945.16,
+      "note": "the tick when the log changed since the last read: statusView() + statuslineOf() over a fresh assembly",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153,
+        "snapshot_share_pct": 69.3
+      }
+    },
+    {
+      "name": "statusline() [tick]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 409,
+      "rounds": 5,
+      "median_ms": 0.1571,
+      "min_ms": 0.1559,
+      "ops_per_s": 6365.46,
+      "note": "the public tick as the host calls it; consecutive calls with an unchanged log hit the W762 cache",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153,
+        "snapshot_share_pct": 69.3
+      }
+    },
+    {
+      "name": "statusline() [no snapshot]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 18820,
+      "rounds": 5,
+      "median_ms": 0.0004295,
+      "min_ms": 0.0003167,
+      "ops_per_s": 2328262.5,
+      "note": "A/B baseline: the same payload with assembled:()=>null; cold tick - this = the W755 overhead",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153,
+        "w755_overhead_ms": 0.514,
+        "snapshot_share_pct": 69.3
+      }
+    },
+    {
+      "name": "contextSnapshot() [assembly]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 18,
+      "rounds": 5,
+      "median_ms": 3.401,
+      "min_ms": 3.366,
+      "ops_per_s": 294.01,
+      "note": "W755: the request the next step would build (system + derived history + tool schemas), reached through the loop so the W762 cache is out of the way",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700
+      }
+    },
+    {
+      "name": "contextSnapshot() [repeat read]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 2752,
+      "rounds": 5,
+      "median_ms": 0.01885,
+      "min_ms": 0.01866,
+      "ops_per_s": 53057.65,
+      "note": "W762: the runtime entry with the log unchanged since the last read — a memoized hit (key = log identity + event count + last event reference)",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700
+      }
+    },
+    {
+      "name": "statusline() [cold]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 12,
+      "rounds": 5,
+      "median_ms": 4.903,
+      "min_ms": 4.822,
+      "ops_per_s": 203.98,
+      "note": "the tick when the log changed since the last read: statusView() + statuslineOf() over a fresh assembly",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700,
+        "snapshot_share_pct": 69.4
+      }
+    },
+    {
+      "name": "statusline() [tick]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 42,
+      "rounds": 5,
+      "median_ms": 1.462,
+      "min_ms": 1.459,
+      "ops_per_s": 684.02,
+      "note": "the public tick as the host calls it; consecutive calls with an unchanged log hit the W762 cache",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700,
+        "snapshot_share_pct": 69.4
+      }
+    },
+    {
+      "name": "statusline() [no snapshot]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 17167,
+      "rounds": 5,
+      "median_ms": 0.0002906,
+      "min_ms": 0.0002846,
+      "ops_per_s": 3441543.38,
+      "note": "A/B baseline: the same payload with assembled:()=>null; cold tick - this = the W755 overhead",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700,
+        "w755_overhead_ms": 4.903,
+        "snapshot_share_pct": 69.4
+      }
+    },
+    {
+      "name": "contextSnapshot() [assembly]",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 3,
+      "rounds": 5,
+      "median_ms": 18.26,
+      "min_ms": 18.03,
+      "ops_per_s": 54.78,
+      "note": "W755: the request the next step would build (system + derived history + tool schemas), reached through the loop so the W762 cache is out of the way",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "estimate_tokens": 514108
+      }
+    },
+    {
+      "name": "contextSnapshot() [repeat read]",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 189,
+      "rounds": 5,
+      "median_ms": 0.3483,
+      "min_ms": 0.3344,
+      "ops_per_s": 2871.5,
+      "note": "W762: the runtime entry with the log unchanged since the last read — a memoized hit (key = log identity + event count + last event reference)",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "estimate_tokens": 514108
+      }
+    },
+    {
+      "name": "statusline() [cold]",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 1,
+      "rounds": 5,
+      "median_ms": 25.47,
+      "min_ms": 24.58,
+      "ops_per_s": 39.27,
+      "note": "the tick when the log changed since the last read: statusView() + statuslineOf() over a fresh assembly",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "estimate_tokens": 514108,
+        "snapshot_share_pct": 71.7
+      }
+    },
+    {
+      "name": "statusline() [tick]",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 4,
+      "rounds": 5,
+      "median_ms": 7.911,
+      "min_ms": 7.652,
+      "ops_per_s": 126.41,
+      "note": "the public tick as the host calls it; consecutive calls with an unchanged log hit the W762 cache",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "estimate_tokens": 514108,
+        "snapshot_share_pct": 71.7
+      }
+    },
+    {
+      "name": "statusline() [no snapshot]",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 54945,
+      "rounds": 5,
+      "median_ms": 0.0002972,
+      "min_ms": 0.0002849,
+      "ops_per_s": 3364620.11,
+      "note": "A/B baseline: the same payload with assembled:()=>null; cold tick - this = the W755 overhead",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "estimate_tokens": 514108,
+        "w755_overhead_ms": 25.47,
+        "snapshot_share_pct": 71.7
+      }
+    },
+    {
+      "name": "contextSnapshot() [over budget, assembly]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 113,
+      "rounds": 5,
+      "median_ms": 0.5112,
+      "min_ms": 0.5068,
+      "ops_per_s": 1956.35,
+      "note": "context_window=2,000 tokens: history + trim pass (see trimContext rows)",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153
+      }
+    },
+    {
+      "name": "contextSnapshot() [over budget, repeat read]",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 18121,
+      "rounds": 5,
+      "median_ms": 0.001576,
+      "min_ms": 0.001547,
+      "ops_per_s": 634563.69,
+      "note": "the same over-budget session read twice with no append in between (W762 cache hit)",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "estimate_tokens": 10153
+      }
+    },
+    {
+      "name": "contextSnapshot() [over budget, assembly]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 12,
+      "rounds": 5,
+      "median_ms": 4.981,
+      "min_ms": 4.953,
+      "ops_per_s": 200.77,
+      "note": "context_window=2,000 tokens: history + trim pass (see trimContext rows)",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700
+      }
+    },
+    {
+      "name": "contextSnapshot() [over budget, repeat read]",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 3185,
+      "rounds": 5,
+      "median_ms": 0.01915,
+      "min_ms": 0.01897,
+      "ops_per_s": 52216.95,
+      "note": "the same over-budget session read twice with no append in between (W762 cache hit)",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "estimate_tokens": 102700
+      }
+    },
+    {
+      "name": "estimateTokens() ASCII",
+      "scale": "4,000 chars",
+      "unit": "ms",
+      "iterations": 31463,
+      "rounds": 5,
+      "median_ms": 0.001282,
+      "min_ms": 0.001275,
+      "ops_per_s": 779727.47,
+      "note": "UTF-8 bytes / 4, rounded up",
+      "extra": {
+        "chars": 4000,
+        "bytes": 4000,
+        "tokens": 1000,
+        "chars_per_token": 4,
+        "bytes_per_token": 4
+      }
+    },
+    {
+      "name": "estimateTokens() CJK",
+      "scale": "4,000 chars",
+      "unit": "ms",
+      "iterations": 11558,
+      "rounds": 5,
+      "median_ms": 0.004989,
+      "min_ms": 0.004937,
+      "ops_per_s": 200458.66,
+      "note": "same estimator on 3-byte characters: chars/token > 1 means it under-counts",
+      "extra": {
+        "chars": 4000,
+        "bytes": 12000,
+        "tokens": 3000,
+        "chars_per_token": 1.333,
+        "bytes_per_token": 4
+      }
+    },
+    {
+      "name": "estimateMessagesTokens() ASCII",
+      "scale": "200 messages",
+      "unit": "ms",
+      "iterations": 2238,
+      "rounds": 5,
+      "median_ms": 0.02712,
+      "min_ms": 0.02653,
+      "ops_per_s": 36868.65,
+      "note": "content + per-message overhead",
+      "extra": {
+        "chars": 40000,
+        "bytes": 40000,
+        "tokens": 10800,
+        "chars_per_token": 4,
+        "bytes_per_token": 4,
+        "messages": 200
+      }
+    },
+    {
+      "name": "estimateMessagesTokens() CJK",
+      "scale": "200 messages",
+      "unit": "ms",
+      "iterations": 709,
+      "rounds": 5,
+      "median_ms": 0.06692,
+      "min_ms": 0.06592,
+      "ops_per_s": 14942.72,
+      "note": "same list in CJK",
+      "extra": {
+        "chars": 40000,
+        "bytes": 120000,
+        "tokens": 30800,
+        "chars_per_token": 1.333,
+        "bytes_per_token": 4,
+        "messages": 200
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "1,000 messages",
+      "unit": "ms",
+      "iterations": 106,
+      "rounds": 3,
+      "median_ms": 0.5752,
+      "min_ms": 0.5359,
+      "ops_per_s": 1738.48,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 1000,
+        "kept": 10
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "2,000 messages",
+      "unit": "ms",
+      "iterations": 56,
+      "rounds": 3,
+      "median_ms": 1.09,
+      "min_ms": 1.086,
+      "ops_per_s": 917.54,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 2000,
+        "kept": 10
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "4,000 messages",
+      "unit": "ms",
+      "iterations": 29,
+      "rounds": 3,
+      "median_ms": 2.179,
+      "min_ms": 2.168,
+      "ops_per_s": 458.91,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 4000,
+        "kept": 10
+      }
+    },
+    {
+      "name": "trimContext() [over budget]",
+      "scale": "5,000 messages",
+      "unit": "ms",
+      "iterations": 22,
+      "rounds": 3,
+      "median_ms": 2.715,
+      "min_ms": 2.715,
+      "ops_per_s": 368.26,
+      "note": "real projected history, window=2,000 tokens: on every statusline tick of an over-budget session",
+      "extra": {
+        "messages": 5000,
+        "kept": 10,
+        "growth_exponent_loglog": 0.97
+      }
+    },
+    {
+      "name": "trimContext() [disabled]",
+      "scale": "28,572 messages",
+      "unit": "ms",
+      "iterations": 321,
+      "rounds": 5,
+      "median_ms": 0.208,
+      "min_ms": 0.205,
+      "ops_per_s": 4807.24,
+      "note": "window=0 disables trimming: the O(n) estimate only — the cheap regime",
+      "extra": {
+        "messages": 28572
+      }
+    },
+    {
+      "name": "SessionLog.deriveMessages()",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 356,
+      "rounds": 5,
+      "median_ms": 0.1862,
+      "min_ms": 0.1831,
+      "ops_per_s": 5370.38,
+      "note": "replays the whole event log and re-balances tool calls",
+      "extra": {
+        "events": 1001,
+        "messages": 572,
+        "events_per_message": 1.75
+      }
+    },
+    {
+      "name": "SessionLog.events()",
+      "scale": "1k events (1,001)",
+      "unit": "ms",
+      "iterations": 18472,
+      "rounds": 5,
+      "median_ms": 0.00154,
+      "min_ms": 0.001511,
+      "ops_per_s": 649332.16,
+      "note": "the defensive copy a statusline read used to pay for",
+      "extra": {
+        "events": 1001
+      }
+    },
+    {
+      "name": "SessionLog.deriveMessages()",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 34,
+      "rounds": 5,
+      "median_ms": 1.798,
+      "min_ms": 1.766,
+      "ops_per_s": 556.18,
+      "note": "replays the whole event log and re-balances tool calls",
+      "extra": {
+        "events": 10003,
+        "messages": 5716,
+        "events_per_message": 1.75
+      }
+    },
+    {
+      "name": "SessionLog.events()",
+      "scale": "10k events (10,003)",
+      "unit": "ms",
+      "iterations": 3259,
+      "rounds": 5,
+      "median_ms": 0.01901,
+      "min_ms": 0.01892,
+      "ops_per_s": 52613.08,
+      "note": "the defensive copy a statusline read used to pay for",
+      "extra": {
+        "events": 10003
+      }
+    },
+    {
+      "name": "SessionLog.deriveMessages()",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 6,
+      "rounds": 5,
+      "median_ms": 9.904,
+      "min_ms": 9.671,
+      "ops_per_s": 100.97,
+      "note": "replays the whole event log and re-balances tool calls",
+      "extra": {
+        "events": 50001,
+        "messages": 28572,
+        "events_per_message": 1.75
+      }
+    },
+    {
+      "name": "SessionLog.events()",
+      "scale": "50k events (50,001)",
+      "unit": "ms",
+      "iterations": 181,
+      "rounds": 5,
+      "median_ms": 0.3425,
+      "min_ms": 0.3362,
+      "ops_per_s": 2919.37,
+      "note": "the defensive copy a statusline read used to pay for",
+      "extra": {
+        "events": 50001
+      }
+    },
+    {
+      "name": "SessionLog.append() replay",
+      "scale": "1,000 events",
+      "unit": "ms",
+      "iterations": 1221,
+      "rounds": 5,
+      "median_ms": 0.04124,
+      "min_ms": 0.04044,
+      "ops_per_s": 24246.08,
+      "note": "fresh in-memory store per replay (real projectingSessionLog + memoryEventStore)",
+      "extra": {
+        "events": 1000,
+        "per_event_ms": 0.000041
+      }
+    },
+    {
+      "name": "SSE frame encode",
+      "scale": "1 frame",
+      "unit": "ms",
+      "iterations": 22988,
+      "rounds": 5,
+      "median_ms": 0.0008274,
+      "min_ms": 0.0008024,
+      "ops_per_s": 1208639.6,
+      "note": "loopEventToFrame + envelope + JSON + wire block (apps/studio createStudioBus + parseWire)",
+      "extra": {
+        "impl": "apps/studio createStudioBus + parseWire"
+      }
+    },
+    {
+      "name": "SSE wire decode",
+      "scale": "200 frames",
+      "unit": "ms",
+      "iterations": 147,
+      "rounds": 5,
+      "median_ms": 0.377,
+      "min_ms": 0.3686,
+      "ops_per_s": 2652.4,
+      "note": "parseWire over one 29,218-byte document",
+      "extra": {
+        "impl": "apps/studio createStudioBus + parseWire",
+        "frames": 200,
+        "frames_per_ms": 530.5
+      }
+    },
+    {
+      "name": "LoopEvent -> SSE name/payload",
+      "scale": "1 event",
+      "unit": "ms",
+      "iterations": 85592,
+      "rounds": 5,
+      "median_ms": 0.00005216,
+      "min_ms": 0.00005012,
+      "ops_per_s": 19170459.68,
+      "note": "the contract mapping alone (no envelope, no JSON), cycling all 6 event kinds",
+      "extra": {}
+    }
+  ]
+}

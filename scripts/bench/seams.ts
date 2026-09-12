@@ -18,6 +18,7 @@
  */
 
 import {
+  AGENT_LOOP_SERVICE,
   LLM_SERVICE,
   SESSION_LOG_SERVICE,
   TOOL_REGISTRY_SERVICE,
@@ -168,6 +169,17 @@ export function composeBenchRuntime(log: SessionLog, patch: Partial<Profile> = {
     workers: false,
     watchdog: false,
   });
+}
+
+/**
+ * The `AgentLoop` mounted in this generation — the object `Runtime.contextSnapshot()`
+ * asks (W725). Reaching it directly is how the benchmark measures the ASSEMBLY
+ * (`DefaultAgentLoop.buildRequest`) without the W762 memoization in front of it.
+ */
+export function benchLoopOf(runtime: Runtime): DefaultAgentLoop {
+  const loop = runtime.ctx.get<DefaultAgentLoop>(AGENT_LOOP_SERVICE);
+  if (loop === undefined) throw new Error("bench fixture: no AgentLoop mounted in this generation");
+  return loop;
 }
 
 /** The user text every synthetic turn carries (also the fixture's input). */
