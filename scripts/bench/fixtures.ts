@@ -22,9 +22,9 @@
  */
 
 import { memoryEventStore, projectingSessionLog, type SessionEvent, type SessionLog } from "@celestea/core";
-import { estimateMessagesTokens } from "@celestea/agent-loop";
+import { estimateMessagesTokens, type DefaultAgentLoop } from "@celestea/agent-loop";
 import type { Runtime } from "@celestea/runtime";
-import { composeBenchRuntime, FIXTURE_TURN_INPUT, TIGHT_WINDOW } from "./seams.js";
+import { benchLoopOf, composeBenchRuntime, FIXTURE_TURN_INPUT, TIGHT_WINDOW } from "./seams.js";
 import { nowNs } from "./timing.js";
 
 /** Events the real loop produces before amplification takes over. */
@@ -51,8 +51,12 @@ export interface Fixture {
   loop_ms: number;
   log: SessionLog;
   runtime: Runtime;
+  /** The loop mounted in `runtime` — the cache-free assembly path. */
+  loop: DefaultAgentLoop;
   /** The same log under a tiny window: the over-budget (trim engaged) regime. */
   tightRuntime: Runtime;
+  /** The loop mounted in `tightRuntime`. */
+  tightLoop: DefaultAgentLoop;
 }
 
 function elapsedMs(start: bigint): number {
@@ -138,6 +142,7 @@ function buildFixture(input: BuildInput): Fixture {
   const { scale, log, runtime, template, loopMs, startedAt } = input;
   const amplification = amplify(log, template, scale);
   const messages = log.deriveMessages();
+  const tightRuntime = composeBenchRuntime(log, { context_window_tokens: TIGHT_WINDOW });
   return {
     scale,
     events: log.events().length,
@@ -150,7 +155,9 @@ function buildFixture(input: BuildInput): Fixture {
     loop_ms: loopMs,
     log,
     runtime,
-    tightRuntime: composeBenchRuntime(log, { context_window_tokens: TIGHT_WINDOW }),
+    loop: benchLoopOf(runtime),
+    tightRuntime,
+    tightLoop: benchLoopOf(tightRuntime),
   };
 }
 

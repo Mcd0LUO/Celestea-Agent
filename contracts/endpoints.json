@@ -124,7 +124,8 @@
           {
             "name": "tokens_per_sec",
             "type": "number",
-            "required": false
+            "required": false,
+            "note": "W218/W754/W763: characters per second (approximate token rate, ~1:1 in the UI) averaged over ACTIVE intervals only — no-flow breaks (> 1s between deltas) are excluded. Responsive 5s window rate while the window carries output, else the current turn's active-interval mean, so it stays positive after a stall or after the turn ends; 0 = this turn has not streamed yet (TTFT)."
           },
           {
             "name": "context_usage",

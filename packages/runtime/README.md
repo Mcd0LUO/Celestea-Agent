@@ -68,7 +68,11 @@ core ← runtime → session / llm / tools / agent-loop / workers
 ## StatusTracker / UsageTracker
 
 - steps：一次 tool **call** 记一步（tool_result 不重复计，W263 口径）；
-- tokens_per_sec：text/thinking delta 字符的 5s 滑动窗口，span 下限 1s，时钟可注入（`now`）；
+- tokens_per_sec：text/thinking delta 字符的速率（近似 token 速率，~1:1），**只在本轮有流时段的区间上平均**
+  （相邻 delta 间隔 > `GAP_MS` = 1s 视为无流间断，不计入分母；每个区间下限 `MIN_ACTIVE_MS` = 1s）；
+  窗口有样本时给响应式的 5s 滑窗速率（W754），窗口空时（停顿 > 5s 或轮次结束）回落到**本轮活动区间均值**（W763，
+  `turnRate` / `turnSpanMs` / `pushTurnDelta`，区间按停顿压缩，内存 O(停顿次数) 而非 O(delta 数)）；
+  只有本轮还没有任何 delta（TTFT）才是 0，`beginTurn()` 重置；时钟可注入（`now`）；
 - context usage：优先真实 usage（`latest().prompt_tokens > 0` → `estimated:false` /
   `usage_prompt_tokens`），否则回退 session log 字符估算（`estimated:true` / `session_event_chars`）；
 - usage：`latest` + `total`，`cache_hit_ratio = cache_read / prompt_tokens`（clamp [0,1]、4 位小数、分母 0 时为 0）。
@@ -99,4 +103,4 @@ const runtime = compose({
   宿主回执 FIFO 注入；
 - `lifecycle.test.ts`：shutdown 幂等/可重入/hook 只跑一次、release 断引用、会话重绑（同目录）、
   换代无混合态（并发读者）、回执迁移、buildAndSwap；
-- `status.test.ts`：steps 口径、速率窗口（注入时钟）、context usage 真实/估算回退、cache_hit_ratio。
+- `status.test.ts`：steps 口径、速率（窗口 + 本轮活动区间均值，注入时钟）、context usage 真实/估算回退、cache_hit_ratio。

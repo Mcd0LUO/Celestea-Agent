@@ -98,7 +98,7 @@ function writeArtifacts(options: Options, baseline: Baseline): void {
     return;
   }
   writeBaseline(options.out, baseline);
-  writeDoc(options.doc, baseline);
+  writeDoc(options.doc, baseline, options.out);
   console.log(`\nwrote ${options.out} and ${options.doc}`);
 }
 
