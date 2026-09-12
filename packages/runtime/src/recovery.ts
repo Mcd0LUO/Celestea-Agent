@@ -29,9 +29,16 @@ import {
   type CheckpointRead,
   type RecoveryAction,
 } from "@celestea/session";
+import { SESSION_LOG_ID } from "./host/engine-session.js";
 
-/** The engine's log file name / id inside a session directory (contract). */
-export const SESSION_LOG_ID = "cli-main";
+/**
+ * The engine's log file name / id inside a session directory (contract).
+ *
+ * W747: single source — `host/engine-session.ts` owns the session log id/name
+ * (it opens the log); this module imports and re-exports it instead of keeping a
+ * second declaration of the same literal. Public name and value are unchanged.
+ */
+export { SESSION_LOG_ID };
 
 /** `<dir>/cli-main.jsonl` — the log this orchestrator may repair. */
 export function sessionLogPath(dir: string, sessionId: string = SESSION_LOG_ID): string {
