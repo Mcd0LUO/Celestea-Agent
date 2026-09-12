@@ -45,6 +45,21 @@ export const ENV_ALLOWLIST: readonly string[] = [
   "PWD",
 ];
 
+/**
+ * W768: the per-SESSION filesystem scope. One value, resolved by the HOST from
+ * the session's own workspace record — never from a process-wide env knob —
+ * because a process serves several sessions and `process.cwd()` cannot describe
+ * more than one of them.
+ *
+ * `workspace` is both the default cwd of every spawned command and the root a
+ * workdir must stay inside, so "where am I" and "what may I touch" cannot
+ * disagree.
+ */
+export interface SessionFsScope {
+  /** Absolute, canonical workspace root of the session being composed. */
+  workspace: string;
+}
+
 export interface SandboxConfigOverrides {
   timeoutMs?: number;
   maxTimeoutMs?: number;
@@ -54,16 +69,32 @@ export interface SandboxConfigOverrides {
   extraEnv?: ReadonlyArray<readonly [string, string]>;
 }
 
-/** Configuration from `CELAESTEA_RUN_SHELL_*` / `CELESTEA_SHELL_MAX_TIMEOUT_MS`. */
-export function sandboxConfigFromEnv(env: NodeJS.ProcessEnv = process.env): SandboxConfig {
-  const workdir = resolveOrCwd(envString(env, ENV_SHELL_WORKDIR) ?? process.cwd());
+/**
+ * Configuration from `CELAESTEA_RUN_SHELL_*` / `CELESTEA_SHELL_MAX_TIMEOUT_MS`.
+ *
+ * W768: `overrides` is how a session's OWN workspace replaces the process-wide
+ * default. `workdir`/`root` are the only two knobs a session may set — the
+ * limits stay operator policy — and with no override the env reading is byte for
+ * byte what it always was (the fallback path for detached/legacy sessions).
+ */
+export function sandboxConfigFromEnv(env: NodeJS.ProcessEnv = process.env, overrides: SandboxConfigOverrides = {}): SandboxConfig {
+  const workdir = resolveOrCwd(overrides.workdir ?? envString(env, ENV_SHELL_WORKDIR) ?? process.cwd());
   return buildSandboxConfig({
     timeoutMs: positive(envInt(env, ENV_SHELL_TIMEOUT_MS), DEFAULT_TIMEOUT_MS),
     maxTimeoutMs: positive(envInt(env, ENV_SHELL_MAX_TIMEOUT_MS), DEFAULT_MAX_TIMEOUT_MS),
     maxOutputBytes: positive(envInt(env, ENV_SHELL_MAX_OUTPUT_BYTES), DEFAULT_MAX_OUTPUT_BYTES),
     workdir,
-    root: resolveOrCwd(envString(env, ENV_SHELL_ROOT) ?? gitToplevelOr(workdir)),
+    root: resolveOrCwd(overrides.root ?? envString(env, ENV_SHELL_ROOT) ?? gitToplevelOr(workdir)),
   });
+}
+
+/**
+ * W768: the sandbox config of ONE session — the session's workspace as cwd and
+ * root, the operator's limits unchanged. `null` scope = the env posture.
+ */
+export function sessionSandboxConfig(scope: SessionFsScope | null, env: NodeJS.ProcessEnv = process.env): SandboxConfig {
+  if (scope === null) return sandboxConfigFromEnv(env);
+  return sandboxConfigFromEnv(env, { workdir: scope.workspace, root: scope.workspace });
 }
 
 /** Materialize a config, filling defaults (tests pin explicit knobs). */

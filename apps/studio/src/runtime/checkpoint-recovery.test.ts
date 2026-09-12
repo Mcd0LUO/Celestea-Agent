@@ -9,7 +9,7 @@
  *     turn_end / clean shutdown), so "was the last exit clean?" is answerable;
  *   - the session-local turn number comes back from the log, not from 0;
  *   - the second boot changes NOTHING on disk (idempotence), and P0 adds no
- *     endpoint (44 stays 44).
+ *     endpoint (it stays whatever it was; 47 since W767).
  */
 
 import { createHash } from "node:crypto";

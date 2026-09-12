@@ -2,7 +2,7 @@
  * Handler registry — the ONLY place that knows every endpoint group.
  *
  * Each `registerXxx` returns the contract ids it bound, and `app.ts` asserts
- * the union equals the frozen 44. A route can therefore never be silently
+ * the union equals the frozen 47. A route can therefore never be silently
  * dropped: adding an endpoint to `contracts/endpoints.json` without a handler
  * fails at startup with the missing id.
  *
@@ -21,6 +21,7 @@
  *   prompts.ts       /api/prompts (+delete/default)
  *   worker.ts        /api/worker/spawn | send | status
  *   grants.ts        GET+POST+DELETE /api/sessions/{id}/grants | grants/confirm-token
+ *   auth.ts          W767: GET /login | POST /auth/login | GET /auth/check
  *
  * W725: the context endpoint (44th) lives in sessions.ts; its shaping is in
  * context-shape.ts.
@@ -28,6 +29,7 @@
 
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
+import { registerAuth } from "./auth.js";
 import { registerConfig } from "./config.js";
 import { registerDialog } from "./dialog.js";
 import { registerFs } from "./fs.js";
@@ -54,6 +56,8 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     ...registerPrompts(app, deps, table),
     ...registerWorker(app, deps, table),
     ...registerGrants(app, deps, table),
+    // W767: Studio's OWN login-cookie gate (page + login + nginx auth_request).
+    ...registerAuth(app, deps, table),
   ];
 }
 

@@ -29,6 +29,7 @@ const VARS = toPromptVars({
   provider: "Gateway",
   base_url: "http://x/v1",
   workspace: "ws",
+  workspace_dir: "/tmp/ws",
   session: "ws/s1",
   tools: "read_file, write_file",
   context_window: 1_000_000,

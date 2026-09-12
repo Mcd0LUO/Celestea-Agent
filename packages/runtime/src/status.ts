@@ -45,6 +45,11 @@
  * missing context window is reported as `window:0, ratio:0` — the 1,000,000
  * display fallback never enters a ratio (W755, Fix A/B/C).
  *
+ * W766: branch 2 reads a MEMOIZED estimate ([AssembledContext]): the runtime
+ * derives it once per log state, so an idle session's 2s status tick is a lookup
+ * instead of an O(bytes) re-estimate. No口径 value changes — the same function
+ * produces the same number, just not on every tick.
+ *
  * `now()` is injectable so the rate window is testable without sleeping.
  */
 
@@ -298,11 +303,16 @@ export interface StatusView {
   events: () => readonly SessionEvent[];
   /**
    * W755 (Fix A): the model-visible request the NEXT step would build — the
-   * loop's OWN assembly (system + trimmed history + tool schemas), or null when
+   * loop's OWN assembly (system + trimmed history + tool schemas) — or null when
    * the mounted loop cannot snapshot (test doubles). This — not the raw log —
    * is what the context usage falls back to.
+   *
+   * W766: the estimate travels WITH the request ([AssembledContext]), because the
+   * runtime memoizes both on the log state that produced them. A tick that
+   * re-reads an unchanged log therefore costs one lookup, not another O(bytes)
+   * walk of the messages.
    */
-  assembled: () => ModelRequest | null;
+  assembled: () => AssembledContext | null;
   /**
    * W755 (Fix B): the per-session projection state. MUST be the same instance on
    * every call for one session (a fresh one per call silently disables the
@@ -312,14 +322,41 @@ export interface StatusView {
 }
 
 /**
+ * W766: a model-visible request TOGETHER with its token estimate.
+ *
+ * The two are one value on purpose: [estimatedContextTokens] is O(total bytes),
+ * the runtime memoizes the assembly on the session log's state, and a statusline
+ * tick must not re-walk a request it was already handed. Bundling the estimate
+ * with the request gives it the SAME lifetime and the SAME invalidation key as
+ * what it describes — there is no second cache to keep in sync
+ * (`Runtime.assembledContext()`).
+ */
+export interface AssembledContext {
+  request: ModelRequest;
+  /** [estimatedContextTokens] of `request`, computed once per assembly. */
+  tokens: number;
+}
+
+/**
  * W755 (Fix A): token estimate of a MODEL-VISIBLE request — the very estimator
  * the loop's trim budget already uses (`packages/agent-loop/src/context-trim.ts`),
  * reused rather than re-derived, so the two can never disagree: system text +
  * every message (content + structural overhead) + the tool schemas.
+ *
+ * W766: callers on a hot path should obtain the value through a memoized
+ * [AssembledContext] instead of calling this again on an unchanged request.
  */
 export function estimatedContextTokens(request: ModelRequest): number {
   const system = request.system === null ? 0 : estimateTokens(request.system);
   return system + estimateMessagesTokens(request.messages) + estimateTokens(JSON.stringify(request.tools));
+}
+
+/**
+ * W766: pair a request with its estimate — for callers that build a view by hand
+ * (tests, the bench) and therefore have no runtime cache to read it from.
+ */
+export function assembledContextOf(request: ModelRequest): AssembledContext {
+  return { request, tokens: estimatedContextTokens(request) };
 }
 
 /** W263: used/window ratio, clamped to [0,1], rounded to 4 decimals. */
@@ -410,15 +447,16 @@ function contextWindowOf(configured: number): { window: number; source: ContextW
 
 /** The token estimate of the loop's assembly, or null when it cannot snapshot. */
 function assembledTokensOf(view: StatusView): number | null {
-  let request: ModelRequest | null = null;
+  let assembled: AssembledContext | null = null;
   try {
-    request = view.assembled();
+    assembled = view.assembled();
   } catch {
     // A statusline read must never fail the endpoint: no snapshot is a valid
     // answer (method "none"), an exception is not.
-    request = null;
+    assembled = null;
   }
-  return request === null ? null : estimatedContextTokens(request);
+  // W766: read the estimate the assembly carries; never re-estimate here.
+  return assembled === null ? null : assembled.tokens;
 }
 
 /**

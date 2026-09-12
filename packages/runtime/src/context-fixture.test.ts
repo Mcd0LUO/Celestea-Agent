@@ -15,6 +15,7 @@ import type { ModelRequest, ToolSpec } from "@celestea/core";
 import { deriveMessages, parseSessionJsonl } from "@celestea/session";
 import {
   ContextPressure,
+  assembledContextOf,
   createStatusTracker,
   estimatedContextChars,
   estimatedContextTokens,
@@ -80,7 +81,7 @@ describe.skipIf(!hasFixture)("W755 fixture replay — harness架构哥", () => {
       temperature: null,
     };
 
-    const line = statuslineOf(fixtureView({ events: () => events, assembled: () => request }));
+    const line = statuslineOf(fixtureView({ events: () => events, assembled: () => assembledContextOf(request) }));
     const cu = line.context_usage;
     // Exactly the engine's assembly, not a char count of the log.
     expect(cu.method).toBe("assembled_estimate");

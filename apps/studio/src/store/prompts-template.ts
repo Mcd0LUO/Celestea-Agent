@@ -17,6 +17,7 @@ export const PROMPT_VARS = [
   "provider",
   "base_url",
   "workspace",
+  "workspace_dir",
   "session",
   "tools",
   "context_window",

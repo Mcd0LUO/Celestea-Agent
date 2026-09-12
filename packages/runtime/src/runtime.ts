@@ -39,7 +39,14 @@ import { RuntimeReleasedError, TurnBusyError } from "./errors.js";
 import type { InjectionLane } from "@celestea/core";
 import type { InboxPushOptions, InjectedMessage, SessionInbox } from "./inbox.js";
 import { bindSession, type SessionBinding } from "./session-binding.js";
-import { ContextPressure, statuslineOf, type StatusTracker, type StatusView } from "./status.js";
+import {
+  ContextPressure,
+  estimatedContextTokens,
+  statuslineOf,
+  type AssembledContext,
+  type StatusTracker,
+  type StatusView,
+} from "./status.js";
 import type { FrameSink, TurnOptions, TurnRunner } from "./turn-runner.js";
 import type { TurnFrame } from "./frames.js";
 import type { UsageAccounting } from "./usage.js";
@@ -206,7 +213,7 @@ export class Runtime {
       // degrades to "no snapshot" instead of failing the endpoint.
       assembled: () => {
         try {
-          return this.contextSnapshot();
+          return this.assembledContext();
         } catch {
           return null;
         }
@@ -245,15 +252,49 @@ export class Runtime {
    * assembly. A HIT costs only that copy — ~2 orders of magnitude less.
    */
   contextSnapshot(): ModelRequest | null {
+    return this.snapshotEntry().request;
+  }
+
+  /**
+   * W766: the memoized assembly TOGETHER with its token estimate — what the
+   * statusline's `context_usage` fallback needs.
+   *
+   * W755 made the tick read the loop's own assembly; W762 memoized the assembly
+   * but left the ESTIMATE to be recomputed on every read, which dominated the
+   * tick (7.4ms of a 7.4ms tick at 50k events: an O(bytes) walk of the messages
+   * that could not have changed, because the request it walked was the very
+   * object the cache had just handed back). The estimate now rides in the same
+   * entry, so it is derived once per log state and dropped with the request.
+   *
+   * Lazy on purpose: the usage-frame path and the context viewer never read the
+   * estimate, so a MISS must not pay for it (same reason `tokens`/`assembled`
+   * start null rather than being filled by the assembly that built the request).
+   */
+  assembledContext(): AssembledContext | null {
+    const entry = this.snapshotEntry();
+    const request = entry.request;
+    if (request === null) return null;
+    entry.assembled ??= { request, tokens: estimatedContextTokens(request) };
+    return entry.assembled;
+  }
+
+  /**
+   * The memoized snapshot entry for the log state right now, building (and
+   * caching) the assembly on a miss. This is the ONE cache the runtime keeps:
+   * the request, its estimate and its display wrapper all hang off it, so they
+   * can never disagree about which log state they describe.
+   */
+  private snapshotEntry(): SnapshotCache {
     const log = this.p.sessionRef.log;
     const last = lastEventOf(log);
     const cached = this.snapshotCache;
     if (cached !== null && cached.log === log && cached.events === last.count && cached.last === last.event) {
-      return cached.request;
+      return cached;
     }
     const request = contextSnapshotOf(this.p.agentLoop, this.p.ctx);
-    this.snapshotCache = { log, events: last.count, last: last.event, request };
-    return request;
+    const entry: SnapshotCache = { log, events: last.count, last: last.event, request, assembled: null };
+    this.snapshotCache = entry;
+    return entry;
   }
 
   /** Pending host receipts (worker -> host) that the next turn will inject. */
@@ -365,12 +406,18 @@ async function runHook(hook: ShutdownHook): Promise<void> {
  * from. `events` is the event COUNT and `last` the last event REFERENCE (not an
  * index): a log that grew and then got trimmed back to the same length would
  * still be caught by the reference.
+ *
+ * W766: the entry also owns the request's DERIVED values (its token estimate and
+ * the wrapper that carries both). They are nullable because they are computed on
+ * first demand, and they die with the entry — the log state is their only
+ * invalidation key, exactly like the request's.
  */
 interface SnapshotCache {
   log: SessionLog;
   events: number;
   last: SessionEvent | undefined;
   request: ModelRequest | null;
+  assembled: AssembledContext | null;
 }
 
 /** `(count, last event)` of a log — the cache key half that changes on append. */

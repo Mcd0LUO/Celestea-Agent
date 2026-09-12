@@ -22,7 +22,7 @@
  * rows show the same paths with the trim pass ENGAGED (see `cases-tokens.ts`).
  */
 
-import { statuslineOf, type StatusView } from "@celestea/runtime";
+import { assembledContextOf, statuslineOf, type StatusView } from "@celestea/runtime";
 import { caseOf, timeValue, type BenchCase, type Timing } from "./timing.js";
 import { scaleLabel, type Fixture } from "./fixtures.js";
 
@@ -36,9 +36,19 @@ function share(snapshot: number, tick: number): number {
 const ASSEMBLY_NOTE = "W755: the request the next step would build (system + derived history + tool schemas), reached through the loop so the W762 cache is out of the way";
 const READ_NOTE = "W762: the runtime entry with the log unchanged since the last read — a memoized hit (key = log identity + event count + last event reference)";
 
-/** The tick with a COLD assembly: the view's `assembled` goes straight to the loop. */
+/**
+ * The tick with a COLD assembly: the view's `assembled` goes straight to the loop.
+ *
+ * W766: the pair must carry the estimate too, because that is what a tick pays
+ * when the log CHANGED (new assembly + its first estimate). `[tick]` keeps using
+ * the runtime's own memoized `assembledContext()`, so the gap between the two is
+ * exactly the work the memo removes from an unchanged-log tick.
+ */
 function coldView(fixture: Fixture): StatusView {
-  return { ...fixture.runtime.statusView(), assembled: () => fixture.loop.contextSnapshot(fixture.runtime.ctx) };
+  return {
+    ...fixture.runtime.statusView(),
+    assembled: () => assembledContextOf(fixture.loop.contextSnapshot(fixture.runtime.ctx)),
+  };
 }
 
 /** One scale: assembly, cached read, cold tick, warm tick, and the A/B baseline. */

@@ -156,12 +156,17 @@ export class SessionComposer {
   /** Compose one session generation (the registry's build factory). */
   compose(sessionId: string | null, dir: string | null): Runtime {
     const profile = this.profileFor(sessionId);
+    // W768: the session's OWN workspace, taken from the same resolution the
+    // system prompt renders (the host's `resolveSession` hook). A session with no
+    // resolvable workspace keeps the process env posture — never a failure.
+    const workspace = sessionId === null ? null : (this.opts.resolveSession?.(sessionId)?.workspace ?? null);
     const reader = this.opts.grants;
     const read = reader?.read(sessionId, dir) ?? { grants: EMPTY_GRANTS, warnings: [] };
     // W728: the ledger must exist before the Llm wrapper (every step books).
     const ledger = this.usageLedger(sessionId, dir);
     const engine = enginePlugins({
       profile,
+      workspace: workspace === null ? null : { workspace: workspace.path },
       llm: this.stepObservedLlm(this.llmFactory()(profile), profile, ledger),
       workers: null, // the workers plugin registers the three tools, in compose order
       ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),

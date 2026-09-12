@@ -19,7 +19,7 @@ import { DEFAULT_SESSION_MODE, type SessionMode } from "../store/mode.js";
 import type { PromptScope } from "../store/prompts.js";
 import { assembleSystemPrompt, resolveActivePrompt, toPromptVars } from "../store/prompts-compose.js";
 import { readSessionMeta } from "../store/session-meta.js";
-import type { ResolvedSession } from "../store/sessions.js";
+import { sessionWorkspaceOf, type ResolvedSession } from "../store/sessions.js";
 import type { ToolInfo } from "../runtime-adapter.js";
 import type { Deps, JsonObject } from "./common.js";
 import { activeSession } from "./common.js";
@@ -160,11 +160,16 @@ export function assembleSystemPromptFor(deps: Deps, sessionId: string | null = n
   // byte-for-byte what it was before W729 (K8).
   const model = (scoped === null ? null : meta?.model ?? null) ?? profile.model;
   const scope = scopeOf(deps, resolved);
+  // W768: the prompt's workspace NAME and ROOT PATH come from the ONE projector
+  // the composer also uses for the sandbox cwd (`sessionWorkspaceOf`) — a prompt
+  // naming one workspace while the shell starts in another is impossible now.
+  const workspace = sessionWorkspaceOf(resolved);
   const vars = toPromptVars({
     model,
     provider: providerOf(deps, model),
     base_url: baseUrlOf(deps),
-    workspace: resolved?.workspace ?? "",
+    workspace: workspace?.name ?? "",
+    workspace_dir: workspace?.path ?? "",
     session: resolved?.id ?? "",
     tools: toolsOf(deps, sessionId).map((t) => t.name).join(", "),
     context_window: profile.context_window,

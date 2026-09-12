@@ -119,8 +119,10 @@ function readJson<T>(...parts: string[]): T {
 export function loadEndpoints(): EndpointsContract {
   const c = readJson<EndpointsContract>("endpoints.json");
   // W725: 43 -> 44 (GET /api/sessions/{id}/context).
-  if (c.count !== 44 || c.endpoints.length !== 44) {
-    throw new Error(`endpoints contract must hold 44 endpoints, got ${c.endpoints.length}`);
+  // W767: 44 -> 47 (GET /login, POST /auth/login, GET /auth/check — Studio's own
+  // login-cookie gate; the two non-/api paths are declared in the contract too).
+  if (c.count !== 47 || c.endpoints.length !== 47) {
+    throw new Error(`endpoints contract must hold 47 endpoints, got ${c.endpoints.length}`);
   }
   return c;
 }
