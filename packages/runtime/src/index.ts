@@ -33,6 +33,8 @@
  *   recovery.ts        boot recovery: close a turn a crash left open (E §1.3)
  *   gen.ts             Gen + GenerationHub (hot swap)            (studio/main.rs:340-420)
  *   compose.ts         compose(config) — mount order             (runtime/compose.rs)
+ *   host/              W747: the ENGINE-side host assembly (log/binding +
+ *                      provider targeting); see host/index.ts (apps/studio/src/runtime)
  *   compact/           context compaction (W259)                 (studio/src/compact.rs)
  *   tokens.ts          runtime service tokens
  *   errors.ts          TurnBusyError / RuntimeReleasedError / ComposeError
@@ -61,4 +63,5 @@ export * from "./watchdog-mount.js";
 export * from "./runtime.js";
 export * from "./gen.js";
 export * from "./compose.js";
+export * from "./host/index.js";
 export * from "./compact/index.js";

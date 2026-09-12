@@ -25,8 +25,16 @@
 
 import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute } from "node:path";
+import { dirname, isAbsolute } from "node:path";
 import { isInside, parseIpRange, parseToolRoots } from "@celestea/tools";
+/**
+ * W747: `sessionIdOfDir` moved to the engine (`@celestea/runtime`, host layer
+ * `host/engine-session.ts`) — the `<workspace>/<session>` id space is what that
+ * module already owns. Imported + re-exported here so every `./engine-grants.js`
+ * import of it keeps working, unchanged.
+ */
+import { sessionIdOfDir } from "@celestea/runtime";
+export { sessionIdOfDir };
 import type { GrantsAuditEventName } from "../store/grants-audit.js";
 import { loadStudioConfig } from "../config.js";
 import {
@@ -71,11 +79,6 @@ export interface EffectiveGrantsResult {
 export function unsandboxedAvailable(env: NodeJS.ProcessEnv): boolean {
   const raw = (env[ENV_GRANTS_UNSANDBOXED] ?? "").trim().toLowerCase();
   return ["1", "true", "on", "yes"].includes(raw);
-}
-
-/** `<workspace>/<session>` of a session directory (the file's self-description). */
-export function sessionIdOfDir(sessionDir: string): string {
-  return `${basename(dirname(sessionDir))}/${basename(sessionDir)}`;
 }
 
 /** Read + validate; NEVER throws, only degrades with warnings (§4.1). */
