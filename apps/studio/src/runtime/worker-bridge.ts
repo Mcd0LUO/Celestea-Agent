@@ -71,6 +71,74 @@ export function aggregateWorkerStatus(rows: readonly WorkerSessionRow[], wid?: s
 }
 
 /** Studio projection of a worker session transcript (null = unknown session). */
+/**
+ * W769: the runtime facts these aggregations need about ONE session instance —
+ * structural, so the adapter passes its own `SessionRuntime` rows straight in and
+ * this module never imports the runtime package (it stays a pure view layer).
+ */
+export interface WorkerHostEntry {
+  sessionId: string | null;
+  dir: string | null;
+  inFlight: boolean;
+  runtime: { workers: WorkerRegistry | null; hostSessionId: string | null; tools: ToolRegistry | null };
+}
+
+/** Merged worker rows over every live instance (W513 aggregate view). */
+export function mergedWorkerRows(entries: readonly WorkerHostEntry[]): WorkerSessionRow[] {
+  const rows: WorkerSessionRow[] = [];
+  for (const entry of entries) {
+    for (const row of workerSessionsOf(entry.runtime.workers, entry.runtime.hostSessionId)) {
+      rows.push({ ...row, host_session: entry.sessionId, busy: entry.inFlight });
+    }
+  }
+  return rows;
+}
+
+/** The messages of one worker session, from whichever live instance owns it. */
+export function workerMessagesAcross(entries: readonly WorkerHostEntry[], sessionId: string): unknown[] | null {
+  for (const entry of entries) {
+    const found = workerMessagesOf(entry.runtime.workers, sessionId);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/** `POST /api/worker/spawn`: the spawn tool, dispatched through the session's own registry. */
+export async function spawnWorkerThrough(
+  entry: WorkerHostEntry,
+  req: { wid: string; brief: string; title?: string; model?: string; report_to?: string },
+  callId: string,
+): Promise<WorkerSpawnOutcome> {
+  const args: Record<string, unknown> = { wid: req.wid, brief: req.brief };
+  for (const key of ["title", "model"] as const) {
+    const value = req[key];
+    if (value !== undefined) args[key] = value;
+  }
+  // W513: an unaddressed worker reports back to the session that spawned it.
+  args["report_to"] = req.report_to ?? entry.runtime.hostSessionId ?? "";
+  return spawnOutcomeOf(await dispatchWorkerTool(entry.runtime.tools, "spawn_worker", args, callId));
+}
+
+/**
+ * `POST /api/worker/send`: the worker's registry is per session, so the message is
+ * routed to the instance that owns the target — the first one that accepts it wins.
+ */
+export async function sendWorkerThrough(
+  entries: readonly WorkerHostEntry[],
+  req: { target: string; content: string },
+  callId: () => string,
+): Promise<Record<string, unknown>> {
+  let last: Record<string, unknown> | null = null;
+  for (const entry of entries) {
+    const body = sendBodyOf(
+      await dispatchWorkerTool(entry.runtime.tools, "session_send_message", { target: req.target, content: req.content }, callId()),
+    );
+    if (body["ok"] === true) return body;
+    last = body;
+  }
+  return last ?? { ok: false, delivered: false, error: "worker registry is not wired" };
+}
+
 export function workerMessagesOf(registry: WorkerRegistry | null, sessionId: string): unknown[] | null {
   const sid = sessionId.startsWith("worker:") ? sessionId.slice("worker:".length) : sessionId;
   const log = registry?.sessions.logOf(sid);

@@ -15,6 +15,42 @@ describe("SessionMailbox", () => {
     expect(mailbox.pending("s2")).toBe(1);
   });
 
+  it("W769: notifies only on a REAL enqueue, never for a parked consumer", async () => {
+    const mailbox = new SessionMailbox();
+    const seen: Array<{ to: string; content: string }> = [];
+    const off = mailbox.onQueued((to, msg) => seen.push({ to, content: msg.content }));
+
+    // No waiter: this really lands in the queue -> the observer hears it.
+    mailbox.send("host", "queued", "W1");
+    expect(seen).toEqual([{ to: "host", content: "queued" }]);
+
+    // A parked consumer takes the message itself: nobody else must wake up.
+    mailbox.poll("host"); // drain, so the next send finds a PARKED waiter
+    const parked = mailbox.recv("host");
+    mailbox.send("host", "delivered", "W2");
+    expect((await parked)?.content).toBe("delivered");
+    expect(seen).toEqual([{ to: "host", content: "queued" }]);
+
+    // Another queue is not this observer's business… it IS the same mailbox, so
+    // the callback sees the key; filtering is the consumer's job.
+    mailbox.send("other", "elsewhere", "W3");
+    expect(seen.map((s) => s.to)).toEqual(["host", "other"]);
+
+    // …and unsubscribing really detaches (a later generation must not leak).
+    off();
+    mailbox.send("host", "after-unsubscribe", "W4");
+    expect(seen).toHaveLength(2);
+  });
+
+  it("W769: a throwing observer cannot lose a message", () => {
+    const mailbox = new SessionMailbox();
+    mailbox.onQueued(() => {
+      throw new Error("observer exploded");
+    });
+    mailbox.send("s1", "still queued", "W1");
+    expect(mailbox.poll("s1").map((m) => m.content)).toEqual(["still queued"]);
+  });
+
   it("wakes a parked consumer and delivers straight to it", async () => {
     const mailbox = new SessionMailbox();
     const parked = mailbox.recv("s1");

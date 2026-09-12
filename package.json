@@ -23,10 +23,10 @@
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
-    "dependency-cruiser": "^16.10.4",
+    "dependency-cruiser": "^17.4.3",
     "eslint": "^9.39.5",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.2",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
     "vitest": "^3.2.4"
   }

@@ -12,6 +12,12 @@
  *     never hang a shutdown;
  *   - `purge` / `purgeAll` drop undelivered messages (generation swap /
  *     shutdown), and `release` parks nothing further.
+ *
+ * W769: `onQueued` observes the wake-up channel itself — it fires ONLY when a
+ * message is actually QUEUED (no parked `recv` waiter consumed it). That is the
+ * distinction the host auto-wake needs: a message delivered straight to a parked
+ * worker driver is already being handled and must not wake anybody else, while a
+ * message that landed in a queue is precisely "somebody should look at this".
  */
 
 import type { MailboxMessage, MailboxSendOptions, MailboxWaiter } from "./types.js";
@@ -19,6 +25,7 @@ import type { MailboxMessage, MailboxSendOptions, MailboxWaiter } from "./types.
 export class SessionMailbox {
   private readonly queues = new Map<string, MailboxMessage[]>();
   private readonly waiters = new Map<string, MailboxWaiter[]>();
+  private readonly queuedListeners: Array<(to: string, message: MailboxMessage) => void> = [];
   private nextId = 1;
   private released = false;
   private readonly now: () => number;
@@ -51,7 +58,32 @@ export class SessionMailbox {
     const queue = this.queues.get(to);
     if (queue === undefined) this.queues.set(to, [msg]);
     else queue.push(msg);
+    this.notifyQueued(to, msg);
     return msg;
+  }
+
+  /**
+   * W769: observe messages that were really QUEUED for `to` (a `send` handed
+   * straight to a parked `recv` waiter does NOT notify — that consumer is awake
+   * already). Returns the unsubscribe function; listeners are called
+   * synchronously from `send` and a throwing listener can never break delivery.
+   */
+  onQueued(listener: (to: string, message: MailboxMessage) => void): () => void {
+    this.queuedListeners.push(listener);
+    return () => {
+      const i = this.queuedListeners.indexOf(listener);
+      if (i >= 0) this.queuedListeners.splice(i, 1);
+    };
+  }
+
+  private notifyQueued(to: string, message: MailboxMessage): void {
+    for (const listener of [...this.queuedListeners]) {
+      try {
+        listener(to, message);
+      } catch {
+        // An observer must never be able to lose a message.
+      }
+    }
   }
 
   /** Drain one session's queue in FIFO order. */

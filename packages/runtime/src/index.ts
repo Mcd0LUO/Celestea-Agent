@@ -62,6 +62,7 @@ export * from "./worker-wiring.js";
 export * from "./watchdog-mount.js";
 export * from "./runtime.js";
 export * from "./gen.js";
+export * from "./autowake.js";
 export * from "./compose.js";
 export * from "./host/index.js";
 export * from "./compact/index.js";

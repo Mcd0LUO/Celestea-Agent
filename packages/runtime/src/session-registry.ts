@@ -37,6 +37,8 @@
 import type { TurnOutcome } from "@celestea/core";
 import { nextTurnNumber } from "@celestea/session";
 import type { Runtime } from "./runtime.js";
+import { migrateReceipts } from "./gen.js";
+import { HOST_SESSION_ID } from "./tokens.js";
 
 /** Registry key of the "no session" runtime (turns without an active session). */
 export const DETACHED_SESSION_KEY = "<detached>";
@@ -388,6 +390,10 @@ export class SessionRuntimeRegistry {
   private rebuild(entry: SessionRuntime): void {
     const previous = entry.runtime;
     entry.runtime = this.deps.build(entry.sessionId, entry.dir, this.epoch());
+    // W769: a worker receipt that landed in this session's mailbox while the
+    // generation was being swapped must not die with the generation it was
+    // addressed to (the same migration `GenerationHub.swapSync` performs).
+    migrateReceipts(previous, entry.runtime, entry.sessionId ?? HOST_SESSION_ID);
     entry.profileEpoch = this.epoch();
     entry.needsRebuild = false;
     entry.turnNo = turnNumberFromLog(entry.runtime);

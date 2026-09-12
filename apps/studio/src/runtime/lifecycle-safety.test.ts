@@ -88,7 +88,11 @@ describe("W742 §1: an epoch bump never tears down an instance with live worker 
 
 describe("W742 §1: the 409 guard of both profile-swapping endpoints", () => {
   it("refuses a config change and a provider default while a worker is in flight", async () => {
-    const h = make({ llm: SLOW_BRIEF });
+    // W769: with auto-wake ON the host starts a turn the moment the receipt
+    // lands, which 409s a config change for the ordinary reason ("turn in
+    // progress"). This test is about the WORKER guard, so the wake is off and
+    // the two 409 reasons stay distinguishable.
+    const h = make({ llm: SLOW_BRIEF, env: { CELESTEA_AUTOWAKE: "0" } });
     const engine = engineOf(h);
     expect((await getJson(h.app, "/api/worker/spawn", jsonRequest("POST", { wid: "W1", brief: "a long brief", title: "T" }))).status).toBe(200);
     expect(running(h, "W1")).toBe(true);

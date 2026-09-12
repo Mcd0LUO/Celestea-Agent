@@ -43,9 +43,11 @@ import type { InjectionPlacement, InjectionLane, PendingInjection, Statusline, T
 import { getExtra, hasInProgressTurn, type Watchdog, type WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
+  autowakeEnabled,
   coldStatusline,
   keyOfSession,
   outcomePhaseOf,
+  HOST_SESSION_ID,
   runCompaction,
   SessionRuntimeRegistry,
   statuslineOf,
@@ -54,7 +56,10 @@ import {
   type SessionRuntime,
 } from "@celestea/runtime";
 import { join } from "node:path";
-import { EngineError, toolSpecView } from "../runtime-adapter.js";
+import { CapacityError, EngineError, toolSpecView } from "../runtime-adapter.js";
+import { HostAutowake, autowakeLog } from "./host-autowake.js";
+import { sessionContextOf } from "./context-snapshot.js";
+import { mergedWorkerRows, sendWorkerThrough, spawnWorkerThrough, workerMessagesAcross } from "./worker-bridge.js";
 import type {
   ClearOutcome,
   CompactOutcome,
@@ -138,6 +143,12 @@ export interface RealRuntimeAdapter extends RuntimeAdapter {
   shutdown(): Promise<void>;
 }
 
+/** Optional fields of one status frame (`source` marks the W769 auto-wake). */
+interface StatusExtra {
+  error?: string;
+  source?: "autowake";
+}
+
 class RealEngine implements RealRuntimeAdapter {
   readonly name = "real-runtime-adapter";
   private readonly opts: RealRuntimeAdapterOptions;
@@ -149,10 +160,23 @@ class RealEngine implements RealRuntimeAdapter {
   private baseEpoch = 0;
   private toolCalls = 0;
   private shutdownPromise: Promise<void> | null = null;
+  /**
+   * W769: the wake-up loops (one per host conversation; see `host-autowake.ts`).
+   * They carry no turn logic: the adapter supplies the wake callback below.
+   */
+  private readonly autowake: HostAutowake;
 
   constructor(opts: RealRuntimeAdapterOptions = {}) {
     this.opts = opts;
     this.env = opts.env ?? process.env;
+    this.autowake = new HostAutowake({
+      enabled: autowakeEnabled(this.env),
+      lookup: (session) => {
+        const entry = this.registry.peek(session);
+        return entry === null ? null : { mailbox: entry.runtime.workers?.mailbox ?? null, busy: entry.inFlight };
+      },
+      wake: (session, input) => this.startAutowakeTurn(session, input),
+    });
     this.profileValue = profileFromEngine(opts.profile ?? defaultEngineProfile(this.env, "CELESTEA_API_KEY"));
     this.composer = new SessionComposer({
       ...opts,
@@ -161,7 +185,12 @@ class RealEngine implements RealRuntimeAdapter {
       sessionHooks: (sessionId) => this.injectionHooks(sessionId),
     });
     this.registry = new SessionRuntimeRegistry({
-      build: (sessionId, dir) => this.composer.compose(sessionId, dir),
+      build: (sessionId, dir) => {
+        const runtime = this.composer.compose(sessionId, dir);
+        // W769: every host conversation gets a wake-up loop over its OWN mailbox.
+        this.autowake.ensure(sessionId);
+        return runtime;
+      },
       dispose: (runtime) => disposeRuntime(runtime),
       currentEpoch: () => this.baseEpoch,
       maxLive: opts.maxLiveSessions ?? limitFromEnv(this.env, "CELESTEA_MAX_LIVE_SESSIONS", MAX_LIVE_SESSIONS),
@@ -203,8 +232,39 @@ class RealEngine implements RealRuntimeAdapter {
   }
 
   async shutdown(): Promise<void> {
-    if (this.shutdownPromise === null) this.shutdownPromise = this.registry.shutdown();
+    if (this.shutdownPromise === null) {
+      // W769: unpark the wake-up loops FIRST: a loop that grabbed a queue during
+      // the teardown would otherwise start a turn on a disposing runtime.
+      this.shutdownPromise = this.autowake.stop().then(() => this.registry.shutdown());
+    }
     await this.shutdownPromise;
+  }
+
+  /** Is auto-wake on? (`CELESTEA_AUTOWAKE`, read once at construction.) */
+  get autowakeRunning(): boolean {
+    return this.autowake.running;
+  }
+  /**
+   * Run ONE ordinary turn with the drained receipts as its input — the same
+   * `beginTurn` + status + `drive` path a `POST /api/turn` takes, with
+   * `source: "autowake"` on the start frame (contracts/sse-events.json allows
+   * it). Returns false when the slot is gone (session deleted) or already taken
+   * (busy): the loop then re-queues the messages into the CURRENT generation and
+   * retries, so nothing is lost and nothing is consumed twice.
+   */
+  private startAutowakeTurn(session: string | null, input: string): boolean {
+    const entry = this.registry.peek(session);
+    if (entry === null || entry.inFlight) return false;
+    try {
+      const turn = this.launch(entry, input, "autowake");
+      autowakeLog(session, `woke the host: turn ${turn}`);
+      return true;
+    } catch (error) {
+      // Capacity (max concurrent turns) is the one raciness we can retry: the
+      // loop re-queues and comes back.
+      if (error instanceof CapacityError) return false;
+      throw error;
+    }
   }
 
   /** The composed tool registry of the default instance (`GET /api/tools`). */
@@ -314,12 +374,21 @@ class RealEngine implements RealRuntimeAdapter {
   async startTurn(req: TurnRequest): Promise<TurnStart> {
     const entry = this.entryFor(req.session);
     if (entry.inFlight) throw new TurnBusyError("turn");
+    // W515 §2: this input IS the turn, so it is already in the context.
+    return { turn: this.launch(entry, req.input), placement: "context" };
+  }
+
+  /**
+   * Claim the slot and start one turn — the ONE path both a manual turn and a
+   * W769 auto-wake take, so SSE frames, statusline phases, the turn number and
+   * the busy guard cannot differ between them.
+   */
+  private launch(entry: SessionRuntime, input: string, source?: "autowake"): number {
     const controller = new AbortController();
     const turn = this.beginTurn(entry, controller);
-    this.emitStatus(entry, turn, "start");
-    void this.drive(entry, req.input, turn, controller);
-    // W515 §2: this input IS the turn, so it is already in the context.
-    return { turn, placement: "context" };
+    this.emitStatus(entry, turn, "start", source === null ? {} : { source });
+    void this.drive(entry, input, turn, controller);
+    return turn;
   }
 
   /**
@@ -364,7 +433,7 @@ class RealEngine implements RealRuntimeAdapter {
       this.emitStatus(entry, turn, outcomePhaseOf(outcome));
     } catch (e) {
       this.registry.endTurn(entry, null);
-      this.emitStatus(entry, turn, "error", e instanceof Error ? e.message : String(e));
+      this.emitStatus(entry, turn, "error", { error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -406,10 +475,8 @@ class RealEngine implements RealRuntimeAdapter {
     return this.registry.peek(session ?? null)?.runtime.workers ?? null;
   }
 
-  private emitStatus(entry: SessionRuntime, turn: number, phase: string, error: string | null = null): void {
-    const payload: Record<string, unknown> = { phase, statusline: entry.runtime.statusline() };
-    if (error !== null) payload["error"] = error;
-    this.bus?.emit("status", turn, payload, entry.sessionId);
+  private emitStatus(entry: SessionRuntime, turn: number, phase: string, extra: StatusExtra = {}): void {
+    this.bus?.emit("status", turn, { phase, statusline: entry.runtime.statusline(), ...extra }, entry.sessionId);
   }
 
   // --- host views --------------------------------------------------------
@@ -425,14 +492,8 @@ class RealEngine implements RealRuntimeAdapter {
    * snapshot is the engine's own, never a host-side re-derivation.
    */
   sessionContext(session: string | null): SessionContextView {
-    const runtime = this.entryFor(session).runtime;
-    const profile = this.composer.profileFor(session);
-    return contextViewOf(runtime, {
-      // W729: THAT session's profile (mode variant included), not the process's.
-      model: profile.model,
-      system: profile.system_prompt,
-      tools: runtime.tools?.schemas() ?? [],
-    });
+    // W729: THAT session's profile (mode variant included), not the process's.
+    return sessionContextOf(this.entryFor(session).runtime, this.composer.profileFor(session));
   }
 
   /** The requested session's statusline (no instance yet = an empty one). */
@@ -440,12 +501,8 @@ class RealEngine implements RealRuntimeAdapter {
     const entry = this.registry.peek(session ?? null);
     if (entry !== null) return entry.runtime.statusline();
     // W755: a cold session measures nothing — `coldStatusline` owns that shape.
-    return coldStatusline({
-      model: this.composer.profileFor(session ?? null).model,
-      reasoning_effort: this.profileValue.reasoning_effort,
-      context_window: this.profileValue.context_window_tokens,
-      now: this.now,
-    });
+    const profile = this.profileValue;
+    return coldStatusline({ ...profile, context_window: profile.context_window_tokens, now: this.now });
   }
 
   async configure(patch: ProfilePatch): Promise<EngineProfile> {
@@ -501,48 +558,19 @@ class RealEngine implements RealRuntimeAdapter {
 
   /** Merged worker rows over every live instance (W513 aggregate view). */
   workerSessions(): WorkerSessionRow[] {
-    const rows: WorkerSessionRow[] = [];
-    for (const entry of this.registry.list()) {
-      for (const row of workerSessionsOf(entry.runtime.workers, entry.runtime.hostSessionId)) {
-        rows.push({ ...row, host_session: entry.sessionId, busy: entry.inFlight });
-      }
-    }
-    return rows;
+    return mergedWorkerRows(this.registry.list());
   }
 
   workerMessages(sessionId: string): unknown[] | null {
-    for (const entry of this.registry.list()) {
-      const found = workerMessagesOf(entry.runtime.workers, sessionId);
-      if (found !== null) return found;
-    }
-    return null;
+    return workerMessagesAcross(this.registry.list(), sessionId);
   }
 
   async workerSpawn(req: WorkerSpawnRequest): Promise<WorkerSpawnOutcome> {
-    const entry = this.entryFor(req.session ?? null);
-    const args: Record<string, unknown> = { wid: req.wid, brief: req.brief };
-    for (const key of ["title", "model"] as const) {
-      const value = req[key];
-      if (value !== undefined) args[key] = value;
-    }
-    // W513: an unaddressed worker reports back to the session that spawned it.
-    args["report_to"] = req.report_to ?? entry.runtime.hostSessionId ?? "";
-    this.toolCalls += 1;
-    return spawnOutcomeOf(await dispatchWorkerTool(entry.runtime.tools, "spawn_worker", args, `host-spawn-${this.toolCalls}`));
+    return spawnWorkerThrough(this.entryFor(req.session ?? null), req, `host-spawn-${(this.toolCalls += 1)}`);
   }
 
-  /** The worker's registry is per session: route the send to its owner. */
   async workerSend(req: WorkerSendRequest): Promise<Record<string, unknown>> {
-    let last: Record<string, unknown> | null = null;
-    for (const entry of this.registry.list()) {
-      this.toolCalls += 1;
-      const body = sendBodyOf(
-        await dispatchWorkerTool(entry.runtime.tools, "session_send_message", { target: req.target, content: req.content }, `host-send-${this.toolCalls}`),
-      );
-      if (body["ok"] === true) return body;
-      last = body;
-    }
-    return last ?? { ok: false, delivered: false, error: "worker registry is not wired" };
+    return sendWorkerThrough(this.registry.list(), req, () => `host-send-${(this.toolCalls += 1)}`);
   }
 
   /**

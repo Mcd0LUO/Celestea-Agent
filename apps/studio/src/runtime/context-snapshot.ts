@@ -64,6 +64,17 @@ export function contextViewOf(runtime: Runtime, fallback: ContextFallback): Sess
   };
 }
 
+/**
+ * W769: the read-only view helpers the adapter's HTTP surface needs, so the
+ * adapter stays a router instead of an assembly site (it is at its size budget).
+ *
+ * `sessionContextOf` is `/api/sessions/{id}/context` for one already-composed
+ * runtime: the read-only view of a runtime the caller already resolved.
+ */
+export function sessionContextOf(runtime: Runtime, profile: { model: string; system_prompt: string }): SessionContextView {
+  return contextViewOf(runtime, { model: profile.model, system: profile.system_prompt, tools: runtime.tools?.schemas() ?? [] });
+}
+
 /** Tool schemas pass through verbatim (name / description / parameters). */
 export function toolViews(specs: readonly ToolSpec[]): ContextToolView[] {
   return specs.map((spec) => ({ name: spec.name, description: spec.description, parameters: spec.parameters }));
