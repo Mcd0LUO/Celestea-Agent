@@ -8,9 +8,7 @@
  * instances (P0-A unique turn identity).
  */
 
-import type { Message, SessionEvent, SessionLog } from "@celestea/core";
-import { deriveMessagesFrom } from "./derive.js";
-import { formatTurnId } from "../turn-id.js";
+import { deriveMessagesFrom, formatTurnId, type Message, type SessionEvent, type SessionLog } from "@celestea/core";
 
 export class InMemorySessionLog implements SessionLog {
   private recorded: SessionEvent[] = [];

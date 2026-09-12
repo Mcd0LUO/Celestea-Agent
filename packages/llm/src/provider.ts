@@ -5,10 +5,12 @@
  * DeepSeek adapter is registered under the canonical name "deepseek", and the
  * from-env path requires a non-empty API key.
  *
- * TODO(core-seam): `LlmRegistry` lives in core in Rust; once `@celestea/core`
- * exports the seam this local registry is replaced by the core one (README
- * §"core seam adapter").
+ * A1 (W746): the registry is CORE's `LlmRegistry` (the `llm.rs` port) — the
+ * local `Map`-based copy is deleted, so registration/resolution semantics are
+ * the seam's, not a second implementation's.
  */
+
+import { LlmRegistry } from "@celestea/core";
 
 import { OpenAiCompatClient } from "./client.js";
 import { LlmError } from "./errors.js";
@@ -19,6 +21,8 @@ import type { EnvLike } from "./timeouts.js";
 
 /** Canonical provider name (mirrors `deepseek_registry`). */
 export const DEEPSEEK_PROVIDER_NAME = "deepseek";
+
+export { LlmRegistry };
 
 /**
  * Build the DeepSeek provider from a runtime profile + environment. The API key
@@ -36,26 +40,9 @@ export function createDeepSeekLlm(
   return OpenAiCompatClient.fromConfig(resolveClientConfig(profile, env));
 }
 
-/** Name -> adapter registry (a later registration of a name shadows earlier). */
-export class LlmRegistry {
-  readonly #adapters = new Map<string, Llm>();
-
-  register(name: string, llm: Llm): void {
-    this.#adapters.set(name, llm);
-  }
-
-  resolve(name: string): Llm | undefined {
-    return this.#adapters.get(name);
-  }
-
-  list(): string[] {
-    return [...this.#adapters.keys()];
-  }
-}
-
 /** A registry holding `llm` under the canonical "deepseek" name. */
-export function createDeepSeekRegistry(llm: Llm): LlmRegistry {
-  const registry = new LlmRegistry();
+export function createDeepSeekRegistry(llm: Llm): LlmRegistry<Llm> {
+  const registry = new LlmRegistry<Llm>();
   registry.register(DEEPSEEK_PROVIDER_NAME, llm);
   return registry;
 }

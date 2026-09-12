@@ -33,8 +33,8 @@ timeout tiers, free-form `reasoning_effort` passthrough.
 
 | 分类 | 导出 |
 |---|---|
-| seam 类型 | `Llm`, `LlmStream`, `StreamEvent`, `Message`, `Content`, `TextContent`, `ToolCallContent`, `ToolCall`, `Role`, `ROLES`, `ToolSpec`, `ModelRequest` |
-| seam 工具 | `userMessage`, `systemMessage`, `assistantText`, `assistantToolCall`, `toolResultMessage`, `collectMessageText`, `messageToolCalls`, `collectStream` |
+| seam 类型（re-export core） | `Llm`, `LlmStream`, `StreamEvent`, `Message`, `Content`, `TextContent`, `ToolCallContent`, `ToolCall`, `Role`, `ROLES`, `ToolSpec`, `ModelRequest`, `ModelRequestDraft`, `LlmError` |
+| seam 工具（re-export core，除 helper） | `userMessage`, `systemMessage`, `assistantText`, `assistantToolCall`, `toolResultMessage`, `collectMessageText`, `messageToolCalls`, `collectStream` |
 | 用量 | `Usage`, `parseUsage`, `usageFromObject`, `usageIsEmpty`, `zeroUsage`, `ZERO_USAGE`, `cacheHitRatio`, `USAGE_REQUIRED_KEYS`, `CACHE_READ_FLAT_KEYS`, `CACHE_READ_NESTED`, `REASONING_TOKENS_NESTED` |
 | 错误 | `LlmError`, `LlmErrorKind`, `TimeoutStage`, `TIMEOUT_ERROR_PREFIX`, `timeoutError`, `responseHeaderTimeoutError`, `connectTimeoutError`, `streamIdleTimeoutMessage`, `isTimeoutError`, `errorKind` |
 | 超时三档 | `TimeoutTiers`, `TimeoutProfile`, `DEFAULT_TIMEOUTS`, `DEFAULT_*_TIMEOUT_MS`, `CONNECT_TIMEOUT_ENV`, `RESPONSE_TIMEOUT_ENV`, `STREAM_IDLE_TIMEOUT_ENV`, `PROFILE_TIMEOUT_KEYS`, `resolveTimeoutMs`, `resolveTimeoutTiers`, `readTimeoutProfile`, `msToDuration`, `isTimeoutMs`, `EnvLike` |
@@ -80,48 +80,62 @@ prompt_tokens, 0, 1)`，4 位小数。全零 usage 视为“没有 usage 帧”�
 3. 注册：`registry.register("myprovider", new MyProvider(...))`。
    `crates/llm/src/registry.rs` 的对应物是 `createDeepSeekRegistry(llm)`。
 
-## core seam adapter（TODO）
+## core seam（A1 / W746：已收口）
 
-`packages/llm` 以**插件**形式实现 `packages/core` 的 `Llm` seam，只依赖 `packages/core`
-（不依赖 session / tools / agent-loop / runtime）。P2a 交付时 core 的 seam 仍在改造中
-（`packages/core/src/{llm,stream,message}.ts` 在工作区里尚未提交、也未定型），因此
-**本包自带 `src/seam.ts` 这份词汇表**，并把形状对齐到 core 现有实现；一旦 core 定稿，
-切换只需改 import：
+`packages/llm` 以**插件**形式实现 `packages/core` 的 LLM seam，只依赖 `packages/core`
+（不依赖 session / tools / agent-loop / runtime）。W746 之前本包自带 `src/seam.ts` 这份与 core
+同名的词汇表（`src/*.ts` 对 core 的 import 数为 **0**）；现在词汇表**就是 core 的**：
 
 ```ts
-// 现在（P2a，自持词汇表）
-import type { Llm, LlmStream, Message, ModelRequest, StreamEvent, ToolSpec } from "./seam.js";
-// core seam 合并后（唯一改动点；seam.ts 可退化为 core 的 re-export）
-import type { Llm, LlmStream, Message, ModelRequest, StreamEvent, ToolSpec } from "@celestea/core";
+// seam.ts：直接 re-export core（值也 re-export，`LlmError` 因此跨包 instanceof 一致）
+export { assistantText, messageToolCalls, userMessage, ROLES, … } from "@celestea/core";
+export type { Content, LlmError, Message, ModelRequest, Role, StreamEvent, … } from "@celestea/core";
 ```
 
-### 接口差异（对照 W271 的 `packages/core/src/{llm,stream,message,types}.ts`）
+- **零重复定义**：`Message` / `Content` / `Role` / `ToolCall` / `ToolSpec` / `ModelRequest` /
+  `Usage` / `LlmError` / `LlmRegistry` 全部来自 core（`seam.ts` / `usage.ts` / `errors.ts` /
+  `provider.ts` 只保留「解析」「构造器」「provider 注册」这类 provider 侧代码）。
+- **`instanceof` 跨包一致**：`LlmError` 类本体在 `packages/core/src/stream.ts`，本包
+  `statusError()` / `timeoutError()` 造出的错误在 core 侧同样是 `instanceof LlmError`
+  （`src/seam.test.ts` 断言类对象同一性，不是结构相同）。
+- **`LlmRegistry`**：删除本包同名最小实现，`createDeepSeekRegistry` 改用 core 的
+  `LlmRegistry<Llm>`（core 的注册表加了带默认值的类型参数，见 `core/src/llm.ts`）。
 
-| 项 | core 现状 | 本包 | 差异 / 处置 |
+### 唯一保留的差异（`StreamEvent.failed.kindOf`）
+
+| 项 | core | 本包 | 处置 |
 |---|---|---|---|
-| `Llm.generate(req): Promise<LlmStream>` | 一致 | 一致 | 无差异，`OpenAiCompatClient implements Llm` 直接满足结构 |
-| `StreamEvent` 判别字段 | `kind` | `kind` | 已对齐（`text` / `thinking` 载荷字段同样是 `text`） |
-| `StreamEvent.failed.kindOf` | `"generate" \| "stream"` | `"generate" \| "stream" \| "timeout"` | **需 core 放宽**：Rust 侧 `Failed{kind}` 是自由字符串，SSE 空闲守卫取 `"timeout"`（P2a 硬性要求“流空闲 → kind=timeout”）；否则换接口时会丢该语义 |
-| `ModelRequest` | 全字段必填（`model: string`、`system: string \| null`、`tools: ToolSpec[]`、`max_tokens: number \| null`、`temperature: number \| null`） | 同名字段、可选/宽松 | 无破坏：core 的值可直接传入本包；本包不生产 `ModelRequest`，只消费 |
-| `LlmError` | 纯 `message` 类（对齐 Rust `LlmError(String)`） | 同名 + `kind` / `isTimeout` / `timeoutStage`，保留 `TIMEOUT_ERROR_PREFIX = "llm timeout"` | 换接口时让本包 `LlmError extends CoreLlmError`（`instanceof` 与 core 兼容），结构化字段保留 |
-| `LlmRegistry` | 已有（`NamedRegistry`，后注册覆盖、`list()` 去重） | `provider.ts` 内含同名最小实现 | 换接口时删除本包实现，改用 core 的；`createDeepSeekRegistry` 保留为便捷工厂 |
-| seam 词汇（`Role`/`Content`/`ToolCall`/`Message`/`ToolSpec`/`Usage`） | `message.ts` + `types.ts` | 与之一致：`Content` 标签 `"text"` / `"tool_call"`，载荷字段 `content`，`tool_call_id: string \| null`，Usage 五扁平计数 | 已对齐，无需转换 |
+| `StreamEvent.failed.kindOf` | `"generate" \| "stream"` | `"generate" \| "stream" \| "timeout"` | **本包唯一放宽的成员**（SSE 空闲守卫 → `"timeout"`，Rust 侧 `Failed{kind}` 本是自由字符串）。其余成员由 core 的联合类型派生（`Exclude<CoreStreamEvent, {kind:"failed"}>`），core 新增变体会自动出现。见 `src/seam.ts` 的 `TODO(core-timeout-kind)` |
+| `ModelRequest` | 全字段必填 | `ModelRequest` 照旧 re-export；另有 `ModelRequestDraft = Partial<ModelRequest> & { messages }` 作为**直连调用**的入参 | 引擎交给本包的一定是全字段 core `ModelRequest`（可直接当 draft 用）；一次性调用只给 `messages` 也合法，wire 映射的「缺省即空」回退语义未变 |
+| `LlmError` | 结构化类（`kind`/`isTimeout`/`timeoutStage`/`httpStatus`/`retryable`） | 同一个类 | 类本体已在 core，本包只留 `TIMEOUT_ERROR_PREFIX` 与构造器 |
+| seam 词汇（`Role`/`Content`/`ToolCall`/`Message`/`ToolSpec`/`Usage`） | `message.ts` + `types.ts` | re-export | 无差异 |
 | `Llm` service token | `LLM_SERVICE` / `LLM_REGISTRY_SERVICE` | 无 | 组合期（compose）由 runtime 侧使用；本包不涉及 |
+
+**为什么放宽没进 core**（选择理由）：要放宽 `kindOf` 就必须同时放宽 core 的
+`TurnOutcome.error.kind`，因为 `packages/agent-loop/src/step.ts:49` 把 `kindOf` 原样写进
+`TurnOutcome.error.kind`；而 `TurnOutcome.error.kind` 的取值被冻结契约
+`contracts/session-event.schema.json` 钉成 `["generate","stream"]`，且 W744 起该 schema 会被
+`tests/contract-parity.test.ts` 真实执行（第 68 / 119 行）——放宽 core 会让引擎能产出契约拒绝
+的行。契约冻结 + agent-loop 不在本刀范围内，所以本刀选择「保留一层最小适配」：差异只此一个
+成员，有损降级点收敛在唯一的 host 适配器
+（`apps/studio/src/runtime/llm-assembly.ts:69-96`，`kindOf: "timeout"` → `"stream"`，
+`llm timeout:` 前缀保住细节）。真正放宽需要 契约 + agent-loop + 本包 三处一起动。
 
 ## 目录
 
 | 文件 | 行数(约) | 职责 |
 |---|---|---|
-| `src/index.ts` | 107 | 唯一公开出口 |
-| `src/seam.ts` | 143 | seam 词汇表 + `Llm` 接口 + 消息构造器 + `collectStream` |
-| `src/client.ts` | 177 | `OpenAiCompatClient`（实现 `Llm`）与 HTTP 错误包装 |
+| `src/index.ts` | 127 | 唯一公开出口 |
+| `src/seam.ts` | 125 | core 词汇表的 re-export + `Llm` 接口（唯一放宽）+ 消息/流 helper |
+| `src/client.ts` | 176 | `OpenAiCompatClient`（实现 `Llm`）与 HTTP 错误包装 |
 | `src/transport.ts` | 150 | HTTP 传输 + connect/响应头两档超时 + 错误体片段 + 脱敏 |
 | `src/stream.ts` | 246 | 流空闲超时读体 + `TurnAccumulator` + 终态事件（done/failed/interrupted） |
 | `src/sse/frames.ts` | 98 | 增量 SSE 分帧器 |
 | `src/sse/chunks.ts` | 151 | chunk 视图、`reasoning_content`、tool-call 分片、参数解析 |
-| `src/wire.ts` | 136 | 消息/工具映射与请求体构造 |
-| `src/usage.ts` | 121 | 用量与三种 cache 键解析 |
+| `src/wire.ts` | 135 | 消息/工具映射与请求体构造 |
+| `src/usage.ts` | 107 | 用量与三种 cache 键解析（`Usage`/`zeroUsage`/`usageIsEmpty` re-export core） |
+| `src/errors.ts` | 108 | 超时前缀 + 结构化错误构造器（`LlmError` 类本体在 core） |
 | `src/timeouts.ts` | 153 | 三档超时解析（profile 键 + env + 默认） |
 | `src/profile.ts` | 121 | profile→配置、api key 只从 env、effort 直通 |
-| `src/provider.ts` | 62 | provider 注册与 from-env 构造 |
-| `src/*.test.ts`, `src/mock-upstream.test-util.ts` | — | 本地 mock HTTP server 测试（无网络） |
+| `src/provider.ts` | 48 | provider 注册与 from-env 构造（用 core 的 `LlmRegistry`） |
+| `src/*.test.ts`, `src/mock-upstream.test-util.ts` | — | 本地 mock HTTP server 测试（无网络）；`seam.test.ts` 锁 A1 不变量 |

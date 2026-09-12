@@ -2,8 +2,10 @@
  * `@celestea/session` — the SessionLog implementations (plugin form).
  *
  * Responsibility: record SessionEvents in insertion order (in memory and as an
- * append-only JSONL file), replay/repair a persisted log, own the monotonic
- * turn-id counter, and project the two message views:
+ * append-only JSONL file), replay/repair a persisted log, and project the two
+ * message views. A2 (W746): the projection algorithm and the turn-id math are
+ * CORE's (`deriveMessagesFrom` / `formatTurnId`), re-exported here — this package
+ * owns storage, not seam semantics:
  *   - the Studio projection (`projectMessages`, per-event, golden vs Rust HTTP);
  *   - the engine model-visible history (`deriveMessages`, Rust derive_messages).
  *
@@ -11,14 +13,14 @@
  * `inMemorySessionLogPlugin` / `persistentSessionLogPlugin` into a Context.
  *
  * Module map:
- *   log/derive.ts      derive_messages + balance_tool_calls   (session/log.rs)
+ *   log/derive.ts      derive_messages + balance_tool_calls   (re-export of core, A2)
  *   log/memory.ts      InMemorySessionLog                     (session/log.rs)
  *   log/file.ts        JSONL file replay / naming             (session/persistent.rs)
  *   log/persistent.ts  PersistentSessionLog                   (session/persistent.rs)
  *   plugin.ts          Context registration (SESSION_LOG_SERVICE)
  *   jsonl.ts           file-level parse/serialize + codec re-exports
  *   messages.ts        Studio projection + deriveMessages facade
- *   turn-id.ts         turn id math + audit
+ *   turn-id.ts         turn id math + audit (re-export of core, A2)
  *   replay.ts          replay analysis + SSE transcript derivation
  *   checkpoint.ts      checkpoint.json sidecar: shape + atomic read/write
  *   checkpoint-log.ts  SessionLog decorator: turn boundary -> checkpoint

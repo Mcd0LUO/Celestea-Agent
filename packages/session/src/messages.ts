@@ -14,9 +14,8 @@
  * contract.
  */
 
-import type { SessionEvent, StudioMessage } from "@celestea/core";
-import { deriveMessagesFrom } from "./log/derive.js";
-import type { Message } from "@celestea/core";
+import { deriveMessagesFrom } from "@celestea/core";
+import type { Message, SessionEvent, StudioMessage } from "@celestea/core";
 
 /** Studio projection of a single event; null for structural markers. */
 export function sessionEventToMessage(ev: SessionEvent): StudioMessage | null {
