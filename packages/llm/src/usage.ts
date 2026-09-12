@@ -5,16 +5,16 @@
  * in a usage-only final frame or attached to the last chunk; cache-hit prompt
  * tokens use three different provider key shapes and all of them are probed.
  * The statusline reads exactly these five flat counters.
+ *
+ * A1 (W746): the `Usage` shape itself (and `zeroUsage` / `usageIsEmpty`) is
+ * core's `message.rs` port — re-exported here, not redeclared. What is
+ * provider-specific stays: the three provider key shapes and the parser.
  */
 
-/** Provider-reported token usage for one turn (all counters default to 0). */
-export interface Usage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-  cache_read: number;
-  reasoning_tokens: number;
-}
+import { usageIsEmpty, zeroUsage, type Usage } from "@celestea/core";
+
+export { usageIsEmpty, zeroUsage };
+export type { Usage };
 
 /** P0 placeholder name, kept as an alias of the real Usage shape. */
 export type LlmUsageFrame = Usage;
@@ -33,17 +33,6 @@ export const REASONING_TOKENS_NESTED = {
   outer: "completion_tokens_details",
   inner: "reasoning_tokens",
 } as const;
-
-/** A fresh all-zero usage block. */
-export function zeroUsage(): Usage {
-  return {
-    prompt_tokens: 0,
-    completion_tokens: 0,
-    total_tokens: 0,
-    cache_read: 0,
-    reasoning_tokens: 0,
-  };
-}
 
 /** An all-zero usage block (constant; do not mutate). */
 export const ZERO_USAGE: Usage = zeroUsage();
@@ -69,17 +58,6 @@ function nested(usage: Record<string, unknown>, outer: string, inner: string): n
   const obj = usage[outer];
   if (!isRecord(obj)) return undefined;
   return asU64(obj[inner]);
-}
-
-/** True when every counter is zero (the Rust `Usage::is_empty` gate). */
-export function usageIsEmpty(u: Usage): boolean {
-  return (
-    u.prompt_tokens === 0 &&
-    u.completion_tokens === 0 &&
-    u.total_tokens === 0 &&
-    u.cache_read === 0 &&
-    u.reasoning_tokens === 0
-  );
 }
 
 /**
@@ -112,7 +90,16 @@ export function parseUsage(chunk: unknown): Usage | undefined {
   return usageFromObject(usage);
 }
 
-/** cache_read / prompt_tokens, clamped to [0,1] and rounded to 4 decimals. */
+/**
+ * cache_read / prompt_tokens, clamped to [0,1] and rounded to 4 decimals.
+ *
+ * NOTE (A1): this is the PROVIDER-side reading of the ratio, and it is
+ * deliberately not core's `cacheHitRatio(u)` (unclamped, unrounded, the
+ * `message.rs` port). `packages/runtime` has a third spelling
+ * (`cacheHitRatioRounded`). Unifying the three is queued, not done here:
+ * every one of them is asserted by its own test, so folding them is a
+ * behaviour change, not a move.
+ */
 export function cacheHitRatio(u: Usage): number {
   if (u.prompt_tokens <= 0) return 0;
   const ratio = u.cache_read / u.prompt_tokens;

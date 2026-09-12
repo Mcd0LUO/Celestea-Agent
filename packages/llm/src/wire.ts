@@ -16,7 +16,7 @@
 import {
   collectMessageText,
   type Message,
-  type ModelRequest,
+  type ModelRequestDraft,
   type ToolSpec,
 } from "./seam.js";
 
@@ -106,8 +106,8 @@ export interface BuildBodyOptions {
   maxOutputTokens?: number | null;
 }
 
-/** Build the serialized chat-completions body for one ModelRequest. */
-export function buildRequestBody(req: ModelRequest, opts: BuildBodyOptions): ChatCompletionsBody {
+/** Build the serialized chat-completions body for one request draft. */
+export function buildRequestBody(req: ModelRequestDraft, opts: BuildBodyOptions): ChatCompletionsBody {
   const messages: WireMessage[] = [];
   if (req.system !== null && req.system !== undefined && req.system !== "") {
     messages.push({ role: "system", content: req.system });

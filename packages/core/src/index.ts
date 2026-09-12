@@ -12,7 +12,9 @@
  *   message.ts       Role / Content / ToolCall / Message / Usage   (message.rs)
  *   stream.ts        ModelRequest / StreamEvent / LlmError         (message.rs, llm.rs)
  *   session-event.ts SessionEvent JSONL codec (validate / serialize)  (session_log.rs)
- *   session-log.ts   SessionLog seam
+ *   session-log.ts   SessionLog seam + storage half + default projection (A2)
+ *   projection.ts    derive_messages / balance_tool_calls      (session/log.rs, A2)
+ *   turn-id.ts       turn id math + audit                      (A2)
  *   injection.ts     mid-turn delivery seam: lanes / placement / envelope (W513)
  *   plugin.ts        Plugin seam + NamedRegistry                   (plugin.rs)
  *   context.ts       Context service container                     (context.rs)
@@ -34,6 +36,8 @@ export * from "./message.js";
 export * from "./stream.js";
 export * from "./session-event.js";
 export * from "./session-log.js";
+export * from "./projection.js";
+export * from "./turn-id.js";
 export * from "./injection.js";
 export * from "./plugin.js";
 export * from "./context.js";

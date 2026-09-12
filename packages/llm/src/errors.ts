@@ -1,6 +1,13 @@
 /**
  * Structured LLM errors (P2a; status/retryability fields: iteration E §4 P0).
  *
+ * A1 (W746): the `LlmError` class and its `LlmErrorKind` / `TimeoutStage` /
+ * `LlmErrorOptions` vocabulary live in `@celestea/core` (`core/src/stream.ts`)
+ * and are re-exported here — this package no longer owns a second `LlmError`,
+ * so `instanceof LlmError` and `isTimeoutError` agree across packages. What
+ * stays here is provider-side and cannot move to core: the canonical timeout
+ * prefix and the error builders.
+ *
  * Rust keeps a plain-string `LlmError` and encodes the semantics in the
  * canonical `llm timeout` message prefix: an error thrown out of `generate`
  * maps to `TurnOutcome::Error { kind: "generate" }`, a stalled stream maps to
@@ -19,51 +26,19 @@
  * throw site, SSE frame and statusline field is byte-for-byte unchanged.
  */
 
+import { LlmError, type LlmErrorKind, type LlmErrorOptions, type TimeoutStage } from "@celestea/core";
+
+export { LlmError };
+export type { LlmErrorKind, LlmErrorOptions, TimeoutStage };
+
 /** Canonical prefix of every timeout error (Rust TIMEOUT_ERROR_PREFIX). */
 export const TIMEOUT_ERROR_PREFIX = "llm timeout";
-
-export type LlmErrorKind = "generate" | "stream" | "timeout";
-
-export type TimeoutStage = "connect" | "response" | "idle";
 
 /**
  * Non-5xx statuses worth retrying (§4.2.2 `retryableStatuses`): request
  * timeout, too early, rate limited. Every 5xx counts as retryable as well.
  */
 export const RETRYABLE_HTTP_STATUSES: readonly number[] = [408, 425, 429];
-
-/** Extra structured fields of `LlmError` (all optional; defaults are safe). */
-export interface LlmErrorOptions {
-  isTimeout?: boolean;
-  timeoutStage?: TimeoutStage | null;
-  /** Status of the failed HTTP response; `null` = no response arrived. */
-  httpStatus?: number | null;
-  /** Whether retrying / switching target could plausibly help. */
-  retryable?: boolean;
-}
-
-export class LlmError extends Error {
-  /** Turn-outcome kind this failure maps to. */
-  readonly kind: LlmErrorKind;
-  /** True for any timeout; the message then carries the canonical prefix. */
-  readonly isTimeout: boolean;
-  /** Which guard tripped, when the failure was a timeout. */
-  readonly timeoutStage: TimeoutStage | null;
-  /** HTTP status of the failing response; `null` when none was received. */
-  readonly httpStatus: number | null;
-  /** True for transient causes (timeouts, transport, 408/425/429/5xx). */
-  readonly retryable: boolean;
-
-  constructor(message: string, kind: LlmErrorKind = "generate", options?: LlmErrorOptions) {
-    super(message);
-    this.name = "LlmError";
-    this.kind = kind;
-    this.isTimeout = options?.isTimeout ?? false;
-    this.timeoutStage = options?.timeoutStage ?? null;
-    this.httpStatus = options?.httpStatus ?? null;
-    this.retryable = options?.retryable ?? false;
-  }
-}
 
 /** Would another attempt / another target help, judged from the status alone? */
 export function isRetryableStatus(status: number | null): boolean {

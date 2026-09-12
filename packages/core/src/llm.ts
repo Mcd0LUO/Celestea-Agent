@@ -17,16 +17,23 @@ export interface Llm {
   generate(req: ModelRequest): Promise<LlmStream>;
 }
 
-/** Named registry of adapters; a later `register` of a name shadows the earlier. */
-export class LlmRegistry {
-  private readonly registry = new NamedRegistry<Llm>();
+/**
+ * Named registry of adapters; a later `register` of a name shadows the earlier.
+ *
+ * A1 (W746): the adapter type is a parameter so a provider package registers
+ * its OWN `Llm` (the same seam plus its documented stream widening) without a
+ * cast; the default keeps every existing use (`new LlmRegistry()`) meaning the
+ * core `Llm`.
+ */
+export class LlmRegistry<T = Llm> {
+  private readonly registry = new NamedRegistry<T>();
 
-  register(name: string, llm: Llm): void {
+  register(name: string, llm: T): void {
     this.registry.insert(name, llm);
   }
 
   /** The adapter registered for `name` (last registration wins). */
-  resolve(name: string): Llm | undefined {
+  resolve(name: string): T | undefined {
     return this.registry.get(name);
   }
 

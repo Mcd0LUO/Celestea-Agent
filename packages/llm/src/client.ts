@@ -35,7 +35,7 @@ import {
 } from "./wire.js";
 import { httpStatusLabel, readBodySnippet, redact, sendChatRequest } from "./transport.js";
 import { streamEvents } from "./stream.js";
-import type { Llm, LlmStream, ModelRequest } from "./seam.js";
+import type { Llm, LlmStream, ModelRequestDraft } from "./seam.js";
 import { DEFAULT_TIMEOUTS, type EnvLike, type TimeoutTiers } from "./timeouts.js";
 
 /** Constructor options. Timeout fields: 0 = disabled (Rust ms_to_duration). */
@@ -111,12 +111,12 @@ export class OpenAiCompatClient implements Llm {
   }
 
   /** Request model wins; the configured model is the fallback. */
-  effectiveModel(req: ModelRequest): string {
+  effectiveModel(req: ModelRequestDraft): string {
     return req.model === undefined || req.model === "" ? this.#model : req.model;
   }
 
   /** Serialized request body (reasoning_effort injected verbatim). */
-  requestBody(req: ModelRequest, model: string = this.effectiveModel(req)): ChatCompletionsBody {
+  requestBody(req: ModelRequestDraft, model: string = this.effectiveModel(req)): ChatCompletionsBody {
     return buildRequestBody(req, {
       model,
       reasoningEffort: this.#reasoningEffort,
@@ -129,7 +129,7 @@ export class OpenAiCompatClient implements Llm {
    * response-header timeout, transport error, non-2xx status) reject with an
    * LlmError; the returned stream then carries the terminal state as an event.
    */
-  async generate(req: ModelRequest): Promise<LlmStream> {
+  async generate(req: ModelRequestDraft): Promise<LlmStream> {
     const model = this.effectiveModel(req);
     validateModel(model);
     const body = this.requestBody(req, model);

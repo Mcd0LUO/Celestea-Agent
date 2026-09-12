@@ -9,13 +9,16 @@
  * the `Llm` seam, not on the provider.
  */
 
-// The seam this package implements (see seam.ts for the core TODO adapter).
+// The seam this package implements. A1 (W746): every symbol below is CORE's
+// own (re-exported through seam.ts) except the one documented widening of
+// `StreamEvent.failed.kindOf` — see seam.ts §StreamEvent.
 export type {
   Content,
   Llm,
   LlmStream,
   Message,
   ModelRequest,
+  ModelRequestDraft,
   Role,
   StreamEvent,
   TextContent,
@@ -35,7 +38,8 @@ export {
   userMessage,
 } from "./seam.js";
 
-// Usage contract (the statusline reads exactly these flat counters).
+// Usage contract (the statusline reads exactly these flat counters). The
+// `Usage` shape + `zeroUsage`/`usageIsEmpty` are core's; the parser is ours.
 export type { LlmUsageFrame, Usage } from "./usage.js";
 export {
   cacheHitRatio,

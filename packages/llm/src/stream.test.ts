@@ -7,7 +7,13 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { collectStream, OpenAiCompatClient, userMessage, type ModelRequest } from "@celestea/llm";
+import {
+  collectStream,
+  OpenAiCompatClient,
+  userMessage,
+  type ModelRequest,
+  type ModelRequestDraft,
+} from "@celestea/llm";
 import { sseFrame, startMockUpstream, type MockUpstream } from "./mock-upstream.test-util.js";
 
 const DUMMY_KEY = "sk-dummy-test-key-never-real";
@@ -19,7 +25,7 @@ afterEach(async () => {
   upstream = null;
 });
 
-function request(): ModelRequest {
+function request(): ModelRequestDraft {
   return { model: "deepseek-v4-flash-0731", messages: [userMessage("ping")], max_tokens: 16 };
 }
 

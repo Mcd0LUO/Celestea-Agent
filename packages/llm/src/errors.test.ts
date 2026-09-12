@@ -33,7 +33,7 @@ import {
   timeoutError,
   userMessage,
   validateModel,
-  type ModelRequest,
+  type ModelRequestDraft,
 } from "@celestea/llm";
 import { startMockUpstream, type MockUpstream } from "./mock-upstream.test-util.js";
 
@@ -47,7 +47,7 @@ afterEach(async () => {
   upstream = null;
 });
 
-function request(): ModelRequest {
+function request(): ModelRequestDraft {
   return { model: MODEL, messages: [userMessage("ping")], max_tokens: 16 };
 }
 

@@ -1,123 +1,113 @@
 /**
- * The LLM seam — the vocabulary a provider adapter and its callers share (P2a).
+ * The LLM seam — the vocabulary a provider adapter and its callers share.
  *
- * TODO(core-seam): W271 is landing the `Llm` seam in `packages/core`
- * (`packages/core/src/message.ts` already carries the ported Role/Content/
- * Message/Usage shapes; the `Llm` trait + stream events are still in flight).
- * Until `@celestea/core` exports them, this package owns this vocabulary and
- * keeps it shaped exactly like the Rust core types, so switching over is a pure
- * import change — see README.md §"core seam adapter" for the two-line diff.
+ * A1 (W746): the seam vocabulary is CORE's. `@celestea/core` is the single
+ * source of `Llm` / `Message` / `Content` / `Role` / `ToolCall` / `ToolSpec` /
+ * `ModelRequest` / `Usage` / `LlmError`, and this module re-exports it instead
+ * of redeclaring a second, structurally-identical universe. The old
+ * `TODO(core-seam)` ("core's seam is still in flight") is discharged: core has
+ * exported all of these since W271, and `packages/llm` now imports core.
  *
  * Field names and content tag names are contract, not style (`type` +
  * `content`, `tool_call_id`, flat usage counters): do not rename anything.
+ *
+ * ONE member cannot be a pure re-export — see [StreamEvent].
  */
 
-import type { Usage } from "./usage.js";
+import type {
+  Content,
+  Message,
+  ModelRequest,
+  StreamEvent as CoreStreamEvent,
+  TextContent,
+} from "@celestea/core";
 
-/** `Role` — serde `rename_all = "lowercase"`. */
-export const ROLES = ["system", "user", "assistant", "tool"] as const;
-export type Role = (typeof ROLES)[number];
-
-/** `ToolCall` — the provider call id plus the raw JSON arguments. */
-export interface ToolCall {
-  id: string;
-  name: string;
-  args: unknown;
-}
-
-/** `Content::Text` — `{"type":"text","content":"…"}`. */
-export interface TextContent {
-  type: "text";
-  content: string;
-}
-
-/** `Content::ToolCall` — `{"type":"tool_call","content":{…}}`. */
-export interface ToolCallContent {
-  type: "tool_call";
-  content: ToolCall;
-}
-
-export type Content = TextContent | ToolCallContent;
-
-/** `Message` — one entry of the model-visible history. */
-export interface Message {
-  role: Role;
-  content: Content[];
-  /** Set only for `role = "tool"` (matches a result to its call). */
-  tool_call_id: string | null;
-}
-
-/** `ToolSpec` — an OpenAI-compatible function tool declaration. */
-export interface ToolSpec {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
-
-/** `ModelRequest` — one turn's request (field names are contract). */
-export interface ModelRequest {
-  /** Empty/absent falls back to the client's configured model. */
-  model?: string;
-  system?: string | null;
-  messages: Message[];
-  tools?: ToolSpec[];
-  /** Explicit output cap; falls back to the client's max_output_tokens. */
-  max_tokens?: number | null;
-  temperature?: number | null;
-}
+// The seam vocabulary, verbatim from core (values keep their identity too, so
+// `userMessage(...)` here IS core's `userMessage(...)`).
+export {
+  assistantText,
+  assistantToolCall,
+  messageToolCalls,
+  ROLES,
+  systemMessage,
+  toolResultMessage,
+  userMessage,
+} from "@celestea/core";
+export type {
+  Content,
+  LlmError,
+  LlmErrorKind,
+  LlmErrorOptions,
+  Message,
+  ModelRequest,
+  Role,
+  TextContent,
+  TimeoutStage,
+  ToolCall,
+  ToolCallContent,
+  ToolSpec,
+  Usage,
+} from "@celestea/core";
 
 /**
- * `StreamEvent` — the streamed turn. Reasoning/text deltas stream live, a usage
- * event rides just before the terminal event, and the turn ends with exactly
- * one of done / failed / interrupted — never a fake done (R1).
+ * `StreamEvent` — core's streamed-turn union with exactly ONE member widened.
  *
- * Shape = `@celestea/core` `stream.ts` (discriminator `kind`, delta field
- * `text`, terminal failure field `kindOf`), so the swap is an import change.
- * `kindOf` is a free-form string in Rust (`StreamEvent::Failed { kind, .. }`)
- * whose live values are "stream" (mid-stream decode failure) and "timeout"
- * (SSE idle guard); core's TS union currently lists "generate" | "stream" only
- * and must be widened (see README §"core seam adapter").
+ * A provider's SSE idle guard is a terminal `failed{kindOf:"timeout"}` (Rust:
+ * `StreamEvent::Failed { kind, .. }` with a free-form kind whose live values
+ * are "stream" and "timeout"), while core's union lists "generate" | "stream".
+ *
+ * TODO(core-timeout-kind) — why the widening stays HERE for now: folding it
+ * into core needs three files this cut may not touch or must not change:
+ *   1. `contracts/session-event.schema.json` freezes `TurnOutcome.error.kind`
+ *      to exactly ["generate","stream"], and W744 EXECUTES that schema
+ *      (`tests/contract-parity.test.ts:68,119`): widening core's
+ *      `TurnOutcome.error.kind` would let the engine mint rows the frozen
+ *      contract rejects;
+ *   2. `packages/agent-loop/src/step.ts:49` forwards `kindOf` into
+ *      `TurnOutcome.error.kind` verbatim, so `StreamEvent.failed.kindOf`
+ *      cannot be widened alone (agent-loop is W747's file);
+ *   3. `contracts/` is frozen — a real widening is a contract change with a
+ *      decision record, not a worker's bounded cut.
+ * Until then the delta is this single member: everything else is derived from
+ * core's union, so a variant added in core appears here automatically.
  */
 export type StreamEvent =
-  | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string }
-  | { kind: "usage"; usage: Usage }
-  | { kind: "done"; message: Message }
-  | { kind: "failed"; kindOf: "generate" | "stream" | "timeout"; message: string }
-  | { kind: "interrupted" };
+  | Exclude<CoreStreamEvent, { kind: "failed" }>
+  | { kind: "failed"; kindOf: "generate" | "stream" | "timeout"; message: string };
+
+/**
+ * A request DRAFT — what a DIRECT caller of this provider may pass: every field
+ * of core's `ModelRequest` optional except `messages`.
+ *
+ * The engine always hands over a fully-filled core `ModelRequest` (which IS a
+ * draft: it is assignable to this type), but the provider is also driven
+ * one-shot (`packages/llm/**` tests, an embedding host), where `model` /
+ * `system` / `tools` / `max_tokens` / `temperature` are simply absent — the
+ * wire mapper's documented "absent == empty" fallbacks handle exactly that, and
+ * have always handled it. Keeping the permissive form HERE (instead of
+ * loosening core's `ModelRequest`, which `apps/studio` reads as a fully-filled
+ * shape) is what makes the shared seam strict and the provider usable.
+ */
+export type ModelRequestDraft = Partial<ModelRequest> & { messages: Message[] };
 
 /** The streamed turn: an async iterable of events. */
 export type LlmStream = AsyncIterable<StreamEvent>;
 
-/** The `Llm` seam every provider adapter implements. */
+/**
+ * The `Llm` seam every provider adapter implements: core's `Llm` with the
+ * [StreamEvent] widening above (hence not a re-export — the return type is the
+ * provider's stream). A provider stream is therefore NOT assignable to core's
+ * `Llm`; the single host adapter converts it (and drops "timeout" to "stream"
+ * for the frozen contract): `apps/studio/src/runtime/llm-assembly.ts:69-96`.
+ */
 export interface Llm {
   /** Start a streaming turn; pre-stream failures reject with an LlmError. */
-  generate(req: ModelRequest): Promise<LlmStream>;
+  generate(req: ModelRequestDraft): Promise<LlmStream>;
 }
 
 // ---------------------------------------------------------------------------
-// Message constructors (same names as the Rust `impl Message`)
+// Message helpers over core's shapes (convenience, not seam vocabulary)
 // ---------------------------------------------------------------------------
-
-export function userMessage(text: string): Message {
-  return { role: "user", content: [{ type: "text", content: text }], tool_call_id: null };
-}
-
-export function systemMessage(text: string): Message {
-  return { role: "system", content: [{ type: "text", content: text }], tool_call_id: null };
-}
-
-export function assistantText(text: string): Message {
-  return { role: "assistant", content: [{ type: "text", content: text }], tool_call_id: null };
-}
-
-export function assistantToolCall(call: ToolCall): Message {
-  return { role: "assistant", content: [{ type: "tool_call", content: call }], tool_call_id: null };
-}
-
-export function toolResultMessage(id: string, text: string): Message {
-  return { role: "tool", content: [{ type: "text", content: text }], tool_call_id: id };
-}
 
 /** Concatenate the text parts of a message's content (joined with "\n"). */
 export function collectMessageText(content: readonly Content[]): string {
@@ -125,13 +115,6 @@ export function collectMessageText(content: readonly Content[]): string {
     .filter((part): part is TextContent => part.type === "text")
     .map((part) => part.content)
     .join("\n");
-}
-
-/** The tool calls of a message, in order. */
-export function messageToolCalls(message: Message): ToolCall[] {
-  return message.content
-    .filter((part): part is ToolCallContent => part.type === "tool_call")
-    .map((part) => part.content);
 }
 
 /** Drain a stream into an array (helper for tests/CLI; consumers stream live). */

@@ -19,7 +19,7 @@ import {
   TIMEOUT_ERROR_PREFIX,
   userMessage,
   OpenAiCompatClient,
-  type ModelRequest,
+  type ModelRequestDraft,
 } from "@celestea/llm";
 import {
   fastStreamFrames,
@@ -37,7 +37,7 @@ afterEach(async () => {
   upstream = null;
 });
 
-function request(): ModelRequest {
+function request(): ModelRequestDraft {
   return { model: "deepseek-v4-flash-0731", messages: [userMessage("ping")], max_tokens: 16 };
 }
 
