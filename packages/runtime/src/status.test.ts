@@ -1,11 +1,71 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { zeroUsage, type SessionEvent, type Usage } from "@celestea/core";
+import {
+  LLM_SERVICE,
+  assistantText,
+  definePlugin,
+  userMessage,
+  zeroUsage,
+  type ModelRequest,
+  type SessionEvent,
+  type ToolSpec,
+  type Usage,
+} from "@celestea/core";
+import { agentLoopPlugin, estimateMessagesTokens, estimateTokens } from "@celestea/agent-loop";
+import { deriveMessages, parseSessionJsonl } from "@celestea/session";
+import { agentConfigFromProfile } from "./agent-config.js";
 import { compose } from "./compose.js";
-import { StatusTracker, createStatusTracker, estimatedContextChars, ratio4, statuslineOf, type StatusView } from "./status.js";
+import {
+  ContextPressure,
+  GAP_MS,
+  StatusTracker,
+  activeSpanMs,
+  createStatusTracker,
+  estimatedContextChars,
+  estimatedContextTokens,
+  ratio4,
+  statuslineOf,
+  type StatusView,
+} from "./status.js";
 import { UsageTracker, cacheHitRatioRounded, usageBlock, usageStatus } from "./usage.js";
-import { fakeLoop, memoryLog, memorySessionPlugin, testProfile, tick } from "./fakes.test-util.js";
+import { fakeLlm, fakeLoop, memoryLog, memorySessionPlugin, recordingRegistryPlugin, testProfile, tick } from "./fakes.test-util.js";
 
 const usageOf = (u: Partial<Usage>): Usage => ({ ...zeroUsage(), ...u });
+
+const events: SessionEvent[] = [
+  { type: "turn_start", id: "turn-0" },
+  { type: "user_message", text: "12345" },
+  { type: "thinking_delta", text: "ignored" },
+  { type: "assistant_message", text: "123" },
+  { type: "tool_call", id: "c1", name: "read_file", args: { path: "ab" } },
+  { type: "tool_result", id: "c1", value: "xyz", error: null },
+  { type: "turn_end", id: "turn-0", outcome: "completed" },
+];
+
+/** A view with the W755 fields filled in; each test overrides what it measures. */
+const viewOf = (over: Partial<StatusView> = {}): StatusView => ({
+  model: "m",
+  reasoning_effort: null,
+  status: createStatusTracker(),
+  usage: new UsageTracker(),
+  context_window: 1_000,
+  events: () => events,
+  assembled: () => null,
+  pressure: new ContextPressure(),
+  ...over,
+});
+
+/** A request whose token estimate this test can predict: one system string. */
+const systemOnly = (chars: number): ModelRequest => ({
+  model: "m",
+  system: "x".repeat(chars),
+  messages: [],
+  tools: [],
+  max_tokens: null,
+  temperature: null,
+});
 
 describe("StatusTracker", () => {
   it("counts one step per tool call, never per tool_result", async () => {
@@ -34,20 +94,72 @@ describe("StatusTracker", () => {
     expect(tracker.rate()).toBe(0);
   });
 
-  it("estimates chars per second over a 5s sliding window with a 1s floor", () => {
-    let clock = 1_000;
+  it("averages chars per second over a stable stream (W754)", () => {
+    let clock = 0;
+    const tracker = new StatusTracker(() => clock);
+    for (let i = 0; i < 10; i += 1) {
+      clock = i * 100;
+      tracker.addChars(10);
+    }
+    // 10 deltas x 10 chars over a 900ms stream; the stream is still live at t=1s,
+    // so the active span is 1s -> exactly 100 chars/s (the 5s window still holds it).
+    clock = 1_000;
+    expect(tracker.rate()).toBe(100);
+  });
+
+  it("does not dilute the rate across a no-flow break (W754)", () => {
+    let clock = 0;
+    const tracker = new StatusTracker(() => clock);
+    for (let i = 0; i < 10; i += 1) {
+      clock = i * 100;
+      tracker.addChars(10);
+    }
+    clock = 3_900; // 3s of silence (tool call / stall): the wall clock keeps running...
+    for (let i = 0; i < 10; i += 1) {
+      clock = 3_900 + i * 100;
+      tracker.addChars(10);
+    }
+    clock = 4_900;
+    // ...but the break is free: two 1s activity intervals -> 200 chars / 2s = 100.
+    // The pre-W754 formula divided by the 4.9s wall-clock span and reported ~41.
+    expect(tracker.rate()).toBe(100);
+  });
+
+  it("keeps the rate after a stall longer than GAP_MS (W754)", () => {
+    let clock = 0;
+    const tracker = new StatusTracker(() => clock);
+    for (const at of [0, 500, 1_000, 1_500, 2_000]) {
+      clock = at;
+      tracker.addChars(50);
+    }
+    // 250 chars over a 2s active stream, then a 1.1s pause (past GAP_MS):
+    // the trailing pause is not part of the denominator -> 125 chars/s (was 80.6).
+    clock = 3_100;
+    expect(tracker.rate()).toBe(125);
+  });
+
+  it("reports zero while nothing flows (W754)", () => {
+    let clock = 0;
+    const tracker = new StatusTracker(() => clock);
+    expect(tracker.rate()).toBe(0);
+    tracker.addChars(10);
+    clock = 6_000; // the only sample rolled out of the 5s window
+    expect(tracker.rate()).toBe(0);
+  });
+
+  it("drops samples that rolled out of the 5s window (W754)", () => {
+    let clock = 0;
     const tracker = new StatusTracker(() => clock);
     tracker.addChars(50);
-    clock += 1_000;
+    clock = 1_000;
     tracker.addChars(50);
-    // 100 chars over 1s span.
-    expect(tracker.rate()).toBe(100);
-    clock += 4_500;
-    tracker.addChars(50);
-    // The t=1s sample fell out of the window; 100 chars (t=2s + t=6.5s) over 4.5s.
-    expect(tracker.rate()).toBeCloseTo(100 / 4.5, 5);
-    clock += 10_000;
+    expect(tracker.rate()).toBe(100); // 100 chars over the 1s active span
+    clock = 6_100; // both samples are now older than RATE_WINDOW_MS
     expect(tracker.rate()).toBe(0);
+    clock = 6_700;
+    tracker.addChars(20);
+    clock = 6_800;
+    expect(tracker.rate()).toBe(20); // only the fresh sample is left: 20 chars / 1s floor
   });
 
   it("never reports a silly rate for a single burst (1s floor)", () => {
@@ -57,54 +169,188 @@ describe("StatusTracker", () => {
     clock += 5;
     expect(tracker.rate()).toBe(10);
   });
+
+  it("splits samples into activity intervals at GAP_MS", () => {
+    const samples = [0, 200, 400, 4_000, 4_200].map((at) => ({ at, chars: 1 }));
+    // Interval [0,400] -> span 400 floored to 1s; break at 3.6s (free);
+    // interval [4000,4200] extended to now=4200 -> floored to 1s.
+    expect(activeSpanMs(samples, 4_200)).toBe(2_000);
+    expect(activeSpanMs([], 4_200)).toBe(0);
+    expect(GAP_MS).toBe(1_000);
+  });
 });
 
 describe("context usage + statusline", () => {
-  const events: SessionEvent[] = [
-    { type: "turn_start", id: "turn-0" },
-    { type: "user_message", text: "12345" },
-    { type: "thinking_delta", text: "ignored" },
-    { type: "assistant_message", text: "123" },
-    { type: "tool_call", id: "c1", name: "read_file", args: { path: "ab" } },
-    { type: "tool_result", id: "c1", value: "xyz", error: null },
-    { type: "turn_end", id: "turn-0", outcome: "completed" },
-  ];
-
   it("counts the model-visible characters only", () => {
     expect(estimatedContextChars(events)).toBe(
       5 + 3 + ("c1".length + "read_file".length + JSON.stringify({ path: "ab" }).length) + ("c1".length + JSON.stringify("xyz").length),
     );
   });
 
-  it("prefers the real prompt size and falls back to the char estimate", () => {
-    const usage = new UsageTracker();
-    const view = (): StatusView => ({
-      model: "m",
-      reasoning_effort: null,
-      status: createStatusTracker(),
-      usage,
-      context_window: 1_000,
-      events: () => events,
-    });
-    const estimated = statuslineOf(view());
-    expect(estimated.context_usage.estimated).toBe(true);
-    expect(estimated.context_usage.method).toBe("session_event_chars");
-    usage.record(usageOf({ prompt_tokens: 250, total_tokens: 250 }));
-    const real = statuslineOf(view());
-    expect(real.context_usage).toEqual({ used: 250, window: 1_000, ratio: 0.25, estimated: false, method: "usage_prompt_tokens" });
+  it("W755 regression anchor: the log's CHARACTER count is never reported as tokens", () => {
+    // The anchor only means something when the log is FAR bigger than the request
+    // (here: the trimmed-away prefix), and pure ASCII keeps `bytes/4` and
+    // `chars/4` on the same scale — so `used * 4 <= chars` really is the "a
+    // quarter of the characters, at most" pin. Before W755 the same view reported
+    // `used === chars` (565,437 chars against a 1,000,000 TOKEN window).
+    const bigLog: SessionEvent[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      bigLog.push({ type: "user_message", text: "u".repeat(1_000) });
+      bigLog.push({ type: "assistant_message", text: "a".repeat(1_000) });
+    }
+    const chars = estimatedContextChars(bigLog);
+    expect(chars).toBe(80_000);
+    const request: ModelRequest = { ...systemOnly(400), messages: [userMessage("u".repeat(1_000))] };
+    const line = statuslineOf(viewOf({ events: () => bigLog, assembled: () => request }));
+    expect(line.context_usage.method).toBe("assembled_estimate");
+    expect(line.context_usage.used * 4).toBeLessThanOrEqual(chars);
+    expect(line.context_usage.used).toBeLessThan(chars / 4);
   });
 
-  it("uses the contract display default when trimming is off", () => {
-    const line = statuslineOf({
-      model: "m",
-      reasoning_effort: "high",
-      status: createStatusTracker(),
-      usage: new UsageTracker(),
-      context_window: 0,
-      events: () => [],
+  it("prefers the real prompt and only reports 'none' when nothing is measurable", () => {
+    const usage = new UsageTracker();
+    const pressure = new ContextPressure();
+    const view = (): StatusView => viewOf({ usage, pressure });
+    const nothing = statuslineOf(view());
+    expect(nothing.context_usage).toMatchObject({
+      used: 0,
+      window: 1_000,
+      ratio: 0,
+      estimated: true,
+      method: "none",
+      projected: false,
+      window_source: "profile",
     });
-    expect(line.context_usage.window).toBe(1_000_000);
-    expect(line.reasoning_effort).toBe("high");
+    usage.record(usageOf({ prompt_tokens: 250, total_tokens: 250 }));
+    const real = statuslineOf(view());
+    expect(real.context_usage).toEqual({
+      used: 250,
+      window: 1_000,
+      ratio: 0.25,
+      estimated: false,
+      method: "usage_prompt_tokens",
+      projected: false,
+      window_source: "profile",
+    });
+  });
+
+  it("falls back to the engine's own assembly, within 25% of it (W755 Fix A)", () => {
+    const request: ModelRequest = {
+      model: "m",
+      system: "You are celestea. ".repeat(100),
+      messages: [userMessage("hello"), assistantText("hi there"), userMessage("again")],
+      tools: [{ name: "read_file", description: "read a file", parameters: { type: "object" } }],
+      max_tokens: null,
+      temperature: null,
+    };
+    // The reference the contract names: messages + system + the tool schemas.
+    const reference =
+      estimateMessagesTokens(request.messages) +
+      estimateTokens(request.system ?? "") +
+      estimateTokens(JSON.stringify(request.tools));
+    const cu = statuslineOf(viewOf({ assembled: () => request })).context_usage;
+    expect(cu.method).toBe("assembled_estimate");
+    expect(cu.estimated).toBe(true);
+    expect(cu.projected).toBe(false);
+    expect(cu.used).toBe(reference);
+    expect(Math.abs(cu.used - reference) / reference).toBeLessThanOrEqual(0.25);
+  });
+
+  it("reports an unknown window instead of the 1,000,000 display default (W755 Fix C)", () => {
+    const usage = new UsageTracker();
+    usage.record(usageOf({ prompt_tokens: 500, total_tokens: 500 }));
+    const off = statuslineOf(viewOf({ usage, context_window: 0 }));
+    // No capacity -> no ratio. The display default never becomes a denominator.
+    expect(off.context_usage).toMatchObject({ used: 500, window: 0, ratio: 0, window_source: "fallback" });
+    const garbage = statuslineOf(viewOf({ usage, context_window: Number.NaN }));
+    expect(garbage.context_usage).toMatchObject({ window: 0, ratio: 0, window_source: "unknown" });
+    const declared = statuslineOf(viewOf({ usage, context_window: 2_000 }));
+    expect(declared.context_usage).toMatchObject({ window: 2_000, ratio: 0.25, window_source: "profile" });
+  });
+
+});
+
+describe("context usage projection (W755 Fix B)", () => {
+  it("projects the visible growth since the prompt sample (W755 Fix B)", () => {
+    const usage = new UsageTracker();
+    const pressure = new ContextPressure();
+    let systemChars = 4_000;
+    const view = (): StatusView => viewOf({ usage, pressure, assembled: () => systemOnly(systemChars) });
+
+    usage.record(usageOf({ prompt_tokens: 5_000, total_tokens: 5_000 }));
+    const sampled = estimatedContextTokens(systemOnly(systemChars));
+    const first = statuslineOf(view()).context_usage;
+    expect(first).toMatchObject({ used: 5_000, estimated: false, method: "usage_prompt_tokens", projected: false });
+
+    // Tool results roll into the surface before the next request: the number has
+    // to move NOW, not one step late (DSH `projectedTokens`).
+    systemChars += 4_000;
+    const second = statuslineOf(view()).context_usage;
+    expect(second.projected).toBe(true);
+    expect(second.used).toBe(5_000 + (estimatedContextTokens(systemOnly(systemChars)) - sampled));
+
+    systemChars += 4_000;
+    const third = statuslineOf(view()).context_usage;
+    expect(third.used).toBeGreaterThan(second.used);
+
+    // A NEW sample re-anchors: no stale growth is carried over.
+    usage.record(usageOf({ prompt_tokens: 7_000, total_tokens: 7_000 }));
+    expect(statuslineOf(view()).context_usage).toMatchObject({ used: 7_000, projected: false });
+  });
+
+  it("never decreases inside a turn and never drops below the latest real prompt (W755 Fix B)", () => {
+    const usage = new UsageTracker();
+    const pressure = new ContextPressure();
+    const view = (): StatusView => viewOf({ usage, pressure, assembled: () => systemOnly(systemChars) });
+    // One provider sample per step, and the visible surface grows in between (the
+    // step's tool results / injected receipts) exactly as a real turn does.
+    const samples = [5_000, 8_000, 9_500, 14_500];
+    const growth = [0, 3_000, 1_500, 5_000];
+    let systemChars = 4_000;
+    let prompt = 0;
+    let previous = 0;
+    const observe = (): void => {
+      const cu = statuslineOf(view()).context_usage;
+      expect(cu.used, `used >= latest real prompt (${prompt})`).toBeGreaterThanOrEqual(prompt);
+      expect(cu.used, "monotone within the turn").toBeGreaterThanOrEqual(previous);
+      previous = cu.used;
+    };
+    for (let i = 0; i < samples.length; i += 1) {
+      for (const fraction of [0.5, 1]) {
+        systemChars = 4_000 + growth[i]! * fraction * 4;
+        observe();
+      }
+      prompt = samples[i]!;
+      usage.record(usageOf({ prompt_tokens: prompt, total_tokens: prompt }));
+      observe();
+    }
+    expect(previous).toBe(14_500);
+  });
+
+  it("wires the loop's own assembly through the composed runtime (W755 Fix A)", () => {
+    const profile = testProfile();
+    const log = memoryLog();
+    const reg = recordingRegistryPlugin();
+    const runtime = compose({
+      profile,
+      plugins: [
+        memorySessionPlugin(log),
+        reg.plugin,
+        definePlugin("test.llm", (ctx) => ctx.provide(LLM_SERVICE, fakeLlm())),
+        agentLoopPlugin(agentConfigFromProfile(profile, {})),
+      ],
+      workers: false,
+    });
+    log.append({ type: "user_message", text: "hello" });
+    const request = runtime.statusView().assembled();
+    expect(request).not.toBeNull();
+    const line = runtime.statusline();
+    expect(line.context_usage.method).toBe("assembled_estimate");
+    expect(line.context_usage.used).toBe(estimatedContextTokens(request!));
+    expect(line.context_usage).toMatchObject({ window: 65_536, window_source: "profile", projected: false, estimated: true });
+    // Growing the log grows the number, with no usage frame anywhere.
+    log.append({ type: "user_message", text: "x".repeat(4_000) });
+    expect(runtime.statusline().context_usage.used).toBeGreaterThan(line.context_usage.used);
   });
 
   it("rounds the ratio to 4 decimals and clamps it", () => {
@@ -120,7 +366,11 @@ describe("context usage + statusline", () => {
     const line = runtime.statusline();
     expect(line.steps).toBe(2);
     expect(line.model).toBe("deepseek-chat");
+    // A scripted loop has no `contextSnapshot` and no usage frame -> the honest
+    // "unknown" branch, never the retired char-vs-token estimate (W755).
     expect(line.context_usage.estimated).toBe(true);
+    expect(line.context_usage.method).toBe("none");
+    expect(line.context_usage.used).toBe(0);
     expect(line.usage.cache_hit_ratio).toBe(0);
   });
 
@@ -132,6 +382,8 @@ describe("context usage + statusline", () => {
     expect(runtime.statusline().tokens_per_sec).toBeGreaterThan(0);
   });
 });
+
+
 
 describe("UsageTracker", () => {
   it("tracks latest and cumulative usage independently", () => {

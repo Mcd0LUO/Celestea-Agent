@@ -43,8 +43,7 @@ import type { InjectionPlacement, InjectionLane, PendingInjection, Statusline, T
 import { getExtra, hasInProgressTurn, type Watchdog, type WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
-  createStatusTracker,
-  createUsageTracker,
+  coldStatusline,
   keyOfSession,
   outcomePhaseOf,
   runCompaction,
@@ -440,13 +439,12 @@ class RealEngine implements RealRuntimeAdapter {
   statusline(session?: string | null): Statusline {
     const entry = this.registry.peek(session ?? null);
     if (entry !== null) return entry.runtime.statusline();
-    return statuslineOf({
+    // W755: a cold session measures nothing — `coldStatusline` owns that shape.
+    return coldStatusline({
       model: this.composer.profileFor(session ?? null).model,
       reasoning_effort: this.profileValue.reasoning_effort,
-      status: createStatusTracker(this.now),
-      usage: createUsageTracker(),
       context_window: this.profileValue.context_window_tokens,
-      events: () => [],
+      now: this.now,
     });
   }
 

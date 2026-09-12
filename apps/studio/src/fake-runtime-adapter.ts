@@ -200,7 +200,10 @@ class FakeRuntime implements FakeRuntimeAdapter {
       reasoning_effort: this.engineProfile.reasoning_effort,
       steps: 0,
       tokens_per_sec: 0,
-      context_usage: { used: 0, window: this.engineProfile.context_window, ratio: 0, estimated: true, method: "session_event_chars" },
+      // W755 vocabulary: this double drives no engine loop, so it has neither a
+      // provider sample nor an assembly -> `none` ("unknown"), never the retired
+      // char-vs-token `session_event_chars`.
+      context_usage: contextUsageOf(this.engineProfile.context_window),
       usage: zeroUsage(),
     };
   }
@@ -318,6 +321,25 @@ class FakeRuntime implements FakeRuntimeAdapter {
     const sid = sessionId.startsWith("worker:") ? sessionId.slice("worker:".length) : sessionId;
     return this.transcripts.get(sid) ?? null;
   }
+}
+
+/**
+ * W755: the fake engine measures nothing (no provider frame, no assembly), so
+ * its context_usage is the honest "unknown" branch: `used:0`, `method:"none"`,
+ * and — W755 Fix C — `window:0` (the profile's 1,000,000 is a DISPLAY default,
+ * not a real capacity, so it must never become a denominator).
+ */
+function contextUsageOf(contextWindow: number): Statusline["context_usage"] {
+  const known = Number.isFinite(contextWindow) && contextWindow > 0;
+  return {
+    used: 0,
+    window: 0,
+    ratio: 0,
+    estimated: true,
+    method: "none",
+    projected: false,
+    window_source: known ? "fallback" : "unknown",
+  };
 }
 
 /** The five scripted tools carry no schema of their own: an empty object one. */

@@ -113,6 +113,17 @@ function registerModelsFetch(app: Hono, deps: Deps, table: RouteTable): string {
   return route.id;
 }
 
+/**
+ * POST /api/providers/default — make (provider, model) the default pair.
+ *
+ * W750: `provider_id` is the OPTIONAL disambiguator. Model ids are not unique
+ * across providers (production: `deepseek-flash` is listed by both the gateway
+ * and 「基元」), so "model id only" cannot express "switch to THAT provider" —
+ * the plain `find` below would keep picking the first provider that happens to
+ * list the id. When `provider_id` is given the model must be one of that
+ * provider's models (otherwise nothing is applied: 400/404, no partial write);
+ * when it is absent the historical first-lister behaviour is unchanged.
+ */
 function registerDefault(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_provider_default");
   app.on(route.method, route.honoPath, async (c) => {
@@ -120,11 +131,23 @@ function registerDefault(app: Hono, deps: Deps, table: RouteTable): string {
     if (!read.ok) return read.response;
     const model = strField(c, read.body, "model");
     if (!model.ok) return model.response;
+    const providerId = strField(c, read.body, "provider_id");
+    if (!providerId.ok) return providerId.response;
     const wanted = (model.value ?? "").trim();
     if (wanted === "") return failJson(c, 400, "model must not be empty");
     if (deps.runtime.isBusy()) return failJson(c, 409, "a turn is running; provider default applies between turns");
     if (workersInFlight(deps.runtime)) return failJson(c, 409, "a worker is running; provider default applies between turns");
-    const owner = deps.providers.rows().find((p) => p.models.some((m) => m.id === wanted));
+    const askedProvider = (providerId.value ?? "").trim();
+    let owner: ProviderRow | undefined;
+    if (askedProvider !== "") {
+      owner = deps.providers.rows().find((p) => p.id === askedProvider);
+      if (owner === undefined) return failJson(c, 404, `unknown provider '${askedProvider}'`);
+      if (!owner.models.some((m) => m.id === wanted)) {
+        return failJson(c, 400, `provider '${askedProvider}' does not list model '${wanted}'`);
+      }
+    } else {
+      owner = deps.providers.rows().find((p) => p.models.some((m) => m.id === wanted));
+    }
     const patch = owner !== undefined && owner.request_format === "chat_completions" && owner.base_url !== "" ? { model: wanted, base_url: owner.base_url } : { model: wanted };
     try {
       await deps.runtime.configure(patch);

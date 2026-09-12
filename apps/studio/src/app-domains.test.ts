@@ -153,7 +153,9 @@ describe("session context snapshot endpoint", () => {
     const tools = res.body["tools"] as Array<Record<string, unknown>>;
     expect(tools[0]).toHaveProperty("parameters");
     expect(res.body["counts"]).toEqual({ system_chars: 3, tool_count: tools.length, message_count: 3 });
-    expect(res.body["context"]).toEqual({ used: 0, window: 1_000_000, ratio: 0, estimated: true });
+    // W755: the fake runtime measures nothing, and the profile's 1,000,000 is a
+    // display default, not a declared capacity -> window 0, ratio 0.
+    expect(res.body["context"]).toEqual({ used: 0, window: 0, ratio: 0, estimated: true });
     const health = await getJson(h.app, "/api/health");
     expect((health.body["capabilities"] as Record<string, unknown>)["context"]).toBe(true);
   });
