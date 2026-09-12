@@ -316,6 +316,30 @@ describe("C6/C7/C8: idempotency, price versions, no body text", () => {
   });
 });
 
+describe("W756: the cache-hit region is billed once, never twice", () => {
+  it("books `in` as the UNCACHED prompt only, with the hit region under `cache`", async () => {
+    const dir = tmpDir();
+    writePricing(dir, "2026-09-11"); // in 1.0, out 2.0, cache_read 0.1
+    const r = rig([okStep(1000, 100, 800)], dir);
+    await drain(await r.llm.generate(request()));
+    closeTurn(r);
+    r.ledger.endTurn("completed");
+
+    const row = r.rows()[0] as UsageStepRecord;
+    expect(row.usage?.prompt_tokens).toBe(1000);
+    expect(row.usage?.cache_read).toBe(800);
+    // in = (1000 - 800) x 1.0, out = 100 x 2.0, cache = 800 x 0.1.
+    expect(row.cost).toEqual({ in: 0.0002, out: 0.0002, cache: 0.00008, total: 0.00048 });
+    // The rejected reading (whole prompt x `in` PLUS the cache counter) = 0.00128.
+    expect(row.cost?.total).toBeLessThan(0.00128);
+    // The token dimension still reconciles: the row counters are untouched.
+    const total = r.file.read().find((x) => x.kind === "turn_total");
+    if (total?.kind !== "turn_total") throw new Error("no turn_total row");
+    expect(total.cost).toEqual(row.cost);
+    expect(total.usage.cache_read).toBe(800);
+  });
+});
+
 describe("append-only durability, concurrency and restart continuity", () => {
   it("appends without rewriting, and interleaved writers keep whole lines", async () => {
     const dir = tmpDir();

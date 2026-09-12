@@ -2595,10 +2595,16 @@
             "note": "CELESTEA_GRANTS_ALLOW_UNSANDBOXED=1"
           },
           {
+            "name": "net_hosts_effective",
+            "type": "boolean",
+            "required": true,
+            "note": "W757 additive: false = the session holds net_hosts entries this deployment ignores entirely (neither CELESTEA_HTTP_ALLOW nor CELESTEA_HTTP_DENY set, so the http_request target policy stays inactive and the union-widening changes nothing); true when there are no net_hosts entries to drop. Same verdict as the engine mount path (HttpTargetPolicy.netHostsIneffective)"
+          },
+          {
             "name": "warnings",
             "type": "string[]",
             "required": false,
-            "note": "W516 additive: present only when the file was unreadable or entries were ignored"
+            "note": "W516 additive: present only when the file was unreadable or entries were ignored; W757 appends the readable net_hosts_ineffective entry when net_hosts_effective is false"
           }
         ]
       },

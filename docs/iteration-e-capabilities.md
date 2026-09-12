@@ -383,7 +383,9 @@
              "cache_read": 4096, "reasoning_tokens": 0 },
   "billed_unknown": false,            // true = provider 未回 usage，成本不可知（不是 0）
   "price": { "version": "2026-09-11", "currency": "CNY", "in": 1.0, "out": 2.0, "cache_read": 0.1, "unit": "per_mtok" },
-  "cost": { "in": 0.008123, "out": 0.000822, "cache": 0.000410, "total": 0.009355 },
+  "cost": { "in": 0.004027, "out": 0.000822, "cache": 0.000410, "total": 0.005259 },
+  // in = UNCACHED input only, (8123 - 4096) x 1.0; the prompt counter already
+  // contains the cache-hit region, which is billed ONCE at the cache price.
   "priced_by": "table",               // table | record | unpriced
   "fallback_from": null,              // 能力 4：本 attempt 因何而来（target 名）
   "request_id": "…"                   // P1：上游 request-id（若 header 有），用于对账
@@ -407,6 +409,8 @@
 **纪律（防止成为第二真相）**：
 1. 价格**不手写在引擎代码里**，由 `scripts/sync-pricing.ts`（P1）从 newapi 侧**只读**同步成快照，并记 `version`/`synced_at`/来源引用；
 2. 引擎只做 `tokens × 单价`，**不**复刻平台侧的分组倍率/计费表达式（`/server-center/docs/docs/lts/biz/newapi.md:20-24` 的 I1–I3：价格单一事实源在 newapi 侧、`ratio = 官方CNY × factor`、展示≠计费）——否则我们就是第二个计费实现；
+
+   **cache 口径（V2.6.0 修正）**：provider 的 `prompt_tokens` **已包含** cache 命中区（宿主 `turn-usage` 的 `total − output === input + cacheRead + cacheWrite`；`packages/llm/src/usage.ts` 把 `prompt_tokens` 当总数、cache 计数另取）。因此命中区**只按 `cache_read` 单价收一次**：`cost.in = max(0, prompt_tokens − cache_read) × in` 是**未命中输入**的成本，`cost.cache = cache_read × cache_read` 是命中区成本；旧口径「prompt 全额 × `in` + cache 另计」会把命中区收两次，已废弃；
 3. 表里没有的模型 → `priced_by:"unpriced"`、`cost.total = null`、聚合视图返回 `unpriced_models[]`（**禁止静默 0**）。
 
 #### 3.2.3 记账规则表（失败与重试，逐条可检）

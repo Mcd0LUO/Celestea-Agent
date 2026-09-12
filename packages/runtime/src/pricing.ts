@@ -46,9 +46,20 @@ export interface PricingTable {
 
 /** Money of one ledger row: the three components and their sum. */
 export interface LedgerCost {
+  /**
+   * Cost of the UNCACHED input only: `max(0, prompt_tokens - cache_read) × in`.
+   * The prompt counter already contains the cache-hit region, so `in` is NOT
+   * `prompt_tokens × in` - the hit region is charged once, under [cache].
+   */
   in: number;
+  /** Cost of the completion tokens (`completion_tokens × out`). */
   out: number;
+  /**
+   * Cost of the cache-hit region (`cache_read × cache_read`). Charged HERE
+   * only - never also at the input price.
+   */
   cache: number;
+  /** `in + out + cache` (the parts cannot drift from the total). */
   total: number;
 }
 
@@ -71,14 +82,25 @@ export function priceFor(table: PricingTable, model: string | null): ModelPrice 
 }
 
 /**
- * `prompt × in + completion × out + cache_read × cache_read`, rounded to 6
- * decimals. The component split mirrors the design's worked example (§3.2.1):
- * the prompt counter is charged at the input price AS REPORTED, and the cache
- * counter is charged separately — the engine never invents a "discounted
- * prompt" derivation the platform did not state.
+ * `uncached_in × in + completion × out + cache_read × cache_read`, rounded
+ * to 6 decimals.
+ *
+ * The provider's `prompt_tokens` ALREADY CONTAINS the cache-hit region (host
+ * turn-usage: `total - output === input + cacheRead + cacheWrite`; the LLM seam
+ * reads `prompt_tokens` as that total and the cache counters separately), so
+ * the hit region must be billed ONCE, at the cache price:
+ * `billableIn = max(0, prompt_tokens - cache_read)` is the input the provider
+ * did NOT serve from cache. Charging the whole prompt at the input price AND
+ * the cache counter on top would bill the hit region twice; that reading was
+ * rejected by the product, so this function never does it.
+ *
+ * `max(0, ...)` guards anomalous data (`cache_read > prompt_tokens`, which the
+ * provider should never report): the input component floors at 0 instead of
+ * going negative. The cache component still charges what was reported.
  */
 export function costOf(usage: Usage, price: ModelPrice): LedgerCost {
-  const inCost = round6((usage.prompt_tokens / 1e6) * price.in);
+  const billableIn = Math.max(0, usage.prompt_tokens - usage.cache_read);
+  const inCost = round6((billableIn / 1e6) * price.in);
   const outCost = round6((usage.completion_tokens / 1e6) * price.out);
   const cacheCost = round6((usage.cache_read / 1e6) * price.cache_read);
   return { in: inCost, out: outCost, cache: cacheCost, total: round6(inCost + outCost + cacheCost) };

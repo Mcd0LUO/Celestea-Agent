@@ -26,7 +26,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute } from "node:path";
-import { isInside, parseIpRange, parseToolRoots } from "@celestea/tools";
+import { httpOptions, isInside, parseIpRange, parseToolRoots } from "@celestea/tools";
 /**
  * W747: `sessionIdOfDir` moved to the engine (`@celestea/runtime`, host layer
  * `host/engine-session.ts`) — the `<workspace>/<session>` id space is what that
@@ -79,6 +79,28 @@ export interface EffectiveGrantsResult {
 export function unsandboxedAvailable(env: NodeJS.ProcessEnv): boolean {
   const raw = (env[ENV_GRANTS_UNSANDBOXED] ?? "").trim().toLowerCase();
   return ["1", "true", "on", "yes"].includes(raw);
+}
+
+/**
+ * W757: whether this session's `net_hosts` entries take effect AT ALL in this
+ * deployment.
+ *
+ * ONE definition, and deliberately the SAME construction path the engine mounts
+ * its tools with (`engineTools` → `httpOptions` → `HttpTargetPolicy.fromEnv`):
+ * `net_hosts` is merged into the allow side only, so an inactive env policy
+ * (neither `CELESTEA_HTTP_ALLOW` nor `CELESTEA_HTTP_DENY` set) drops the whole
+ * list — `netHostsIneffective` is exactly that verdict and this module never
+ * re-derives it (a second implementation would silently drift from the mount).
+ *
+ * `false` ⇒ the session holds `net_hosts` entries the deployment ignores
+ * entirely. Empty `net_hosts` ⇒ `true`: there is nothing to be dropped.
+ *
+ * Reporting only: the policy object is built and discarded, so no authorization
+ * decision here changes, and the union / deny-wins / fail-closed semantics of
+ * `ssrf.ts` stay exactly as they are.
+ */
+export function netHostsEffective(env: NodeJS.ProcessEnv, grants: EffectiveGrants): boolean {
+  return httpOptions(env, { netHosts: grants.netHosts }).policy?.netHostsIneffective !== true;
 }
 
 /** Read + validate; NEVER throws, only degrades with warnings (§4.1). */

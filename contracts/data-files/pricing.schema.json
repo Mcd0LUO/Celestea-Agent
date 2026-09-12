@@ -31,9 +31,9 @@
           "type": "object",
           "required": ["in", "out"],
           "properties": {
-            "in": { "type": "number", "minimum": 0 },
+            "in": { "type": "number", "minimum": 0, "description": "price of one UNCACHED prompt token; the provider's prompt_tokens already contains the cache-hit region, which is priced by cache_read only" },
             "out": { "type": "number", "minimum": 0 },
-            "cache_read": { "type": "number", "minimum": 0, "default": 0 }
+            "cache_read": { "type": "number", "minimum": 0, "default": 0, "description": "price of one cache-HIT (cache-read) token; charged once, never on top of the `in` price" }
           },
           "additionalProperties": true
         }
