@@ -196,7 +196,15 @@ describe("GET /api/status and /api/tools", () => {
       "tokens_per_sec",
       "usage",
     ]);
-    expect(before.body["context_usage"]).toMatchObject({ estimated: true, method: "session_event_chars" });
+    // W755: no usage frame yet, so the fallback is the token estimate of the
+    // LOOP'S OWN next request (not the session log's character count).
+    expect(before.body["context_usage"]).toMatchObject({
+      estimated: true,
+      method: "assembled_estimate",
+      projected: false,
+      window_source: "profile",
+    });
+    expect((before.body["context_usage"] as { used: number }).used).toBeGreaterThan(0);
 
     await runTurnWithFrames(h, "hi");
     const after = await getJson(h.app, "/api/status");
@@ -205,7 +213,15 @@ describe("GET /api/status and /api/tools", () => {
     expect(usage.cache_hit_ratio).toBeCloseTo(0.5, 2);
     expect(usage.total.prompt_tokens).toBe(usage.prompt_tokens);
     expect(after.body["steps"]).toBe(0);
-    expect(after.body["context_usage"]).toMatchObject({ used: usage.prompt_tokens, estimated: false, method: "usage_prompt_tokens", window: 1_000_000 });
+    expect(after.body["context_usage"]).toMatchObject({
+      estimated: false,
+      method: "usage_prompt_tokens",
+      window: 1_000_000,
+      window_source: "profile",
+    });
+    // W755 (Fix B): the real prompt is a FLOOR — the number may carry the visible
+    // growth measured after that sample, never less than the provider's own count.
+    expect((after.body["context_usage"] as { used: number }).used).toBeGreaterThanOrEqual(usage.prompt_tokens);
   });
 
   it("lists the composed tool registry (builtins + worker tools)", async () => {

@@ -266,6 +266,8 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
 | `src/store/providers.test.ts` | round-trip、0600、public_view 脱敏、keep-key 语义、探测三分支 + keyless 借用 |
 | `src/store/prompts.test.ts` | 模板三错、插值、四级组装、默认链、CRUD round-trip |
 | `src/app.test.ts` / `src/app-domains.test.ts` | 39 端点形状/状态码/409 守卫/错误码/redaction/SSE 帧 |
+| `src/config-models.test.ts` | W750：`available.models` 每个 (provider, model) 一条（provider 内去重、撞名 id 不合并）、`active` 归属、`POST /api/providers/default` 的 `provider_id` 消歧与拒绝分支 |
+| `tests/model-icon.test.ts` | W750：跨仓直测前端 `model-icon.ts` 纯函数（前缀/大小写/分隔符、未知 → null、SVG 零硬编码颜色） |
 | `tests/studio-routes.test.ts` | 跨包契约：路由表与契约逐条一致，无端点漏绑 |
 
 ### 已知边界（P4）
@@ -274,6 +276,10 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
    真实 runtime 由另一条线交付后替换。
 2. **静态模型目录**：`/api/config.available.models` 目前**只**从 providers store 重建
    （Rust 还有一份静态 `AVAILABLE_MODELS` 兜底表），providers 为空时该数组为空。
+   W750：每条形如 `{id,name,provider,provider_id,active,reasoning}`，**去重按 provider 做**
+   （同一 id 由两个 provider 提供 = 两个可选条目，`provider_id` 才是切换要回传的稳定
+   id，`provider` 只是显示名）；`active` 由「同模型 id + 同端点」判定，端点都不匹配且
+   id 撞名时不标任何一条。
 3. **`POST /api/config` 的 base_url 空串**：清覆盖后回落链在 P4 只覆盖 env/provider；
    引擎代际重算随真实 runtime 落地。
 4. **请求体拒绝**：axum 的 415/422 语义按「缺 body=415、非 JSON=400、字段类型错=422」复刻，

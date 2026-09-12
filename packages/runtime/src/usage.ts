@@ -81,7 +81,20 @@ export function usageBlock(u: Usage): UsageBlock {
   };
 }
 
-/** The statusline `usage` field: latest block + the same shape under `total`. */
+/**
+ * The statusline `usage` field: latest block + the same shape under `total`.
+ *
+ * W755 GUARDRAIL — `total` is a BILLING-shaped sum, NOT an occupancy reading.
+ * Every step of a turn re-sends the whole prompt, so `total.prompt_tokens` is
+ * O(steps x prompt): the DSH host's own ledger shows the same shape (13.7M
+ * uncached input / 1.09G cache-read over one long session) and it is several
+ * orders of magnitude away from the context window. Context occupancy is
+ * `context_usage` and ONLY `context_usage`
+ * (`packages/runtime/src/status.ts::contextUsage`, which uses `latest()` plus
+ * the visible growth since that sample). Never divide `total.prompt_tokens`,
+ * `total.cache_read` or `total.total_tokens` by a context window, and never
+ * render a context meter from this block.
+ */
 export function usageStatus(u: UsageAccounting): UsageBlock & { total: UsageBlock } {
   return { ...usageBlock(u.latest()), total: usageBlock(u.total()) };
 }

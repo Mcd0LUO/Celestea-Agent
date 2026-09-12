@@ -185,8 +185,32 @@ export interface Statusline {
     used: number;
     window: number;
     ratio: number;
+    /** W755: `used` is the visible-surface ESTIMATE, not a real provider sample. */
     estimated: boolean;
-    method: "usage_prompt_tokens" | "session_event_chars";
+    /**
+     * W755 source vocabulary:
+     *   - `usage_prompt_tokens` the REAL prompt of a provider usage frame;
+     *   - `assembled_estimate`  the token estimate of the loop's own next request
+     *                           (system + trimmed history + tool schemas);
+     *   - `none`                nothing measurable -> the UI shows "unknown";
+     *   - `session_event_chars` RETIRED in v2.5.0 (the session log's CHARACTER
+     *                           count was divided by a TOKEN window). Kept in the
+     *                           union so a consumer can still recognise a payload
+     *                           from an older build; never emitted any more.
+     */
+    method: "usage_prompt_tokens" | "session_event_chars" | "assembled_estimate" | "none";
+    /**
+     * W755 (Fix B): true when `used` carries the model-visible growth measured
+     * after the prompt sample — i.e. it answers for the NEXT request rather than
+     * the last one (DSH `projectedTokens`). Distinct from `estimated`.
+     */
+    projected: boolean;
+    /**
+     * W755 (Fix C): where `window` came from. `ratio` is a real measurement only
+     * for `profile`; `fallback` (no declared capacity -> the 1,000,000 display
+     * default applies) and `unknown` both report `window: 0, ratio: 0`.
+     */
+    window_source: "profile" | "fallback" | "unknown";
   };
   usage: UsageBlock & { total: UsageBlock };
 }

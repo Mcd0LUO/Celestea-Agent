@@ -99,7 +99,18 @@ describe("health / status / tools / config", () => {
     expect(body["grants_active"]).toEqual([]);
     expect(body["session"]).toBeNull();
     expect(body["busy"]).toBe(false);
-    expect(body["context_usage"]).toMatchObject({ window: 1_000_000, estimated: true, method: "session_event_chars" });
+    // W755: the fake runtime has neither a provider frame nor an engine assembly,
+    // so the honest branch is "none"; and 1,000,000 is a DISPLAY default, never a
+    // denominator (window:0 -> the client draws no ring).
+    expect(body["context_usage"]).toMatchObject({
+      used: 0,
+      window: 0,
+      ratio: 0,
+      estimated: true,
+      method: "none",
+      projected: false,
+      window_source: "fallback",
+    });
   });
 
   it("serves GET /api/tools as {tools:[{name,description}]}", async () => {
@@ -130,7 +141,18 @@ describe("health / status / tools / config", () => {
       "system_prompt",
     ]);
     expect(body["available"]).toEqual({
-      models: [{ id: "test-model", name: "Test Model", provider: "Gateway", reasoning: true }],
+      models: [
+        {
+          id: "test-model",
+          name: "Test Model",
+          provider: "Gateway",
+          // W750: the stable provider id beside the display name …
+          provider_id: "celestea",
+          // … and the active flag: same model id AND same endpoint as the profile.
+          active: true,
+          reasoning: true,
+        },
+      ],
       efforts: ["low", "high", "max"],
     });
     expect(String(body["system_prompt"])).toContain("Celestea engine");

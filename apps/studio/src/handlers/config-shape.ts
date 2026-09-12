@@ -2,10 +2,12 @@
  * The `/api/config` response shape, assembled from live stores.
  *
  * `available.models` is rebuilt on EVERY read from the providers store
- * (`src/api.rs:61-68`): a provider-backed row (`provider: "<display name>"`)
- * wins over the id-dedup fallback, and `reasoning` is true when the model row
- * declares at least one reasoning effort. `system_prompt` is either the host
- * override (POST /api/config) or the registry assembly (`build_gen`).
+ * (`src/api.rs:61-68`): one row per (provider, model) pair — de-dup is per
+ * provider since W750 — carrying the display name (`provider`), the stable id
+ * (`provider_id`), whether that exact pair is the composed one (`active`) and
+ * `reasoning` = the model row declares at least one effort. `system_prompt` is
+ * either the host override (POST /api/config) or the registry assembly
+ * (`build_gen`).
  *
  * S1 (W729): `system_prompt` is the FOCUSED (active) session's assembly. The
  * engine's own per-session prompt comes from the same function with an explicit
@@ -27,7 +29,12 @@ export const EFFORTS: readonly string[] = ["low", "high", "max"];
 export interface AvailableModel {
   id: string;
   name: string;
+  /** Provider DISPLAY name (grouping header); `provider_id` is the stable id. */
   provider: string;
+  /** W750: the provider's stable id — what a switch must send back. */
+  provider_id: string;
+  /** W750: this exact (provider, model) pair is the one the engine routes to. */
+  active: boolean;
   reasoning: boolean;
 }
 
@@ -64,23 +71,68 @@ export function activePromptBinding(deps: Deps): string | null {
   return readSessionMeta(resolved.dir)?.prompt ?? null;
 }
 
-/** Provider display name that lists `model`, else "" (static rows). */
+/**
+ * Provider display name that lists `model`, else "" (static rows).
+ *
+ * W750: the same model id can live under several providers, so the provider the
+ * engine actually routes to — the one whose `base_url` is the active one — wins;
+ * only when no provider matches the active endpoint does the first lister win
+ * (the historical reading, kept for custom endpoints).
+ */
 function providerOf(deps: Deps, model: string): string {
-  for (const p of deps.providers.rows()) {
-    if (p.models.some((m) => m.id === model)) return p.name;
-  }
-  return "";
+  const rows = deps.providers.rows();
+  const listed = rows.filter((p) => p.models.some((m) => m.id === model));
+  if (listed.length === 0) return "";
+  const activeBase = trimSlash(baseUrlOf(deps));
+  const exact = listed.find((p) => trimSlash(p.base_url) === activeBase);
+  return (exact ?? listed[0]!).name;
 }
 
+/** Trailing-slash-insensitive compare (providers.json and the profile differ). */
+function trimSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+/**
+ * The model picker's catalogue, rebuilt from the live providers store.
+ *
+ * W750 (bug fix): de-duplication is PER PROVIDER, never global. The same model
+ * id under two providers is two different choices — the provider is what decides
+ * the endpoint the request goes to — so a global `seen` set silently swallowed
+ * every provider after the first one that shared an id (production: provider
+ * 「基元」 vanished because it also lists `deepseek-flash`). Identical ids
+ * repeated INSIDE one provider are still dropped (a store typo, not a choice).
+ *
+ * `active` marks the single (provider, model) pair the engine would use right
+ * now: same model id AND same endpoint as the composed profile. When nothing
+ * matches the endpoint — a custom base_url override, or a non
+ * `chat_completions` provider whose switch never rewrites the endpoint — the
+ * model id alone is enough ONLY if it is unambiguous; an ambiguous id is left
+ * unmarked rather than marked wrong.
+ */
 export function availableModels(deps: Deps): AvailableModel[] {
+  const activeModel = deps.runtime.profile().model;
+  const activeBase = trimSlash(baseUrlOf(deps));
   const out: AvailableModel[] = [];
-  const seen = new Set<string>();
   for (const p of deps.providers.rows()) {
+    const seen = new Set<string>();
+    const base = trimSlash(p.base_url);
     for (const m of p.models) {
       if (seen.has(m.id)) continue;
       seen.add(m.id);
-      out.push({ id: m.id, name: m.name === "" ? m.id : m.name, provider: p.name, reasoning: m.reasoning_efforts.length > 0 });
+      out.push({
+        id: m.id,
+        name: m.name === "" ? m.id : m.name,
+        provider: p.name,
+        provider_id: p.id,
+        active: m.id === activeModel && base === activeBase,
+        reasoning: m.reasoning_efforts.length > 0,
+      });
     }
+  }
+  if (!out.some((e) => e.active)) {
+    const same = out.filter((e) => e.id === activeModel);
+    if (same.length === 1) same[0]!.active = true;
   }
   return out;
 }

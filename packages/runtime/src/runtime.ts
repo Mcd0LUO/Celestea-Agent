@@ -38,7 +38,7 @@ import { RuntimeReleasedError, TurnBusyError } from "./errors.js";
 import type { InjectionLane } from "@celestea/core";
 import type { InboxPushOptions, InjectedMessage, SessionInbox } from "./inbox.js";
 import { bindSession, type SessionBinding } from "./session-binding.js";
-import { statuslineOf, type StatusTracker, type StatusView } from "./status.js";
+import { ContextPressure, statuslineOf, type StatusTracker, type StatusView } from "./status.js";
 import type { FrameSink, TurnOptions, TurnRunner } from "./turn-runner.js";
 import type { TurnFrame } from "./frames.js";
 import type { UsageAccounting } from "./usage.js";
@@ -75,6 +75,14 @@ export class Runtime {
   private binding: SessionBinding | null;
   private shutdownPromise: Promise<void> | null = null;
   private released = false;
+  /**
+   * W755 (Fix B): the context-usage projection state for THIS session (one
+   * generation = one session). Deliberately owned here rather than in
+   * `RuntimeParts` (compose passes no such thing) and never a module singleton:
+   * two live sessions must not share a prompt anchor. [rebind] re-opens the SAME
+   * session, so the anchor survives it exactly like the usage tracker's does.
+   */
+  private readonly pressure = new ContextPressure();
 
   constructor(parts: RuntimeParts) {
     this.parts = parts;
@@ -186,6 +194,18 @@ export class Runtime {
       usage: p.usage,
       context_window: p.profile.context_window_tokens,
       events: () => this.p.sessionRef.log.events(),
+      // W755 (Fix A): the SAME assembly `/api/sessions/{id}/context` serves, so
+      // the fallback estimate can never drift from the real next request. The
+      // statusline is polled (and pushed on every SSE tick), so a failing read
+      // degrades to "no snapshot" instead of failing the endpoint.
+      assembled: () => {
+        try {
+          return this.contextSnapshot();
+        } catch {
+          return null;
+        }
+      },
+      pressure: this.pressure,
     };
   }
 

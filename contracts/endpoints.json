@@ -128,7 +128,7 @@
           },
           {
             "name": "context_usage",
-            "type": "object{used:int,window:int,ratio:number,estimated:bool,method:'usage_prompt_tokens'|'session_event_chars'}",
+            "type": "object{used:int,window:int,ratio:number,estimated:bool,method:'usage_prompt_tokens'|'assembled_estimate'|'none'|'session_event_chars',projected:bool,window_source:'profile'|'fallback'|'unknown'}",
             "required": false
           },
           {
@@ -153,7 +153,12 @@
       "errors": [],
       "notes": [
         "Always 200.",
-        "W729: `mode` is the queried session's creation-time mode; P0 has no switch endpoint, so it only ever equals what POST /api/sessions was given."
+        "W729: `mode` is the queried session's creation-time mode; P0 has no switch endpoint, so it only ever equals what POST /api/sessions was given.",
+        "W755 context_usage口径 (aligned with the DSH host's contextPressure): `method:usage_prompt_tokens` = the REAL prompt of the latest provider usage frame (input + cache, never output), with `projected:true` when the model-visible growth measured since that sample has been added on top (so the number answers for the NEXT request, DSH projectedTokens); `method:assembled_estimate` = no frame yet, so `used` is the token estimate of the loop's OWN next request (system + post-trim history + tool schemas, the same assembly GET /api/sessions/{id}/context serves); `method:none` = nothing measurable (`used:0`) and the client must show \"unknown\" instead of a ratio.",
+        "W755: `method:session_event_chars` is RETIRED — it divided the session log's CHARACTER count by a TOKEN window (~4x over-report; fixtures/live/status.json held used:565437 / ratio:0.5654 where the real assembly is 155,698 / 0.1557). The literal stays in the union only so a consumer can recognise an older build's payload; this backend never emits it.",
+        "W755: `estimated` says whether `used` is the visible-surface estimate; `projected` says whether the real-prompt anchor was extended by measured growth. They are different questions and both may be false.",
+        "W755: `window_source:profile` is the only case where `ratio` is a real measurement. A session whose profile declares no capacity reports `window:0, ratio:0, window_source:fallback` — the 1000000 CONTEXT_WINDOW_FALLBACK is a DISPLAY default only and never a denominator (the client must not draw a ring when window is 0); `unknown` means the configured value was not usable at all. DSH refuses to render occupancy without a resolved capacity.",
+        "W755: `usage.total` is a cross-step, repeatedly-billed sum (every step re-sends the whole prompt), NOT an occupancy reading — never divide it by a context window. Occupancy is `context_usage` only."
       ],
       "probe": {
         "checked": true,
@@ -431,14 +436,16 @@
           },
           {
             "name": "available",
-            "type": "object{models:array<{id,name,provider,reasoning:bool}>,efforts:array<string>}",
+            "type": "object{models:array<{id,name,provider,provider_id,active:bool,reasoning:bool}>,efforts:array<string>}",
             "required": false
           }
         ]
       },
       "errors": [],
       "notes": [
-        "Always 200. Never contains api_key. available.models is rebuilt from the live providers store on every read."
+        "Always 200. Never contains api_key. available.models is rebuilt from the live providers store on every read.",
+        "W750: available.models carries ONE row per (provider, model) pair — de-duplication is per provider, never global, because the same model id can be served by two providers over different endpoints (the provider decides where the request goes).",
+        "W750: each row carries provider_id (the provider's stable id, for switches) beside provider (the display name), plus active = this exact pair is the composed one (same model id AND same endpoint as the live profile; when no endpoint matches, a model id is marked active only if it is unambiguous)."
       ],
       "probe": {
         "checked": true,
@@ -1963,8 +1970,15 @@
             "name": "model",
             "type": "string",
             "required": true
+          },
+          {
+            "name": "provider_id",
+            "type": "string",
+            "required": false,
+            "note": "W750: optional provider disambiguator; when given, `model` must be one of that provider's models"
           }
-        ]
+        ],
+        "note": "W750: `provider_id` selects WHICH provider serves the model — model ids are not unique across providers, so without it the first provider listing the id wins (unchanged legacy behaviour)."
       },
       "response": {
         "status": 200,
@@ -1983,6 +1997,14 @@
           "error": "model must not be empty"
         },
         {
+          "status": 400,
+          "error": "provider '{provider_id}' does not list model '{model}'"
+        },
+        {
+          "status": 404,
+          "error": "unknown provider '{provider_id}'"
+        },
+        {
           "status": 409,
           "error": "a turn is running; provider default applies between turns"
         },
@@ -1996,7 +2018,8 @@
         }
       ],
       "notes": [
-        "compose failure never persists; persist failure never swaps. Unknown model ids are applied and stored as-is."
+        "compose failure never persists; persist failure never swaps. Unknown model ids are applied and stored as-is.",
+        "W750: a rejected provider_id (unknown provider / model not listed by it) is refused BEFORE compose, so nothing is applied and nothing is persisted."
       ],
       "probe": {
         "checked": false,
@@ -2910,7 +2933,7 @@
             "name": "context",
             "type": "object{used:int,window:int,ratio:number,estimated:bool}",
             "required": true,
-            "note": "the statusline's context_usage口径 minus its `method` discriminator"
+            "note": "the statusline's context_usage口径 minus its `method`/`projected`/`window_source` discriminators: used/window/ratio/estimated as defined by get_status (W755: real prompt + measured growth, else the token estimate of THIS very assembly, else used:0; window:0 + ratio:0 when the profile declares no capacity)"
           },
           {
             "name": "truncated",
@@ -2933,6 +2956,7 @@
       "notes": [
         "Read-only: it composes the session's instance when none is live and never drives a turn.",
         "The body is the ENGINE's assembly (agent-loop buildRequest: system + trimContext(deriveMessages()) + registry.schemas()), never a host-side re-derivation.",
+        "W755: `context` is the same口径 as get_status.context_usage, computed from THIS assembly — which is exactly what the fallback estimate measures, so the panel and the meter can no longer disagree.",
         "Per-entry cap: a message or the system text longer than 20000 chars is cut to 20000 and marked (message: `truncated:true`; system: top-level flag only).",
         "`role` is the verbatim engine role, so a trimmed-history marker message can appear as `system` (user|assistant|tool otherwise).",
         "`worker:<sid>` sessions have no directory and are rejected by session resolution (404)."
