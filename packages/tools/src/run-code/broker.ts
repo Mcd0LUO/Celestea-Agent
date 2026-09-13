@@ -1,11 +1,16 @@
 /**
  * The `run_code` parent broker (`crates/tools/src/run_code.rs:562-978`).
  *
- * One `run_code` call = one round trip. The assembled Python program runs in
- * the sandbox; its sub-calls arrive as one-line JSON on stdout and the parent
- * answers on stdin after dispatching each one through the **same** registry
- * pipeline (schema → guards → execute) the model itself would use. Only
- * `main()`'s return value travels back as the tool result.
+ * One `run_code` call = one round trip. The assembled program — TypeScript by
+ * default since W774, Python on request — runs in the sandbox; its sub-calls
+ * arrive as one-line JSON on stdout and the parent answers on stdin after
+ * dispatching each one through the **same** registry pipeline (schema → guards →
+ * execute) the model itself would use. Only `main()`'s return value travels back
+ * as the tool result.
+ *
+ * The protocol is language-neutral (it is byte-identical for both SDKs), so the
+ * language only decides two things: the script file's extension and the
+ * interpreter that runs it.
  *
  * Invariants:
  * - every limit is enforced here, never in the child: the 21st sub-call is
@@ -18,6 +23,7 @@
  *   left behind — and its script file is removed on every exit path.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Writable } from "node:stream";
@@ -42,7 +48,7 @@ import {
   type RunCodeConfig,
 } from "./limits.js";
 import { LineReader, appendBounded, jsonByteLength, tail, truncateValue, type BoundedLine } from "./lines.js";
-import { assembleProgram } from "./sdk.js";
+import { assembleProgram, DEFAULT_RUN_CODE_LANGUAGE, type RunCodeLanguage } from "./sdk.js";
 
 /** Session-log sink for sub-call rows (Rust `Fn(SessionEvent)` sink). */
 export type RunCodeEventSink = (event: SessionEvent) => void;
@@ -88,15 +94,24 @@ interface RunState {
 
 let scriptSeq = 0;
 
+/**
+ * Absolute interpreter path of a TypeScript program (W774): the Node that runs
+ * THIS process, which is the same binary the sandbox can see (`--ro-bind / /`
+ * mounts the host root read-only) and never depends on the child's PATH.
+ * `/usr/bin/node` is preferred because it is the host's system-wide install;
+ * `process.execPath` is the honest fallback (nvm/volta hosts).
+ */
+export const TS_PROGRAM_RUNTIME = existsSync("/usr/bin/node") ? "/usr/bin/node" : process.execPath;
+
 /** One full run_code round trip: the program's final value + its render. */
 export async function brokerRun(ctx: BrokerContext, args: unknown): Promise<ToolExecOutcome> {
-  const code = programSource(args);
+  const source = programSource(args);
   const timeoutMs = resolveTimeoutMs(readArg(args, "timeout_ms"), ctx.config);
   const workdir = await sandboxWorkdir(ctx.sandbox);
-  const script = await placeProgram(workdir, code);
+  const script = await placeProgram(workdir, source);
   const state = newRunState();
   try {
-    await executeProgram(ctx, script.name, timeoutMs, state);
+    await executeProgram(ctx, script.name, source.language, timeoutMs, state);
   } catch (e) {
     throw withLogs(e, ctx, state);
   } finally {
@@ -107,11 +122,21 @@ export async function brokerRun(ctx: BrokerContext, args: unknown): Promise<Tool
 
 // ---- argument + program placement --------------------------------------------
 
-/** `code` must be a non-empty Python program (Rust `arg_str` + empty check). */
-function programSource(args: unknown): string {
+/** What one `run_code` call asks to run: the source plus its language. */
+interface ProgramSource {
+  code: string;
+  language: RunCodeLanguage;
+}
+
+/** `code` must be a non-empty program; `language` defaults to TypeScript (W774). */
+function programSource(args: unknown): ProgramSource {
   const code = stringArg(args, "code");
-  if (code.trim() === "") throw runCodeFailure("invalid_arg", "'code' must be a non-empty Python program");
-  return code;
+  if (code.trim() === "") throw runCodeFailure("invalid_arg", "'code' must be a non-empty program");
+  const raw = readArg(args, "language");
+  if (raw === undefined || raw === null) return { code, language: DEFAULT_RUN_CODE_LANGUAGE };
+  if (raw === "typescript" || raw === "python") return { code, language: raw };
+  // The spec's enum refuses anything else before dispatch; this is the floor.
+  throw runCodeFailure("invalid_arg", `'language' must be 'typescript' or 'python' (got ${JSON.stringify(raw)})`);
 }
 
 function readArg(args: unknown, key: string): unknown {
@@ -127,18 +152,23 @@ async function sandboxWorkdir(sandbox: Sandbox): Promise<string> {
   }
 }
 
-/** Write `SDK + user code + runner` into `<workdir>/.celestea/run_code_<pid>_<n>.py`. */
-async function placeProgram(workdir: string, code: string): Promise<{ name: string; cleanup: () => Promise<void> }> {
+/**
+ * Write `SDK + user code + runner` into
+ * `<workdir>/.celestea/run_code_<pid>_<n>.{ts,py}` — the extension is the ONLY
+ * thing the language changes about placement.
+ */
+async function placeProgram(workdir: string, source: ProgramSource): Promise<{ name: string; cleanup: () => Promise<void> }> {
   const dir = join(workdir, ".celestea");
   try {
     await mkdir(dir, { recursive: true });
   } catch (e) {
     throw runCodeFailure("config", `cannot create '${dir}': ${errorText(e)}`);
   }
-  const name = `run_code_${process.pid}_${scriptSeq++}.py`;
+  const suffix = source.language === "python" ? "py" : "ts";
+  const name = `run_code_${process.pid}_${scriptSeq++}.${suffix}`;
   const path = join(dir, name);
   try {
-    await writeFile(path, assembleProgram(code), "utf8");
+    await writeFile(path, assembleProgram(source.code, source.language), "utf8");
   } catch (e) {
     throw runCodeFailure("spawn", `cannot write program file '${path}': ${errorText(e)}`);
   }
@@ -147,10 +177,19 @@ async function placeProgram(workdir: string, code: string): Promise<{ name: stri
 
 // ---- child lifecycle ---------------------------------------------------------
 
-async function spawnProgram(sandbox: Sandbox, scriptName: string): Promise<SandboxChild> {
+/**
+ * The interpreter command line. Python keeps `python3 -uB` byte for byte;
+ * TypeScript runs under an absolute Node path (native type stripping, no build,
+ * no `node_modules`), so the child's PATH never matters.
+ */
+function interpreterCommand(language: RunCodeLanguage, scriptName: string): string {
+  return language === "python" ? `python3 -uB .celestea/${scriptName}` : `${TS_PROGRAM_RUNTIME} .celestea/${scriptName}`;
+}
+
+async function spawnProgram(sandbox: Sandbox, scriptName: string, language: RunCodeLanguage): Promise<SandboxChild> {
   let spawned: SandboxSpawned;
   try {
-    spawned = await sandbox.spawn({ command: `python3 -uB .celestea/${scriptName}` });
+    spawned = await sandbox.spawn({ command: interpreterCommand(language, scriptName) });
   } catch (e) {
     throw runCodeFailure("spawn", errorText(e));
   }
@@ -162,10 +201,11 @@ async function spawnProgram(sandbox: Sandbox, scriptName: string): Promise<Sandb
 async function executeProgram(
   ctx: BrokerContext,
   scriptName: string,
+  language: RunCodeLanguage,
   timeoutMs: number,
   state: RunState,
 ): Promise<void> {
-  const child = await spawnProgram(ctx.sandbox, scriptName);
+  const child = await spawnProgram(ctx.sandbox, scriptName, language);
   const stderr = readCapped(child.stderr, ctx.config.maxLogBytes);
   try {
     await pumpLines(ctx, child, timeoutMs, state);

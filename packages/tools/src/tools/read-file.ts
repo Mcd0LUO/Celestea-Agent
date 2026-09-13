@@ -8,6 +8,7 @@
 import type { Tool, ToolSpec } from "@celestea/core";
 
 import { stringArg } from "../args.js";
+import { descParam } from "../desc.js";
 import { MAX_READ_BYTES, readTextFile, truncationNote } from "../fs/file-io.js";
 
 export function readFileSpec(): ToolSpec {
@@ -16,7 +17,10 @@ export function readFileSpec(): ToolSpec {
     description: "Read a UTF-8 text file and return its contents as a string.",
     parameters: {
       type: "object",
-      properties: { path: { type: "string", description: "Filesystem path of the file to read." } },
+      properties: {
+        path: { type: "string", description: "Filesystem path of the file to read." },
+        desc: descParam(),
+      },
       required: ["path"],
       additionalProperties: false,
     },

@@ -152,9 +152,19 @@ describe("bwrapMeta", () => {
 });
 
 describe("seccomp filter (pure TS cBPF)", () => {
-  it("matches the engine instruction stream size", () => {
-    expect(instructionCount()).toBe(322);
-    expect(toBlobBytes().length).toBe(322 * 8);
+  it("matches the engine instruction stream size plus the five W775 entries", () => {
+    // 322 engine slots + 2 per added syscall (getsockname/getsockopt/socketpair/
+    // sched_getparam/sched_getscheduler — see the W775 note in seccomp.ts).
+    expect(instructionCount()).toBe(332);
+    expect(toBlobBytes().length).toBe(332 * 8);
+  });
+
+  it("allows the syscalls Node and CPython need, and keeps them read-mostly", () => {
+    const allowed = new Set(buildSeccompFilter().filter((ins) => ins.code === 0x15).map((ins) => ins.k));
+    for (const nr of [51, 53, 55, 143, 145]) expect(allowed.has(nr)).toBe(true);
+    // the additions must not have dragged in the network surface itself
+    // (connect(42) is engine-table legacy and harmless without socket(41))
+    for (const nr of [41, 43, 44, 45, 49, 50, 54]) expect(allowed.has(nr)).toBe(false);
   });
 
   it("serializes little-endian words with the engine's header and tail", () => {
@@ -170,7 +180,7 @@ describe("seccomp filter (pure TS cBPF)", () => {
   it("materializes a readable blob file and cleans it up", () => {
     const handle = openSeccompBlob();
     const path = readFileSync(`/proc/self/fd/${handle.fd}`).length;
-    expect(path).toBe(322 * 8);
+    expect(path).toBe(332 * 8);
     handle.dispose();
     expect(existsSync(`/proc/self/fd/${handle.fd}`)).toBe(false);
   });

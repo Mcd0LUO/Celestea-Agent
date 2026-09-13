@@ -591,7 +591,8 @@
       "errors": [],
       "notes": [
         "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending.",
-        "W729: every row carries `mode` (worker rows included); a session without session.json.mode reads as \"standard\"."
+        "W729: every row carries `mode` (worker rows included); a session without session.json.mode reads as \"standard\".",
+        "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name."
       ],
       "probe": {
         "checked": true,
@@ -618,7 +619,8 @@
           {
             "name": "title",
             "type": "string",
-            "required": true
+            "required": true,
+            "note": "W779: stored verbatim (trimmed, CJK/spaces preserved) as session.json.title — the GUI displays THIS, never the directory name"
           },
           {
             "name": "model",

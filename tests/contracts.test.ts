@@ -257,12 +257,14 @@ describe("W729 session modes (P0 contract delta)", () => {
     expect(tools.tools).toHaveLength(10);
   });
 
-  it("freezes the session.json mode enum and keeps unknown keys tolerated", () => {
+  it("freezes the session.json mode enum and the W779 title, unknown keys tolerated", () => {
     const schema = loadDataFileSchema("session.schema.json")["schema"] as {
-      properties: Record<string, { enum?: string[] }>;
+      properties: Record<string, { enum?: string[]; type?: string }>;
       additionalProperties?: boolean;
     };
     expect(schema.properties["mode"]?.enum).toEqual(["standard", "execution"]);
+    // W779 T2: the display name the GUI shows, next to the sanitized dir name.
+    expect(schema.properties["title"]?.type).toBe("string");
     expect(schema.additionalProperties).toBe(true);
     expect(loadDataFilesIndex().files).toHaveLength(11);
   });

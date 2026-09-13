@@ -15,6 +15,7 @@
 import type { Tool, ToolSpec } from "@celestea/core";
 
 import { optionalIntArg, optionalRecordArg, optionalStringArg, stringArg } from "../args.js";
+import { descParam } from "../desc.js";
 import { contractFailure } from "../errors.js";
 import { fnTool } from "../fn-tool.js";
 import { httpFailure } from "../http/errors.js";
@@ -65,6 +66,7 @@ export function httpRequestSpec(): ToolSpec {
           minimum: 1,
           description: "Optional timeout in milliseconds (default 15000, maximum 60000).",
         },
+        desc: descParam(),
       },
       required: ["url"],
       additionalProperties: false,

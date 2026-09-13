@@ -222,8 +222,10 @@ describe("W729 tool_access variants (P0, §1.3)", () => {
       expect(Buffer.byteLength(out, "utf8"), mode).toBeLessThanOrEqual(PROMPT_MAX_LEN);
     }
     // Frozen byte sizes: A shrinks the old text by ~264 B, B grows it by ~451 B.
-    expect(Buffer.byteLength(TOOL_ACCESS_VARIANTS.standard, "utf8")).toBe(353);
-    expect(Buffer.byteLength(TOOL_ACCESS_VARIANTS.execution, "utf8")).toBe(1068);
+    // W774: +52 B (standard) / +160 B (execution) — the run_code sentence now
+    // says the default language is TypeScript and that python is an option.
+    expect(Buffer.byteLength(TOOL_ACCESS_VARIANTS.standard, "utf8")).toBe(405);
+    expect(Buffer.byteLength(TOOL_ACCESS_VARIANTS.execution, "utf8")).toBe(1228);
   });
 
   it("R4: a user override of tool_access still wins over the mode variant", () => {

@@ -10,6 +10,20 @@
  * Semantics: x86_64 only; unknown arch → `EPERM`; x32-flagged numbers → `EPERM`;
  * everything outside the whitelist → `EPERM`, except `clone3` → `ENOSYS` (so
  * glibc falls back to `clone` instead of failing outright).
+ *
+ * Node needs four read-only metadata queries on top of the engine table
+ * (`51 getsockname` + `55 getsockopt` let libuv's `uv_guess_handle()` classify
+ * socket-backed stdio; `143 sched_getparam` + `145 sched_getscheduler` back
+ * `pthread_getschedparam`, which V8's absl mutex calls at startup). Without them
+ * Node does not fail loudly: `uv_guess_handle()` returns an unknown handle, the
+ * `process.stdout`/`stderr` objects get no libuv handle, and every write is
+ * dropped silently (W775).
+ *
+ * `53 socketpair` is the one addition that is not a metadata query: CPython's
+ * asyncio event loop builds its self-pipe with it. It stays a purely local IPC
+ * primitive — `socket(41)`, `connect(42)`, `bind(49)` and friends are still
+ * denied and the net namespace is unshared, so it grants no reach outside the
+ * sandbox (same family as the already-allowed `pipe2`/`eventfd2`).
  */
 
 import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
@@ -35,9 +49,9 @@ const SYSCALL_CLONE3 = 435;
 /** x86_64 syscall numbers the sandbox allows (engine `ALLOW` table). */
 const ALLOWED_SYSCALLS: readonly number[] = [
   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
-  32, 33, 35, 38, 39, 40, 42, 56, 57, 58, 59, 60, 61, 62, 63, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83,
+  32, 33, 35, 38, 39, 40, 42, 51, 53, 55, 56, 57, 58, 59, 60, 61, 62, 63, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83,
   84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 102, 104, 107, 108, 109, 110, 111, 112,
-  118, 120, 121, 131, 137, 138, 157, 158, 160, 186, 202, 203, 204, 217, 218, 219, 228, 229, 230, 231, 232, 233,
+  118, 120, 121, 131, 137, 138, 143, 145, 157, 158, 160, 186, 202, 203, 204, 217, 218, 219, 228, 229, 230, 231, 232, 233,
   234, 235, 247, 253, 254, 255, 257, 258, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 273, 274,
   276, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 302, 306, 315, 318,
   322, 324, 326, 327, 328, 332, 334, 437, 439, 452,

@@ -178,6 +178,52 @@ describe.skipIf(!probe.bwrapUsable)("bwrap provider (live)", () => {
     expect(run.stdout).toContain("Seccomp:\t2");
     expect(run.sandbox.seccomp).toBe(true);
   });
+
+  it("keeps Node's stdout alive under the whitelist (W775 regression)", async () => {
+    // Before W775 this exited 0 with EMPTY stdout and stderr: `uv_guess_handle()`
+    // could not classify the socket-backed stdio (getsockname/getsockopt were
+    // EPERM), so process.stdout got no libuv handle and dropped every write.
+    const run = await sandboxWith({}, { run: { seccomp: true } }).run({
+      command: `${process.execPath} -e 'console.log("alive")'`,
+      timeoutMs: 10_000,
+    });
+    expect(run.exit_code).toBe(0);
+    expect(run.stdout).toBe("alive\n");
+    expect(run.stderr).toBe("");
+    expect(run.sandbox.seccomp).toBe(true);
+  });
+
+  it("runs a real TypeScript file (native type stripping) under the whitelist", async () => {
+    const dir = makeTempDir("w775-ts");
+    writeFileSync(join(dir, "prog.ts"), 'const n: number = 6 * 7;\nconsole.log(`ts ${n}`);\n');
+    const run = await sandboxWith({ workdir: dir, root: dir }, { run: { seccomp: true } }).run({
+      command: `${process.execPath} prog.ts`,
+      timeoutMs: 10_000,
+    });
+    expect(run.exit_code).toBe(0);
+    expect(run.stdout).toBe("ts 42\n");
+    expect(run.stderr).toBe("");
+  });
+
+  it("runs python3 under the whitelist and keeps the socket surface closed", async () => {
+    const sandbox = sandboxWith({}, { run: { seccomp: true } });
+    const plain = await sandbox.run({ command: "python3 -c 'print(2)'", timeoutMs: 10_000 });
+    expect(plain.exit_code).toBe(0);
+    expect(plain.stdout).toBe("2\n");
+    // socketpair (asyncio's self-pipe, W775) is allowed...
+    const pair = await sandbox.run({
+      command: `python3 -c 'import socket;socket.socketpair();print("PAIR-OK")'`,
+      timeoutMs: 10_000,
+    });
+    expect(pair.stdout).toBe("PAIR-OK\n");
+    // ...but creating, binding or writing to a socket is still EPERM: the pair
+    // is an inert fd couple, so the whitelist gained no reach.
+    for (const verb of ["socket.socket()", `socket.socketpair()[0].send(b"x")`]) {
+      const denied = await sandbox.run({ command: `python3 -c 'import socket;${verb}'`, timeoutMs: 10_000 });
+      expect(denied.exit_code).toBe(1);
+      expect(denied.stderr).toContain("PermissionError");
+    }
+  });
 });
 
 /**

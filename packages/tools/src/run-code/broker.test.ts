@@ -1,118 +1,51 @@
 /**
- * `run_code` broker integration tests (W255 P0 matrix).
- *
- * Every case below spawns a **real** `python3` inside the real userspace
- * sandbox and drives the real line protocol; the sub-call registry is a real
- * `ToolRegistryImpl` (schema validation + guard chain + execute), so what is
- * asserted here is the production pipeline, not a mock of it.
+ * `run_code` broker integration tests — the PYTHON matrix (W255), kept green as
+ * the regression suite of the W774 language switch (TypeScript is now the
+ * default, so every case here says `language: "python"` explicitly; the
+ * TypeScript matrix lives in `broker-ts.test.ts`).
  */
 
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Sandbox, SessionEvent, Tool, ToolGuard, ToolSpec } from "@celestea/core";
+import type { Sandbox, SessionEvent, Tool, ToolGuard, ToolExecOutcome } from "@celestea/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { fnTool } from "../fn-tool.js";
 import { PathGuard } from "../guard/path-guard.js";
 import { assembleTools } from "../plugin.js";
 import { ToolRegistryImpl } from "../registry.js";
-import { userspaceSandboxWith } from "../sandbox/userspace.js";
 import { readFileTool } from "../tools/read-file.js";
-import { RegistryHandle, runCodeTool, runCodeToolWithHandle } from "../tools/run-code.js";
+import { RegistryHandle, runCodeTool } from "../tools/run-code.js";
 import { MAX_SUB_OUTPUT_BYTES } from "./limits.js";
+import { echoSpec, startBrokerHarness, type BrokerHarness } from "./broker.test-util.js";
 
-let dir = "";
+let h: BrokerHarness;
 let sandbox: Sandbox;
-let pythonReady = false;
+let dir = "";
 
 beforeAll(async () => {
-  dir = await mkdtemp(join(tmpdir(), "celestea-run-code-"));
-  sandbox = userspaceSandboxWith({
-    workdir: dir,
-    root: dir,
-    timeoutMs: 30_000,
-    maxTimeoutMs: 120_000,
-    maxOutputBytes: 64 * 1024,
-  });
-  const probe = await sandbox.run({ command: "python3 -c 'print(1)'" });
-  pythonReady = probe.exit_code === 0 && probe.stdout === "1\n";
-  if (!pythonReady) console.warn("[run_code] skip: python3 unavailable in the sandbox right now");
+  h = await startBrokerHarness();
+  sandbox = h.sandbox;
+  dir = h.dir;
 });
 
 afterAll(async () => {
-  if (dir !== "") await rm(dir, { recursive: true, force: true });
+  if (h !== undefined) await h.cleanup();
 });
 
-// ---- test doubles ------------------------------------------------------------
-
-function echoSpec(name: string): ToolSpec {
-  return {
-    name,
-    description: `${name} echo (run_code test double)`,
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        command: { type: "string" },
-        content: { type: "string" },
-        workdir: { type: "string" },
-        timeout_ms: { type: "integer" },
-      },
-      additionalProperties: false,
-    },
-  };
-}
-
-/** Echo registry: every whitelisted tool answers `{echo: name, args}`. */
-function echoRegistry(): ToolRegistryImpl {
-  const registry = new ToolRegistryImpl();
-  for (const name of ["read_file", "write_file", "list_dir", "run_shell"]) {
-    registry.register(fnTool(echoSpec(name), async (args) => ({ echo: name, args })));
-  }
-  return registry;
-}
-
-/** Shell-shaped registry: `run_shell` answers the run_shell result dict. */
-function shellRegistry(): ToolRegistryImpl {
-  const registry = new ToolRegistryImpl();
-  registry.register(fnTool(echoSpec("read_file"), async (args) => ({ echo: "read_file", args })));
-  registry.register(
-    fnTool(echoSpec("run_shell"), async () => ({
-      stdout: "hi\n",
-      stderr: "",
-      exit_code: 0,
-      stdout_truncated: false,
-      stderr_truncated: false,
-    })),
-  );
-  return registry;
-}
-
-/** Register the tool, then bind the handle to that same registry (production wiring). */
-function mount(registry: ToolRegistryImpl, options: { events?: (event: SessionEvent) => void } = {}): Tool {
-  const { tool, handle } = runCodeToolWithHandle({
-    sandbox,
-    ...(options.events === undefined ? {} : { events: options.events }),
-  });
-  registry.register(tool);
-  handle.set(registry);
-  return tool;
-}
-
-async function run(tool: Tool, callId: string, args: unknown) {
-  if (tool.executeWith === undefined) throw new Error("run_code must override executeWith");
-  return tool.executeWith({ call_id: callId, name: "run_code", args });
-}
-
-const skip = (): boolean => !pythonReady;
-
-/** `run_code_*.py` files the broker left behind in `<workdir>/.celestea`. */
-async function leftoverScripts(): Promise<string[]> {
-  const entries = await readdir(join(dir, ".celestea")).catch(() => [] as string[]);
-  return entries.filter((name) => name.startsWith("run_code_"));
-}
+/** The Python regression matrix skips when `python3` is unavailable. */
+const skip = (): boolean => !h.pythonReady;
+/** W774: `language` is explicit here — TypeScript is the tool's default now. */
+const pythonRun = (tool: Tool, callId: string, args: Record<string, unknown>): Promise<ToolExecOutcome> =>
+  run(tool, callId, { ...args, language: "python" });
+const mount = (registry: ToolRegistryImpl, options: Parameters<BrokerHarness["mount"]>[1] = {}): Tool => h.mount(registry, options);
+const run = (tool: Tool, callId: string, args: unknown): Promise<ToolExecOutcome> =>
+  h.run(tool, callId, args) as Promise<ToolExecOutcome>;
+const leftoverScripts = (): Promise<string[]> => h.leftoverScripts();
+const echoRegistry = (): ToolRegistryImpl => h.echoRegistry();
+const shellRegistry = (): ToolRegistryImpl => h.shellRegistry();
 
 // ---- the P0 matrix -----------------------------------------------------------
 
@@ -131,7 +64,7 @@ async def main():
     f = b.get("echo")                               # .get passthrough on the wrapper
     return {"a": a, "b": b, "c": c, "d": d, "d_is_dict": isinstance(d, dict), "e": e, "f": f}
 `;
-    const out = await run(tool, "rc-echo", { code, description: "echo four sub-calls" });
+    const out = await run(tool, "rc-echo", { code, language: "python", description: "echo four sub-calls" });
     expect(out.value).toEqual({
       a: { echo: "read_file", args: { path: "/tmp/x.txt" } },
       b: { echo: "run_shell", args: { command: "printf hi" } },
@@ -171,7 +104,7 @@ async def main():
         return "caught: " + str(e)
     return "not caught"
 `;
-    const out = await run(tool, "rc-deny", { code });
+    const out = await run(tool, "rc-deny", { code, language: "python" });
     expect(out.value).toBe("caught: tool 'read_file' failed: denied: policy says no");
     expect(out.render).toBeNull();
     expect(events).toHaveLength(2);
@@ -191,7 +124,7 @@ async def main():
         return "caught: " + str(e)
     return "no error"
 `;
-    const out = await run(tool, "rc-limit", { code });
+    const out = await run(tool, "rc-limit", { code, language: "python" });
     expect(out.value).toContain("caught: ");
     expect(out.value).toContain("sub-call limit exceeded (max 20)");
     expect(events).toHaveLength(40);
@@ -211,7 +144,7 @@ async def main():
     v = tools.read_file(path="/big")
     return len(v)
 `;
-    const out = await run(tool, "rc-budget", { code });
+    const out = await run(tool, "rc-budget", { code, language: "python" });
     expect(out.value).toBe(MAX_SUB_OUTPUT_BYTES);
     expect(out.render).toContain("sub-call output budget");
     expect(out.render).toContain("dropped");
@@ -228,7 +161,7 @@ async def main():
     print("x" * 100000, flush=True)
     return "done"
 `;
-    const out = await run(tool, "rc-logs", { code });
+    const out = await run(tool, "rc-logs", { code, language: "python" });
     expect(out.value).toBe("done");
     expect(out.render?.startsWith("x")).toBe(true);
     expect(out.render).toContain("stdout logs truncated at 65536 bytes");
@@ -250,7 +183,7 @@ async def main():
         "keys": sorted(s.keys()),
     }
 `;
-    const out = await run(tool, "rc-attr", { code });
+    const out = await run(tool, "rc-attr", { code, language: "python" });
     expect(out.value).toEqual({
       before: true,
       after: true,
@@ -263,7 +196,7 @@ async def main():
   it("kills the program on the wall clock and reports a structured timeout", async () => {
     if (skip()) return;
     const tool = mount(echoRegistry());
-    await expect(run(tool, "rc-timeout", { code: "while True:\n    pass\n", timeout_ms: 800 })).rejects.toThrow(
+    await expect(run(tool, "rc-timeout", { code: "while True:\n    pass\n", language: "python", timeout_ms: 800 })).rejects.toThrow(
       /^run_code: code=timeout .*800ms/,
     );
   });
@@ -286,7 +219,7 @@ async def main():
         out.append("attr-ok")
     return out
 `;
-    const out = await run(tool, "rc-wl", { code });
+    const out = await run(tool, "rc-wl", { code, language: "python" });
     expect(out.value).toEqual([
       "tool 'http_request' not exposed in run_code SDK",
       "tool 'run_code' not exposed in run_code SDK",
@@ -302,7 +235,7 @@ async def main():
     print("before boom")
     raise ValueError("boom")
 `;
-    const failure = await run(tool, "rc-exc", { code }).catch((error: unknown) => error as Error);
+    const failure = await run(tool, "rc-exc", { code, language: "python" }).catch((error: unknown) => error as Error);
     if (!(failure instanceof Error)) throw new Error("expected the program exception to reject");
     expect(failure.message).toMatch(/^ValueError: boom\n\[run_code\] logs:\n/);
     expect(failure.message).toContain("before boom");
@@ -313,9 +246,9 @@ async def main():
   it("cleans the temporary program file from the session workdir (also on timeout)", async () => {
     if (skip()) return;
     const tool = mount(echoRegistry());
-    await run(tool, "rc-clean", { code: "async def main():\n    return 1\n" });
+    await run(tool, "rc-clean", { code: "async def main():\n    return 1\n", language: "python" });
     expect(await leftoverScripts()).toEqual([]);
-    await run(tool, "rc-clean-timeout", { code: "while True:\n    pass\n", timeout_ms: 600 }).catch(
+    await run(tool, "rc-clean-timeout", { code: "while True:\n    pass\n", language: "python", timeout_ms: 600 }).catch(
       () => undefined,
     );
     expect(await leftoverScripts()).toEqual([]);
@@ -324,7 +257,7 @@ async def main():
   it("reports a non-JSON return value as a program error", async () => {
     if (skip()) return;
     const tool = mount(echoRegistry());
-    await expect(run(tool, "rc-nonjson", { code: "async def main():\n    return object()\n" })).rejects.toThrow(
+    await expect(run(tool, "rc-nonjson", { code: "async def main():\n    return object()\n", language: "python" })).rejects.toThrow(
       /not JSON serializable/,
     );
   });
@@ -335,7 +268,7 @@ describe("run_code argument + wiring contracts", () => {
     const tool = mount(echoRegistry());
     await expect(run(tool, "rc-a1", {})).rejects.toThrow(/missing 'code' \(expected string\)/);
     await expect(run(tool, "rc-a2", { code: "   \n" })).rejects.toThrow(/run_code: code=invalid_arg/);
-    await expect(run(tool, "rc-a3", { code: "return 1", timeout_ms: 999_999 })).rejects.toThrow(
+    await expect(run(tool, "rc-a3", { code: "return 1", language: "python", timeout_ms: 999_999 })).rejects.toThrow(
       /exceeds the run_code maximum 120000ms/,
     );
   });
@@ -364,7 +297,7 @@ describe("run_code argument + wiring contracts", () => {
     const out = await registry.registry.dispatch({
       call_id: "rc-e2e",
       name: "run_code",
-      args: { code: `async def main():\n    text = tools.read_file(path="${path}")\n    return text.splitlines()[0]\n` },
+      args: { code: `async def main():\n    text = tools.read_file(path="${path}")\n    return text.splitlines()[0]\n`, language: "python" },
     });
     expect(out.error).toBeNull();
     expect(out.value).toBe("first line");
@@ -373,7 +306,7 @@ describe("run_code argument + wiring contracts", () => {
     guarded.register(readFileTool());
     guarded.addGuard(PathGuard.fromEnv({ CELESTEA_TOOL_WORKDIR: dir }));
     const tool = mount(guarded);
-    const sub = await run(tool, "rc-guard-ok", { code: `async def main():\n    return tools.read_file(path="${path}")\n` });
+    const sub = await run(tool, "rc-guard-ok", { code: `async def main():\n    return tools.read_file(path="${path}")\n`, language: "python" });
     expect(sub.value).toBe("first line\nsecond line\n");
   });
 });

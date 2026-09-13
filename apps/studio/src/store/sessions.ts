@@ -17,8 +17,8 @@ import type { SessionWorkspace } from "@celestea/runtime";
 import { isDirectory, isFile, listEntries, statOf, writeFileRaw, removeDir, ensureDir } from "./fs-json.js";
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { DEFAULT_SESSION_MODE, parseMode, validateMode, type SessionMode } from "./mode.js";
-import { readSessionMeta, writeSessionMeta } from "./session-meta.js";
-import { sessionDirName, sanitizeComponent, workspaceBasename } from "./session-id.js";
+import { readSessionMeta, writeSessionMeta, type SessionMeta } from "./session-meta.js";
+import { sessionDirName, sanitizeComponent, stripCreationSuffix, workspaceBasename } from "./session-id.js";
 import { validateModelName, validatePromptId } from "./validate.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
 
@@ -49,9 +49,26 @@ export function sessionWorkspaceOf(resolved: ResolvedSession | null): SessionWor
   return { name: resolved.workspace, path: resolved.wsPath };
 }
 
+/**
+ * W779 T2 — the session's DISPLAY name.
+ *
+ * `session.json.title` when the session declared one (the original, un-sanitized
+ * title), else the directory name WITHOUT its `-<secs>.<nanos>[-N]` creation
+ * suffix. ONE rule, used by `list()` and by `branch()`'s default title, so the
+ * GUI never has to know how a session directory is named.
+ */
+export function displayTitle(meta: SessionMeta | null, dirName: string): string {
+  const declared = meta?.title ?? "";
+  return declared === "" ? stripCreationSuffix(dirName) : declared;
+}
+
 export interface SessionRow {
   id: string;
   workspace: string;
+  /**
+   * W779 T2: the display name — `session.json.title`, else the directory name
+   * with its creation suffix stripped (never `main-1789192174.492000000`).
+   */
   title: string;
   model: string | null;
   /**
@@ -99,7 +116,7 @@ export class SessionsStore {
           id: `${name}/${e.name}`,
           workspace: name,
           kind: "session" as const,
-          title: e.name,
+          title: displayTitle(meta, e.name),
           model: meta?.model ?? null,
           mode: meta?.mode ?? DEFAULT_SESSION_MODE,
           size: st?.size ?? 0,
@@ -183,7 +200,14 @@ export class SessionsStore {
       return fail(500, `create failed: ${errText(e)}`);
     }
     try {
-      writeSessionMeta(dir, { model, prompt, ...(mode === "" ? {} : { mode: parseMode(mode) ?? DEFAULT_SESSION_MODE }) });
+      // W779 T2: the ORIGINAL title (trimmed, CJK/spaces preserved) is what the
+      // GUI shows; the directory name stays the sanitized+timestamped form.
+      writeSessionMeta(dir, {
+        title: req.title.trim(),
+        model,
+        prompt,
+        ...(mode === "" ? {} : { mode: parseMode(mode) ?? DEFAULT_SESSION_MODE }),
+      });
     } catch (e) {
       removeDir(dir);
       return fail(500, `meta write failed: ${errText(e)}`);

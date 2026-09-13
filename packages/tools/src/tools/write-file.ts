@@ -7,6 +7,7 @@
 import type { Tool, ToolSpec } from "@celestea/core";
 
 import { stringArg } from "../args.js";
+import { descParam } from "../desc.js";
 import { writeTextFile } from "../fs/file-io.js";
 import { fnTool } from "../fn-tool.js";
 
@@ -19,6 +20,7 @@ export function writeFileSpec(): ToolSpec {
       properties: {
         path: { type: "string", description: "Filesystem path of the file to write." },
         content: { type: "string", description: "Text content to write." },
+        desc: descParam(),
       },
       required: ["path", "content"],
       additionalProperties: false,

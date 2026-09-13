@@ -12,6 +12,7 @@ import type { ProcessRegistry } from "../process/registry.js";
 import type { Tool, ToolSpec } from "@celestea/core";
 
 import { optionalStringArg, stringArg } from "../args.js";
+import { descParam } from "../desc.js";
 import { fnTool } from "../fn-tool.js";
 
 export function processControlSpec(): ToolSpec {
@@ -25,6 +26,7 @@ export function processControlSpec(): ToolSpec {
         handle: { type: "string", description: "Process handle returned by run_shell(background=true)." },
         action: { type: "string", enum: ["poll", "kill", "stdin"], description: "poll | kill | stdin (see tool description)." },
         content: { type: "string", description: "Line to write to the process stdin (action=stdin only)." },
+        desc: descParam(),
       },
       required: ["handle", "action"],
       additionalProperties: false,

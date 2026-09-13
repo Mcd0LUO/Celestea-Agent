@@ -57,6 +57,25 @@ export function sessionDirName(title: string, nowMs: number): string {
   return `${sanitizeComponent(title)}-${timestampSuffix(nowMs)}`;
 }
 
+/** The creation tail [`stripCreationSuffix`] removes: `-<secs>.<nanos>[-<n>]`. */
+const CREATION_SUFFIX = /-\d+\.\d+(-\d+)?$/;
+
+/**
+ * W779 T2 — the display name of a session DIRECTORY.
+ *
+ * A directory is `<sanitized title>-<secs>.<nanos>` (and `uniqueDir` may append
+ * `-N`), a uniqueness trick that must never reach the GUI:
+ *   main-1789192174.492000000 -> main
+ *   v2-1-1700000000.0-2       -> v2-1
+ *   plain                     -> plain        (nothing to strip)
+ *   报告-2024                  -> 报告-2024     (digits, but not a timestamp)
+ * A name that is ONLY a suffix keeps itself instead of becoming "".
+ */
+export function stripCreationSuffix(name: string): string {
+  const stripped = name.replace(CREATION_SUFFIX, "");
+  return stripped === "" ? name : stripped;
+}
+
 /** Folder basename, or null when the path has no usable last component. */
 export function workspaceBasename(path: string): string | null {
   const base = basename(path);
