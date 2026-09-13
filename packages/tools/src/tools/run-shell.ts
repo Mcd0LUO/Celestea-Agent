@@ -14,6 +14,7 @@
 import type { Sandbox, Tool, ToolSpec } from "@celestea/core";
 
 import { boolArg, optionalIntArg, optionalStringArg, stringArg } from "../args.js";
+import { descParam } from "../desc.js";
 import { fnTool } from "../fn-tool.js";
 import type { ProcessRegistry } from "../process/registry.js";
 
@@ -54,6 +55,7 @@ export function runShellSpec(): ToolSpec {
           description:
             "Optional, default true. When background:true and the process exits naturally, the system posts a '[process] <handle> exited code=<n>' completion message (with stdout/stderr tails) to the session mailbox so the agent is re-engaged automatically; set false to suppress that message (poll via process_control instead).",
         },
+        desc: descParam(),
       },
       required: ["command"],
       additionalProperties: false,

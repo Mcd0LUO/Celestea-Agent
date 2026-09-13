@@ -13,9 +13,9 @@ import { copyFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
 import { isDirectory, isFile, removeDir } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { sanitizeComponent, timestampSuffix } from "./session-id.js";
-import { SESSION_META } from "./session-meta.js";
+import { readSessionMeta, writeSessionMeta } from "./session-meta.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
-import type { ResolvedSession, SessionsStore } from "./sessions.js";
+import { displayTitle, type ResolvedSession, type SessionsStore } from "./sessions.js";
 
 export const ARCHIVED_DIR = ".celestea-archived";
 export const TRASH_DIR = ".celestea-trash";
@@ -46,11 +46,10 @@ export class SessionOps {
     const found = this.sessions.require(id);
     if (!found.ok) return found;
     const res = found.value;
-    const base = sanitizeComponent(newTitle.trim());
+    const title = newTitle.trim();
+    const base = sanitizeComponent(title);
     if (base === "" || base === "." || base === "..") return badRequest("new title must not be empty");
-    if (base.startsWith(".")) {
-      return badRequest(`title '${newTitle.trim()}' sanitizes to the hidden name '${base}'`);
-    }
+    if (base.startsWith(".")) return badRequest(`title '${title}' sanitizes to the hidden name '${base}'`);
     if (base === res.session) return ok(res.id);
     const newDir = this.sessions.uniqueDir(res.wsPath, base);
     try {
@@ -58,7 +57,26 @@ export class SessionOps {
     } catch (e) {
       return fail(500, `move failed: ${errText(e)}`);
     }
+    // W779 T2: the directory name is the sanitized title, so the DISPLAY name
+    // lives in session.json — an update that fails reports 500 rather than
+    // leaving the session labelled with its old title.
+    const titled = this.writeTitle(newDir, title);
+    if (!titled.ok) return titled;
     return ok(`${res.workspace}/${baseOf(newDir)}`);
+  }
+
+  /**
+   * W779 T2: `session.json.title` <- [title], keeping every other key. A session
+   * that never had a meta file gets a `{title}` one (the title belongs to the
+   * session, not to the model/prompt/mode trio).
+   */
+  private writeTitle(dir: string, title: string): StoreResult<void> {
+    try {
+      writeSessionMeta(dir, { ...(readSessionMeta(dir) ?? {}), title });
+      return ok(undefined);
+    } catch (e) {
+      return fail(500, `meta write failed: ${errText(e)}`);
+    }
   }
 
   /** POST /api/sessions/{id}/branch — copy the log into a sibling dir. */
@@ -66,8 +84,12 @@ export class SessionOps {
     const found = this.sessions.require(id);
     if (!found.ok) return found;
     const res = found.value;
+    const parent = readSessionMeta(res.dir);
     const asked = (title ?? "").trim();
-    const base = asked === "" ? `${res.session}-分支` : sanitizeComponent(asked);
+    // W779 T2: the default name is derived from the PARENT'S DISPLAY NAME, not
+    // from its directory (`alpha-1700000000.0-分支` was the old leak).
+    const display = asked === "" ? `${displayTitle(parent, res.session)}-分支` : asked;
+    const base = sanitizeComponent(display);
     if (base === "" || base === "." || base === "..") return badRequest("title must not be empty");
     if (base.startsWith(".")) return badRequest(`title sanitizes to the hidden name '${base}'`);
     const newDir = this.sessions.uniqueDir(res.wsPath, `${base}-${timestampSuffix(this.now())}`);
@@ -82,13 +104,13 @@ export class SessionOps {
       removeDir(newDir);
       return fail(500, `copy failed: ${errText(e)}`);
     }
-    if (isFile(`${res.dir}/${SESSION_META}`)) {
-      try {
-        copyFileSync(`${res.dir}/${SESSION_META}`, `${newDir}/${SESSION_META}`);
-      } catch (e) {
-        removeDir(newDir);
-        return fail(500, `meta copy failed: ${errText(e)}`);
-      }
+    // The branch INHERITS model/prompt/mode and carries its OWN title (the asked
+    // one, or `<parent display>-分支`); the log copy above never touches meta.
+    try {
+      writeSessionMeta(newDir, { ...(parent ?? {}), title: display });
+    } catch (e) {
+      removeDir(newDir);
+      return fail(500, `meta write failed: ${errText(e)}`);
     }
     return ok(`${res.workspace}/${baseOf(newDir)}`);
   }

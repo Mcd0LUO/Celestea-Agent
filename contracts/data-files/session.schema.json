@@ -10,10 +10,12 @@
   },
   "notes": [
     "The engine NEVER reads this file; cli-main.jsonl is the conversation history.",
-    "Only writer: POST /api/sessions when model and/or prompt is non-empty (both empty -> the file is not created).",
+    "Writers: POST /api/sessions (always, from W779: `title` is mandatory at creation), /rename (updates `title` in place) and /branch (writes the new session's own `title` over the inherited keys). Nothing is written when every field is empty (pre-W779 sessions with no model/prompt/mode).",
     "Written with a plain std::fs::write (NOT atomic, no fsync).",
     "Missing/corrupt -> None (tolerated).",
-    "Copied by branch; follows a rename because the whole directory moves.",
+    "W779: `rename` moves the directory AND rewrites `title` (the directory name is the sanitized title, so the file is the only place the original survives); `branch` copies model/prompt/mode and writes its own `title` (default `<parent display name>-分支`) instead of copying the file verbatim; the whole directory still follows a rename.",
+    "W779: `title` is the ORIGINAL, un-sanitized session title (CJK, spaces preserved) — the display name the GUI shows. Absent -> the caller falls back to the directory name with its `-<secs>.<nanos>[-N]` creation suffix stripped (`stripCreationSuffix`); the directory name itself is unchanged (it stays sanitized + timestamped for uniqueness).",
+    "W779: a non-string `title` is ignored on read (like an unknown `mode`); an empty `title` is never written.",
     "POST /api/config does NOT write it back: the session-level model is decided at creation time.",
     "W729: `mode` (standard|execution) is fixed at creation; DEFAULT = standard and it is NOT written (a session without the key behaves exactly as before).",
     "W729: an unknown `mode` value is ignored on read (behaves like a missing key); POST /api/sessions rejects it with 400 `invalid mode: <v>` before anything is created.",
@@ -37,6 +39,10 @@
           "execution"
         ],
         "description": "session working mode (W729): standard = call tools directly; execution = prefer one run_code program per dependent sequence. Absent = standard; the default is never written."
+      },
+      "title": {
+        "type": "string",
+        "description": "W779: display name of the session, verbatim as created/renamed (NOT sanitized, may contain CJK/spaces). Absent -> the GUI strips the creation suffix from the directory name."
       }
     },
     "additionalProperties": true

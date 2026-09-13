@@ -3,7 +3,7 @@ import { SESSION_LOG_SERVICE, type Context, type Tool, type ToolRegistry, type L
 import { recordingSessionLog } from "./log.js";
 import { WorkerRegistry } from "./registry.js";
 import { getExtra } from "./registry-tsv.js";
-import { deriveShort, tokenSafe, workerToolSpec, workerTools } from "./tools.js";
+import { deriveShort, tokenSafe, WORKER_TOOL_NAMES, workerToolSpec, workerTools } from "./tools.js";
 import { scriptedDrivers, scriptedLoop, waitUntil } from "./fakes.test-util.js";
 
 function harness(pid = 4242): { registry: WorkerRegistry; tools: Map<string, Tool> } {
@@ -25,6 +25,15 @@ describe("worker tool specs", () => {
     expect(spawn.parameters["additionalProperties"]).toBe(false);
     expect(workerToolSpec("worker_status").parameters["required"]).toEqual([]);
     expect(workerToolSpec("session_send_message").name).toBe("session_send_message");
+  });
+
+  it("W779: every spec carries the optional desc UI label from the contract", () => {
+    for (const name of WORKER_TOOL_NAMES) {
+      const spec = workerToolSpec(name);
+      const properties = spec.parameters["properties"] as Record<string, { type?: string }>;
+      expect(properties["desc"]?.type, name).toBe("string");
+      expect(spec.parameters["required"] as string[], name).not.toContain("desc");
+    }
   });
 
   it("fails loudly for a tool the contract does not describe", () => {

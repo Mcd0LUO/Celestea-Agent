@@ -259,9 +259,19 @@ describe("GET /api/sessions/{id}/context over the real engine", () => {
     expect(system).toContain("the active session is sample-ws/s1");
     expect(system).toContain(`workspace directory, ${h.workspace}`);
     expect(system).toContain(STANDARD_TOOL_ACCESS_MARK);
-    const tools = (body["tools"] as Array<{ name: string; parameters: Record<string, unknown> }>).map((t) => t.name);
+    const toolViews = body["tools"] as Array<{ name: string; parameters: Record<string, unknown> }>;
+    const tools = toolViews.map((t) => t.name);
     expect(tools).toContain("read_file");
     expect(tools).toEqual([...tools].sort());
+    // W779 T1: this surface is `registry.schemas()` verbatim, so it is where the
+    // `desc` label actually reaches the model — all 10 tools, builtins AND the
+    // three contract-driven worker tools. (`GET /api/tools` keeps its frozen
+    // two-field {name, description} view and never carried `parameters`.)
+    expect(toolViews).toHaveLength(10);
+    for (const view of toolViews) {
+      const desc = (view.parameters["properties"] as Record<string, unknown>)["desc"] as { type?: string };
+      expect(desc?.type, view.name).toBe("string");
+    }
 
     const messages = body["messages"] as Array<Record<string, unknown>>;
     expect(messages.map((m) => m["role"])).toEqual(["user", "assistant"]);

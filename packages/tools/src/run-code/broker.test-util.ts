@@ -1,0 +1,139 @@
+/**
+ * Shared harness of the `run_code` broker tests (both language matrices).
+ *
+ * Every case spawns a REAL interpreter inside the REAL userspace sandbox and
+ * drives the real line protocol; the sub-call registry is a real
+ * `ToolRegistryImpl` (schema validation + guard chain + execute), so what the
+ * tests assert is the production pipeline, not a mock of it.
+ */
+
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import type { Sandbox, SessionEvent, Tool, ToolRegistry, ToolSpec } from "@celestea/core";
+
+import { fnTool } from "../fn-tool.js";
+import { userspaceSandboxWith } from "../sandbox/userspace.js";
+import { RegistryHandle, runCodeToolWithHandle } from "../tools/run-code.js";
+import { ToolRegistryImpl } from "../registry.js";
+
+/** W775: let a caller inject the sandbox (e.g. one built with the seccomp whitelist). */
+export interface BrokerHarnessOptions {
+  /** Build the sandbox for `dir`; default: the no-isolation userspace fallback. */
+  sandboxFor?: (dir: string) => Sandbox;
+}
+
+export interface BrokerHarness {
+  /** The sandbox workdir (also the guard root). */
+  dir: string;
+  sandbox: Sandbox;
+  /** `python3` answered inside the sandbox (the Python matrix's skip switch). */
+  pythonReady: boolean;
+  /** The TypeScript runtime answered inside the sandbox (the TS matrix's switch). */
+  nodeReady: boolean;
+  /** Register `run_code`, then bind its handle to that same registry. */
+  mount(registry: ToolRegistryImpl, options?: { events?: (event: SessionEvent) => void }): Tool;
+  run(tool: Tool, callId: string, args: unknown): Promise<unknown> & { value?: unknown };
+  /** `run_code_*` files left behind in `<workdir>/.celestea`. */
+  leftoverScripts(): Promise<string[]>;
+  echoRegistry(): ToolRegistryImpl;
+  shellRegistry(): ToolRegistryImpl;
+  cleanup(): Promise<void>;
+}
+
+/** A schema covering every argument the broker's sub-calls use. */
+export function echoSpec(name: string): ToolSpec {
+  return {
+    name,
+    description: `${name} echo (run_code test double)`,
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        command: { type: "string" },
+        content: { type: "string" },
+        workdir: { type: "string" },
+        timeout_ms: { type: "integer" },
+      },
+      additionalProperties: false,
+    },
+  };
+}
+
+/** Echo registry: every whitelisted tool answers `{echo: name, args}`. */
+export function echoRegistryOn(): ToolRegistryImpl {
+  const registry = new ToolRegistryImpl();
+  for (const name of ["read_file", "write_file", "list_dir", "run_shell"]) {
+    registry.register(fnTool(echoSpec(name), async (args) => ({ echo: name, args })));
+  }
+  return registry;
+}
+
+/** Shell-shaped registry: `run_shell` answers the run_shell result dict. */
+export function shellRegistryOn(): ToolRegistryImpl {
+  const registry = new ToolRegistryImpl();
+  registry.register(fnTool(echoSpec("read_file"), async (args) => ({ echo: "read_file", args })));
+  registry.register(
+    fnTool(echoSpec("run_shell"), async () => ({
+      stdout: "hi\n",
+      stderr: "",
+      exit_code: 0,
+      stdout_truncated: false,
+      stderr_truncated: false,
+    })),
+  );
+  return registry;
+}
+
+/** Start the sandbox, probe both interpreters, and hand back the helper set. */
+export async function startBrokerHarness(options: BrokerHarnessOptions = {}): Promise<BrokerHarness> {
+  const dir = await mkdtemp(join(tmpdir(), "celestea-run-code-"));
+  const sandbox =
+    options.sandboxFor?.(dir) ??
+    userspaceSandboxWith({
+      workdir: dir,
+      root: dir,
+      timeoutMs: 30_000,
+      maxTimeoutMs: 120_000,
+      maxOutputBytes: 64 * 1024,
+    });
+  const probe = await sandbox.run({ command: "python3 -c 'print(1)'" });
+  const pythonReady = probe.exit_code === 0 && probe.stdout === "1\n";
+  if (!pythonReady) console.warn("[run_code] skip: python3 unavailable in the sandbox right now");
+  // W774: the TypeScript path needs the same Node the broker uses, reachable from
+  // inside the sandbox (bwrap mounts the host root read-only).
+  const node = await sandbox.run({ command: "/usr/bin/node --version" });
+  const nodeReady = node.exit_code === 0 && node.stdout.startsWith("v");
+  if (!nodeReady) console.warn("[run_code] skip: /usr/bin/node unavailable in the sandbox right now");
+
+  return {
+    dir,
+    sandbox,
+    pythonReady,
+    nodeReady,
+    mount(registry: ToolRegistryImpl, options: { events?: (event: SessionEvent) => void } = {}): Tool {
+      const { tool, handle } = runCodeToolWithHandle({
+        sandbox,
+        ...(options.events === undefined ? {} : { events: options.events }),
+      });
+      registry.register(tool);
+      handle.set(registry);
+      return tool;
+    },
+    async run(tool: Tool, callId: string, args: unknown) {
+      if (tool.executeWith === undefined) throw new Error("run_code must override executeWith");
+      return tool.executeWith({ call_id: callId, name: "run_code", args });
+    },
+    async leftoverScripts(): Promise<string[]> {
+      const entries = await readdir(join(dir, ".celestea")).catch(() => [] as string[]);
+      return entries.filter((name) => name.startsWith("run_code_"));
+    },
+    echoRegistry: echoRegistryOn,
+    shellRegistry: shellRegistryOn,
+    cleanup: () => rm(dir, { recursive: true, force: true }),
+  } satisfies BrokerHarness & { run: (tool: Tool, callId: string, args: unknown) => Promise<unknown> };
+}
+
+/** A handle nothing ever bound (the fail-closed wiring case). */
+export { RegistryHandle };

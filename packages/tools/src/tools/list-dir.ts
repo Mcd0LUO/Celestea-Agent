@@ -8,6 +8,7 @@
 import type { Tool, ToolSpec } from "@celestea/core";
 
 import { stringArg } from "../args.js";
+import { descParam } from "../desc.js";
 import { listDirNames, MAX_DIR_ENTRIES, truncationNote } from "../fs/file-io.js";
 
 export function listDirSpec(): ToolSpec {
@@ -16,7 +17,10 @@ export function listDirSpec(): ToolSpec {
     description: "List the entry names in a directory.",
     parameters: {
       type: "object",
-      properties: { path: { type: "string", description: "Directory path to list." } },
+      properties: {
+        path: { type: "string", description: "Directory path to list." },
+        desc: descParam(),
+      },
       required: ["path"],
       additionalProperties: false,
     },

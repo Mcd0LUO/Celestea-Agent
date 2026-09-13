@@ -15,6 +15,55 @@
  *     printing the traceback, exiting 1.
  */
 
+/** The runner appended after the user program. */
+export const RUN_CODE_RUNNER = `
+# ======================= harness entry point (injected) =======================
+def _plain(v):
+    """Unwrap dual-interface results before JSON serialization (dict/list deep)."""
+    if isinstance(v, _Value):
+        v = v._v
+    if isinstance(v, dict):
+        return {k: _plain(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_plain(x) for x in v]
+    return v
+
+
+import asyncio as _asyncio
+
+
+def _celestea_run_main():
+    main = globals().get("main")
+    if main is None:
+        raise RuntimeError(
+            "run_code: no 'main' defined - write the program as an async "
+            "function body, or as a complete script defining async def main()"
+        )
+    result = main()
+    if _asyncio.iscoroutine(result):
+        result = _asyncio.run(result)
+    return result
+
+
+try:
+    _final_value = _celestea_run_main()
+    print(_json.dumps({"__final__": _plain(_final_value)}, ensure_ascii=False), flush=True)
+except BaseException as _exc:  # report ANY failure as __error__
+    _tb = _traceback.format_exc()
+    for _line in _tb.rstrip("\\n").split("\\n"):
+        print(_line, flush=True)
+    print(
+        _json.dumps({"__error__": f"{type(_exc).__name__}: {_exc}"}, ensure_ascii=False),
+        flush=True,
+    )
+    _sys.exit(1)
+`;
+
+// W774: the TypeScript SDK/runner live in their own module (see `sdk-ts.ts`) and
+// are re-exported here so a caller can reach both languages from one place.
+export { RUN_CODE_RUNNER_TS, RUN_CODE_SDK_TS } from "./sdk-ts.js";
+import { RUN_CODE_RUNNER_TS, RUN_CODE_SDK_TS } from "./sdk-ts.js";
+
 /** The SDK preamble (standard library only; zero pip). */
 export const RUN_CODE_SDK = `# =============================================================================
 # celestea run_code SDK (W255 P0) - engine-injected preamble. Standard library
@@ -193,61 +242,40 @@ class _Tools:
 tools = _Tools()
 `;
 
-/** The runner appended after the user program. */
-export const RUN_CODE_RUNNER = `
-# ======================= harness entry point (injected) =======================
-def _plain(v):
-    """Unwrap dual-interface results before JSON serialization (dict/list deep)."""
-    if isinstance(v, _Value):
-        v = v._v
-    if isinstance(v, dict):
-        return {k: _plain(x) for k, x in v.items()}
-    if isinstance(v, (list, tuple)):
-        return [_plain(x) for x in v]
-    return v
+/** The two languages `run_code` can run (W774: TypeScript is the default). */
+export type RunCodeLanguage = "typescript" | "python";
 
-
-import asyncio as _asyncio
-
-
-def _celestea_run_main():
-    main = globals().get("main")
-    if main is None:
-        raise RuntimeError(
-            "run_code: no 'main' defined - write the program as an async "
-            "function body, or as a complete script defining async def main()"
-        )
-    result = main()
-    if _asyncio.iscoroutine(result):
-        result = _asyncio.run(result)
-    return result
-
-
-try:
-    _final_value = _celestea_run_main()
-    print(_json.dumps({"__final__": _plain(_final_value)}, ensure_ascii=False), flush=True)
-except BaseException as _exc:  # report ANY failure as __error__
-    _tb = _traceback.format_exc()
-    for _line in _tb.rstrip("\\n").split("\\n"):
-        print(_line, flush=True)
-    print(
-        _json.dumps({"__error__": f"{type(_exc).__name__}: {_exc}"}, ensure_ascii=False),
-        flush=True,
-    )
-    _sys.exit(1)
-`;
+/** What `run_code` runs when the call omits `language`. */
+export const DEFAULT_RUN_CODE_LANGUAGE: RunCodeLanguage = "typescript";
 
 /**
- * Assemble the program file: SDK preamble + user code + runner. When the first
- * non-blank line of the user code is indented it is treated as an **async
- * function body** and wrapped into `async def main():`; otherwise it must be a
- * complete script defining `main` itself (Rust `assemble_program`).
+ * Assemble the program file for one language: SDK preamble + user code + runner.
+ *
+ * When the first non-blank line of the user code is indented it is treated as a
+ * **function body** and wrapped (`async def main():` / `async function main()`);
+ * otherwise it must be a complete script defining `main` itself (Rust
+ * `assemble_program`). The Python path is byte-for-byte what it always was; the
+ * TypeScript path lays the file out the same way and deliberately does NOT
+ * re-indent a wrapped body — JavaScript does not need it, and re-indenting would
+ * rewrite the contents of a template literal.
  */
-export function assembleProgram(userCode: string): string {
-  const parts = [RUN_CODE_SDK, "\n\n# ========================== user program ==========================\n"];
-  parts.push(firstNonblankLineIndented(userCode) ? wrapBody(userCode) : terminate(userCode));
-  parts.push(RUN_CODE_RUNNER);
+export function assembleProgram(userCode: string, language: RunCodeLanguage): string {
+  const body = firstNonblankLineIndented(userCode);
+  if (language === "python") {
+    const parts = [RUN_CODE_SDK, "\n\n# ========================== user program ==========================\n"];
+    parts.push(body ? wrapBody(userCode) : terminate(userCode));
+    parts.push(RUN_CODE_RUNNER);
+    return parts.join("");
+  }
+  const parts = [RUN_CODE_SDK_TS, "\n\n// ========================== user program ==========================\n"];
+  parts.push(body ? wrapBodyTs(userCode) : terminate(userCode));
+  parts.push(RUN_CODE_RUNNER_TS);
   return parts.join("");
+}
+
+/** `async function main() {` + the user body verbatim + `}`. */
+function wrapBodyTs(userCode: string): string {
+  return `async function main() {\n${terminate(userCode)}}\n`;
 }
 
 /** True when the first non-blank line starts with whitespace (body form). */
