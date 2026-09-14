@@ -1,15 +1,19 @@
 # celestea_studio-ts
 
-Celestea Studio 后端的 **TypeScript 全量重构**（W268 评估报告 §10 场景 B）。
-本仓当前处于 **P0：契约冻结 + 骨架 + 黄金样本对拍工具链**。
+Celestea Studio 后端（**TypeScript，生产**）。
 
-> 依据（已归档）：`/src/celestea_studio/docs/archive/backend-ts-rewrite-eval.md` §10 P0、§13.2 三条不可妥协前置（Rust → TypeScript 迁移评估；迁移已完成）。
-> 本仓是**独立 git 仓**（无 remote）。P0 不触碰生产：`/src/celestea_studio` 与 `/src/celestea_harness` 全程只读。
+> 前身：Rust 后端（axum）的 TypeScript 全量重构（W268 评估报告 §10 场景 B）。
+> **迁移已完成**：`celestea-studio-ts.service` 自 2026-09-11 起是生产后端，原 Rust
+> `celestea-studio.service` 已 masked 退役。评估报告存档见
+> `/src/celestea_studio/docs/archive/backend-ts-rewrite-eval.md`。
+> 本仓远端 = `https://github.com/Mcd0LUO/Celestea-Agent.git`。
+> 下文 §6/§7.2/§8 的迁移分期（P0–P4）与「Rust 对应」列是**立项时口径**，保留作迁移留痕；
+> 现状以本段与 [docs/README.md](docs/README.md) 为准。
 
 ## 文档与仓库角色
 
 - **[`docs/README.md`](docs/README.md)** — 本仓 `docs/` 全量索引：每份文档的**状态（当前 / 设计）**、一句话与权威入口。**找文档先看它。**
-- **本仓角色**：Studio **后端**（TypeScript）。现状（2026-09-11）：`celestea-studio-ts.service` 跑在 127.0.0.1:3777，是**生产**后端（文首「P0」段与 §8 是立项时口径，落地进展见 §8 与 §P4）。后端开发只在本仓。
+- **本仓角色**：Studio **后端**（TypeScript）。现状（2026-09-11）：`celestea-studio-ts.service` 跑在 127.0.0.1:3777，是**生产**后端。后端开发只在本仓。
 - **线上前端 + 共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）在 [`/src/celestea_studio`](/src/celestea_studio/docs/README.md)（该仓 Rust 后端已退役，见其 `LEGACY-RUST-BACKEND.md`）。
 - **Rust 引擎**参考实现在 [`/src/celestea_harness`](/src/celestea_studio/docs/archive/harness/README.md)。
 - 本仓 `docs/` **不含归档**（全部为当前 / 设计）；Rust 期的语言切换、迁移计划、旧 API 契约、旧部署等历史文档在 [`/src/celestea_studio/docs/archive/`](/src/celestea_studio/docs/README.md)。
@@ -22,7 +26,7 @@ Celestea Studio 后端的 **TypeScript 全量重构**（W268 评估报告 §10 �
 cd /src/celestea_studio-ts
 pnpm install            # Node 24 + pnpm 11
 pnpm typecheck          # tsc --noEmit（strict + noUncheckedIndexedAccess + verbatimModuleSyntax）
-pnpm test               # vitest（58 passed）
+pnpm test               # vitest（全量单测）
 
 # 契约与实机对拍（只读 :3777）
 pnpm contracts:verify   # 20 端点抽样 + 8 SSE 事件名 + 10 工具，写 contracts/probe-evidence.json
@@ -32,7 +36,7 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 
 一次跑完：`pnpm check`（typecheck + lint + lint:arch + test，见 §7）。
 
-端口约定：Rust 生产 `:3777` 保持不变；TS 开发实例预留 `:3778`（`pnpm --filter @celestea/studio start`，**P0 不启动任何常驻服务**）。
+端口约定：生产 `:3777`（由 `scripts/run-studio-ts.sh` 设 `STUDIO_TS_PORT=3777`）；直接 `pnpm --filter @celestea/studio start` 时源码默认 `:3778`，便于与生产实例并排起临时实例。
 
 ---
 
@@ -47,7 +51,7 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 | `packages/agent-loop` | `LoopEvent → SSE` 映射、五态 outcome、协作式取消信号、`MIN_STEPS=4096` | `crates/agent-loop`（P1 实现） |
 | `packages/workers` | `registry.tsv` 解析/序列化/k=v token/summarize（含 `by_state`） | `crates/workers/src/{types,registry}.rs` |
 | `packages/runtime` | compose 15 步、profile 12 键、key 三路解析枚举 | `crates/runtime` + `studio/src/main.rs:1191-1394`（P3 实现） |
-| `apps/studio` | Hono 应用：39 端点全部注册（P0 只有 health/status/events 有实现，其余 501 并点名契约 id） | `studio/src/main.rs` 路由表 + handlers（P4 实现） |
+| `apps/studio` | Hono 应用：**47 端点全部实现**（契约测试与实机校验常绿） | `studio/src/main.rs` 路由表 + handlers |
 | `contracts/` | **机器可读契约（冻结数据）** | 见 §3 |
 | `scripts/` | 导出器 / 对拍器 / 实机校验器 | — |
 | `fixtures/` | 黄金样本（导出产物，入库） | — |
@@ -288,6 +292,6 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
 ### 运行
 
 ```bash
-pnpm --filter @celestea/studio start      # 默认 127.0.0.1:3778（Rust 参考实现占 3777）
+pnpm --filter @celestea/studio start      # 默认 127.0.0.1:3778（生产实例占 3777）
 pnpm check                                # typecheck + lint + lint:arch + test
 ```

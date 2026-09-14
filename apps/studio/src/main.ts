@@ -1,9 +1,10 @@
 /**
  * Studio process entry (CLI entry point: console output is allowed here).
  *
- * The TS studio listens on 3778 by default so it can run next to the Rust
- * reference on 3777 during the migration. Nothing here touches production data
- * files unless the caller points the path env vars at them.
+ * Source default port is 3778 (so a throwaway instance can run next to the
+ * production one on 3777); production sets STUDIO_TS_PORT=3777 via
+ * scripts/run-studio-ts.sh. Nothing here touches production data files unless
+ * the caller points the path env vars at them.
  *
  * Startup also reports the resolved provider target (model / base_url / mode /
  * whether a key is present) so an operator can see which real model the engine
