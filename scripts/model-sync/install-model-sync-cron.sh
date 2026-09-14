@@ -4,14 +4,14 @@
 # 装什么：
 #   /etc/cron.d/celes-studio-models        每 30min 把 Studio providers 清单与网关实际可用模型对齐
 #   /etc/cron.d/celes-sync-upstream-models 每 30min 把基元律动渠道 model 清单与上游 /v1/models 对齐
-# 部署方式：脚本真源留在 /src/celestea_studio/tools/，/server-center/runtime/bin/ 只放 symlink
+# 部署方式：脚本真源留在 /src/celestea_studio-ts/scripts/model-sync/，/server-center/runtime/bin/ 只放 symlink
 #          （与 newapi-ops README 的约定一致）。
 #
-# 用法：  sudo bash /src/celestea_studio/tools/install-model-sync-cron.sh
+# 用法：  sudo bash /src/celestea_studio-ts/scripts/model-sync/install-model-sync-cron.sh
 # 先干看：sudo bash ... --dry-run
 set -euo pipefail
 
-SRC=/src/celestea_studio/tools
+SRC=/src/celestea_studio-ts/scripts/model-sync
 BIN=/server-center/runtime/bin
 CRON=/etc/cron.d
 DRY=0
