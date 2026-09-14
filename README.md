@@ -32,13 +32,32 @@ Celestea Studio **全栈仓**：TypeScript 后端（**生产**）+ 线上前端�
 
 ```bash
 cd apps/web
-pnpm install
 pnpm build          # tsc --noEmit && vite build -> apps/web/dist
 pnpm check          # 7 道门禁（先 build 再 check：产物体积门禁量的是 dist）
 ```
 
+依赖不从 `apps/web` 单独装：本仓是**一个** pnpm workspace（根 `pnpm-workspace.yaml`
+已含 `apps/*`），在**仓根** `pnpm install` 一次即可，前端依赖经根 store 链接进
+`apps/web/node_modules`。
+
 前端改动 `pnpm build` 后刷新页面即生效，**无需重启服务**。
 `pnpm check` 里的 scope-hash 门禁直接读本仓 `contracts/scope-hash-vectors.json`（同仓，不再跨仓）。
+
+> **W782：前端门禁不再有「单独入口」这一说。** 合并前这是两个仓、两条独立门禁，
+> 各自有各自的 CI 心智；合并成单仓后，在根目录跑 `pnpm check` 会**静默跳过整个
+> 前端门禁**（scope-hash 漂移守护、默认折叠守护、体积棘轮全都不跑）——那就是
+> 「合并后门禁假绿」。现在根 `pnpm check` 自带 `check:web`：
+>
+> | 入口 | 覆盖 | 何时用 |
+> |---|---|---|
+> | `pnpm check` | 后端 4 关（typecheck / lint / lint:arch / test）**+ 前端 7 关** | **提交前必须跑的就是它**（全量） |
+> | `pnpm check:web` | 只跑前端：先 `pnpm --dir apps/web run build`，再 `CELESTEA_BUNDLE_STRICT=1 pnpm --dir apps/web run check` | 只改前端时的快回路 |
+> | `pnpm typecheck` / `lint` / `lint:arch` / `test` | 单关，后端 | 定位失败点 |
+>
+> 两个细节是刻意的，别「优化」掉：
+> 1. **先 build 后 check**：`check-bundle-size.mjs` 量的是 `dist`，不先构建就量不到东西；
+> 2. **`CELESTEA_BUNDLE_STRICT=1`**：否则 `dist/assets` 不存在时该门禁会「跳过并退出 0」，
+>    也就是**假绿**。根入口里它必须算失败。
 
 ### Access via tunnel
 
@@ -63,7 +82,7 @@ pnpm golden:export      # 导出 fixtures/（只读现有会话日志 + 只读 /
 pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时 golden 分歧即退出码 1）
 ```
 
-一次跑完：`pnpm check`（typecheck + lint + lint:arch + test，见 §7）。
+一次跑完：`pnpm check`（typecheck + lint + lint:arch + test **+ `check:web`（前端 7 关）**，见 §7 与 §0）。
 
 端口约定：生产 `:3777`（由 `scripts/run-studio-ts.sh` 设 `STUDIO_TS_PORT=3777`）；直接 `pnpm --filter @celestea/studio start` 时源码默认 `:3778`，便于与生产实例并排起临时实例。
 
@@ -173,7 +192,7 @@ pnpm lint           # ESLint：单文件规模（≤400 行 / 函数 ≤80 行 /
 pnpm lint:arch      # dependency-cruiser：分层方向、同层横向依赖、循环依赖、深层导入、不可解析导入
 pnpm typecheck      # tsc --noEmit（strict + noUncheckedIndexedAccess + verbatimModuleSyntax）
 pnpm test           # vitest（契约 / 回放 / 单元）
-pnpm check          # = 以上四者之和，本地提交前与 CI 的唯一门禁
+pnpm check          # = 以上四者 + 前端 7 关（check:web），本地提交前与 CI 的唯一门禁
 
 ARCH_STRICT=1 pnpm lint   # 忽略全部例外，用于复核 docs/ARCHITECTURE.md §5 的例外清单是否还有必要
 ```
@@ -322,5 +341,5 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
 
 ```bash
 pnpm --filter @celestea/studio start      # 默认 127.0.0.1:3778（生产实例占 3777）
-pnpm check                                # typecheck + lint + lint:arch + test
+pnpm check                                # typecheck + lint + lint:arch + test + check:web
 ```

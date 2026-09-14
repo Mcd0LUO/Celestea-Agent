@@ -3,6 +3,9 @@
  *
  * Ported verbatim from `fixtures/live/prompts.json` (a read-only live capture
  * of GET /api/prompts), which mirrors `src/prompts.rs:89-99` BUILTIN_SECTIONS.
+ * W782 is the one deliberate edit since: `environment` (order 200) no longer
+ * spells out this checkout's paths/port/unit name — it renders `{{studio_*}}`
+ * variables derived at runtime, and no template may carry an absolute path.
  * These are DATA, not logic: the registry stores them as `source: "builtin"`
  * and a global/workspace row with the same id only swaps the template.
  *
@@ -50,7 +53,10 @@ export const BUILTIN_SECTIONS: readonly BuiltinSection[] = [
     id: "environment",
     name: "Environment",
     order: 200,
-    template: "The live Celestea Studio backend is the TypeScript service in /src/celestea_studio-ts (Hono, systemd unit celestea-studio-ts on 127.0.0.1:3777; public site https://studio.celestea.top). Your working directory IS this session's workspace directory, {{workspace_dir}} (workspace {{workspace}}): run_shell starts there and read_file / write_file / list_dir resolve relative paths against it, and the sandbox refuses paths outside it — confirm with `pwd` via run_shell if you need to.\n\nYou are interacting with the user through the Celestea Studio web UI. When the user refers to \"this page\", \"this GUI\", or \"this app\" without naming another target, they mean this UI. The browser provides no implicit DOM, route, or screenshot context. Code changes: the frontend is /src/celestea_studio-ts/apps/web and only takes effect after `pnpm build` refreshes apps/web/dist; the backend is TypeScript run from source, so it needs no build step but does need a service restart. Never restart the service yourself — report when a restart is required. Do not edit the retired Rust backend under /src/celestea_studio-ts/docs/archive/rust-studio-backend expecting it to serve traffic.",
+    // W782: every deployment fact here is a `{{studio_*}}` variable derived at
+    // runtime (`src/deployment.ts`) — this template states no path, port or unit
+    // name of its own, so moving the checkout can no longer make it lie.
+    template: "The live Celestea Studio backend is the TypeScript service in {{studio_repo}} (Hono, systemd unit {{studio_service}} on {{studio_bind}}; public site {{studio_site}}). Your working directory IS this session's workspace directory, {{workspace_dir}} (workspace {{workspace}}): run_shell starts there and read_file / write_file / list_dir resolve relative paths against it, and the sandbox refuses paths outside it — confirm with `pwd` via run_shell if you need to.\n\nYou are interacting with the user through the Celestea Studio web UI. When the user refers to \"this page\", \"this GUI\", or \"this app\" without naming another target, they mean this UI. The browser provides no implicit DOM, route, or screenshot context. Code changes: the frontend is {{studio_frontend_dir}} and only takes effect after `pnpm build` refreshes {{studio_static_root}}; the backend is TypeScript run from source, so it needs no build step but does need a service restart. Never restart the service yourself — report when a restart is required. Do not edit the retired Rust backend under {{studio_repo}}/docs/archive/rust-studio-backend expecting it to serve traffic.",
   },
   {
     id: "tool_access",

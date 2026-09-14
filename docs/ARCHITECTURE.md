@@ -329,7 +329,13 @@ apps/studio → runtime.compose(profile)
 | `pnpm lint` | 规模 + 导入边界（单文件粒度） | `eslint.config.js` | 按 §4.2 拆分，或按 §5 登记例外 |
 | `pnpm lint:arch` | 分层方向 / 同层横向 / 循环 / 深层导入 / 不可解析 | `.dependency-cruiser.cjs` | 按 §1.4 三选一 |
 | `pnpm test` | 契约与回放回归 | `vitest.config.ts` | 修实现；若契约真变了，先改 `contracts/` 并说明 |
-| **`pnpm check`** | **以上四者之和**（typecheck → lint → lint:arch → test） | 上述全部 | 本地提交前的唯一门禁 |
+| `pnpm check:web` | 前端 7 关（`tsc --noEmit` + UI 文案 / scope-hash / 默认折叠 / 授权默认永久 / 模块体积 / 产物体积） | `apps/web/tools/*.mjs` + `apps/web/tsconfig.json` | 按门禁自己的提示改；体积超限需解释并显式上调基准 |
+| **`pnpm check`** | **后端四者 + `check:web`（前端 7 关）** | 上述全部 | 本地提交前的唯一门禁 |
+
+W782：`check` 一定串上 `check:web`。合并成单仓前这是两条独立门禁，根入口只跑后端
+四关 ⇒ 前端 7 关（含 scope-hash 漂移守护与体积棘轮）会**静默跳过**，即「门禁假绿」。
+`check:web` 的两处刻意设计：**先 build 再 check**（产物体积门禁量 `dist`），且带
+`CELESTEA_BUNDLE_STRICT=1`（否则 `dist` 缺失时该关「跳过并退出 0」，同样是假绿）。
 
 CI / 本地：
 

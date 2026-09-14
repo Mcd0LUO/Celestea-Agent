@@ -15,6 +15,7 @@
  * callers, so the UI and the engine can never disagree about a session's mode.
  */
 
+import { deploymentFacts } from "../deployment.js";
 import { DEFAULT_SESSION_MODE, type SessionMode } from "../store/mode.js";
 import type { PromptScope } from "../store/prompts.js";
 import { assembleSystemPrompt, resolveActivePrompt, toPromptVars } from "../store/prompts-compose.js";
@@ -138,6 +139,25 @@ export function availableModels(deps: Deps): AvailableModel[] {
 }
 
 /**
+ * W782: the `{{studio_*}}` values, resolved from the live deployment. Kept as a
+ * named helper so the derivation lives in ONE place and a test can pin it.
+ */
+function deploymentVars(deps: Deps, env: NodeJS.ProcessEnv): Pick<
+  Parameters<typeof toPromptVars>[0],
+  "studio_repo" | "studio_frontend_dir" | "studio_static_root" | "studio_service" | "studio_bind" | "studio_site"
+> {
+  const facts = deploymentFacts(deps.config, env);
+  return {
+    studio_repo: facts.repo,
+    studio_frontend_dir: facts.frontendDir,
+    studio_static_root: facts.staticRoot,
+    studio_service: facts.service,
+    studio_bind: facts.bind,
+    studio_site: facts.publicSite,
+  };
+}
+
+/**
  * Registry-assembled (or overridden) system prompt.
  *
  * W729 (§5.1 #4/#5, S1/S2): with an explicit `sessionId` the WHOLE assembly is
@@ -148,7 +168,12 @@ export function availableModels(deps: Deps): AvailableModel[] {
  * process model, the default generation's tools), which is what the startup
  * priming and `GET /api/config` use.
  */
-export function assembleSystemPromptFor(deps: Deps, sessionId: string | null = null, mode?: SessionMode): string {
+export function assembleSystemPromptFor(
+  deps: Deps,
+  sessionId: string | null = null,
+  mode?: SessionMode,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const override = deps.settings.systemPromptOverride();
   if (override !== null) return override;
   const profile = deps.runtime.profile();
@@ -179,6 +204,11 @@ export function assembleSystemPromptFor(deps: Deps, sessionId: string | null = n
     context_window: profile.context_window,
     max_output_tokens: profile.max_output_tokens,
     date: new Date().toISOString().slice(0, 10),
+    // W782: the deployment facts the `environment` section renders. Every one is
+    // derived here (this process's own checkout + the operator's config), so the
+    // template states where the RUNNING service actually is — not where some
+    // hand-edited string once said it was.
+    ...deploymentVars(deps, env),
   });
   const binding = scoped === null ? activePromptBinding(deps) : (meta?.prompt ?? null);
   // `mode` (explicit) wins over the session's own: the BASE generation is primed

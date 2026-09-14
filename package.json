@@ -19,7 +19,8 @@
     "replay:e2e": "tsx scripts/replay-e2e.ts",
     "lint": "eslint .",
     "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps/studio scripts tests",
-    "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test && pnpm check:web",
+    "check:web": "pnpm --dir apps/web run build && CELESTEA_BUNDLE_STRICT=1 pnpm --dir apps/web run check"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
