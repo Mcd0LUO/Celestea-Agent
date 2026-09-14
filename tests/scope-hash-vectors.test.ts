@@ -31,7 +31,7 @@ interface FrontendScopeHash {
   scopeHashOf(cap: string, scope: Record<string, string[]>): Promise<string>;
   sha256Hex(bytes: Uint8Array): string;
 }
-const FRONTEND_MODULE_URL = new URL("../../celestea_studio/frontend/src/security/scope-hash.ts", import.meta.url).href;
+const FRONTEND_MODULE_URL = new URL("../apps/web/src/security/scope-hash.ts", import.meta.url).href;
 const frontend = (await import(/* @vite-ignore */ FRONTEND_MODULE_URL)) as FrontendScopeHash;
 
 interface Vector {

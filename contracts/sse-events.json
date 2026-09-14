@@ -3,8 +3,8 @@
   "title": "Celestea Studio SSE contract (GET /api/events)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
-    "code": "/src/celestea_studio/src/main.rs:644-712 (emit + loop_event_to_json), 871-896 (handler), 1311 (bus capacity)",
-    "doc": "/src/celestea_studio/docs/DEVELOPMENT.md §2.5",
+    "code": "docs/archive/rust-studio-backend/main.rs:644-712 (emit + loop_event_to_json), 871-896 (handler), 1311 (bus capacity)",
+    "doc": "docs/DEVELOPMENT.md §2.5",
     "liveProbe": {
       "endpoint": "http://127.0.0.1:3777/api/events",
       "mode": "read-only passive connect",

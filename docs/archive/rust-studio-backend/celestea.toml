@@ -1,0 +1,7 @@
+# Celestea Studio engine profile - same schema/precedence as the engine.
+# Resolution (reused from celestea-runtime): ./celestea.toml > ./profile.json
+# > ~/.celestea/celestea.toml > ~/.celestea/profile.json > defaults.
+# API key: env[CELESTEA_API_KEY] > api_key_file > error (never stored here).
+model = "deepseek-v4-flash-0731"
+base_url = "http://127.0.0.1:3001/v1"
+api_key_env = "CELESTEA_API_KEY"

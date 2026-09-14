@@ -1,0 +1,117 @@
+/* ============================================================================
+ * 「灵动消息选择条」v3（W238 删旧重做）—— 锚定聊天区左侧留白带
+ *
+ * 锚定策略：
+ *   轨道 .railv3 是 #main（本文件设 position:relative）内的绝对定位条带，
+ *   由 ui/rail.ts 实时对齐 #messages 视口的 top/height，left 固定 #main
+ *   左缘内侧 8px —— 「侧栏 + 拖宽分隔条」右侧的留白带最左端。
+ *   → 不挂在滚动容器里：不随消息滚动而移动；
+ *   → 长条最长 min(110, 留白−26)，距 .mcol 左缘 ≥18px 收住：不贴消息列
+ *     边缘、不遮消息内容；
+ *   → 留白收窄自适应：≥64px 正常 / 24–64px 细条化（.railv3-thin）/
+ *     <24px 由 JS 整体隐藏，任何档位不溢出留白带。
+ * 颜色全部引用 styles/tokens.css 的 mono（黑白）令牌变量（--c-*）。
+ * ============================================================================ */
+
+#main { position: relative; }
+
+.railv3 {
+  position: absolute;
+  width: 1px;            /* 占位；长条宽度由 JS fisheye 覆写 */
+  z-index: 20;
+  pointer-events: none;  /* 交互统一走 #main 级监听 + 命中判定（ui/rail.ts） */
+}
+
+.railv3-item {
+  position: absolute;
+  left: 0;
+  width: 7px;            /* 未悬停细条宽（变长由 JS fisheye 覆写） */
+  height: var(--barh, 5px); /* 细高固定 5px：hover/吸附绝不加粗加高（第 18 轮） */
+  border-radius: 999px;
+  background: var(--c-text-3);
+  border: 1px solid transparent;
+  opacity: .5;           /* 微亮由 JS inline opacity 控制（0.35–0.7） */
+  pointer-events: none;
+  transition: width 85ms ease-out, /* 第 19 轮：轻 ease-out，去 overshoot 回弹（跟手不弹） */
+              opacity 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+/* 命中条几乎即时到位：宽度过渡进一步缩短 */
+.railv3-item.is-hover {
+  transition-duration: 45ms, 120ms, 120ms, 120ms;
+}
+.railv3-item.is-reply {
+  background: var(--c-accent);
+}
+/* 命中条：仅变色/微亮 + 高亮描边（不改变尺寸） */
+.railv3-item.is-hover {
+  opacity: 1;
+  background: var(--c-accent-strong);
+  border-color: var(--c-accent-ring);
+}
+
+/* 顶部折叠条（「更早 N 轮已折叠」）：虚线风格区别于普通轮条 */
+.railv3-item.railv3-fold {
+  background: transparent;
+  border: 1px dashed var(--c-border-strong);
+  color: var(--c-text-3);
+  font-size: 8px;
+  line-height: 1;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: .7;
+}
+.railv3-item.railv3-fold.is-hover {
+  background: var(--c-accent-soft);
+  border-style: solid;
+  border-color: var(--c-accent-ring);
+  color: var(--c-text-1);
+}
+
+/* 细条化档（留白 24–64px）：更低调 */
+.railv3-thin .railv3-item { opacity: .4; }
+.railv3-thin .railv3-item.is-hover { opacity: 1; }
+
+/* ---- 预览卡片（锚定悬停长条右侧；内容取自已渲染消息 DOM，零请求） ---- */
+.railv3-card {
+  position: absolute;
+  width: 280px;
+  z-index: 40;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  animation: railv3-pop .14s ease-out;
+}
+@keyframes railv3-pop {
+  from { opacity: 0; transform: translateY(3px); }
+}
+.railv3-card-q, .railv3-card-a {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--c-text-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.railv3-card-a { color: var(--c-text-2); }
+.railv3-card-noa { color: var(--c-text-3); font-style: italic; }
+.railv3-card-tag {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--c-text-3);
+}
+.railv3-card-q .railv3-card-tag { color: var(--c-accent); border-color: var(--c-accent-ring); }
+.railv3-card-sep { height: 1px; background: var(--c-border-subtle); }

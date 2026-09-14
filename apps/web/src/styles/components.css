@@ -1,0 +1,517 @@
+/* ============================================================================
+ * 组件层：工具清单 / 会话 / 消息流 / thinking（收起+时长）/ 工具卡（默认收起）/
+ *          markdown 正文 / 代码高亮 / 弹层 / 配置表单
+ * ============================================================================ */
+
+/* ---- 工具清单 ---- */
+.tool-item {
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 7px;
+  background: var(--c-surface-raised);
+  padding: 7px 10px;
+  cursor: default;
+}
+.tool-item:hover { border-color: var(--c-border-strong); }
+.tool-item-name {
+  font-family: var(--mono); font-size: 12.5px; color: var(--c-accent);
+  font-weight: 600;
+}
+.tool-item-desc {
+  color: var(--c-text-2); font-size: 12px; margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- 会话清单 ---- */
+.sess-item {
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 7px;
+  background: var(--c-surface-raised);
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.sess-item:hover { border-color: var(--c-border-strong); }
+.sess-item.active { border-color: var(--c-accent-ring); background: var(--c-accent-soft); }
+.sess-title { font-size: 13px; color: var(--c-text-1); display: flex; align-items: center; gap: 8px; }
+.sess-title .sess-live {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--c-ok); flex: 0 0 auto;
+}
+.sess-title .sess-idle {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--c-text-3); flex: 0 0 auto;
+}
+.sess-meta {
+  font-size: 11.5px; color: var(--c-text-3); font-family: var(--mono);
+  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- 消息流 ---- */
+/* W227 任务1：聊天列宽度跟随侧栏 —— 上限由 --sidebar-w（ui/sidebar.ts 维护）
+   动态决定：侧栏越窄聊天列越宽，实时重排；min 560 / max 1400 保证可读性。 */
+.mcol {
+  width: 100%;
+  max-width: clamp(560px, calc(100vw - var(--sidebar-w, 316px) - 140px), 1400px);
+  margin: 0 auto;
+  display: flex; flex-direction: column;
+}
+
+.msg { display: flex; flex-direction: column; }
+.msg.user { align-items: flex-end; }
+.msg.assistant { align-items: stretch; }
+
+.msg-caption {
+  font-size: 11.5px; color: var(--c-text-3);
+  margin-bottom: 4px; font-family: var(--mono);
+  display: flex; gap: 8px; align-items: center;
+}
+.msg-caption .who { color: var(--c-text-2); }
+.msg.user .msg-caption { flex-direction: row-reverse; }
+
+/* W243 任务2：气泡按文字自适应宽度（不再铺满）；
+   用户右对齐紧凑（max-width 72% + 反色底），AI 左对齐（72%）。 */
+.bubble {
+  width: fit-content;
+  max-width: 72%;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--c-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.msg.user .bubble {
+  margin-left: auto; /* 右对齐 */
+  background: var(--c-accent);
+  color: var(--c-accent-fg);
+}
+.msg.user .bubble .content { color: inherit; }
+.msg.user .bubble a { color: var(--c-accent-fg); text-decoration: underline; }
+/* W764：工具卡 / 思考段不再套「气泡」外框 —— 卡片（TerminalBlock 的 code-block
+   表面）与折叠行（DisclosureRow 的裸行）各自带表面与留白；信息块保留浅表面。 */
+.msg.tool .bubble, .msg.info .bubble, .msg.think-seg .bubble {
+  width: 100%; max-width: 100%;
+}
+.msg.tool .bubble, .msg.think-seg .bubble {
+  background: none; box-shadow: none; padding: 0; border-radius: 0;
+}
+.msg.assistant .bubble.streaming { box-shadow: 0 0 0 1px var(--c-accent-ring); }
+
+/* ---- 思考（W240 起为独立思考段 .think-seg；旧的 details 版 .thinking 组件已无任何
+   代码路径创建，W764 顺带删除该段死样式） ---- */
+
+/* ---- 工具调用卡（默认收起 = banner 一行，点开看参数/结果）
+   W764：对齐 DSH Web 客户端的 TerminalBlock —— 12px 圆角 + code-block 表面、
+   banner padding 9px 14px、等宽 12/18、运行状态点独占 30px gutter 列、状态用 Pill、
+   banner 与正文之间 0.5px 发丝线（运行中只有 banner，不画线）。 ---- */
+.toolcards { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.toolcard {
+  position: relative;
+  /* gutter 是卡片自己的内边距（不是 margin）：状态点的位置与参数/命令的左缘由同一个
+     变量决定，任何一处改 margin 都不会把它们拆开（TerminalBlock 的教训） */
+  padding-left: var(--card-gutter);
+  background: var(--c-code-bg);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
+}
+/* banner：先跨回 gutter 通铺整张卡，再按同量重新内缩（TerminalBlock .header） */
+.toolcard > summary.toolcard-head {
+  cursor: pointer; user-select: none; list-style: none;
+  margin-left: calc(-1 * var(--card-gutter));
+  padding: 9px 14px 9px var(--card-gutter);
+  border-top-left-radius: var(--card-radius);
+  border-top-right-radius: var(--card-radius);
+  max-height: 150px; overflow-y: auto;
+}
+.toolcard > summary.toolcard-head::-webkit-details-marker { display: none; }
+/* 运行中卡片只有 banner → 不画分隔线；其余画 0.5px 发丝线 */
+.toolcard:not(.running) > .toolcard-head { border-bottom: 0.5px solid var(--c-hairline-l2); }
+.toolcard-head {
+  /* W778：折叠态 = 单行（第 N 步 + desc/工具名 + 状态 + 复制 + 折叠指示） */
+  display: flex; align-items: center; gap: 3px;
+}
+/* 折叠入口沿用 TerminalBlock .expand 的语言：tertiary 起手、hover 升 secondary */
+.toolcard-head:hover { color: var(--c-text-2); }
+.toolcard-row1 { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; }
+/* W778：折叠指示（内联 SVG chevron）——收起指右、展开指下，100ms 旋转；
+   与思考段同一形态（16 网格 / 线宽 1.6 / 圆头），形状常量在 ui/toolcards.ts。 */
+.toolcard-fold {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; line-height: 1;
+  color: var(--c-text-3);
+}
+.toolcard-fold > svg {
+  display: block; width: 14px; height: 14px;
+  transform-origin: 50% 50%;
+  transition: transform 100ms ease;
+}
+.toolcard-fold[data-fold='collapsed'] > svg { transform: rotate(0deg); }
+.toolcard-fold[data-fold='expanded'] > svg { transform: rotate(90deg); }
+/* W778：参数/结果预览移进展开区（折叠态不再露出半截预览行）；
+   body 内仍是一行省略号摘要 + 等宽全文。 */
+.toolcard-args-preview,
+.toolcard-result-preview {
+  width: 100%;
+  padding: 8px 14px 0 0;
+  font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.toolcard-result-preview { padding-top: 6px; }
+.toolcard-result-preview { color: var(--c-text-2); }
+.toolcard.err .toolcard-result-preview { color: var(--c-err); }
+.toolcard.ok .toolcard-result-preview { color: var(--c-ok); }
+.toolcard-head .step-tag {
+  font-family: var(--mono); font-size: 11px; color: var(--c-text-3);
+  flex: 0 0 auto;
+}
+.toolcard-name {
+  font-family: var(--mono); font-weight: 600; color: var(--c-accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 状态 Pill（Pill.module.css：24px 高 / 12px 圆角 / padding 0 8px / 12px 字 / 次级层底）。
+   注：TerminalBlock 会把 Pill 高度压到命令行高（18px）以免拉高 banner；我们的 banner
+   本身是多行（名称行 + 参数/结果预览行），Pill 保持自身 24px。 */
+.toolcard-state {
+  margin-left: auto; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 4px;
+  height: var(--row-h); padding: 0 8px; border-radius: 12px;
+  font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
+  color: var(--c-text-2); background: var(--c-layer-2);
+}
+.toolcard.ok .toolcard-state { color: var(--c-ok); }
+.toolcard.err .toolcard-state, .toolcard.deny .toolcard-state { color: var(--c-err); }
+.toolcard-body { display: flex; flex-direction: column; }
+/* W752：作者样式里的 `display: flex` 会盖掉 UA 对关闭态 <details> 子节点的隐藏
+   （Firefox/Safari 的 UA 规则是普通规则，作者规则优先级更高；只有 Chromium 用
+   ::details-content 的 content-visibility 才天然免疫）——不补这条，工具卡在部分
+   引擎里「明明没 open 却把参数/结果全文摊开」。权重 (0,3,0) > (0,1,0)，稳赢。 */
+.toolcard:not([open]) > .toolcard-body { display: none; }
+/* 参数 / 结果正文：等宽 pre、不换行、横向滚动（TerminalBlock .output）；
+   滚动条浮在圆角外侧：transparent 2px border + padding-box */
+.tool-args, .tool-out {
+  margin: 0; padding: 12px 14px 12px 0;
+  color: var(--c-text-2); background: none;
+  font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
+  white-space: pre; overflow-x: auto; overflow-y: auto;
+  max-height: 260px;
+}
+.tool-out { color: var(--c-text-1); border-top: 0.5px solid var(--c-hairline-l2); }
+/* W778：结果预览在展开区内，和结果全文一起与参数区分隔 */
+.toolcard-result-preview.has { border-top: 0.5px solid var(--c-hairline-l2); margin-top: 2px; }
+.tool-out.err-c { color: var(--c-err); }
+.toolcard-head::-webkit-scrollbar-thumb,
+.tool-args::-webkit-scrollbar-thumb,
+.tool-out::-webkit-scrollbar-thumb {
+  border: 2px solid transparent; background-clip: padding-box; border-radius: 6px;
+}
+.toolcard-head::-webkit-scrollbar-track,
+.tool-args::-webkit-scrollbar-track,
+.tool-out::-webkit-scrollbar-track { margin: 6px; }
+
+/* ---- markdown 正文 ---- */
+.content { overflow-wrap: anywhere; }
+.content > :first-child { margin-top: 0; }
+.content > :last-child { margin-bottom: 0; }
+.content p { margin: 0 0 .7em; }
+.content h1, .content h2, .content h3, .content h4 {
+  margin: .9em 0 .5em; font-weight: 600; line-height: 1.35;
+}
+.content h1 { font-size: 1.3em; } .content h2 { font-size: 1.18em; } .content h3 { font-size: 1.08em; }
+.content ul, .content ol { margin: 0 0 .7em; padding-left: 1.5em; }
+.content li { margin: .15em 0; }
+.content a { color: var(--c-accent); text-decoration: none; }
+.content a:hover { text-decoration: underline; }
+.content blockquote {
+  margin: .6em 0; padding: 2px 12px;
+  border-left: 2px solid var(--c-border-strong); color: var(--c-text-2);
+}
+.content hr { border: none; border-top: 1px solid var(--c-border-subtle); margin: .9em 0; }
+.content table { border-collapse: collapse; margin: .6em 0; font-size: 13px; }
+.content th, .content td { border: 1px solid var(--c-border-subtle); padding: 4px 10px; }
+.content th { background: var(--c-surface-raised); color: var(--c-text-2); }
+.content img { max-width: 100%; border-radius: 6px; }
+
+.content code {
+  font-family: var(--mono); font-size: 12.5px;
+}
+.content :not(pre) > code {
+  background: var(--c-code-bg); border: 1px solid var(--c-border-subtle);
+  padding: 0 5px; border-radius: 4px; font-size: 12px;
+}
+.content pre {
+  background: var(--c-code-bg); border: 1px solid var(--c-border-subtle);
+  border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: .7em 0;
+}
+.content pre code { background: transparent; font-size: 12.5px; padding: 0; border: none; }
+.content pre code.hljs { background: transparent; color: inherit; }
+
+/* 代码高亮 token（主题化，见 tokens.css --hl-*） */
+.content .hljs-comment, .content .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.content .hljs-keyword, .content .hljs-selector-tag, .content .hljs-doctag { color: var(--hl-keyword); }
+.content .hljs-string, .content .hljs-regexp { color: var(--hl-string); }
+.content .hljs-number, .content .hljs-literal { color: var(--hl-number); }
+.content .hljs-title, .content .hljs-title.function_, .content .hljs-section { color: var(--hl-title); }
+.content .hljs-attr, .content .hljs-attribute, .content .hljs-variable, .content .hljs-template-variable { color: var(--hl-attr); }
+.content .hljs-built_in { color: var(--hl-builtin); }
+.content .hljs-meta { color: var(--hl-meta); }
+.content .hljs-type, .content .hljs-title.class_ { color: var(--hl-type); }
+.content .hljs-name { color: var(--hl-title); }
+.content .hljs-deletion { color: var(--c-err); }
+.content .hljs-addition { color: var(--c-ok); }
+
+.bubble.streaming .content::after { content: "▍"; color: var(--c-accent); animation: caret 1s steps(2) infinite; }
+
+.err-inline {
+  color: var(--c-err); margin-top: 8px; font-size: 12.5px;
+  white-space: pre-wrap; font-family: var(--mono);
+}
+
+/* ---- 弹层 ---- */
+.modal {
+  position: fixed; inset: 0; z-index: 50;
+  background: var(--c-overlay);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.modal-box {
+  width: min(660px, 100%); max-height: 86vh;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-panel);
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--c-border-subtle);
+}
+.modal-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.modal-actions { display: flex; align-items: center; gap: 6px; }
+.modal-body { padding: 12px 14px; overflow-y: auto; }
+.modal-actions .btn-mini { flex: 0 0 auto; }
+
+/* ---- 配置表单（可热调） ---- */
+.cfg-form { display: flex; flex-direction: column; gap: 10px; }
+.cfg-field {
+  display: grid; grid-template-columns: 140px 1fr;
+  align-items: center; gap: 10px;
+}
+.cfg-field .cfg-label {
+  color: var(--c-text-2); font-size: 12.5px;
+  font-family: var(--mono); text-align: right;
+}
+.cfg-input { width: 100%; min-width: 0; }
+.cfg-sys { resize: vertical; min-height: 96px; font-size: 12.5px; }
+.cfg-hint {
+  grid-column: 2; font-size: 11.5px; color: var(--c-text-3);
+}
+.cfg-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  border-top: 1px solid var(--c-border-subtle); padding-top: 10px;
+}
+.cfg-status {
+  font-size: 12px; font-family: var(--mono);
+  white-space: pre-wrap; word-break: break-all;
+}
+.cfg-status.ok { color: var(--c-ok); }
+.cfg-status.err { color: var(--c-err); }
+.cfg-hintline {
+  margin-top: 10px; padding-top: 8px;
+  font-size: 11.5px; color: var(--c-text-3); font-family: var(--mono);
+}
+
+.cfg-hintline:empty { display: none; }
+
+.msg.tool .msg-caption .who { color: var(--c-text-3); }
+
+/* ============================================================================
+ * W227（续）：启动恢复 cli-main 历史 —— 折叠提示 / 分隔线 / 工具消息块
+ * ============================================================================ */
+.restore-note {
+  text-align: center; font-size: 12px; color: var(--c-text-3);
+  padding: 6px 0 0;
+}
+.restore-fold {
+  text-align: center; font-size: 11.5px; color: var(--c-text-3);
+  font-family: var(--mono);
+  padding: 2px 0 12px;
+  border-bottom: 1px dashed var(--c-border-subtle);
+  margin-bottom: 14px;
+}
+.live-sep {
+  display: flex; align-items: center; gap: 12px;
+  margin: 4px 0 2px;
+  font-size: 11px; color: var(--c-text-3); font-family: var(--mono);
+  user-select: none;
+}
+.live-sep::before, .live-sep::after {
+  content: ''; flex: 1; height: 1px; background: var(--c-border-subtle);
+}
+.live-sep span { letter-spacing: 1px; white-space: nowrap; }
+.content.restore-tool {
+  white-space: pre-wrap; word-break: break-all;
+  font-family: var(--mono); font-size: 12px; color: var(--c-text-2);
+}
+/* ============================================================================
+ * W240：连续事件流 —— 思考段（弱化）/ 信息块（context/status 类事件）
+ * ============================================================================ */
+/* W764：思考段 = DisclosureRow 头行 + .lcKema_thinkBody 正文（无外框、无左侧色条） */
+.msg.think-seg .msg-caption .who { color: var(--c-text-2); }
+.think-seg-bubble {
+  width: 100%; max-width: 100%;
+  padding: 0; background: none; border: none; border-radius: 0; color: var(--c-text-3);
+}
+.think-seg-body {
+  padding: 4px 0 4px calc(var(--lead-box) + var(--lead-gap));
+  color: var(--c-text-3);
+  font-family: var(--sans); font-size: var(--fs-secondary); line-height: var(--lh-secondary);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 320px; overflow-y: auto;
+}
+
+/* 信息块（同族语言：统一圆角 + 次级层底 + 紧凑行高；保留左侧 2px 语义条做区分） */
+.msg.info .msg-caption .who { color: var(--c-text-3); }
+.info-bubble {
+  width: 100%; max-width: 100%;
+  padding: 8px 12px; border-radius: var(--card-radius);
+  border-left: 2px solid var(--c-warn);
+  background: var(--c-layer-2); box-shadow: none;
+}
+.msg.info.err .info-bubble { border-left-color: var(--c-err); background: var(--c-err-dim); }
+.info-content {
+  font-size: var(--fs-secondary); line-height: var(--lh-secondary);
+  color: var(--c-text-2); white-space: pre-wrap; word-break: break-word;
+}
+
+/* 工具卡：复制按钮（TerminalBlock .copyButton —— 无边框无底色、次级色文字控件；
+   仍是 banner 内的独立热区，点击不触发 summary 的展开切换） */
+.toolcard-copy {
+  flex: 0 0 auto;
+  border: none; background: none; padding: 0;
+  color: var(--c-text-2); cursor: pointer;
+  font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
+}
+.toolcard-copy:hover { color: var(--c-text-1); }
+/* ============================================================================
+ * 第 10 轮：会话切换轻量进度条（顶部细条，非整页空白）
+ * ============================================================================ */
+.switch-progress {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  z-index: 95;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, var(--c-accent) 50%, transparent 100%);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: switchSlide 1.1s linear infinite;
+}
+@keyframes switchSlide {
+  0%   { background-position: -40% 0; }
+  100% { background-position: 140% 0; }
+}
+/* ============================================================================
+ * W764：思考段头行 / 运行状态点（对齐 DSH Web 客户端）
+ *   DisclosureRow：24px 行高 · 16px 行首图标盒（+6px 间距）· 13px 次级标题 ·
+ *     hover 时行首图标 ↔ 折叠箭头 100ms 交叉淡入；
+ *   .lcKema_root[data-state=running] .row:after：流式头行 300px 扫光带，
+ *     2.6s ease-out infinite，left −300px → 100%；
+ *   StateDot：::before 同色 0.10 光晕 + ::after（inset 20%）实心核；进行中走
+ *     chase 离散步进（不做补间）。
+ * 折叠语义与门禁依赖的类名（.think-head / .think-fold-mark / .think-seg-body /
+ * .think-seg-folded）一字不动，只换视觉。 */
+.msg.think-seg .think-head {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: var(--lead-gap);
+  height: var(--row-h); margin: 0;
+  padding-left: calc(var(--lead-box) + var(--lead-gap));
+  font-family: var(--sans); font-size: var(--fs-secondary); line-height: var(--row-h);
+  color: var(--c-text-2);
+  cursor: pointer; user-select: none;
+}
+.msg.think-seg .think-head:hover { color: var(--c-text-1); }
+/* 行首图标盒：纯 CSS 四角星（两根交叉细杆），不引图标资源、不新增 DOM */
+.msg.think-seg .think-head::before {
+  content: ''; position: absolute; left: 0; top: 50%;
+  width: var(--lead-box); height: var(--lead-box); transform: translateY(-50%);
+  color: var(--c-text-3);
+  background:
+    linear-gradient(currentColor, currentColor) center / 1.5px 10px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 10px 1.5px no-repeat;
+  transition: opacity 100ms ease;
+}
+.msg.think-seg .think-head:hover::before { opacity: 0; }
+.msg.think-seg .think-head:focus-visible {
+  outline: 1px solid var(--c-accent-ring); outline-offset: 2px; border-radius: 6px;
+}
+/* 折叠箭头：与图标盒同心，hover / 键盘聚焦时淡入（DisclosureRow 的 100ms 交叉淡入）；
+   折叠态另有「思考已折叠，点击展开」占位行，状态不靠箭头单独承担。
+   W765：内容由 /▸▾ 字形改为**内联 SVG chevron**（对齐 DSH DisclosureRow 的 chevron
+   资源），方向由 data-fold 驱动 100ms 旋转：collapsed(0°) 指向右 ≡ 旧 ▸，
+   expanded(90°) 指向下 ≡ 旧 ▾；交叉淡入时长不变（仍是 100ms ease）。 */
+.think-fold-mark {
+  position: absolute; left: 0; top: 50%; width: var(--lead-box); height: var(--lead-box);
+  transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1; color: var(--c-text-3);
+  opacity: 0; transition: opacity 100ms ease;
+}
+.think-fold-mark svg {
+  display: block; width: 14px; height: 14px;
+  transform-origin: 50% 50%;
+  transition: transform 100ms ease;
+}
+.think-fold-mark[data-fold='collapsed'] svg { transform: rotate(0deg); }
+.think-fold-mark[data-fold='expanded'] svg { transform: rotate(90deg); }
+.msg.think-seg .think-head:hover .think-fold-mark,
+.msg.think-seg .think-head:focus-visible .think-fold-mark { opacity: 1; }
+/* 流式思考：头行扫光带。页面底色本身就是 bg-base，叠一层 bg-base 色调的带子看不见，
+   故带色取低透明度墨色（--c-sweep）：角色相同（一道掠过的光），在灰阶主题里可见。 */
+.msg.think-seg[data-state='running'] .think-head::after {
+  content: ''; position: absolute; inset-block: 0; left: -300px; width: 300px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, var(--c-sweep) 55%, transparent 100%);
+  animation: think-row-sweep 2.6s ease-out infinite;
+}
+@keyframes think-row-sweep { 0% { left: -300px; } 90%, 100% { left: 100%; } }
+/* 流式中行首图标缓慢自转：进行中的第二个信号（不占不透明度，避免与 hover 交叉淡入打架） */
+.msg.think-seg[data-state='running'] .think-head::before {
+  animation: think-mark-spin 1.6s linear infinite;
+}
+@keyframes think-mark-spin {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+.think-time {
+  margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.think-seg-folded {
+  display: none;
+  padding: 2px 0 2px calc(var(--lead-box) + var(--lead-gap));
+  font-size: 12px; line-height: var(--lh-secondary); color: var(--c-text-3);
+}
+/* 折叠态挂在 .msg.think-seg 本身（W752 修：此前 live 把类挂在 .mcol 根上，
+   这两条选择器永不命中 → 点了没反应、永远展开）。 */
+.msg.think-seg.collapsed .think-seg-body { display: none; }
+.msg.think-seg.collapsed .think-seg-folded { display: block; }
+
+/* 运行状态点（StateDot）：::before 同色 0.10 光晕 + ::after（inset 20%）实心核；
+   四态取色沿用本仓灰阶语义色（ok/warn/err/idle）；进行中用 chase 离散步进。 */
+.ts-dot { position: relative; display: inline-block; flex: none; width: 10px; height: 10px; color: var(--c-text-3); }
+.ts-dot::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: currentColor; opacity: .1; }
+.ts-dot::after { content: ''; position: absolute; inset: 20%; border-radius: 50%; background: currentColor; }
+.toolcard.ok .ts-dot { color: var(--c-ok); }
+.toolcard.err .ts-dot, .toolcard.deny .ts-dot { color: var(--c-err); }
+.toolcard.running .ts-dot { color: var(--c-accent); }
+.toolcard.running .ts-dot::after { animation: state-chase 1s infinite; }
+@keyframes state-chase {
+  0%, 12.4% { opacity: 1; }
+  12.5%, 24.9% { opacity: .6; }
+  25%, 37.4% { opacity: .35; }
+  37.5%, 100% { opacity: .15; }
+}
+/* 状态点独占卡片 gutter 列：绝对定位出流，不挤占参数/命令宽度（TerminalBlock .runState） */
+.toolcard-row1 .ts-dot {
+  position: absolute; left: calc(-1 * var(--card-gutter) + 8px); top: 50%;
+  transform: translateY(-50%);
+}

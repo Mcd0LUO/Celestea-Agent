@@ -1,7 +1,7 @@
 # 清单 3 · 共用前端「面向用户可见的技术文案」审计
 
 > 状态：**清单（只读审计，未改任何代码）**。
-> 范围：`/src/celestea_studio/frontend/src/**/*.ts`（27 个文件）+ 附加：`/src/celestea_studio/frontend/index.html`（同一份 dist，见 §5）。
+> 范围：`apps/web/src/**/*.ts`（27 个文件）+ 附加：`apps/web/index.html`（同一份 dist，见 §5）。
 > 背景：架构师已完成一处清理——`frontend/src/ui/config.ts:215-218` 的
 > `'数据源：GET /api/config · 窗口补充：GET /api/status · 保存 POST /api/config（后端需支持热调）'` 已删除
 > （commit `3f9bc29`）。本清单是**其余**同类文案的完整清点。

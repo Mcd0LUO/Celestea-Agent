@@ -1,0 +1,93 @@
+/* ============================================================================
+ * 基础层：reset / 全局 / 滚动条 / 按钮 / 表单控件 / 动画
+ * ============================================================================ */
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text-1);
+  font: 14px / 1.65 var(--sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--c-accent-ring); }
+
+.hidden { display: none !important; }
+
+/* ---- 滚动条 ---- */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb {
+  background: var(--c-scroll-thumb);
+  border-radius: 5px;
+  border: 2px solid var(--c-bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--c-border-strong); }
+::-webkit-scrollbar-track { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--c-scroll-thumb) transparent; }
+
+button { font: inherit; }
+
+/* ---- 按钮 ---- */
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 7px;
+  background: var(--c-surface-raised);
+  color: var(--c-text-1);
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--c-surface-raised); border-color: var(--c-border-strong); }
+.btn:disabled { opacity: .4; cursor: default; }
+.btn:focus-visible { outline: 2px solid var(--c-accent-ring); outline-offset: 1px; }
+
+.btn-accent {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-accent-fg);
+  font-weight: 600;
+}
+.btn-accent:hover { background: var(--c-accent-strong); border-color: var(--c-accent-strong); }
+
+.btn-quiet { background: transparent; border-color: transparent; color: var(--c-text-2); }
+.btn-quiet:hover { background: var(--c-surface-raised); color: var(--c-text-1); }
+
+.btn-soft {
+  background: transparent;
+  color: var(--c-accent);
+  border-color: var(--c-accent-ring);
+}
+.btn-soft:hover { background: var(--c-accent-soft); border-color: var(--c-accent-ring); }
+
+.btn-mini {
+  border: none; background: transparent; color: var(--c-text-3);
+  font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 5px;
+}
+.btn-mini:hover { color: var(--c-text-2); background: var(--c-surface-raised); }
+
+.btn-theme { font-family: var(--mono); font-size: 12px; }
+
+/* ---- 表单控件 ---- */
+input, textarea, select {
+  background: var(--c-code-bg);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 7px;
+  color: var(--c-text-1);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color .12s ease;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--c-accent); }
+input::placeholder, textarea::placeholder { color: var(--c-text-3); }
+select { cursor: pointer; }
+
+/* ---- 动画 ---- */
+@keyframes pulse { 50% { opacity: .35; } }
+@keyframes caret { 50% { opacity: .25; } }

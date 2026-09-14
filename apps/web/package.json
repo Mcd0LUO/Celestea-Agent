@@ -1,0 +1,29 @@
+{
+  "name": "celestea-studio-frontend",
+  "private": true,
+  "version": "2.6.5",
+  "type": "module",
+  "description": "Celestea Studio UI — TypeScript + Vite, mono (black/white) theme",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && node tools/check-ui-copy.mjs && node tools/check-scope-hash.mjs && node tools/check-fold-default.mjs && node tools/check-grants-permanent.mjs && node tools/check-module-size.mjs && node tools/check-bundle-size.mjs",
+    "check:copy": "node tools/check-ui-copy.mjs",
+    "check:scope-hash": "node tools/check-scope-hash.mjs",
+    "check:size": "node tools/check-module-size.mjs",
+    "check:bundle": "node tools/check-bundle-size.mjs",
+    "check:fold": "node tools/check-fold-default.mjs",
+    "check:permanent": "node tools/check-grants-permanent.mjs"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/marked": "^4.3.2",
+    "typescript": "^6.0.3",
+    "vite": "^5.4.11"
+  }
+}

@@ -35,7 +35,7 @@ const OUT = resolve(str(args, "out", "fixtures"));
 const SSE_WINDOW_MS = num(args, "sse-window-ms", 6000);
 /** Above this event count the derived per-session SSE transcript is omitted (it is regenerable from cli-main.jsonl). */
 const MAX_DERIVED_SSE_EVENTS = num(args, "max-derived-sse-events", 200);
-const STUDIO_REPO = str(args, "studio-repo", "/src/celestea_studio");
+const STUDIO_REPO = str(args, "studio-repo", "/src/celestea_studio-ts");
 const VERBOSE = bool(args, "verbose");
 
 interface SessionFixtureMeta {

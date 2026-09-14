@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Celestea Studio data-file schemas (format freeze)",
   "generatedAt": "2026-09-10T01:20:00Z",
-  "doc": "/src/celestea_studio/docs/data-files.md",
+  "doc": "docs/data-files.md",
   "freezeRule": "Migration period: NO format changes. Do not add a `version` field (it would let the two implementations diverge).",
   "files": [
     {

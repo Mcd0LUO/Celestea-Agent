@@ -1,0 +1,317 @@
+/* ============================================================================
+ * Statusline — 发送栏正上方两行紧凑状态条（借鉴 DSH SessionStatusBar）
+ *   第 1 行  上下文占用环(≥90% 警告) + 用量 + 模型 + 思考强度
+ *   第 2 行  tokens/s + step
+ * 数据：GET /api/status 轮询 + SSE status 事件增量字段。
+ * ============================================================================ */
+
+#statusline,
+.statusline {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 5px 14px 4px;
+  background: var(--c-surface);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--c-text-2);
+  flex: 0 0 auto;
+  user-select: none;
+}
+
+.sl-row {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 16px;
+}
+.sl-row-main { flex-wrap: wrap; }
+.sl-row-sub { color: var(--c-text-3); }
+
+.sl-sep { color: var(--c-text-3); opacity: .6; }
+.sl-spacer { flex: 1 1 auto; }
+
+.sl-ctx { font-variant-numeric: tabular-nums; color: var(--c-text-1); }
+.sl-model {
+  color: var(--c-text-1);
+  max-width: 46ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sl-effort {
+  color: var(--c-text-2);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  line-height: 14px;
+}
+.sl-effort:empty { display: none; }
+.sl-tps { font-variant-numeric: tabular-nums; }
+.sl-steps { font-variant-numeric: tabular-nums; }
+.sl-cache { font-variant-numeric: tabular-nums; }
+.sl-hint { color: var(--c-warn); font-size: 10.5px; }
+
+.sl-ring {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px;
+  cursor: pointer; /* W726：点击打开只读「完整上下文」浮层 */
+}
+.sl-ring svg { display: block; }
+.sl-ring circle { fill: none; stroke-width: 2; }
+.sl-ring .sl-ring-track { stroke: var(--c-border-subtle); }
+.sl-ring .sl-ring-prog {
+  stroke: var(--c-ok);
+  transition: stroke-dashoffset .35s ease, stroke .2s ease;
+}
+.sl-ring.warn .sl-ring-prog {
+  stroke: var(--c-warn);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* /api/status 不可用时整条降低对比并显示提示 */
+#statusline.sl-stale .sl-model,
+#statusline.sl-stale .sl-ctx,
+#statusline.sl-stale .sl-effort,
+#statusline.sl-stale .sl-tps,
+#statusline.sl-stale .sl-steps,
+#statusline.sl-stale .sl-cache { opacity: .55; }
+
+/* ============================================================================
+ * W227：模型 / 推理档位快速切换（按钮 + 紧凑下拉面板）
+ * ============================================================================ */
+
+#statusline { position: relative; }
+
+.sl-model, .sl-effort {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.sl-model {
+  color: var(--c-text-1);
+  max-width: 46ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-bottom: 1px dashed var(--c-border-subtle);
+}
+.sl-effort {
+  color: var(--c-text-2);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  line-height: 14px;
+}
+.sl-effort:empty { display: none; }
+.sl-model:hover, .sl-effort:hover {
+  color: var(--c-text-1);
+  border-color: var(--c-accent-ring);
+}
+.sl-model:focus-visible, .sl-effort:focus-visible {
+  outline: 1px solid var(--c-accent-ring);
+  outline-offset: 1px;
+}
+
+/* ---- 下拉面板（自 statusline 向上弹出，覆盖消息区底部） ---- */
+.sl-popup {
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 14px;
+  z-index: 40;
+  width: min(360px, calc(100vw - 40px));
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.sl-popup-title {
+  padding: 7px 12px;
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--c-border-subtle);
+  background: var(--c-surface);
+}
+.sl-popup-body {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex; flex-direction: column;
+  gap: 2px;
+}
+.sl-popup-loading, .sl-popup-note {
+  padding: 6px 8px; font-size: 12px; color: var(--c-text-3);
+}
+.sl-popup-error, .sl-popup-status.err { color: var(--c-err); }
+.sl-popup-status.busy { color: var(--c-accent); }
+.sl-popup-error, .sl-popup-status {
+  padding: 6px 8px; font-size: 12px; white-space: pre-wrap; word-break: break-all;
+  border-top: 1px solid var(--c-border-subtle); margin-top: 4px;
+}
+
+.sl-opt {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--c-text-1);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.sl-opt:hover { background: var(--c-accent-soft); border-color: var(--c-accent-ring); }
+.sl-opt.current { background: var(--c-surface); border-color: var(--c-accent-ring); }
+.sl-opt-name {
+  font-size: 12.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sl-opt-val {
+  font-family: var(--mono); font-size: 10.5px; color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1 1 auto; text-align: right;
+}
+.sl-opt-tag {
+  flex: 0 0 auto;
+  font-size: 10px; color: var(--c-accent);
+  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 4px;
+  font-family: var(--mono);
+}
+.sl-popup-sep {
+  font-size: 10.5px; color: var(--c-text-3); letter-spacing: 1px;
+  padding: 6px 8px 2px; border-top: 1px solid var(--c-border-subtle); margin-top: 4px;
+}
+
+/* W262：模型清单的树状分组 —— 一级=提供商名（不可点击），二级=模型行缩进一级 */
+.sl-group {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 8px 2px;
+  font-size: 10.5px; color: var(--c-text-3);
+  letter-spacing: 1px;
+  cursor: default;
+  user-select: none;
+}
+.sl-group + .sl-group { border-top: 1px solid var(--c-border-subtle); margin-top: 4px; }
+.sl-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* W750：组内含当前生效项 → 标题加重 + 「当前」标记；显示名与稳定 id 不同名时淡显 id */
+.sl-group.cur .sl-group-name { color: var(--c-text-1); }
+.sl-group-id {
+  font-family: var(--mono); font-size: 9.5px; color: var(--c-text-3);
+  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14ch;
+}
+.sl-group-tag {
+  font-family: var(--mono); font-size: 9.5px; color: var(--c-accent);
+  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 4px;
+}
+
+/* ============================================================================
+ * W750/W778：内置模型图标（家族级）。
+ * 色彩语义例外（同 W701 权限盾牌先例）：图标要区分厂商家族，纯灰阶做不到，
+ * 因此单列 --mi-* token，组件层仍只引用 token、不写死颜色。
+ * W778：内置图标从「几何外框 + 首字母」换成真实厂商单色图标（见 utils/model-icon.ts
+ * 与 tools/fetch-model-icons.mjs），家族扩到 12 个，故 token 一并补齐。
+ * 取值取中间调：浅底（白/浅灰）与深底（#111 级）上都留得住对比度；同族之间刻意
+ * 拉开色相（例如 grok 近黑、ollama 灰蓝、kimi 深青），避免列表里认错家族。
+ * ============================================================================ */
+:root {
+  --mi-deepseek: #3f5cf0;
+  --mi-openai: #0f8a72;
+  --mi-glm: #6d4df0;
+  --mi-claude: #c26340;
+  --mi-gemini: #1a8fe3;
+  --mi-qwen: #b83fd0;
+  --mi-meta: #1552b8;
+  --mi-mistral: #cc5200;
+  --mi-grok: #3f3f46;
+  --mi-kimi: #0b7285;
+  --mi-cohere: #2f8f4e;
+  --mi-ollama: #6b7280;
+}
+/* 当前唯一主题（mono）把 color-scheme 钉在 light，这一支今天不会命中；
+   保留它是为了将来出现深色主题时图标自动换成亮一档的变体。 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mi-deepseek: #8fa4ff;
+    --mi-openai: #4fc3a6;
+    --mi-glm: #a992ff;
+    --mi-claude: #e79b78;
+    --mi-gemini: #7cc0ff;
+    --mi-qwen: #e79bff;
+    --mi-meta: #7fa8ff;
+    --mi-mistral: #ff9a66;
+    --mi-grok: #c4c4cc;
+    --mi-kimi: #5fd0e0;
+    --mi-cohere: #7ed99a;
+    --mi-ollama: #a8b4c4;
+  }
+}
+.sl-micon {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 12px; height: 12px;
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--c-text-3);
+}
+.sl-micon svg { display: block; }
+.sl-micon-deepseek { color: var(--mi-deepseek); }
+.sl-micon-openai { color: var(--mi-openai); }
+.sl-micon-glm { color: var(--mi-glm); }
+.sl-micon-claude { color: var(--mi-claude); }
+.sl-micon-gemini { color: var(--mi-gemini); }
+.sl-micon-qwen { color: var(--mi-qwen); }
+.sl-micon-meta { color: var(--mi-meta); }
+.sl-micon-mistral { color: var(--mi-mistral); }
+.sl-micon-grok { color: var(--mi-grok); }
+.sl-micon-kimi { color: var(--mi-kimi); }
+.sl-micon-cohere { color: var(--mi-cohere); }
+.sl-micon-ollama { color: var(--mi-ollama); }
+.sl-opt.sub { padding-left: 20px; position: relative; }
+.sl-opt.sub::before {
+  content: '';
+  position: absolute;
+  left: 9px; top: 50%;
+  width: 6px; height: 1px;
+  background: var(--c-border-strong);
+}
+.sl-popup-textrow { display: flex; gap: 6px; padding: 2px; }
+.sl-popup-input { flex: 1; min-width: 0; }
+
+/* ============================================================================
+ * W302：statusline 第 1 行右端的「停止」方形按钮
+ *   仅运行中可见（.hidden 全局隐藏类，由 ui/inputbar.setBusy 同步），
+ *   点击 = 同一个取消入口 chat.ts requestCancel（#btnCancel 共用）。
+ *   显隐只切 class，不触碰消息区 / 背景视图（FRONTEND-RULES 铁律 5）。
+ * ============================================================================ */
+.sl-stop {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 4px;
+  color: var(--c-text-2);
+  cursor: pointer;
+  line-height: 0;
+}
+.sl-stop svg { display: block; }
+.sl-stop:hover {
+  background: var(--c-accent-soft);
+  color: var(--c-text-1);
+  border-color: var(--c-accent-ring);
+}
+.sl-stop:focus-visible {
+  outline: 1px solid var(--c-accent-ring);
+  outline-offset: 1px;
+}
+.sl-stop:disabled {
+  opacity: .45;
+  cursor: default;
+  background: transparent;
+  color: var(--c-text-2);
+  border-color: var(--c-border-subtle);
+}

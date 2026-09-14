@@ -1,5 +1,5 @@
 {
-  "source": "/src/celestea_studio/src/main.rs:1333-1376",
+  "source": "docs/archive/rust-studio-backend/main.rs:1333-1376",
   "extractedAt": "2026-09-10T01:20:00Z",
   "extraction": "read-only regex over the Router::new() chain",
   "routeDeclarations": 38,

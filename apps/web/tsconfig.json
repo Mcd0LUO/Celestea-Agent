@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    // W772（TS 6.0）：6.0 起不再自动发现 node_modules/@types，且
+    // noUncheckedSideEffectImports 默认为 true —— main.ts 里 12 条
+    // `import './styles/*.css'` 会报 TS2882。按规矩「优先补声明」：
+    // 显式引入 vite/client（它声明了 *.css 等资源模块与 import.meta.env），
+    // 而不是关掉这个更严格的检查。
+    "types": ["vite/client"],
+    "noUncheckedSideEffectImports": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src", "vite.config.ts"]
+}

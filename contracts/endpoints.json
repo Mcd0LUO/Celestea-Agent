@@ -5,7 +5,7 @@
   "phase": "P0 contract freeze",
   "source": {
     "doc": "/src/celestea_studio-ts/docs/feature-session-grants.md",
-    "routes": "/src/celestea_studio/src/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
+    "routes": "docs/archive/rust-studio-backend/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json",
     "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes)."
@@ -36,7 +36,7 @@
       "path": "/api/health",
       "group": "health",
       "rustHandler": "get_health",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apihealth",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apihealth",
       "request": {
         "kind": "none",
         "fields": []
@@ -97,7 +97,7 @@
       "path": "/api/status",
       "group": "health",
       "rustHandler": "api::get_status",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apistatus",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apistatus",
       "request": {
         "kind": "none",
         "fields": []
@@ -173,7 +173,7 @@
       "path": "/api/tools",
       "group": "health",
       "rustHandler": "api::get_tools",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apitools",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apitools",
       "request": {
         "kind": "none",
         "fields": []
@@ -206,7 +206,7 @@
       "path": "/api/events",
       "group": "dialog",
       "rustHandler": "get_events",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apievents--sse",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apievents--sse",
       "request": {
         "kind": "none",
         "fields": []
@@ -248,7 +248,7 @@
       "path": "/api/turn",
       "group": "dialog",
       "rustHandler": "post_turn",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiturn",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiturn",
       "request": {
         "kind": "json",
         "fields": [
@@ -301,7 +301,7 @@
       "path": "/api/cancel",
       "group": "dialog",
       "rustHandler": "post_cancel",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apicancel",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apicancel",
       "request": {
         "kind": "none",
         "fields": []
@@ -340,7 +340,7 @@
       "path": "/api/clear",
       "group": "dialog",
       "rustHandler": "workspaces::post_clear",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiclear",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiclear",
       "request": {
         "kind": "none",
         "fields": []
@@ -381,7 +381,7 @@
       "path": "/api/config",
       "group": "config",
       "rustHandler": "api::get_config",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apiconfig",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apiconfig",
       "request": {
         "kind": "none",
         "fields": []
@@ -460,7 +460,7 @@
       "path": "/api/config",
       "group": "config",
       "rustHandler": "api::post_config",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiconfig",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiconfig",
       "request": {
         "kind": "json",
         "fields": [
@@ -567,7 +567,7 @@
       "path": "/api/sessions",
       "group": "sessions",
       "rustHandler": "workspaces::get_sessions",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apisessions",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apisessions",
       "request": {
         "kind": "none",
         "fields": []
@@ -606,7 +606,7 @@
       "path": "/api/sessions",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_create",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessions",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessions",
       "request": {
         "kind": "json",
         "fields": [
@@ -710,7 +710,7 @@
       "path": "/api/sessions/{id}/messages",
       "group": "sessions",
       "rustHandler": "workspaces::get_session_messages",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apisessionsidmessages",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apisessionsidmessages",
       "request": {
         "kind": "none",
         "fields": []
@@ -771,7 +771,7 @@
       "path": "/api/sessions/{id}/activate",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_activate",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsidactivate",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidactivate",
       "request": {
         "kind": "none",
         "fields": []
@@ -824,7 +824,7 @@
       "path": "/api/sessions/{id}/rename",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_rename",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsidrename",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidrename",
       "request": {
         "kind": "json",
         "fields": [
@@ -891,7 +891,7 @@
       "path": "/api/sessions/{id}/branch",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_branch",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsidbranch",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidbranch",
       "request": {
         "kind": "json",
         "fields": [
@@ -955,7 +955,7 @@
       "path": "/api/sessions/{id}/compact",
       "group": "sessions",
       "rustHandler": "compact::post_session_compact",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsidcompact",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidcompact",
       "request": {
         "kind": "none",
         "fields": []
@@ -1077,7 +1077,7 @@
       "path": "/api/sessions/{id}/archive",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_archive",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
       "request": {
         "kind": "none",
         "fields": []
@@ -1129,7 +1129,7 @@
       "path": "/api/sessions/{id}/unarchive",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_unarchive",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
       "request": {
         "kind": "none",
         "fields": []
@@ -1170,7 +1170,7 @@
       "path": "/api/sessions/batch-archive",
       "group": "sessions",
       "rustHandler": "workspaces::post_sessions_batch_archive",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsbatch-archive",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsbatch-archive",
       "request": {
         "kind": "json",
         "fields": [
@@ -1219,7 +1219,7 @@
       "path": "/api/sessions/batch-delete",
       "group": "sessions",
       "rustHandler": "workspaces::post_sessions_batch_delete",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apisessionsbatch-delete",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsbatch-delete",
       "request": {
         "kind": "json",
         "fields": [
@@ -1268,7 +1268,7 @@
       "path": "/api/workspaces",
       "group": "workspaces",
       "rustHandler": "workspaces::get_workspaces",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apiworkspaces",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apiworkspaces",
       "request": {
         "kind": "none",
         "fields": []
@@ -1306,7 +1306,7 @@
       "path": "/api/workspaces",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspace_create",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiworkspaces",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspaces",
       "request": {
         "kind": "json",
         "fields": [
@@ -1379,7 +1379,7 @@
       "path": "/api/workspaces/{name}/rename",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspace_rename",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiworkspacesnamerename",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspacesnamerename",
       "request": {
         "kind": "json",
         "fields": [
@@ -1462,7 +1462,7 @@
       "path": "/api/workspaces/{name}/delete",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspace_delete",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiworkspacesnamedelete",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspacesnamedelete",
       "request": {
         "kind": "none",
         "fields": []
@@ -1502,7 +1502,7 @@
       "path": "/api/workspaces/batch-delete",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspaces_batch_delete",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiworkspacesbatch-delete",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspacesbatch-delete",
       "request": {
         "kind": "json",
         "fields": [
@@ -1551,7 +1551,7 @@
       "path": "/api/fs/browse",
       "group": "fs",
       "rustHandler": "workspaces::get_fs_browse",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apifsbrowsepath-绝对路径",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apifsbrowsepath-绝对路径",
       "request": {
         "kind": "query",
         "fields": [
@@ -1619,7 +1619,7 @@
       "path": "/api/providers",
       "group": "providers",
       "rustHandler": "providers::get_providers",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apiproviders",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apiproviders",
       "request": {
         "kind": "none",
         "fields": []
@@ -1662,7 +1662,7 @@
       "path": "/api/providers",
       "group": "providers",
       "rustHandler": "providers::post_providers",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiproviders",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiproviders",
       "request": {
         "kind": "json",
         "fields": [
@@ -1760,7 +1760,7 @@
       "path": "/api/providers/{id}/delete",
       "group": "providers",
       "rustHandler": "providers::post_provider_delete",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiprovidersiddelete",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiprovidersiddelete",
       "request": {
         "kind": "none",
         "fields": []
@@ -1800,7 +1800,7 @@
       "path": "/api/providers/test",
       "group": "providers",
       "rustHandler": "providers::post_provider_test",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiproviderstest",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiproviderstest",
       "request": {
         "kind": "json",
         "fields": [
@@ -1904,7 +1904,7 @@
       "path": "/api/providers/{id}/models/fetch",
       "group": "providers",
       "rustHandler": "providers::post_models_fetch",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiprovidersidmodelsfetch",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiprovidersidmodelsfetch",
       "request": {
         "kind": "none",
         "fields": []
@@ -1965,7 +1965,7 @@
       "path": "/api/providers/default",
       "group": "providers",
       "rustHandler": "providers::post_provider_default",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiprovidersdefault",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiprovidersdefault",
       "request": {
         "kind": "json",
         "fields": [
@@ -2035,7 +2035,7 @@
       "path": "/api/prompts",
       "group": "prompts",
       "rustHandler": "prompts::get_prompts",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apiprompts",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apiprompts",
       "request": {
         "kind": "query",
         "fields": [
@@ -2114,7 +2114,7 @@
       "path": "/api/prompts",
       "group": "prompts",
       "rustHandler": "prompts::post_prompts_upsert",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiprompts（upsert）",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiprompts（upsert）",
       "request": {
         "kind": "json",
         "fields": [
@@ -2222,7 +2222,7 @@
       "path": "/api/prompts/{id}/delete",
       "group": "prompts",
       "rustHandler": "prompts::post_prompts_delete",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apipromptsiddelete",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apipromptsiddelete",
       "request": {
         "kind": "json",
         "fields": [
@@ -2287,7 +2287,7 @@
       "path": "/api/prompts/{id}/default",
       "group": "prompts",
       "rustHandler": "prompts::post_prompts_default",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apipromptsiddefault",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apipromptsiddefault",
       "request": {
         "kind": "json",
         "fields": [
@@ -2353,7 +2353,7 @@
       "path": "/api/worker/spawn",
       "group": "workers",
       "rustHandler": "api::post_worker_spawn",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiworkerspawn",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkerspawn",
       "request": {
         "kind": "json",
         "fields": [
@@ -2434,7 +2434,7 @@
       "path": "/api/worker/send",
       "group": "workers",
       "rustHandler": "api::post_worker_send",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#post-apiworkersend",
+      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkersend",
       "request": {
         "kind": "json",
         "fields": [
@@ -2477,7 +2477,7 @@
       "path": "/api/worker/status",
       "group": "workers",
       "rustHandler": "api::get_worker_status",
-      "docRef": "/src/celestea_studio/docs/archive/api-contract.md#get-apiworkerstatuswid-可选",
+      "docRef": "docs/archive/frontend/api-contract.md#get-apiworkerstatuswid-可选",
       "request": {
         "kind": "query",
         "fields": [

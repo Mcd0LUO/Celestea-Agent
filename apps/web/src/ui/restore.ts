@@ -1,0 +1,352 @@
+// ============================================================================
+// ui/restore.ts — 会话历史恢复（W514 多会话版）：
+//   GET /api/sessions/{id}/messages → 用与 live 相同的渲染管线渲染最近
+//   N=200 条存量（更早的加折叠提示）→ 尾部加「以下为本次会话」分隔线 →
+//   之后的 SSE 增量照旧。衔接去重：SSE 重放的助手文本若与已恢复尾部同内容
+//   （前缀匹配）则吞掉，直到发散；done 全量一致时丢弃重复气泡。
+//   404/超时/端点缺失 → 保持空视图 + 轻提示，绝不崩溃。
+//   W514：渲染目标 = 会话视图容器（SessionPane），去重状态每容器一份；
+//         离屏双缓冲 + 单次替换（铁律 1）保持不变 → 切换/恢复无空白帧。
+// ============================================================================
+import { api } from '../api';
+import { el } from '../utils/dom';
+import type { HistoryMsg } from '../types';
+import {
+  activatePane,
+  activePane,
+  adoptPane,
+  ensurePane,
+  type SessionPane,
+} from './viewctx';
+import {
+  addUserMessage,
+  autoscroll,
+  buildThinkSeg,
+  ensureAssistant,
+  finalizeAssistant,
+  renderEmptyHint,
+  renderInboxMessage,
+  type MsgKind,
+} from './messages';
+import { railReset, railSync } from './rail';
+import { buildToolCard, descFromArgs, setToolResult } from './toolcards';
+
+const MAX_RESTORE = 200;
+
+// ---- 衔接去重状态（每容器一份） ------------------------------------------------
+
+/** 重置去重状态（清空会话后调用）。 */
+export function resetRestore(ctx: SessionPane): void {
+  ctx.dedup.tail = null;
+  ctx.dedup.guardActive = false;
+  ctx.dedup.guardBuf = '';
+  ctx.dedup.guardAll = false;
+}
+
+/**
+ * 处理一条 live 助手文本增量：若与已恢复尾部前缀匹配则吞掉（返回 null），
+ * 发散后一次性吐出累积缓冲并解除守卫。
+ */
+export function feedAssistantDelta(ctx: SessionPane, delta: string): string | null {
+  const d = ctx.dedup;
+  if (d.tail?.role !== 'assistant') {
+    d.tail = null;
+    return delta === '' ? null : delta;
+  }
+  if (!d.guardActive) {
+    d.guardActive = true;
+    d.guardBuf = '';
+    d.guardAll = false;
+  }
+  d.guardBuf += delta;
+  const tc = d.tail.content ?? '';
+  if (tc.startsWith(d.guardBuf)) {
+    if (d.guardBuf === tc) d.guardAll = true;
+    return null;
+  }
+  const out = d.guardBuf;
+  d.guardActive = false;
+  d.guardAll = false;
+  d.tail = null;
+  return out === '' ? null : out;
+}
+
+/**
+ * done 事件钩子：若整条 live 助手消息是已恢复尾部的重放（无新增内容），
+ * 返回 true 让调用方移除该重复气泡。
+ */
+export function finalAssistantDedup(ctx: SessionPane, text?: string): boolean {
+  const d = ctx.dedup;
+  if (!d.guardActive) return false;
+  d.guardActive = false;
+  const drop =
+    d.guardAll ||
+    (typeof text === 'string' && text !== '' && d.tail?.role === 'assistant' && text === (d.tail.content ?? ''));
+  d.guardAll = false;
+  d.tail = null;
+  return drop;
+}
+
+// ---- 渲染 ---------------------------------------------------------------------
+
+function toJsonText(v: unknown): string {
+  if (typeof v === 'string') return v;
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
+}
+
+function appendToolLine(text: string, container: HTMLElement): void {
+  const col = el('div', 'mcol');
+  const msg = el('div', 'msg tool');
+  const cap = el('div', 'msg-caption');
+  cap.appendChild(el('span', 'who', '工具'));
+  msg.appendChild(cap);
+  const bubble = el('div', 'bubble');
+  const body = el('div', 'content restore-tool');
+  body.textContent = text;
+  bubble.appendChild(body);
+  msg.appendChild(bubble);
+  col.appendChild(msg);
+  container.appendChild(col);
+}
+
+/** 渲染一条结构化 tool 消息（call 建卡 / result 按 id 配对回填）。 */
+function renderToolMessage(ctx: SessionPane, m: HistoryMsg, container: HTMLElement): void {
+  if (m.kind === 'call') {
+    ctx.histToolStep += 1;
+    const id = m.tool_call_id ?? 'call_' + ctx.histToolStep;
+    const ref = buildToolCard({
+      step: ctx.histToolStep,
+      name: m.tool_name ?? 'tool',
+      argsText: toJsonText(m.tool_args),
+      desc: descFromArgs(m.tool_args), // W778：折叠行标签（与 live 同一取值口径）
+    });
+    container.appendChild(ref.col);
+    ctx.restoreOps.set(id, ref);
+    return;
+  }
+  const id = m.tool_call_id ?? '';
+  const ref = ctx.restoreOps.get(id);
+  if (ref) {
+    const failed = !!m.tool_error && m.tool_error !== '';
+    setToolResult(ref, failed ? String(m.tool_error) : toJsonText(m.tool_value), failed);
+    ctx.restoreOps.delete(id);
+    return;
+  }
+  appendToolLine(
+    '工具结果（无对应调用记录）：' +
+      (m.tool_error ? String(m.tool_error) : toJsonText(m.tool_value)),
+    container,
+  );
+}
+
+/**
+ * W515：历史条目的种类映射 ——
+ *   role=user + kind='steering'|'queued' → 插话/排队气泡（与普通用户消息可区分）；
+ *   role/kind='inbox' → 回执/系统注入条目；
+ *   其余保持现状（未知 kind 一律按普通消息渲染，不丢内容）。
+ */
+function userKindOf(m: HistoryMsg): MsgKind {
+  if (m.kind === 'steering') return 'steering';
+  if (m.kind === 'queued') return 'queued';
+  return 'user';
+}
+
+function renderOne(ctx: SessionPane, m: HistoryMsg, container: HTMLElement): void {
+  const content = String(m.content ?? '');
+  if (m.role === 'inbox' || m.kind === 'inbox') {
+    renderInboxMessage(ctx, content, { source: m.source, into: container });
+    return;
+  }
+  if (m.role === 'user') {
+    addUserMessage(ctx, content, { kind: userKindOf(m), into: container });
+    return;
+  }
+  if (m.role === 'assistant') {
+    if (content.trim() === '') return;
+    const a = ensureAssistant(ctx, container);
+    a.text = content;
+    finalizeAssistant(ctx, a);
+    return;
+  }
+  if (m.role === 'thinking') {
+    renderThinkingHistory(content, container);
+    return;
+  }
+  renderToolMessage(ctx, m, container);
+}
+
+/**
+ * 历史思考条目：与 live **同一构建函数** buildThinkSeg（默认折叠态因此不可能分叉）。
+ * 历史恢复 = 静态内容，永远用默认态（collapsed: true），不随 live 流式状态变化。
+ */
+function renderThinkingHistory(content: string, container: HTMLElement): void {
+  container.appendChild(buildThinkSeg({ text: content, collapsed: true }).root);
+}
+
+function appendNote(ctx: SessionPane, text: string): void {
+  if (ctx.el.querySelector('.restore-note')) return;
+  ctx.el.appendChild(el('div', 'restore-note', text));
+}
+
+/**
+ * 渲染指定会话历史（最近 200 条 + 折叠提示 + 「以下为本次会话」分隔线）。
+ * 离屏双缓冲——先在离屏容器完整构建，再一次性 replaceChildren（无空白帧）；
+ * guard() 返回 false 时丢弃（竞态：旧请求结果晚到不得覆盖新会话）。
+ * 404/超时/端点缺失 → 轻提示，不崩溃。
+ */
+export async function restoreSessionHistory(
+  ctx: SessionPane,
+  guard?: () => boolean,
+): Promise<void> {
+  let resp;
+  try {
+    resp = await api.messages(ctx.id);
+  } catch (err) {
+    if (!ctx.streaming) {
+      appendNote(
+        ctx,
+        '历史恢复暂不可用',
+      );
+    }
+    return;
+  }
+  if (guard && !guard()) return; // 竞态：期间已发起更新的切换，丢弃本次结果
+  const all = resp.messages ?? [];
+  if (ctx.streaming) return; // 已开跑：不打断实时流
+
+  // 离屏构建（不挂载，浏览器不绘制中间态）
+  railReset(ctx); // 先清该会话旧长条；离屏渲染注册的新条目在替换后重新 layout
+  ctx.restoreOps.clear();
+  ctx.histToolStep = 0;
+  const off = document.createElement('div');
+  if (all.length > MAX_RESTORE) {
+    off.appendChild(
+      el('div', 'restore-fold', '更早的历史已折叠 · 仅显示最近 ' + MAX_RESTORE + ' 条'),
+    );
+  }
+  const recent = all.length > MAX_RESTORE ? all.slice(all.length - MAX_RESTORE) : all;
+  for (const m of recent) renderOne(ctx, m, off);
+  if (ctx.restoreOps.size) {
+    for (const ref of ctx.restoreOps.values()) {
+      setToolResult(ref, '（无结果记录）', false);
+    }
+    ctx.restoreOps.clear();
+  }
+  if (recent.length) {
+    const sep = el('div', 'live-sep');
+    sep.appendChild(el('span', null, '以下为本次会话'));
+    sep.title = '上方为更早的消息';
+    off.appendChild(sep);
+  }
+  if (guard && !guard()) return;
+
+  // 一次性替换（无空白帧）
+  ctx.el.replaceChildren(...off.childNodes);
+  if (!recent.length) {
+    renderEmptyHint(ctx);
+    const sep = el('div', 'live-sep');
+    sep.appendChild(el('span', null, '以下为本次会话'));
+    ctx.el.appendChild(sep);
+  }
+  ctx.dedup.tail = recent.length ? (recent[recent.length - 1] ?? null) : null;
+  ctx.dedup.guardActive = false;
+  ctx.dedup.guardBuf = '';
+  ctx.dedup.guardAll = false;
+  ctx.restored = true;
+  railSync(ctx);
+  autoscroll(ctx, true);
+}
+
+/**
+ * 解析当前活跃会话 id（W237）：
+ *   1) GET /api/sessions 的 active 字段；2) GET /api/workspaces 的 active_session；
+ *   3) 兜底：旧后端无 active 概念 → 若 cli-main 存在则用之；否则 null。
+ */
+export async function resolveActiveSession(): Promise<string | null> {
+  try {
+    const d = await api.sessions();
+    const act = (d.sessions ?? []).find((s) => s.active === true);
+    if (act?.id) return act.id;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const w = await api.workspaces();
+    if (w.active_session) return w.active_session;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const d = await api.sessions();
+    if ((d.sessions ?? []).some((s) => s.id === 'cli-main')) return 'cli-main';
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * 启动恢复：把 LOCAL 容器认领为当前活跃会话（容器对象不变 → 已渲染内容
+ * 与 rail 状态全部保留），再拉取历史。
+ */
+export async function restoreActiveHistory(): Promise<void> {
+  const id = await resolveActiveSession();
+  if (id === null) {
+    const ctx = activePane();
+    if (ctx && !ctx.streaming) appendNote(ctx, '未找到活跃会话 · 发送第一条消息后自动建立');
+    return;
+  }
+  const pane = adoptPane(id);
+  if (!pane.restored && !pane.streaming) await restoreSessionHistory(pane);
+}
+
+// ---- 会话切换（无空白帧 + 竞态防护 + 后台会话不阻塞） ----------------------------
+
+let progressEl: HTMLElement | null = null;
+
+function showSwitchProgress(): void {
+  if (progressEl) return;
+  progressEl = document.createElement('div');
+  progressEl.className = 'switch-progress';
+  progressEl.title = '正在加载会话历史…';
+  document.body.appendChild(progressEl);
+}
+
+function hideSwitchProgress(): void {
+  progressEl?.remove();
+  progressEl = null;
+}
+
+/**
+ * 打开会话视图（W514）：
+ *   - 立即切容器（hidden 切换，零重渲染）：别的会话在跑也照样切，不等任何请求；
+ *   - 未恢复过历史 → 离屏双缓冲恢复（顶部细进度条，不整页空白）；
+ *   - 正在跑（live）的会话 → 直接看实时流，不再拉历史；
+ *   - seq 竞态防护：同一容器重复打开时旧结果丢弃。
+ */
+export function openSession(id: string, meta?: { kind?: string; title?: string }): SessionPane {
+  const pane = ensurePane(id, meta?.kind, meta?.title);
+  activatePane(id);
+  if (!pane.streaming && !pane.restored) {
+    const seq = ++pane.restoreSeq;
+    showSwitchProgress();
+    void restoreSessionHistory(pane, () => seq === pane.restoreSeq).finally(() => {
+      if (seq === pane.restoreSeq) hideSwitchProgress();
+    });
+  }
+  return pane;
+}
+
+/** 兼容旧入口：等价于 openSession（保留外部调用点）。 */
+export function switchToSession(id: string): void {
+  openSession(id);
+}
+
+/** 会话切换是否进行中（供外部判断加载态）。 */
+export function isSwitching(): boolean {
+  return progressEl !== null;
+}

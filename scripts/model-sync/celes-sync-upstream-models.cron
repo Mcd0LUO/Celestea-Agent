@@ -1,0 +1,11 @@
+# 基元律动(tokenrhythm) 渠道模型清单随上游同步（V2）：detect+apply 同步渠道 models，
+# 使 NewAPI 网关 /v1/models 不再挂死 id（模型已关闭 / No available channel），
+# 新 id（如 deepseek-flash）自动进来。
+# 脚本真源：/src/celestea_studio/tools/sync-upstream-models.py
+# 行为：只碰 base_url 含 tokenrhythm.studio 的渠道（自发现+分页，排除 is_multi_key 聚合池）；
+#       默认只「新增」不改删；本行显式 --remove 才同步删除；**默认不碰渠道 setting/key/status**
+#       （V1 曾因 PUT 回带 status 被服务端判非法参数而全量失败，已改为纯 detect+apply）。
+#       想额外开启渠道的「上游模型更新检测+自动同步」开关，手动跑一次 --enable-flags。
+# 与 NewAPI 自带 30min system task（CHANNEL_UPSTREAM_MODEL_UPDATE_TASK_*，需渠道开关）互为兜底。
+# 注意：本文件必须以换行结尾 —— 末行缺换行会让 cron 静默忽略整个文件。
+*/30 * * * * root /usr/bin/python3 /server-center/runtime/bin/sync-upstream-models.py --apply --remove >> /server-center/runtime/log/sync-upstream-models.log 2>&1

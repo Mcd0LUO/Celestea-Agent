@@ -1,0 +1,146 @@
+/* ============================================================================
+ * W726 · 只读「完整上下文」浮层（点状态栏上下文圆环打开）
+ *   .ctx-card = 居中卡片（复用 .modal-scrim / .modal-card 基建）；
+ *   正文三分区：系统提示词 / 工具清单 / 消息流。
+ *   折叠一律 <details> + CSS transition（不重建 DOM，铁律 4）；
+ *   颜色只用 tokens.css 的 --c-* 变量，组件层不写死颜色。
+ * ============================================================================ */
+.ctx-scrim { z-index: 90; }
+
+.ctx-card {
+  width: min(920px, calc(100vw - 40px));
+  max-height: 88vh;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* ---- 顶栏 / 用量条 / 脚注 ---- */
+.ctx-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--c-border-subtle);
+}
+.ctx-title { font-size: 14px; font-weight: 600; }
+.ctx-tag {
+  font-size: 10.5px; color: var(--c-text-3); letter-spacing: 1px;
+  border: 1px solid var(--c-border-subtle); border-radius: 999px; padding: 1px 7px;
+}
+.ctx-close { margin-left: auto; }
+
+.ctx-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 8px 14px; font-size: 12px; color: var(--c-text-2);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border-subtle);
+}
+.ctx-model { font-family: var(--mono); color: var(--c-text-1); }
+.ctx-sep { color: var(--c-text-3); }
+.ctx-usage-text { font-family: var(--mono); }
+.ctx-counts { color: var(--c-text-3); }
+.ctx-badge {
+  font-size: 10px; color: var(--c-text-3); white-space: nowrap;
+  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+  margin-left: 2px;
+}
+
+.ctx-body {
+  overflow-y: auto;
+  padding: 10px 14px 14px;
+}
+.ctx-body-inner { display: flex; flex-direction: column; gap: 14px; }
+
+.ctx-foot {
+  padding: 7px 14px; font-size: 11px; color: var(--c-text-3);
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-border-subtle);
+}
+.ctx-note { font-size: 12px; color: var(--c-text-3); padding: 2px 2px 4px; }
+.ctx-error { font-size: 12.5px; color: var(--c-err); padding: 4px 2px; }
+
+/* ---- 分区 ---- */
+.ctx-sec { display: flex; flex-direction: column; gap: 4px; }
+.ctx-sec-head {
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 4px; font-size: 11.5px; letter-spacing: 1px;
+  color: var(--c-text-2);
+  border-bottom: 1px solid var(--c-border-subtle);
+}
+.ctx-sec-name { font-weight: 600; }
+.ctx-count { font-size: 11px; color: var(--c-text-3); letter-spacing: 0; }
+
+/* ---- 可折叠块：只切 open 属性 + CSS transition，不重建 DOM ---- */
+.ctx-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.ctx-fold > summary::-webkit-details-marker { display: none; }
+.ctx-fold > summary::before {
+  content: '▸';
+  flex: 0 0 auto;
+  font-size: 9px; color: var(--c-text-3);
+  transition: transform .18s ease;
+}
+.ctx-fold[open] > summary::before { transform: rotate(90deg); }
+.ctx-fold > summary:hover { background: var(--c-accent-soft); }
+
+.ctx-fold-head,
+.ctx-tool-head,
+.ctx-msg-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 5px 6px; font-size: 12px;
+}
+.ctx-fold-name { font-weight: 600; color: var(--c-text-1); }
+.ctx-fold-head .ctx-count { margin-left: auto; }
+
+/* ---- 等宽正文块 ---- */
+.ctx-pre {
+  margin: 2px 0 4px 0;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 12px; line-height: 1.55;
+  color: var(--c-text-1);
+  background: var(--c-code-bg);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow: auto;
+}
+.ctx-pre-schema,
+.ctx-pre-msg { margin-left: 18px; max-height: 280px; }
+
+/* ---- 工具清单 ---- */
+.ctx-tools { display: flex; flex-direction: column; }
+.ctx-tool-idx { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--c-text-3); }
+.ctx-tool-name { flex: 0 0 auto; font-family: var(--mono); color: var(--c-text-1); }
+.ctx-tool-desc {
+  min-width: 0; font-size: 11.5px; color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- 消息流（按 role 分组） ---- */
+.ctx-group { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 6px; }
+.ctx-group-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px; font-size: 11.5px; color: var(--c-text-2);
+}
+.ctx-group-name { font-weight: 600; }
+.ctx-msg-idx { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--c-text-3); }
+.ctx-msg-tool {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 11px;
+  color: var(--c-text-2); background: var(--c-code-bg);
+  border-radius: 4px; padding: 1px 5px;
+}
+.ctx-msg-head .ctx-count { flex: 0 0 auto; }
+.ctx-msg-preview {
+  min-width: 0; flex: 1 1 auto; color: var(--c-text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 小窗口：卡片占满可用高度，正文独立滚动 */
+@media (max-height: 640px) {
+  .ctx-card { max-height: 94vh; }
+  .ctx-pre { max-height: 220px; }
+}

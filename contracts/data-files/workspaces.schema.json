@@ -3,7 +3,7 @@
   "title": "workspaces.json (v2)",
   "source": {
     "rust": "src/workspaces.rs:122-140 (RegistryData)",
-    "doc": "/src/celestea_studio/docs/data-files.md §1"
+    "doc": "docs/data-files.md §1"
   },
   "path": {
     "default": "<cwd>/workspaces.json",

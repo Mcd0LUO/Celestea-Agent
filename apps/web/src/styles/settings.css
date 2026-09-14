@@ -1,0 +1,373 @@
+/* ============================================================================
+ * 通用设置页（W227 续：左导航 + 右内容，取代原 #modal 配置弹层）
+ *   导航：「通用配置」「工具」「会话」三页
+ *   主题：全部走 tokens.css 的 mono（黑白）令牌变量，
+ *   本文件不写死任何颜色。
+ * ============================================================================ */
+
+.settings-page {
+  position: fixed; inset: 0; z-index: 50;
+  background: var(--c-overlay);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 34px 24px 24px;
+  overflow-y: auto;
+}
+
+.settings-shell {
+  width: min(920px, 100%);
+  background: var(--c-surface-raised);
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+.settings-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--c-surface);
+}
+.settings-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .5px; }
+.settings-actions { display: flex; align-items: center; gap: 6px; }
+
+/* ---- 左导航 + 右内容 ---- */
+.settings-layout { display: flex; min-height: 460px; max-height: 72vh; overflow: hidden; }
+.settings-nav {
+  flex: 0 0 148px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--c-border-subtle);
+  background: var(--c-surface);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: var(--c-text-2);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+  font-family: var(--sans);
+}
+.settings-nav-item:hover { background: var(--c-accent-soft); color: var(--c-text-1); }
+.settings-nav-item.active {
+  background: var(--c-accent-soft);
+  border-color: var(--c-accent-ring);
+  color: var(--c-text-1);
+  font-weight: 600;
+}
+
+.settings-content {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+
+.settings-pane { display: none; flex-direction: column; padding: 0; }
+.settings-pane.active { display: flex; }
+.settings-pane-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px 8px;
+}
+.settings-pane-head h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--c-text-2); }
+.settings-sec-note { font-size: 11.5px; color: var(--c-text-3); font-family: var(--mono); }
+.settings-pane-head .btn-mini { margin-left: auto; }
+.settings-pane-head .btn-mini + .btn-mini { margin-left: 0; }
+.settings-pane-body { padding: 14px 16px; }
+
+/* ---- 工具列表表格 ---- */
+.tools-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 12.5px;
+}
+.tools-table th, .tools-table td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.tools-table tbody tr { border-top: 1px solid var(--c-border-subtle); }
+.tools-table th {
+  background: var(--c-surface-raised);
+  color: var(--c-text-2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .5px;
+}
+.tools-table .tools-name {
+  font-family: var(--mono);
+  color: var(--c-accent);
+  font-weight: 600;
+  white-space: nowrap;
+  width: 30%;
+}
+.tools-table .tools-desc {
+  color: var(--c-text-2);
+  word-break: break-word;
+}
+
+/* ============================================================================
+ * 模型提供商页（W237 美化：表格 / 徽章 / 按钮组右对齐 / 弹窗网格 / 默认模型卡片）
+ * ============================================================================ */
+
+/* ---- 提供商表格（斑马纹 + 分隔线） ---- */
+.prov-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 12.5px;
+}
+.prov-table th, .prov-table td {
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+.prov-table tbody tr { border-top: 1px solid var(--c-border-subtle); }
+.prov-table thead th {
+  background: var(--c-surface-raised);
+  color: var(--c-text-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .8px;
+  font-weight: 600;
+}
+.prov-table tbody tr:nth-child(even) { background: var(--c-surface); }
+.prov-table tbody tr:hover { background: var(--c-accent-soft); }
+.prov-table tbody tr.is-default td { border-left: 2px solid var(--c-accent-ring); }
+.prov-name { font-size: 13px; font-weight: 600; color: var(--c-text-1); }
+.prov-td-note { color: var(--c-text-2); max-width: 220px; }
+.prov-td-fmt { font-family: var(--mono); font-size: 11.5px; color: var(--c-text-2); white-space: nowrap; }
+.prov-td-models { font-family: var(--mono); text-align: center; color: var(--c-text-2); }
+.prov-td-state { white-space: nowrap; }
+.prov-td-ops { white-space: nowrap; text-align: right; }
+.prov-td-ops .btn-mini + .btn-mini { margin-left: 4px; }
+.prov-badge {
+  font-size: 10px; color: var(--c-accent); font-family: var(--mono);
+  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 5px;
+  margin-right: 4px;
+}
+.prov-badge.key { color: var(--c-ok); border-color: var(--c-ok); }
+.btn-mini.danger { color: var(--c-err); }
+.btn-mini.danger:hover { background: var(--c-err-dim); color: var(--c-err); }
+
+/* ---- 行内联编辑面板（第 26 轮 W256：点行本体原地展开；max-height 过渡，不重建 DOM） ---- */
+.prov-table tbody tr.prov-row { cursor: pointer; }
+.prov-table tbody tr.prov-row.expanded { background: var(--c-accent-soft); }
+.prov-table tbody tr.prov-panel-row { background: transparent; }
+.prov-table tbody tr.prov-panel-row:hover { background: transparent; }
+.prov-table tbody tr.prov-panel-row > td { padding: 0; border-top: none; }
+.prov-inline {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  /* 铁律 4：折叠/展开只切 class + transition，不删建子节点 */
+  transition: max-height .24s ease, opacity .2s ease, visibility 0s linear .24s;
+}
+.prov-panel-row.open .prov-inline {
+  opacity: 1;
+  visibility: visible;
+  transition: max-height .24s ease, opacity .2s ease, visibility 0s linear 0s;
+}
+.prov-inline .prov-form {
+  padding: 10px 12px 12px;
+  border-top: 1px dashed var(--c-border-subtle);
+  background: var(--c-surface);
+}
+
+/* ---- 默认模型：独立卡片区 ---- */
+.prov-default-card {
+  border-radius: 10px;
+  background: var(--c-surface-raised);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  margin-top: 16px;
+  overflow: hidden;
+}
+.prov-default-head {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 8px 12px;
+  background: var(--c-surface);
+}
+.prov-default-title { font-size: 12.5px; font-weight: 600; color: var(--c-text-1); }
+.prov-default-note { font-size: 11px; color: var(--c-text-3); font-family: var(--mono); }
+.prov-default-body {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+}
+.prov-default-label { font-size: 12px; color: var(--c-text-2); flex: 0 0 auto; }
+.prov-default-sel { max-width: 400px; }
+.prov-default-msg { font-size: 11.5px; color: var(--c-text-3); }
+.prov-default-msg.ok { color: var(--c-ok); }
+.prov-default-msg.err { color: var(--c-err); }
+.prov-list-msg { font-size: 12px; padding: 4px 0; }
+.prov-list-msg.err { color: var(--c-err); }
+
+/* ---- 编辑弹窗（表单网格：label 右对齐等宽，控件对齐） ---- */
+.prov-modal { width: min(600px, calc(100vw - 40px)); max-height: 84vh; overflow-y: auto; }
+.prov-editor-status { font-size: 12px; font-family: var(--mono); min-height: 16px; margin-bottom: 8px; }
+.prov-editor-status.ok { color: var(--c-ok); }
+.prov-editor-status.err { color: var(--c-err); }
+.prov-field {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+}
+.prov-field-label {
+  font-size: 12px; color: var(--c-text-2); font-family: var(--mono);
+  text-align: right;
+  white-space: nowrap;
+}
+.prov-urlrow { display: flex; gap: 6px; align-items: center; }
+.prov-urlrow input { flex: 1; min-width: 0; }
+
+.prov-models-head {
+  display: flex; align-items: center; gap: 8px;
+  margin: 12px 0 6px;
+}
+.prov-models-title { font-size: 12.5px; font-weight: 600; color: var(--c-text-2); }
+.prov-models-head .btn-mini { margin-left: auto; }
+
+.prov-model-row {
+  display: flex; align-items: center; gap: 6px;
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  background: var(--c-surface);
+}
+.prov-model-row > input { flex: 1 1 40%; min-width: 140px; }
+.prov-model-adv { flex: 1 1 100%; margin-top: 2px; }
+.prov-model-adv summary {
+  cursor: pointer; font-size: 11px; color: var(--c-text-3);
+  user-select: none; padding: 2px 0;
+}
+.prov-model-adv-body {
+  display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 10px;
+  padding: 8px 0 2px;
+}
+.prov-adv-label { font-size: 11px; color: var(--c-text-3); text-align: right; line-height: 30px; }
+
+/* ---- 推理强度档位片（W258 任务 3：low/high/max 可点击多选） ---- */
+.prov-effort-chips {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  min-height: 30px;
+}
+.prov-effort-chip {
+  background: transparent; border: 1px solid var(--c-border-strong);
+  border-radius: 999px; color: var(--c-text-2);
+  font-family: var(--mono); font-size: 11.5px;
+  padding: 4px 14px; cursor: pointer;
+}
+.prov-effort-chip:hover { border-color: var(--c-accent-ring); color: var(--c-text-1); }
+.prov-effort-chip.on {
+  background: var(--c-accent-soft); border-color: var(--c-accent-ring);
+  color: var(--c-text-1); font-weight: 600;
+}
+
+/* ---- 「获取模型」二级选择窗（W258 任务 4） ---- */
+.prov-picker { width: min(520px, calc(100vw - 40px)); }
+.prov-picker-list {
+  max-height: 320px; overflow-y: auto;
+  border-radius: 8px; background: var(--c-surface); padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.prov-picker-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  font-size: 12.5px; color: var(--c-text-1);
+}
+.prov-picker-row:hover { background: var(--c-accent-soft); }
+.prov-picker-row.existing { opacity: .55; cursor: default; }
+.prov-picker-row.existing:hover { background: transparent; }
+.prov-picker-cb { accent-color: var(--c-accent); flex: 0 0 auto; }
+.prov-picker-id { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prov-picker-tag {
+  margin-left: auto; flex: 0 0 auto;
+  font-size: 10px; font-family: var(--mono); color: var(--c-text-3);
+  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 5px;
+}
+.prov-picker-count { font-size: 11.5px; color: var(--c-text-3); font-family: var(--mono); }
+
+/* ---- 通用配置表单：对齐微调（label 等宽右对齐、提示统一缩进） ---- */
+.cfg-field { grid-template-columns: 148px minmax(0, 1fr); }
+.cfg-hint { padding-left: 2px; }
+
+/* ============================================================================
+ * 提示词页（W245）
+ * ============================================================================ */
+.prompts-scope {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 10px;
+}
+.prompts-scope-btn {
+  background: transparent; border: 1px solid var(--c-border-subtle);
+  border-radius: 999px; color: var(--c-text-2);
+  padding: 3px 14px; font-size: 12px; cursor: pointer;
+}
+.prompts-scope-btn:hover { border-color: var(--c-accent-ring); color: var(--c-text-1); }
+.prompts-scope-btn.active { background: var(--c-accent-soft); border-color: var(--c-accent-ring); color: var(--c-text-1); font-weight: 600; }
+.prompts-ws-sel { max-width: 220px; }
+
+.prompts-table {
+  width: 100%; border-collapse: collapse; font-size: 12.5px;
+}
+.prompts-table th, .prompts-table td {
+  padding: 7px 10px; text-align: left; vertical-align: middle;
+}
+.prompts-table tbody tr { border-top: 1px solid var(--c-border-subtle); }
+.prompts-table thead th {
+  background: var(--c-surface-raised); color: var(--c-text-3);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .8px; font-weight: 600;
+}
+.prompts-table tbody tr:nth-child(even) { background: var(--c-surface); }
+.prompts-table tbody tr:hover { background: var(--c-accent-soft); }
+.prompts-table tbody tr.is-active td { border-left: 2px solid var(--c-ok); }
+.prompt-name { font-weight: 600; color: var(--c-text-1); }
+.prompt-badge {
+  font-size: 10px; font-family: var(--mono);
+  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 5px;
+  color: var(--c-accent); margin-left: 6px;
+}
+.prompt-badge.active { color: var(--c-ok); border-color: var(--c-ok); }
+.prompt-badge.def { color: var(--c-text-2); border-color: var(--c-border-strong); }
+.prompts-td-scope { font-size: 11.5px; color: var(--c-text-2); }
+.prompts-td-state { white-space: nowrap; }
+.prompts-td-ops { text-align: right; white-space: nowrap; }
+.prompts-td-ops .btn-mini + .btn-mini { margin-left: 4px; }
+.prompts-note { font-size: 11px; color: var(--c-text-3); margin-top: 8px; }
+
+/* ---- 编辑弹窗 ---- */
+.prompt-modal { width: min(640px, calc(100vw - 40px)); max-height: 86vh; overflow-y: auto; }
+.prompt-vars {
+  border-radius: 8px;
+  background: var(--c-code-bg); margin-bottom: 10px;
+}
+.prompt-vars summary {
+  cursor: pointer; padding: 6px 10px; font-size: 12px; color: var(--c-text-2);
+  user-select: none; list-style: none;
+}
+.prompt-vars summary::-webkit-details-marker { display: none; }
+.prompt-vars summary::before { content: "▸ "; color: var(--c-text-3); }
+.prompt-vars[open] summary::before { content: "▾ "; }
+.prompt-vars-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.prompt-vars-table td { padding: 3px 10px; }
+.prompt-var-code { font-family: var(--mono); color: var(--c-accent); width: 40%; }
+.prompt-var-desc { color: var(--c-text-2); }
+
+.prompt-secs { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.prompt-sec-row {
+  border-radius: 8px;
+  background: var(--c-surface); padding: 6px 8px;
+}
+.prompt-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.prompt-sec-name { font-size: 12.5px; font-weight: 600; color: var(--c-text-1); }
+.prompt-sec-scope { font-size: 10px; color: var(--c-text-3); font-family: var(--mono); border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px; }
+.prompt-inherit-label {
+  margin-left: auto; display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--c-text-2); cursor: pointer;
+}
+.prompt-inherit { accent-color: var(--c-accent); }
+.prompt-sec-row.inherited .prompt-sec-ta { opacity: .5; }
+.prompt-sec-ta { resize: vertical; min-height: 56px; font-size: 12px; font-family: var(--mono); }

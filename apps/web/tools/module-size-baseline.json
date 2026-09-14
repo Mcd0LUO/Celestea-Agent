@@ -1,0 +1,13 @@
+{
+  "kind": "frontend-module-size-baseline",
+  "note": "W758 建立：暂未拆分的超大文件按登记时真实行数设上限（棘轮：只许降不许升）。拆分落地后请把该行收紧或删除条目；条目行数已 ≤400 或文件不存在即为陈旧项（check-module-size 会报警）。W760：grants 权限面板（原 ui/grants/panel.ts）已拆到 ui/grants/panel/（本体只剩兼容再导出），条目按规矩删除，回到默认上限 400。",
+  "capturedAt": "2026-09-12T12:20+08:00",
+  "defaultLimit": 400,
+  "limits": {
+    "src/chat.ts": 622,
+    "src/types.ts": 657,
+    "src/ui/rail.ts": 550,
+    "src/ui/viewctx.ts": 408,
+    "src/utils/markdown.ts": 509
+  }
+}

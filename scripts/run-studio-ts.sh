@@ -1,23 +1,40 @@
 #!/usr/bin/env bash
 # Celestea Studio TS launcher (systemd): same env/data files as the Rust unit.
 # Resolves CELESTEA_API_KEY from dsh credentials; never persists the key.
+#
+# W781（2026-09-14）：前端/后端已并成同一仓，运行数据移出仓外。
+#   代码   /src/celestea_studio-ts      （唯一仓：apps/studio 后端 + apps/web 前端）
+#   数据   /var/lib/celestea-agent      （0750 celestea:celesdev；密钥文件 0600）
+#   前端产物 apps/web/dist              （STUDIO_STATIC_ROOT，先 `cd apps/web && pnpm build`）
 set -euo pipefail
-cd /src/celestea_studio-ts
+
+REPO=/src/celestea_studio-ts
+DATA=/var/lib/celestea-agent
+
+cd "$REPO"
 CKEY=$(sudo python3 -c "import yaml;print(yaml.safe_load(open('/opt/dsh/.credentials.yaml'))['refs']['CELESTEA_API_KEY'])" 2>/dev/null || true)
 if [ -z "$CKEY" ]; then
   echo "[run-studio-ts] failed to resolve CELESTEA_API_KEY from /opt/dsh/.credentials.yaml" >&2
   exit 1
 fi
 export CELESTEA_API_KEY="$CKEY"
-export CELESTEA_WORKSPACES_FILE="${CELESTEA_WORKSPACES_FILE:-/src/celestea_studio/workspaces.json}"
-export CELESTEA_PROVIDERS_FILE="${CELESTEA_PROVIDERS_FILE:-/src/celestea_studio/providers.json}"
-export CELESTEA_PROMPTS_FILE="${CELESTEA_PROMPTS_FILE:-/src/celestea_studio/prompts.json}"
-export CELESTEA_SESSION_DIR="${CELESTEA_SESSION_DIR:-/src/celestea_studio/sessions}"
-export CELESTEA_TOOL_ROOTS="${CELESTEA_TOOL_ROOTS:-/src/celestea_studio:/src/celestea_studio-ts:/src/celestea_harness:/tmp}"
-export CELESTEA_TOOL_WORKDIR="${CELESTEA_TOOL_WORKDIR:-/src/celestea_studio}"
-export CELAESTEA_RUN_SHELL_WORKDIR="${CELAESTEA_RUN_SHELL_WORKDIR:-/src/celestea_studio}"
+
+# --- 运行数据（仓外，见 /var/lib/celestea-agent；providers.json / studio-auth.secret 为 0600） ---
+export CELESTEA_WORKSPACES_FILE="${CELESTEA_WORKSPACES_FILE:-$DATA/workspaces.json}"
+export CELESTEA_PROVIDERS_FILE="${CELESTEA_PROVIDERS_FILE:-$DATA/providers.json}"
+export CELESTEA_PROMPTS_FILE="${CELESTEA_PROMPTS_FILE:-$DATA/prompts.json}"
+export CELESTEA_SESSION_DIR="${CELESTEA_SESSION_DIR:-$DATA/sessions}"
+export CELESTEA_AUTH_SECRET_FILE="${CELESTEA_AUTH_SECRET_FILE:-$DATA/studio-auth.secret}"
+export CELESTEA_USAGE_LEDGER_FILE="${CELESTEA_USAGE_LEDGER_FILE:-$DATA/usage-ledger.jsonl}"
+
+# --- 工具沙箱：本仓 + 引擎参考实现 + /tmp（读根白名单，fail-closed） ---
+export CELESTEA_TOOL_ROOTS="${CELESTEA_TOOL_ROOTS:-$REPO:/src/celestea_harness:/tmp}"
+export CELESTEA_TOOL_WORKDIR="${CELESTEA_TOOL_WORKDIR:-$REPO}"
+export CELAESTEA_RUN_SHELL_WORKDIR="${CELAESTEA_RUN_SHELL_WORKDIR:-$REPO}"
 export CELESTEA_SANDBOX_NET="${CELESTEA_SANDBOX_NET:-0}"
-export STUDIO_STATIC_ROOT="${STUDIO_STATIC_ROOT:-/src/celestea_studio/frontend/dist}"
+
+# --- 前端静态根（Vite 产物） ---
+export STUDIO_STATIC_ROOT="${STUDIO_STATIC_ROOT:-$REPO/apps/web/dist}"
 export STUDIO_TS_PORT="${STUDIO_TS_PORT:-3777}"
 export STUDIO_TS_BIND="${STUDIO_TS_BIND:-127.0.0.1}"
-exec pnpm --dir /src/celestea_studio-ts/apps/studio start
+exec pnpm --dir "$REPO/apps/studio" start

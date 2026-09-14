@@ -3,7 +3,7 @@
   "title": "<session-dir>/cli-main.jsonl.precompact (single-copy backup)",
   "source": {
     "rust": "src/compact.rs (rewrite_atomic)",
-    "doc": "/src/celestea_studio/docs/data-files.md §4.4"
+    "doc": "docs/data-files.md §4.4"
   },
   "notes": [
     "Single copy, OVERWRITTEN on every /compact. The only manual rollback channel.",

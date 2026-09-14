@@ -33,7 +33,7 @@
   },
   "include": [
     "packages/*/src/**/*.ts",
-    "apps/*/src/**/*.ts",
+    "apps/studio/src/**/*.ts",
     "scripts/**/*.ts",
     "tests/**/*.ts",
     "vitest.config.ts"

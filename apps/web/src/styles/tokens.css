@@ -1,0 +1,97 @@
+/* ============================================================================
+ * Celestea Studio · 设计令牌（单一事实源）
+ * 第 26 轮（W256）：仅保留单主题 mono（黑白 ins 风，浅色纯灰阶）；
+ * 夜航黑灰（[data-theme="night"]）主题块已删除，无其他引用。
+ * <html data-theme="mono"> 单属性切换；:root 兜底同一套值（JS 未执行也可读）。
+ * 组件层禁止写死颜色：一律引用本文件 --c-* token。
+ * ============================================================================ */
+
+:root {
+  --mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --radius: 8px;
+}
+
+/* ------------------------------------------------ mono：黑白 ins 风（唯一主题） */
+:root,
+[data-theme="mono"] {
+  color-scheme: light;
+  --c-accent-h: 0;
+  --c-accent-chroma: 0;
+
+  /* 去饱和 accent：黑/深灰按钮与高亮 */
+  --c-accent: #1a1a1a;
+  --c-accent-strong: #000;
+  --c-accent-soft: rgba(0, 0, 0, 0.055);
+  --c-accent-ring: rgba(0, 0, 0, 0.28);
+  --c-accent-fg: #fff;
+
+  --c-bg: #fafafa;
+  --c-surface: #ffffff;
+  --c-surface-raised: #ffffff;
+
+  --c-border-subtle: #e8e8e8;
+  --c-border-strong: #b8b8b8;
+
+  --c-text-1: #111;
+  --c-text-2: #555;
+  --c-text-3: #999;
+
+  --c-code-bg: #f4f4f4;
+  --c-scroll-thumb: #d0d0d0;
+  --c-overlay: rgba(17, 17, 17, 0.4);
+
+  /* 语义色全部灰阶化（无彩色点缀）：ok=中灰 / warn=深灰 / err=黑 */
+  --c-ok: #3a3a3a;
+  --c-warn: #6a6a6a;
+  --c-err: #000;
+  --c-ok-dim: rgba(0, 0, 0, 0.06);
+  --c-err-dim: rgba(0, 0, 0, 0.1);
+  --c-warn-dim: rgba(0, 0, 0, 0.05);
+
+  /* W701：权限盾牌的**语义色例外**——放宽权限是安全状态指示，
+     必须与灰阶 UI 明确区分（设计 §3.1 要求橙盾 / 危险红盾），
+     因此单列 token，组件层仍只引用 token、不写死颜色。 */
+  --c-grant: #c2410c;
+  --c-grant-soft: rgba(194, 65, 12, 0.1);
+  --c-grant-danger: #b91c1c;
+  --c-grant-idle: #b8b8b8;
+
+  /* W764：折叠行 / 卡片的信息层级 token（对齐 DSH Web 客户端的语义，命名沿用本仓
+     风格；组件层仍只引用 token，不写死颜色与尺寸）。
+     映射：label-secondary→--c-text-2、label-tertiary→--c-text-3、
+           bg-layer-2→--c-layer-2、border-l2→--c-hairline-l2。 */
+  --c-layer-2: rgba(0, 0, 0, 0.04); /* 次级层底：状态 Pill / hover 底 */
+  --c-hairline-l2: rgba(0, 0, 0, 0.09); /* 0.5px 发丝分隔线（卡片 banner ↔ 正文） */
+  --c-sweep: rgba(0, 0, 0, 0.075); /* 流式扫光带：低透明度墨色（页面底色本就是 bg-base，
+                                      叠 bg-base 色调看不见，故用 ink 带表达「掠过」） */
+  --row-h: 24px; /* 折叠行高（思考头行 / 状态 Pill） */
+  --lead-box: 16px; /* 折叠行行首图标盒 */
+  --lead-gap: 6px; /* 图标盒与标题的间距 */
+  --fs-secondary: 13px; /* 次级正文：思考正文 / 折叠行标题 */
+  --lh-secondary: 20px;
+  --card-radius: 12px; /* 卡片圆角：工具卡 / 信息块 */
+  --card-gutter: 30px; /* 工具卡左侧 gutter：运行状态点独占列 */
+  --code-lh: 18px; /* 等宽正文行高 */
+
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.09);
+
+  /* W765：响应式与触控（语义 token；媒体查询条件本身不能用变量，断点数值只登记在
+     styles/responsive.css 顶部表格里，这里放可复用的**尺寸**） */
+  --tap-min: 44px; /* 触控目标最小边长（WCAG 2.5.5 / iOS HIG 一致取 44） */
+  --topbar-h-mobile: 56px; /* 移动端顶栏固定高：抽屉/遮罩的起点与它对齐 */
+  --drawer-w: min(86vw, 320px); /* 移动端会话抽屉宽度 */
+  --safe-b: env(safe-area-inset-bottom, 0px); /* iOS 底部安全区（viewport-fit=cover） */
+
+  /* 代码高亮 token 灰阶 */
+  --hl-comment: #888;
+  --hl-keyword: #222;
+  --hl-string: #444;
+  --hl-number: #333;
+  --hl-title: #111;
+  --hl-attr: #555;
+  --hl-builtin: #444;
+  --hl-literal: #222;
+  --hl-meta: #666;
+  --hl-type: #333;
+}
