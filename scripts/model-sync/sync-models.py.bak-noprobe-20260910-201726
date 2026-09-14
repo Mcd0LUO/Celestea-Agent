@@ -44,7 +44,7 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULT_PROVIDERS_FILE = "/src/celestea_studio/providers.json"
+DEFAULT_PROVIDERS_FILE = "/var/lib/celestea-agent/providers.json"
 DEFAULT_STUDIO = "http://127.0.0.1:3777"
 DEFAULT_PROVIDER_ID = "celestea"
 DEFAULT_INCLUDE = "^deepseek"           # 自动采纳的新 id 白名单（正则）

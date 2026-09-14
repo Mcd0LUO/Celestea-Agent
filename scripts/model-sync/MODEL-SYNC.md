@@ -53,7 +53,7 @@
 
 ```bash
 # 干看（并打印各渠道上游 /v1/models，核对上游是否真有这个 id）
-sudo python3 /src/celestea_studio/tools/add-model-to-channels.py --model deepseek-v4.1-flash --probe-upstream
+sudo python3 /src/celestea_studio-ts/scripts/model-sync/add-model-to-channels.py --model deepseek-v4.1-flash --probe-upstream
 # 先只改一条，验证真的能用，再全量
 sudo python3 ... --model deepseek-v4.1-flash --limit 1 --probe-upstream --apply
 sudo python3 ... --model deepseek-v4.1-flash --apply
@@ -70,8 +70,8 @@ sudo python3 ... --model deepseek-v4.1-flash --map-to <上游名> --apply
 ## 部署（需 root；agent 沙箱内 `no_new_privs=1`+`CapEff=0`+`/` 只读，做不了）
 
 ```bash
-sudo bash /src/celestea_studio/tools/install-model-sync-cron.sh          # 装 + 先跑 dry-run
-sudo bash /src/celestea_studio/tools/install-model-sync-cron.sh --dry-run # 只看计划
+sudo bash /src/celestea_studio-ts/scripts/model-sync/install-model-sync-cron.sh          # 装 + 先跑 dry-run
+sudo bash /src/celestea_studio-ts/scripts/model-sync/install-model-sync-cron.sh --dry-run # 只看计划
 ```
 
 装完：`/etc/cron.d/celes-studio-models`、`/etc/cron.d/celes-sync-upstream-models`（各 `*/30`），
