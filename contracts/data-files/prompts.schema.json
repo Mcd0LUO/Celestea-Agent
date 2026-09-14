@@ -3,7 +3,7 @@
   "title": "prompts.json + <ws>/.celestea-prompts.json (section registry)",
   "source": {
     "rust": "src/prompts.rs:126-165",
-    "doc": "/src/celestea_studio/docs/data-files.md §3"
+    "doc": "docs/data-files.md §3"
   },
   "path": {
     "global": "<cwd>/prompts.json (CELESTEA_PROMPTS_FILE)",

@@ -17,7 +17,8 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "tests/**/*.test.ts"],
+    // W781：apps/web（前端）有独立构建与门禁，不进后端 vitest。
+    include: ["packages/**/*.test.ts", "apps/studio/**/*.test.ts", "tests/**/*.test.ts"],
     testTimeout: 30_000,
   },
 });

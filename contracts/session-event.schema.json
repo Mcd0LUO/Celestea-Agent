@@ -5,7 +5,7 @@
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
     "rust": "/src/celestea_harness/crates/core/src/session_log.rs:44-85 (serde tag=\"type\", rename_all=snake_case)",
-    "doc": "/src/celestea_studio/docs/data-files.md §4"
+    "doc": "docs/data-files.md §4"
   },
   "encoding": {
     "file": "<session-dir>/cli-main.jsonl",

@@ -3,7 +3,7 @@
   "title": "providers.json (+ public_view)",
   "source": {
     "rust": "src/providers.rs:52-86 (Provider/ProviderModel), 219-241 (public_view)",
-    "doc": "/src/celestea_studio/docs/data-files.md §2"
+    "doc": "docs/data-files.md §2"
   },
   "path": {
     "default": "<cwd>/providers.json",

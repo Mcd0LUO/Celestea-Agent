@@ -1,0 +1,387 @@
+/* ============================================================================
+ * W701 · 提权通道（本会话权限盾牌 UI）
+ *   1) 状态栏盾牌按钮（三态：未授予 / 已授予 · 角标 / 即将失效 · 圆点）
+ *   2) 权限面板（沿用 statusline 的 .sl-popup 样式族 + Esc 层级栈；W751：定位到盾牌上方）
+ *   2b) 快捷授权预设（W751：一键组合，逐项授予）
+ *   3) 二次确认弹窗的确认词输入与服务端快照块
+ *   4) 会话叶子的放宽标记（小盾牌 / 危险红盾）
+ * 颜色一律走 tokens.css 的 --c-grant* / --c-* 令牌，组件层不写死颜色。
+ * ============================================================================ */
+
+/* ---- 1) 状态栏盾牌按钮 ---------------------------------------------------- */
+
+.sl-grant {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 4px;
+  color: var(--c-grant-idle);
+  cursor: pointer;
+  line-height: 0;
+}
+.sl-grant svg { display: block; }
+.sl-grant svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+.sl-grant:hover {
+  background: var(--c-accent-soft);
+  border-color: var(--c-accent-ring);
+}
+.sl-grant:focus-visible {
+  outline: 1px solid var(--c-accent-ring);
+  outline-offset: 1px;
+}
+/* 已授予：橙实心盾 */
+.sl-grant.granted {
+  color: var(--c-grant);
+  border-color: var(--c-grant);
+}
+.sl-grant.granted svg path {
+  fill: var(--c-grant);
+  stroke: var(--c-grant);
+}
+.sl-grant.granted:hover { background: var(--c-grant-soft); }
+
+/* 角标：生效条数（仅已授予时可见） */
+.sl-grant-badge {
+  display: none;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: var(--c-grant);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  line-height: 11px;
+  text-align: center;
+}
+.sl-grant.granted .sl-grant-badge:not(:empty) { display: block; }
+
+/* 小圆点：有权限即将失效（<2 分钟） */
+.sl-grant-dot {
+  display: none;
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-grant);
+  box-shadow: 0 0 0 1px var(--c-surface);
+}
+.sl-grant.has-expiring .sl-grant-dot { display: block; }
+
+/* ---- 2) 权限面板（W751 任务 1a：紧贴盾牌**上方**弹出） --------------------- */
+/*
+ * 落位由 ui/grants/geom.ts 的 panelGeom 现算（视口坐标），这里只负责三件事：
+ *   1) position: fixed —— 配合 JS 内联写入的 top/left（每次打开/重绘/resize/滚动重算）；
+ *   2) bottom/left 归零 —— .sl-popup 基类的 absolute 定位值会和 top 打架（top+bottom
+ *      同时存在时高度被拉伸），必须显式 auto 掉；
+ *   3) 高度只受 JS 写入的 max-height 约束（= 盾牌上方可用空间 - 8px 间距），
+ *      内部滚动交给 .sl-popup-body（不再用旧的 62vh 硬上限）。
+ */
+.sl-popup.grant-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: auto;
+  width: min(460px, calc(100vw - 40px));
+  overflow: hidden;
+}
+.sl-popup.grant-popup .sl-popup-body {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 0;
+  padding: 8px 10px 10px;
+}
+/* 高度受限时只有 body 滚动：内部各行一律不参与压缩（否则 flex 会把行挤扁） */
+.sl-popup.grant-popup .sl-popup-body > * { flex: 0 0 auto; }
+
+/* ---- 2b) 快捷授权预设（W751 任务 1c） ------------------------------------- */
+
+.grant-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 6px;
+  background: var(--c-surface);
+  padding: 6px;
+  margin: 0 0 8px;
+}
+.grant-presets-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px 1px;
+}
+.grant-presets-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--c-text-2);
+}
+.grant-presets-ttl-note {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 10px;
+  color: var(--c-text-3);
+}
+.grant-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: var(--c-text-1);
+  font: inherit;
+  cursor: pointer;
+}
+.grant-preset:hover:not(:disabled) {
+  background: var(--c-accent-soft);
+  border-color: var(--c-accent-ring);
+}
+.grant-preset:focus-visible { outline: 1px solid var(--c-accent-ring); outline-offset: 1px; }
+.grant-preset:disabled { opacity: .5; cursor: default; }
+/* 等效授权已生效：显示已生效态（仍可点击 = 幂等重复授予，只会刷新到期时间） */
+.grant-preset.on {
+  border-color: var(--c-grant);
+  background: var(--c-grant-soft);
+}
+.grant-preset-top { display: flex; align-items: center; gap: 6px; }
+.grant-preset-label { font-size: 12px; font-weight: 600; }
+.grant-preset-tag {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 14px;
+  border: 1px solid var(--c-grant);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--c-grant);
+}
+.grant-preset-tag.busy { border-color: var(--c-accent); color: var(--c-accent); }
+.grant-preset-ttl {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--c-text-3);
+}
+.grant-preset-hint { font-size: 10.5px; line-height: 1.45; color: var(--c-text-3); }
+
+.grant-intro {
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  line-height: 1.55;
+  padding: 0 2px 6px;
+}
+.grant-preview {
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 6px;
+  background: var(--c-code-bg);
+  padding: 6px 8px;
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  color: var(--c-text-1);
+  line-height: 1.5;
+}
+.grant-preview-label {
+  display: block;
+  font-size: 10.5px;
+  color: var(--c-text-3);
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.grant-row {
+  border-top: 1px solid var(--c-border-subtle);
+  padding: 7px 2px;
+}
+.grant-row.expired { opacity: .5; }
+.grant-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.grant-row-name {
+  font-size: 12.5px;
+  color: var(--c-text-1);
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.grant-badge {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 15px;
+  color: var(--c-text-3);
+}
+.grant-badge.on {
+  color: var(--c-grant);
+  border-color: var(--c-grant);
+  background: var(--c-grant-soft);
+}
+.grant-badge.expired {
+  color: var(--c-text-3);
+  border-color: var(--c-border-subtle);
+  text-decoration: line-through;
+}
+.grant-impact {
+  font-size: 11px;
+  color: var(--c-text-3);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.grant-detail {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--c-text-2);
+  line-height: 1.5;
+  margin-top: 2px;
+  word-break: break-all;
+}
+.grant-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+.grant-row-actions .grant-spacer { flex: 1 1 auto; }
+
+.grant-input {
+  width: 100%;
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.grant-hosts-row { display: flex; gap: 6px; margin-top: 5px; }
+.grant-hosts-row .grant-input { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+.grant-err {
+  font-size: 11px;
+  color: var(--c-err);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.grant-ttl { font-family: var(--mono); font-size: 11px; }
+
+.grant-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--c-border-subtle);
+  margin-top: 6px;
+  padding-top: 8px;
+}
+.grant-foot-note {
+  flex: 1 1 auto;
+  font-size: 10.5px;
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+
+.btn-mini.grant-danger-btn {
+  border-color: var(--c-grant-danger);
+  color: var(--c-grant-danger);
+}
+
+/* ---- 3) 确认弹窗（确认词 + 服务端快照） ------------------------------------ */
+
+.confirm-message { white-space: pre-wrap; }
+.confirm-note {
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.confirm-snapshot-label {
+  font-size: 10.5px;
+  color: var(--c-text-3);
+  letter-spacing: 1px;
+  margin-top: 8px;
+}
+.confirm-snapshot {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--c-code-bg);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--c-text-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.confirm-word-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.confirm-word-row label {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--c-text-2);
+}
+.confirm-word-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.confirm-word-hint {
+  font-size: 10.5px;
+  color: var(--c-text-3);
+  margin-top: 3px;
+}
+
+/* ---- 4) 会话叶子的放宽标记 ------------------------------------------------- */
+
+.sess-leaf-grant {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--c-grant);
+  line-height: 0;
+  margin-left: 2px;
+}
+.sess-leaf-grant svg { display: block; }
+.sess-leaf-grant svg path {
+  fill: var(--c-grant);
+  stroke: var(--c-grant);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.sess-leaf-grant.danger { color: var(--c-grant-danger); }
+.sess-leaf-grant.danger svg path {
+  fill: var(--c-grant-danger);
+  stroke: var(--c-grant-danger);
+}

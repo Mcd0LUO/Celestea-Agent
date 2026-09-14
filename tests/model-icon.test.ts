@@ -20,7 +20,7 @@ interface ModelIconModule {
   modelIconKeyFor(modelId: string): string | null;
 }
 
-const MODULE_URL = new URL("../../celestea_studio/frontend/src/utils/model-icon.ts", import.meta.url).href;
+const MODULE_URL = new URL("../apps/web/src/utils/model-icon.ts", import.meta.url).href;
 const icons = (await import(/* @vite-ignore */ MODULE_URL)) as ModelIconModule;
 
 /** W778：内置图标覆盖的全部家族（与生成器的 slug 表一一对应）。 */

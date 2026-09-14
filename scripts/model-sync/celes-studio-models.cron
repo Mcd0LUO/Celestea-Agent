@@ -1,0 +1,8 @@
+# Studio 模型清单自动同步（W-model-sync）：把 providers.json 的模型清单与上游网关
+# 真实可用模型对齐 —— 死模型（模型已关闭 / No available channel）剔除，新 deepseek
+# id 自动采纳；走 Studio HTTP API 热更新，不需要重启后端。
+# 脚本真源：/src/celestea_studio/tools/sync-models.py（部署见下方 install 行）
+# 依赖：Gateway(127.0.0.1:3001) + Studio(127.0.0.1:3777) 均在跑；3001 没起来时脚本
+#       只打 FATAL 退出 1，不做任何写操作。
+# 注意：本文件必须以换行结尾 —— 末行缺换行会让 cron 静默忽略整个文件（见 celes-price-sync 的教训）。
+*/30 * * * * root /usr/bin/python3 /server-center/runtime/bin/sync-models.py --apply >> /server-center/runtime/log/studio-model-sync.log 2>&1

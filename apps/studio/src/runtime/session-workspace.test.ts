@@ -2,7 +2,8 @@
  * W768 — a session's tools/沙箱 must run in THAT session's workspace.
  *
  * The bug: the system prompt named the session's workspace (`CelesteaTeamAPI`)
- * while `pwd` reported `/src/celestea_studio`, because the sandbox cwd came from
+ * while `pwd` reported the process-wide launch directory (then the old frontend
+ * repo root), because the sandbox cwd came from
  * a process-wide env knob (`CELAESTEA_RUN_SHELL_WORKDIR`) that cannot describe
  * more than one of the sessions a process serves. Every assertion below is about
  * the SAME resolution feeding both sides: the prompt's `{{workspace}}` /
@@ -156,7 +157,7 @@ describe("W768 per-session workspace", () => {
     expect(promptA).toContain("the active workspace is sample-ws");
     expect(promptB).toContain("the active workspace is second-ws");
     // ...and the old hardcoded cwd sentence is gone.
-    expect(promptA).not.toContain("Your working directory is /src/celestea_studio");
+    expect(promptA).not.toContain("Your working directory is ");
 
     // ④' same source: the value BOTH sides use is `sessionWorkspaceOf(resolve(id))`.
     const services = h.studio.services;

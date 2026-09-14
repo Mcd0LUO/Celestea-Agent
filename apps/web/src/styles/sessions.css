@@ -1,0 +1,269 @@
+/* ============================================================================
+ * 左侧工作区/会话面板（W237）
+ *   顶部工作区胶囊横向条（可横向滚动）→ 下方当前工作区会话列表；
+ *   「⋯」菜单就地锚定按钮右下；批量复选模式；新建工作区文件管理器弹窗。
+ *   全部走 tokens.css 的 mono（黑白）令牌变量。
+ * ============================================================================ */
+
+/* ---- 顶部：新会话按钮 + 工具行 ---- */
+.ws-newsess {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; justify-content: center;
+  padding: 6px 10px; margin-bottom: 8px;
+  font-size: 12.5px;
+}
+.ws-newsess svg { color: var(--c-accent); }
+.ws-toolrow {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 2px 8px;
+}
+.ws-search {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 5px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 7px;
+  background: var(--c-code-bg);
+  padding: 4px 8px;
+  color: var(--c-text-3);
+}
+.ws-search svg { flex: 0 0 auto; }
+.ws-search-input {
+  flex: 1 1 auto; min-width: 0;
+  background: transparent; border: none; outline: none;
+  color: var(--c-text-1); font-size: 12px; padding: 0;
+}
+.ws-toolbtn {
+  display: flex; align-items: center; gap: 4px;
+  flex: 0 0 auto;
+  background: transparent; border: 1px solid var(--c-border-subtle);
+  border-radius: 7px; color: var(--c-text-2);
+  padding: 5px 7px; cursor: pointer;
+  font-family: var(--mono); font-size: 10.5px;
+}
+.ws-toolbtn:hover { border-color: var(--c-accent-ring); color: var(--c-text-1); background: var(--c-accent-soft); }
+/* 第 20 轮：树与工具行之间取消分割线（间距区分） */
+.ws-divider { display: none; }
+
+/* ---- 工作区/会话树 ---- */
+.ws-tree { display: flex; flex-direction: column; gap: 6px; }
+.ws-node { border-radius: 8px; background: var(--c-surface-raised); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+.ws-head {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 8px; cursor: pointer; user-select: none; list-style: none;
+}
+.ws-head::-webkit-details-marker { display: none; }
+.ws-head:hover { background: var(--c-accent-soft); }
+.ws-head > svg { flex: 0 0 auto; color: var(--c-accent); }
+.ws-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 12.5px; font-weight: 600; color: var(--c-text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-count {
+  flex: 0 0 auto;
+  font-family: var(--mono); font-size: 10px; color: var(--c-text-3);
+  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+}
+/* 折叠/展开动画：max-height 过渡（不清除重建 DOM；第 10 轮） */
+.ws-body {
+  padding: 2px 0;
+  max-height: 900px;
+  overflow: hidden;
+  transition: max-height .22s ease, padding .22s ease;
+}
+.ws-details:not([open]) > .ws-body {
+  display: block; /* 覆盖 UA 默认隐藏，使过渡生效 */
+  max-height: 0;
+  padding: 0;
+}
+
+.sess-leaf {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 8px 5px 22px;
+  cursor: pointer;
+  transition: background .12s ease;
+}
+.sess-leaf:hover { background: var(--c-accent-soft); }
+.sess-leaf.active { background: var(--c-accent-soft); box-shadow: inset 2px 0 0 var(--c-accent-ring); }
+.sess-leaf.sel { box-shadow: inset 2px 0 0 var(--c-accent-ring); }
+.sess-leaf > svg { flex: 0 0 auto; color: var(--c-text-3); }
+.sess-leaf-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 12.5px; color: var(--c-text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sess-leaf-meta {
+  flex: 0 1 auto; max-width: 38%;
+  font-family: var(--mono); font-size: 10px; color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sess-kebab {
+  flex: 0 0 auto;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--c-text-3); font-size: 13px; line-height: 1; padding: 0 3px;
+  border-radius: 4px;
+}
+.sess-kebab:hover { color: var(--c-text-1); background: var(--c-surface); }
+
+/* ---- 批量复选 ---- */
+.sess-check { flex: 0 0 auto; accent-color: var(--c-accent); margin: 0; cursor: pointer; }
+
+.sess-batchbar {
+  display: none; align-items: center; gap: 8px;
+  background: var(--c-accent-soft);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-top: 8px;
+}
+.sess-batchbar.active { display: flex; }
+.sess-batchbar-count {
+  font-family: var(--mono); font-size: 11px; color: var(--c-text-1);
+  flex: 1 1 auto;
+}
+.sess-batchbar .btn-danger { font-size: 12px; padding: 3px 10px; }
+
+/* ---- 菜单浮层（锚定按钮右下，就近弹出） ---- */
+.sess-menu {
+  position: absolute; z-index: 60;
+  min-width: 168px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel);
+  padding: 4px;
+  display: flex; flex-direction: column;
+}
+.sess-menu-item {
+  background: transparent; border: none; text-align: left;
+  padding: 7px 10px; font-size: 12.5px; color: var(--c-text-1);
+  border-radius: 5px; cursor: pointer;
+  white-space: nowrap;
+}
+.sess-menu-item:hover:not(:disabled) { background: var(--c-accent-soft); }
+.sess-menu-item.danger { color: var(--c-err); }
+.sess-menu-item.danger:hover:not(:disabled) { background: var(--c-err-dim); }
+.sess-menu-item:disabled { opacity: .45; cursor: default; }
+
+/* ---- 新建会话 / 新建工作区（文件管理器）弹窗 ---- */
+.modal-scrim {
+  position: fixed; inset: 0; z-index: 80;
+  background: var(--c-overlay);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-card {
+  width: min(440px, calc(100vw - 40px));
+  background: var(--c-surface-raised);
+  border-radius: 12px;
+  box-shadow: var(--shadow-panel);
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.modal-card-title { font-size: 14px; font-weight: 600; }
+.modal-card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+.ws-fs {
+  width: min(560px, calc(100vw - 40px));
+  /* W258 任务 1：固定高度树 + 卡片上限 88vh —— 小窗口下卡片自身滚动，不被裁切 */
+  max-height: 88vh; overflow-y: auto;
+}
+.ws-fs-crumbs {
+  /* W258 任务 1：面包屑固定单行（超长路径横向滚动）——行数不再随路径深度变化，
+     弹窗整体高度因此不跳动 */
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--c-code-bg);
+  padding: 6px 8px;
+  min-height: 30px;
+}
+.ws-fs-crumb {
+  background: transparent; border: none; cursor: pointer;
+  font-family: var(--mono); font-size: 12px; color: var(--c-accent);
+  padding: 1px 4px; border-radius: 4px;
+  /* W258 任务 1：面包屑不换行、不压缩（固定单行，横向滚动） */
+  flex: 0 0 auto; white-space: nowrap;
+}
+.ws-fs-crumb:hover { background: var(--c-accent-soft); }
+.ws-fs-crumb.cur { color: var(--c-text-1); font-weight: 600; cursor: default; }
+.ws-fs-crumb.cur:hover { background: transparent; }
+.ws-fs-tree {
+  /* W258 任务 1：固定高度 —— 目录少时不再塌缩、目录多时内部滚动，
+     弹窗（.modal-card 居中）尺寸不随目录数量跳动 */
+  height: 340px;
+  flex: 0 0 340px;
+  border-radius: 8px;
+  background: var(--c-surface);
+  padding: 6px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  align-content: flex-start;
+}
+.ws-fs-tree > * { flex: 0 0 auto; }
+.ws-fs-dir {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  font-size: 12.5px; color: var(--c-text-1);
+  flex: 0 0 auto;
+}
+.ws-fs-dir:hover { background: var(--c-accent-soft); }
+.ws-fs-dir-icon { display: inline-flex; align-items: center; flex: 0 0 auto; color: var(--c-accent); }
+.ws-fs-dir-icon svg { display: block; }
+.ws-fs-dir-name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-fs-addr { display: flex; gap: 6px; }
+.ws-fs-addr input { flex: 1; min-width: 0; }
+.ws-fs-name input { width: 100%; }
+.ws-fs-status { font-size: 11.5px; font-family: var(--mono); min-height: 14px; color: var(--c-text-3); }
+/* W258 任务 1：仅新建工作区弹窗预留两行状态高度 —— 长路径/错误文案换行时弹窗高度不跳
+   （.ws-fs-status 也被新建会话/提示词弹窗复用，故此处收窄作用域） */
+.ws-fs .ws-fs-status { min-height: 32px; }
+.ws-fs-status.ok { color: var(--c-ok); }
+.ws-fs-status.err { color: var(--c-err); }
+
+/* ---- 二次确认弹窗（破坏性操作） ---- */
+.confirm-card { width: min(420px, calc(100vw - 40px)); }
+.confirm-message {
+  font-size: 13px; color: var(--c-text-1); line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word;
+  padding: 2px 0 4px;
+}
+.btn-danger {
+  background: var(--c-err);
+  border-color: var(--c-err);
+  color: oklch(0.98 0.005 25);
+  font-weight: 600;
+}
+.btn-danger:hover { background: var(--c-err); filter: brightness(1.15); }
+.btn-danger:disabled { opacity: .4; cursor: default; filter: none; }
+
+/* ---- 引擎 Worker 组（W239） ---- */
+.ws-worker-group {
+  margin-top: 14px; /* 第 20 轮：组间用间距区分，取消分割线 */
+  padding-top: 2px;
+}
+.ws-worker-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 2px 6px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--c-text-3);
+}
+.ws-worker-count {
+  font-family: var(--mono); font-size: 10px;
+  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 5px;
+}
+.ws-worker-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 8px; border-radius: 7px; cursor: pointer;
+  transition: background .12s ease;
+}
+.ws-worker-row:hover { background: var(--c-accent-soft); }
+.ws-worker-row.active { background: var(--c-accent-soft); box-shadow: inset 2px 0 0 var(--c-accent-ring); }
+.ws-worker-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 12px; color: var(--c-text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-worker-meta {
+  flex: 0 1 auto; max-width: 45%;
+  font-family: var(--mono); font-size: 10px; color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

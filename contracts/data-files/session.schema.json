@@ -3,7 +3,7 @@
   "title": "<session-dir>/session.json (Studio session metadata)",
   "source": {
     "rust": "src/workspaces.rs:1001-1014, 1206-1218",
-    "doc": "/src/celestea_studio/docs/data-files.md §1.5"
+    "doc": "docs/data-files.md §1.5"
   },
   "path": {
     "default": "<workspace path>/<session-dir>/session.json (optional)"

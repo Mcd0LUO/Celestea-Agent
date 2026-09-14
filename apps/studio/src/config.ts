@@ -13,7 +13,7 @@ import { AUTH_SECRET_FILE } from "./auth/token.js";
 /** `src/main.rs:867` — CONSTANT: it does not follow STUDIO_BIND. */
 export const DEFAULT_BIND = "127.0.0.1:3777";
 /** `src/main.rs` STATIC_ROOT: the Vite build, served read-only. */
-export const DEFAULT_STATIC_ROOT = "/src/celestea_studio/frontend/dist";
+export const DEFAULT_STATIC_ROOT = "/src/celestea_studio-ts/apps/web/dist";
 /** `src/main.rs:1311` broadcast capacity; slow clients degrade to `lagged`. */
 export const BUS_CAPACITY = 512;
 /** `src/workspaces.rs:113` informational roots shown by GET /api/fs/browse. */

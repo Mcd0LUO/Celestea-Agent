@@ -1,6 +1,6 @@
 import { createRedactor, collectKnownSecrets } from "@celestea/core";
 import { readFileSync } from "node:fs";
-const prov = JSON.parse(readFileSync("/src/celestea_studio/providers.json", "utf8")) as unknown;
+const prov = JSON.parse(readFileSync("/var/lib/celestea-agent/providers.json", "utf8")) as unknown;
 const npmrc = readFileSync((process.env["HOME"] ?? "") + "/.npmrc", "utf8");
 const r = createRedactor(collectKnownSecrets({ providersJson: prov, npmrc, env: process.env }));
 const res = await fetch("http://127.0.0.1:3777/api/sessions/" + encodeURIComponent("server-center/center-架构师-1788940601.93642104") + "/messages");

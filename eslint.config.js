@@ -23,7 +23,12 @@ const MAX_PARAMS = 5;
 /** 回调嵌套上限。 */
 const MAX_NESTED_CALLBACKS = 4;
 
-const SOURCE_GLOBS = ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"];
+/**
+ * W781：前端并入本仓（`apps/web/`）后，前端的 `apps/web/src/**`（DOM + Vite 语义）
+ * 由它自己的 `apps/web/tsconfig.json` 与 7 道门禁管，不归本仓后端工具链。
+ * 因此这里（以及 tsconfig/vitest/depcruise）只收 `apps/studio`，不再用 `apps/*` 通配。
+ */
+const SOURCE_GLOBS = ["packages/*/src/**/*.ts", "apps/studio/src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"];
 /** 测试文件的规模规则照旧，但允许 import 自己被测的包。 */
 const TEST_GLOBS = ["**/*.test.ts", "**/*.test-util.ts", "**/*.spec.ts"];
 
@@ -161,7 +166,7 @@ export default tseslint.config(
     // 测试文件：单条用例是线性 arrange-act-assert，块上限放宽到 150 行；
     // 文件级 400 行、嵌套深度、参数个数仍然照旧（ARCHITECTURE.md §4.1）。
     name: "arch/size-tests",
-    files: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts", "tests/**/*.ts", "**/*.test-util.ts"],
+    files: ["packages/*/src/**/*.test.ts", "apps/studio/src/**/*.test.ts", "tests/**/*.ts", "**/*.test-util.ts"],
     rules: {
       "max-lines-per-function": linesPerFunction(150),
     },

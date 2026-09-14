@@ -18,7 +18,7 @@
     "replay:compare": "tsx scripts/compare-replay.ts",
     "replay:e2e": "tsx scripts/replay-e2e.ts",
     "lint": "eslint .",
-    "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps scripts tests",
+    "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps/studio scripts tests",
     "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test"
   },
   "devDependencies": {

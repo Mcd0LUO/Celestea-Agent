@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="mono">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Celestea Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230d0f12'/%3E%3Crect x='5' y='5' width='6' height='6' rx='1.2' fill='none' stroke='%237f93b0' stroke-width='1.4'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===================== 顶栏 ===================== -->
+    <header id="topbar">
+      <div class="topbar-left">
+        <span class="logo" aria-hidden="true"><span></span></span>
+        <span class="brand">Celestea Studio</span>
+        <span class="brand-tag" id="brandVersion" title="Celestea Studio 构建版本">Studio v…</span>
+      </div>
+      <div class="topbar-right">
+        <button id="btnTheme" class="btn btn-quiet btn-theme" title="主题（黑白 · 唯一主题）">黑白</button>
+        <button id="btnSidebar" class="btn btn-quiet" title="收起/展开左侧面板">收起</button>
+        <button id="btnConfig" class="btn btn-quiet" title="运行配置（模型 / 推理档位 / 密钥等）">配置</button>
+      </div>
+    </header>
+
+    <!-- ===================== 主体 ===================== -->
+    <div id="layout">
+
+      <!-- ---------- 左侧面板 ---------- -->
+      <aside id="sidebar">
+
+        <section class="side-sec" id="sec-sessions">
+          <header class="side-sec-head">
+            <h3>工作区 · 会话</h3>
+            <span class="sec-note" id="sessionCount">…</span>
+          </header>
+          <div class="side-body" id="sessionTree"><div class="side-note">加载中…</div></div>
+        </section>
+
+        <section class="side-sec side-sec-foot">
+          <div class="side-note" id="sideFoot">—</div>
+        </section>
+      </aside>
+
+      <!-- ---------- 侧栏/主区分隔条（可拖动调宽 · 双击复位） ---------- -->
+      <div id="sidebarResizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" title="拖动调整侧栏宽度 · 双击复位"></div>
+
+      <!-- W765：移动端会话抽屉的遮罩（点它关闭抽屉；桌面端恒为 .hidden，不参与布局） -->
+      <div id="sidebarScrim" class="sidebar-scrim hidden" aria-hidden="true"></div>
+
+      <!-- ---------- 主区 ---------- -->
+      <main id="main">
+        <!-- W514：聚焦会话条（会话名 / worker 标记 / 运行态 / 其它运行中会话入口） -->
+        <div id="sessionBar" class="session-bar" title="当前聚焦会话 · 可切换其它运行中的会话"></div>
+
+        <!-- W514：多会话视图宿主——每个会话一个 .sess-pane 容器（hidden 切换，零重渲染） -->
+        <div id="messages" tabindex="-1"></div>
+
+        <!-- ---------- statusline（模型 / 上下文环 / 吞吐，发送栏正上方） ---------- -->
+        <div id="statusline" class="statusline" title="上下文占用 · 模型 · 思考强度 · 吞吐 · 缓存命中">
+          <div class="sl-row sl-row-main">
+            <span class="sl-ring" id="slRing" title="上下文占用">
+              <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
+                <circle class="sl-ring-track" cx="7" cy="7" r="5.2" transform="rotate(-90 7 7)"></circle>
+                <circle class="sl-ring-prog" cx="7" cy="7" r="5.2" transform="rotate(-90 7 7)"></circle>
+              </svg>
+            </span>
+            <span class="sl-ctx" id="slCtx">—/—</span>
+            <span class="sl-sep">·</span>
+            <button class="sl-model" id="slModel" title="当前模型（点击快速切换）">—</button>
+            <span class="sl-sep">·</span>
+            <button class="sl-effort" id="slEffort" title="思考强度（点击快速切换）">—</button>
+            <span class="sl-spacer"></span>
+            <!-- W701：本会话权限盾牌（三态：未授予 / 已授予 / 即将失效）。
+                 显隐真源 = ui/grants.ts —— 能力位未就绪时保持 .hidden（入口隐藏，不置灰报错）。 -->
+            <button id="slGrant" class="sl-grant hidden" type="button" title="本会话权限：默认（仅工作区，无网络）" aria-label="本会话权限">
+              <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 1.6 13.2 3.4v4.2c0 3.1-2.1 5.6-5.2 6.8-3.1-1.2-5.2-3.7-5.2-6.8V3.4z"></path></svg>
+              <span class="sl-grant-badge" id="slGrantBadge"></span>
+              <span class="sl-grant-dot" aria-hidden="true"></span>
+            </button>
+            <!-- W302：运行中显示的正方形停止按钮（取消当前轮次；显隐真源 = ui/inputbar.setBusy） -->
+            <button id="slStop" class="sl-stop hidden" type="button" title="停止本轮生成" aria-label="停止本轮生成">
+              <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="currentColor"></rect></svg>
+            </button>
+            <span class="sl-hint" id="slHint"></span>
+          </div>
+          <div class="sl-row sl-row-sub">
+            <span class="sl-tps" id="slTps">— tok/s</span>
+            <span class="sl-sep">·</span>
+            <span class="sl-cache" id="slCache" title="缓存命中：最近一次请求">缓存 —</span>
+            <span class="sl-sep">·</span>
+            <span class="sl-steps" id="slSteps">— 步</span>
+          </div>
+        </div>
+
+        <footer id="statusbar">
+          <div class="sb-left">
+            <span class="dot" id="statusDot"></span>
+            <span id="statusText">连接中…</span>
+          </div>
+          <div class="sb-right">
+            <span id="statusTurn">第 — 轮</span>
+            <span class="sb-sep">·</span>
+            <span id="statusStep">— 步</span>
+            <span class="sb-sep">·</span>
+            <span id="statusTime">00:00</span>
+          </div>
+        </footer>
+
+        <div id="inputbar">
+          <textarea id="input" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
+          <div class="input-side">
+            <!-- W515：提交两态切换（运行中显示）：插话（下一步送达）/ 排队（本轮结束后送达） -->
+            <button id="btnMode" class="btn btn-soft btn-mini hidden" type="button" title="提交车道：插话 / 排队">插话</button>
+            <button id="btnCancel" class="btn btn-soft hidden">取消</button>
+            <button id="btnSend" class="btn btn-accent">发送</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ===================== 通用设置页（左导航 + 右内容） ===================== -->
+  <div id="settingsPage" class="settings-page hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="settings-shell">
+      <header class="settings-head">
+        <h3 id="settingsTitle">通用设置</h3>
+        <div class="settings-actions">
+          <button class="btn-mini" id="btnSettingsReload" title="重新载入当前页内容">重新载入</button>
+          <button class="btn-mini" id="btnSettingsClose">关闭</button>
+        </div>
+      </header>
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="设置导航">
+          <button class="settings-nav-item active" type="button" data-page="config">通用配置</button>
+          <button class="settings-nav-item" type="button" data-page="tools">工具</button>
+          <button class="settings-nav-item" type="button" data-page="sessions">会话</button>
+          <button class="settings-nav-item" type="button" data-page="providers">模型提供商</button>
+          <button class="settings-nav-item" type="button" data-page="prompts">提示词</button>
+        </nav>
+        <div class="settings-content">
+          <section class="settings-pane active" data-pane="config">
+            <header class="settings-pane-head">
+              <h4>运行配置</h4>
+              <span class="settings-sec-note">保存后下一轮生效</span>
+            </header>
+            <div class="settings-pane-body" id="settingsConfig"><div class="side-note">加载中…</div></div>
+            <div class="cfg-hintline" id="settingsHint"></div>
+          </section>
+          <section class="settings-pane" data-pane="tools">
+            <header class="settings-pane-head">
+              <h4>工具列表</h4>
+              <span class="sec-note" id="toolsCount">…</span>
+            </header>
+            <div class="settings-pane-body" id="settingsTools"><div class="side-note">加载中…</div></div>
+          </section>
+          <section class="settings-pane" data-pane="sessions">
+            <header class="settings-pane-head">
+              <h4>会话管理</h4>
+              <span class="sec-note" id="settingsSessionCount">…</span>
+            </header>
+            <div class="settings-pane-body" id="settingsSessions"><div class="side-note">加载中…</div></div>
+          </section>
+          <section class="settings-pane" data-pane="providers">
+            <header class="settings-pane-head">
+              <h4>模型提供商</h4>
+              <button class="btn-mini" id="btnAddProvider" type="button">添加提供商</button>
+            </header>
+            <div class="settings-pane-body" id="settingsProviders"><div class="side-note">加载中…</div></div>
+          </section>
+          <section class="settings-pane" data-pane="prompts">
+            <header class="settings-pane-head">
+              <h4>提示词</h4>
+              <button class="btn-mini" id="btnNewPrompt" type="button">新建提示词</button>
+            </header>
+            <div class="settings-pane-body">
+              <div id="promptsWrap"></div>
+              <div id="settingsPrompts"><div class="side-note">加载中…</div></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+/* ============================================================================
+ * W765 · 响应式层（断点体系 + 手机/平板适配）
+ * ----------------------------------------------------------------------------
+ * 断点表（本仓唯一定义处；媒体查询条件不能用 CSS 变量表达，故各断点数值都以本表为准）
+ *
+ *   | 档位    | 区间          | 基准机型   | 布局策略                                             |
+ *   |---------|---------------|-----------|------------------------------------------------------|
+ *   | mobile  | ≤ 640px       | 390x844   | 左栏=覆盖式抽屉（汉堡+遮罩）；statusline 两行、行1 触控≥44 |
+ *   | tablet  | 641 – 1024px  | 768x1024  | 保持「左栏+主区」双栏；只放大触控目标、弹层收进视口      |
+ *   | desktop | > 1024px      | 现状      | 不改（本文件不下发任何 >1024px 的规则）                 |
+ *
+ * 三条硬口径：
+ *   1) 视口高度用 dvh（iOS 地址栏伸缩时不裁掉输入区），仅在不支持时回落 100vh；
+ *   2) 触控目标最小 --tap-min = 44px（WCAG 2.5.5 / iOS HIG）；
+ *   3) 触摸设备没有 hover：仅靠 :hover 才可见的控件必须有常显等价物（见 §4）。
+ *
+ * 组件层不写死颜色/尺寸：本文件只引用 tokens.css 的 --c-* / --tap-min 等 token。
+ * 加载顺序：在 main.ts 里**最后**引入，保证同特异性下覆盖各组件样式表。
+ * ============================================================================ */
+
+/* ---------------------------------------------------------------- 0) 全局 */
+
+html { -webkit-text-size-adjust: 100%; } /* iOS 横屏文字膨胀 */
+
+/* 触屏点按：去掉灰色高亮块（自绘 :active 反馈），并关掉双击缩放的 300ms 延迟 */
+button,
+[role='button'],
+.sess-leaf,
+.sl-opt,
+.sl-ring,
+.think-head,
+.toolcard-head,
+.grant-preset,
+.settings-nav-item { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+/* iOS：100vh 在地址栏伸缩时会算错 → 用 dvh（不支持的浏览器保持 layout.css 的 100vh） */
+@supports (height: 100dvh) {
+  #app { height: 100dvh; }
+}
+
+/* 长内容一律可以在自己的盒子里滚，不把整页撑宽（会话条也是） */
+#sessionBar { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.sess-pane,
+.msg,
+.bubble,
+.content { min-width: 0; }
+
+/* ------------------------------------------------- 1) tablet ≤1024px */
+
+@media (max-width: 1024px) {
+  /* ---- 触控尺寸层：641–1024 的平板同样是触摸设备，所有关键目标 ≥ --tap-min ----
+     （桌面 34~37px 的按钮、16~24px 的状态栏热区在这里统一抬到 44；
+       只改命中区/行高，不改视觉层级与文案） */
+  #topbar .btn,
+  #statusbar .btn,
+  .side-sec .btn-mini,
+  #btnSend,
+  #btnCancel { min-height: var(--tap-min); }
+  #input { min-height: var(--tap-min); }
+
+  /* statusline：环/模型/档位/盾牌/停止全是可点目标；环保持 14px 视觉、命中区 44px */
+  .sl-ring {
+    width: var(--tap-min); height: var(--tap-min); flex: 0 0 auto;
+    margin-left: calc(-1 * (var(--tap-min) - 14px) / 2);
+  }
+  .sl-model,
+  .sl-effort {
+    display: inline-flex; align-items: center;
+    min-height: var(--tap-min); min-width: var(--tap-min);
+  }
+  .sl-effort { padding: 0 8px; }
+  .sl-grant, .sl-stop { width: var(--tap-min); height: var(--tap-min); }
+  .sl-grant svg { width: 14px; height: 14px; }
+
+  /* 列表 / 折叠行 / 工具卡 / 弹层选项 */
+  .sess-leaf, .ws-head { min-height: var(--tap-min); }
+  .sess-kebab { min-width: var(--tap-min); min-height: var(--tap-min); }
+  .think-head { height: auto; min-height: var(--tap-min); }
+  .toolcard-head { min-height: var(--tap-min); }
+  .toolcard-copy { min-width: var(--tap-min); min-height: var(--tap-min); }
+  .sl-opt { min-height: var(--tap-min); }
+  .grant-preset,
+  .grant-row-actions .btn { min-height: var(--tap-min); }
+  .settings-nav-item { min-height: var(--tap-min); }
+
+  /* 弹层永不越出视口（权限面板的宽度由 JS 几何算，这里兜底） */
+  .sl-popup,
+  .sl-popup.grant-popup { max-width: calc(100vw - 16px); }
+
+  /* iOS（含 iPad）输入控件 <16px 会在聚焦时自动放大页面 → 触摸档统一 16px。
+     `#input` 必须单列：layout.css 的 `#input{font-size:14px}` 是 id 选择器，类型选择器压不过它 */
+  #input, input, select, textarea { font-size: 16px; }
+
+  .sess-pane { padding: 16px 14px; }
+  .toolcard { --card-gutter: 26px; }
+}
+
+/* -------------------------------------------------- 2) mobile ≤640px */
+
+@media (max-width: 640px) {
+  /* ---- 2.1 顶栏：定高 + 汉堡 ---- */
+  #topbar { height: var(--topbar-h-mobile); padding: 6px 10px; gap: 6px; }
+  .topbar-left { min-width: 0; gap: 8px; }
+  .brand { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand-tag { display: none; } /* 版本徽标在手机上无决策价值，让位给标题 */
+  .topbar-right { gap: 4px; flex: 0 0 auto; }
+  #topbar .btn {
+    min-width: var(--tap-min); min-height: var(--tap-min);
+    padding: 0 10px; font-size: 12px;
+  }
+  /* 侧栏按钮 = 汉堡：文字留在 DOM 里（可访问名不变），只做视觉替换。
+     选择器带 #topbar 是为了压过上面 `#topbar .btn` 的 font-size（同层特异性） */
+  #topbar #btnSidebar {
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0;
+  }
+  #topbar #btnSidebar::before {
+    content: ''; width: 18px; height: 2px; border-radius: 1px;
+    background: currentColor;
+    box-shadow: 0 -6px 0 currentColor, 0 6px 0 currentColor;
+  }
+
+  /* ---- 2.2 左侧会话树：覆盖式抽屉（不再挤压主区） ---- */
+  #app { --sidebar-w: 0px !important; } /* 主区吃满整宽（.mcol 不再按侧栏宽度限宽） */
+  #sidebar {
+    position: fixed;
+    top: var(--topbar-h-mobile); bottom: 0; left: 0;
+    width: var(--drawer-w) !important; /* 覆盖 ui/sidebar.ts 写进 style 的桌面宽度 */
+    z-index: 61;
+    transform: translateX(-100%);
+    transition: transform .18s ease;
+    box-shadow: var(--shadow-panel);
+    overscroll-behavior: contain;
+    padding-bottom: var(--safe-b);
+    will-change: transform;
+  }
+  #app.drawer-open #sidebar { transform: none; }
+  /* 抽屉态与桌面「收起」态解耦：收起类不再让移动端左栏消失 */
+  #app.sidebar-collapsed #sidebar { display: flex; }
+  /* 移动端不做拖宽（抽屉宽度由 --drawer-w 决定） */
+  #app.sidebar-collapsed #sidebarResizer,
+  .sidebar-resizer { display: none; }
+
+  .sidebar-scrim {
+    position: fixed;
+    inset: var(--topbar-h-mobile) 0 0 0;
+    background: var(--c-overlay);
+    z-index: 60;
+  }
+  .sidebar-scrim.hidden { display: none; }
+
+  /* ---- 2.3 statusline：小屏精简（行1 = 环·用量·模型·档位·盾牌·停止，尺寸见 §1） ---- */
+  #statusline,
+  .statusline { padding: 2px 10px 2px; font-size: 12px; }
+  .sl-row-main { min-height: var(--tap-min); gap: 6px; flex-wrap: nowrap; }
+  .sl-row-sub { min-height: 16px; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
+  .sl-model { max-width: 40vw; flex: 0 1 auto; } /* 长模型名压缩，不挤走右端入口 */
+  .sl-effort { font-size: 11px; flex: 0 0 auto; }
+  /* 提示自占一行；空提示必须 display:none —— 否则 flex-basis:100% 会在 nowrap 行里
+     抢走模型按钮的宽度（实测：模型名被压到 44px 只剩「gpt-」） */
+  .sl-hint { flex: 1 1 100%; }
+  .sl-hint:empty { display: none; }
+  .sl-tps, .sl-cache, .sl-steps { white-space: nowrap; }
+
+  /* ---- 2.4 输入区：占满宽度 + 底部安全区 + 16px 字号（iOS 聚焦不放大） ---- */
+  #inputbar { padding: 8px 10px calc(8px + var(--safe-b)); gap: 8px; }
+  #input { font-size: 16px; max-height: 32dvh; }
+  #btnSend, #btnCancel { min-width: 72px; padding: 0 12px; }
+  #btnMode { min-height: 34px; }
+  .input-side { gap: 6px; }
+
+  /* ---- 2.5 消息 / 工具卡：占满宽度、长内容自己滚、长路径省略 ---- */
+  .sess-pane { padding: 12px 10px; }
+  .msg.user .bubble { max-width: 100%; } /* 桌面 78% 的窄气泡在手机上浪费宽度 */
+  .toolcard { --card-gutter: 22px; }
+  .tool-args, .tool-out { max-height: 200px; }
+  .content pre { max-width: 100%; } /* 代码块横向自滚（overflow-x 已在 components.css） */
+  .think-seg-body { max-height: 240px; }
+
+  /* ---- 2.6 弹层（模型/档位、权限面板）：贴合视口、内部滚动、触控达标 ---- */
+  .sl-popup {
+    left: 8px; right: 8px;
+    width: auto; max-width: none;
+    max-height: min(64dvh, 460px);
+  }
+  .sl-popup-body { max-height: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .sl-opt { padding: 8px 10px; }
+  .sl-opt.sub { padding-left: 22px; }
+  .sl-group { min-height: 30px; }
+  .sl-popup-textrow { flex-wrap: wrap; }
+  .sl-popup-input { flex: 1 1 100%; min-height: var(--tap-min); }
+
+  /* 权限面板：小屏改底部抽屉式（用 !important 覆盖 ui/grants/panel.ts 写入的内联坐标） */
+  .sl-popup.grant-popup {
+    left: 0 !important; right: 0 !important;
+    top: auto !important; bottom: 0 !important;
+    width: auto !important; max-width: none !important;
+    max-height: 78dvh !important;
+    border-radius: 12px 12px 0 0;
+    padding-bottom: var(--safe-b);
+  }
+  .grant-row-actions { flex-wrap: wrap; }
+  .grant-ttl { font-size: 16px; }
+
+  /* ---- 2.7 设置页（左导航 → 顶部横向导航条） ---- */
+  .settings-shell { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .settings-layout { flex-direction: column; }
+  .settings-nav {
+    flex-direction: row; gap: 4px;
+    overflow-x: auto; overscroll-behavior-x: contain;
+    padding: 6px 8px; border-right: none; border-bottom: 1px solid var(--c-border-subtle);
+  }
+  .settings-nav-item { min-height: var(--tap-min); white-space: nowrap; }
+  .settings-content { padding: 10px; }
+  .settings-head { padding: 8px 10px; }
+}
+
+/* ------------------------------------------- 3) 触摸设备：hover 的等价物 */
+
+@media (hover: none) {
+  /* 折叠 chevron 在桌面是 hover 才淡入；触摸端没有 hover → 常显（行首星形图标让位） */
+  .msg.think-seg .think-head::before { opacity: 0; }
+  .think-fold-mark { opacity: 1; }
+
+  /* 只靠 :hover 表达的可点区域，改用 :active 给触摸反馈 */
+  .btn:active,
+  .sl-opt:active,
+  .sess-leaf:active,
+  .toolcard-head:active,
+  .grant-preset:active,
+  .settings-nav-item:active { background: var(--c-accent-soft); }
+  .sl-model:active, .sl-effort:active, .toolcard-copy:active { color: var(--c-text-1); border-color: var(--c-accent-ring); }
+}
