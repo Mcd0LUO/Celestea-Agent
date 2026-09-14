@@ -26,6 +26,18 @@ export interface PromptVarInput {
   context_window: number;
   max_output_tokens: number | null;
   date: string;
+  /** W782: `/src/...` repo root of the RUNNING process (derived, never typed). */
+  studio_repo: string;
+  /** W782: `{{studio_repo}}/apps/web` — the frontend sources. */
+  studio_frontend_dir: string;
+  /** W782: `config.paths.staticRoot` — where the built frontend is served. */
+  studio_static_root: string;
+  /** W782: the systemd unit name (derived or centrally configured). */
+  studio_service: string;
+  /** W782: `config.bind` — host:port the backend listens on. */
+  studio_bind: string;
+  /** W782: the public site (the one irreducible literal, see deployment.ts). */
+  studio_site: string;
 }
 
 /** Interpolation values; every whitelisted variable gets a string. */
@@ -41,6 +53,12 @@ export function toPromptVars(input: PromptVarInput): PromptVars {
     context_window: String(input.context_window),
     max_output_tokens: input.max_output_tokens === null ? "" : String(input.max_output_tokens),
     date: input.date,
+    studio_repo: input.studio_repo,
+    studio_frontend_dir: input.studio_frontend_dir,
+    studio_static_root: input.studio_static_root,
+    studio_service: input.studio_service,
+    studio_bind: input.studio_bind,
+    studio_site: input.studio_site,
   };
 }
 

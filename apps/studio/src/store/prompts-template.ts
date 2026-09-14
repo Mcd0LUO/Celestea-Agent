@@ -23,6 +23,15 @@ export const PROMPT_VARS = [
   "context_window",
   "max_output_tokens",
   "date",
+  // W782: the deployment facts the `environment` section states. Every one is
+  // resolved at runtime (see `src/deployment.ts`) so no template has to spell
+  // out a path, a port or a unit name that the next move/rename would falsify.
+  "studio_repo",
+  "studio_frontend_dir",
+  "studio_static_root",
+  "studio_service",
+  "studio_bind",
+  "studio_site",
 ] as const;
 
 export type PromptVar = (typeof PROMPT_VARS)[number];

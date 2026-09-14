@@ -9,11 +9,22 @@
 
 import { dirname, join, resolve } from "node:path";
 import { AUTH_SECRET_FILE } from "./auth/token.js";
+import { studioRepoRoot } from "./deployment.js";
 
 /** `src/main.rs:867` — CONSTANT: it does not follow STUDIO_BIND. */
 export const DEFAULT_BIND = "127.0.0.1:3777";
-/** `src/main.rs` STATIC_ROOT: the Vite build, served read-only. */
-export const DEFAULT_STATIC_ROOT = "/src/celestea_studio-ts/apps/web/dist";
+/**
+ * `src/main.rs` STATIC_ROOT: the Vite build, served read-only.
+ *
+ * W782: DERIVED, never written down. `apps/web/dist` lives inside this very
+ * checkout, so the repo root comes from `studioRepoRoot()` (this file's own
+ * location) — the previous literal broke silently every time the checkout moved
+ * or the frontend was relocated (it was `celestea_studio/frontend/dist` before
+ * W781). `STUDIO_STATIC_ROOT` still overrides it for an operator.
+ */
+export function defaultStaticRoot(): string {
+  return join(studioRepoRoot(), "apps", "web", "dist");
+}
 /** `src/main.rs:1311` broadcast capacity; slow clients degrade to `lagged`. */
 export const BUS_CAPACITY = 512;
 /** `src/workspaces.rs:113` informational roots shown by GET /api/fs/browse. */
@@ -73,7 +84,7 @@ export function loadStudioConfig(input: StudioConfigInput = {}): StudioConfig {
     workspacesFile,
     providersFile: explicit.providersFile ?? env["CELESTEA_PROVIDERS_FILE"] ?? resolve(cwd, "providers.json"),
     promptsFile: explicit.promptsFile ?? env["CELESTEA_PROMPTS_FILE"] ?? resolve(cwd, "prompts.json"),
-    staticRoot: explicit.staticRoot ?? env["STUDIO_STATIC_ROOT"] ?? DEFAULT_STATIC_ROOT,
+    staticRoot: explicit.staticRoot ?? env["STUDIO_STATIC_ROOT"] ?? defaultStaticRoot(),
     // W767: the login secret lives in the SAME data dir as workspaces.json —
     // `createStudioEngine` derives `<data dir>` the same way, so there is one
     // notion of "Studio's data directory", not two.

@@ -35,6 +35,15 @@ const VARS = toPromptVars({
   context_window: 1_000_000,
   max_output_tokens: null,
   date: "2026-09-10",
+  // W782: the deployment facts the `environment` section renders. Synthetic
+  // values on purpose — this fixture pins the RENDER pipeline, while
+  // `prompt-drift.test.ts` pins that the real ones are derived at runtime.
+  studio_repo: "/derived/repo",
+  studio_frontend_dir: "/derived/repo/apps/web",
+  studio_static_root: "/derived/repo/apps/web/dist",
+  studio_service: "derived.service",
+  studio_bind: "127.0.0.1:3777",
+  studio_site: "https://example.invalid",
 });
 
 describe("prompt templates", () => {

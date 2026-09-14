@@ -213,10 +213,13 @@ function assertCoverage(routes: readonly RegisteredRoute[], ids: readonly string
  * prompt is assembled per instance through the composer's `sessionSystemPrompt`
  * hook, so priming can never leak one session's mode into another's instance.
  */
-function primeEnginePrompt(services: StudioServices): void {
+function primeEnginePrompt(services: StudioServices, env: NodeJS.ProcessEnv): void {
   // The BASE (detached) generation is always the DEFAULT mode, whatever mode the
   // session left active in workspaces.json happens to declare.
-  services.runtime.primeSystemPrompt?.(assembleSystemPromptFor(services, null, DEFAULT_SESSION_MODE));
+  //
+  // W782: `env` is threaded through so the primed prompt states the unit name
+  // this process's own environment declares, not a compile-time guess.
+  services.runtime.primeSystemPrompt?.(assembleSystemPromptFor(services, null, DEFAULT_SESSION_MODE, env));
 }
 
 export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
@@ -230,7 +233,7 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   const table = routeTable();
   const app = new Hono();
 
-  primeEnginePrompt(services);
+  primeEnginePrompt(services, env);
   // E §1.3 P0 ③: close the turn the previous process died inside — BEFORE any
   // instance of the active session is composed, because composing one replays the
   // log and takes its turn counter from it. A clean log, a missing checkpoint or

@@ -72,6 +72,9 @@ importers:
       '@types/marked':
         specifier: ^4.3.2
         version: 4.3.2
+      esbuild:
+        specifier: ^0.21.5
+        version: 0.21.5
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
