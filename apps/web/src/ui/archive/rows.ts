@@ -5,7 +5,13 @@
 //
 //   语义（已核实）：归档 = 会话目录被移到 `<ws>/.celestea-archived/<name>`，
 //   id 稳定且**可恢复**；恢复 = 把该行重新列回会话列表；永久删除走批量删除端点。
-//   `GET /api/sessions` 的每一行带 `archived` 布尔位（types.ts 的 SessionInfo）。
+//
+//   W792 口径（实测 2026-09-16，3777）：归档集合的唯一权威来源是**归档端点**
+//   `GET /api/sessions?archived=1`，它回的每一行都带 `archived: true`；
+//   **缺省** `GET /api/sessions` 只列未归档会话，且响应体里连 `archived` 键都没有
+//   （该响应体已冻结）—— 拿缺省列表筛 `archived === true` 恒为空。
+//   因此下面的过滤是**防御性**的（防后端回传脏行），不是取数手段：
+//   调用方必须先从归档端点取数（archive/panel.ts 已如此）。
 // ============================================================================
 import type { SessionInfo } from '../../types';
 

@@ -6,6 +6,7 @@ import type {
   ActivateResp,
   BatchIdsReq,
   BatchNamesReq,
+  BatchOpResp,
   CancelResp,
   ClearResp,
   CompactResp,
@@ -143,7 +144,19 @@ export const api = {
   config: () => requestJson<ConfigInfo>('/api/config'),
   /** 热调保存：POST /api/config {patch}（成功响应 = 消毒后完整配置）。 */
   saveConfig: (patch: ConfigPatch) => postJson<ConfigSaveResp>('/api/config', patch),
-  sessions: () => requestJson<SessionsResp>('/api/sessions'),
+  /**
+   * GET /api/sessions —— 会话列表。
+   *   缺省（不传 opts）：**只列未归档**会话；实测（2026-09-16，3777）缺省行里
+   *     **连 `archived` 键都没有** ⇒ 拿缺省列表去筛 `archived === true` 永远为空
+   *     （W792 修的正是这个：归档面板曾因此永远列不出东西、也就删不掉）。
+   *   `{archived:true}` → `?archived=1`：**只列已归档**会话，每行带 `archived:true`
+   *     —— 设置页「归档会话管理」的唯一取数口。
+   *   `{archived:false}` / 缺省 → 不加查询串，请求与响应体与过去逐字节一致。
+   */
+  sessions: (opts?: { archived?: boolean }) =>
+    requestJson<SessionsResp>(
+      '/api/sessions' + (opts?.archived === true ? '?archived=1' : ''),
+    ),
   /** 会话历史（回放/恢复）；404/超时 → ApiError。 */
   messages: (id: string) =>
     requestJson<MessagesResp>('/api/sessions/' + encodeURIComponent(id) + '/messages'),
@@ -238,10 +251,15 @@ export const api = {
   /** 目录浏览（W237）：GET /api/fs/browse?path=（懒加载列目录，只显示目录）。 */
   fsBrowse: (path?: string) =>
     requestJson<FsBrowseResp>('/api/fs/browse' + (path ? '?path=' + encodeURIComponent(path) : '')),
+  /**
+   * 批量归档（W792 起按 BatchOpResp 建模）：200 + `{ok:true,archived:N,failed:[...]}`
+   * —— **部分失败仍返回 ok:true**，失败项只在 `failed[]`，调用方必须呈现它。
+   */
   batchArchiveSessions: (ids: string[]) =>
-    postJson<ClearResp>('/api/sessions/batch-archive', { ids } as BatchIdsReq),
+    postJson<BatchOpResp>('/api/sessions/batch-archive', { ids } as BatchIdsReq),
+  /** 批量删除（W792 起按 BatchOpResp 建模）：同上，成功条数在 `deleted`。 */
   batchDeleteSessions: (ids: string[]) =>
-    postJson<ClearResp>('/api/sessions/batch-delete', { ids } as BatchIdsReq),
+    postJson<BatchOpResp>('/api/sessions/batch-delete', { ids } as BatchIdsReq),
   // ---- 模型提供商（W236；缺失时 404 优雅降级） ----
   providers: () => requestJson<ProvidersResp>('/api/providers'),
   saveProvider: (payload: unknown) => postJson<ClearResp>('/api/providers', payload),

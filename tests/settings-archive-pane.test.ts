@@ -5,6 +5,8 @@
  * 本机没有浏览器：CSS 观感无法验证，所以这里验的是**可机械断言的部分**——
  *   ① 真实 index.html 的 #app 全壳 + 真实 config.ts：点「归档会话」导航后，
  *      该 pane 渲染归档行、计数正确，且**不再**复刻侧栏会话树（.ws-tree 缺席）；
+ *      W792：桩按真实端点形状分流 —— 面板**必须**走 `GET /api/sessions?archived=1`
+ *      （缺省 `GET /api/sessions` 里连 archived 键都没有，喂给它只会得到空面板）；
  *   ② 两列网格的几何**只有一个真源**（components.css 的 .cfg-field/.prov-field
  *      共用 --field-label-w），settings.css 里的分叉定义已删；
  *   ③ 真实 newsession.ts：弹窗每一行都是「首子节点 = 标签」的两列行（标题行已补齐），
@@ -57,20 +59,45 @@ function appMarkup(): string {
   return raw.slice(raw.indexOf('<div id="app">'), raw.indexOf('<script type="module"'));
 }
 
+/**
+ * 归档端点返回的行（形状 = 2026-09-16 对运行中的 3777 实测：每行带 `archived:true`）。
+ * 缺省列表的行则**连 archived 键都没有**（`defaultList()` 现剥）—— 这就是修前
+ * 「拿缺省列表筛 archived ⇒ 永远为空」的根因。
+ */
 const SESSIONS = [
   { id: "ws-a/s1", title: "甲", workspace: "ws-a", archived: true, modified: 300 },
   { id: "ws-b/s2", title: "乙", workspace: "ws-b", archived: true, modified: 200 },
   { id: "ws-a/live", title: "在用", workspace: "ws-a", archived: false, modified: 999 },
 ];
+const archivedList = (): unknown[] =>
+  SESSIONS.filter((s) => s.archived === true).map((s) => ({ ...s, archived: true }));
+const defaultList = (): unknown[] =>
+  SESSIONS.filter((s) => s.archived !== true).map(({ id, title, workspace, modified }) => ({
+    id,
+    title,
+    workspace,
+    modified,
+  }));
+/** 本用例发出的请求路径（断言面板取数走的是哪条端点）。 */
+let paths: string[] = [];
 const wait = (ms = 30): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
   doc.body.innerHTML = appMarkup();
-  vi.stubGlobal("fetch", async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ ok: true, available: { models: [] }, sessions: SESSIONS }),
-  }));
+  paths = [];
+  vi.stubGlobal("fetch", async (url: unknown) => {
+    const u = String(url);
+    paths.push(u);
+    if (u.startsWith("/api/sessions")) {
+      const wantArchived = u.includes("archived=1");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, sessions: wantArchived ? archivedList() : defaultList() }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, available: { models: [] } }) };
+  });
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -90,6 +117,9 @@ describe("W786 设置页「归档会话」pane", () => {
     expect(ids(box, ".arc-row")).toEqual(["ws-a/s1", "ws-b/s2"]);
     expect(doc.getElementById("settingsArchiveCount")?.textContent).toBe("2");
     expect(box?.textContent ?? "").not.toContain("在用"); // 未归档不出现
+    // W792：取数必须走归档端点 —— 缺省列表里连 archived 键都没有，筛出来恒为空
+    expect(paths.filter((u) => u.startsWith("/api/sessions"))).toEqual(["/api/sessions?archived=1"]);
+    expect(box?.textContent ?? "").not.toContain("暂无归档会话");
     // 侧栏那套会话管理不再出现在这里
     expect(box?.querySelector(".ws-tree")).toBeNull();
     expect(box?.querySelector(".ws-search-input")).toBeNull();
