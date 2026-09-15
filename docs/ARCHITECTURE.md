@@ -90,7 +90,7 @@
 | `packages/agent-loop` | `AgentLoop` 的实现：turn/step 驱动、上下文裁剪、协作式取消、五态 outcome | `crates/agent-loop` | `src/index.ts` |
 | `packages/workers` | worker 注册表（`registry.tsv` 解析/序列化）、worker 驱动与看门狗插件 | `crates/workers` | `src/index.ts` |
 | `packages/runtime` | 装配层：按 profile `compose` 出 `Context`（LLM 注册表、会话日志、工具注册表、agent loop、worker 接线） | `crates/runtime/src/compose.rs` | `src/index.ts` |
-| `apps/studio` | 宿主应用：Hono 应用与 39 端点路由、进程入口、profile 解析 | `studio/src/main.rs` | `src/index.ts` |
+| `apps/studio` | 宿主应用：Hono 应用与契约全部端点路由、进程入口、profile 解析 | `studio/src/main.rs` | `src/index.ts` |
 
 ### 2.2 公开 API 收口规则
 
@@ -105,7 +105,7 @@
 
 ## 3. 一切皆插件（seam 契约 ↔ Rust `crates/core`）
 
-设计原点与 `/src/celestea_harness/crates/core/src/lib.rs` 一一对应：
+设计原点与 `/src/celestea_harness`（原 Rust 参照实现，2026-09-11 已删除）的 `crates/core/src/lib.rs` 一一对应：
 **该 crate 只有 seam 定义与 re-export，没有任何具体实现**；具体 provider 住在兄弟 crate，在 compose 期挂载。
 TS 侧保持同一形状：`packages/core` 只放接口与容器，实现全在 L1 包里。
 

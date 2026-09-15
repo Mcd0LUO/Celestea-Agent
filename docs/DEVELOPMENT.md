@@ -6,7 +6,7 @@
 
 
 > 🧭 **仓库角色（2026-09-11）**：本仓现役 = **线上前端（`frontend/`）+ 共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）。
-> Rust Studio 后端已于 2026-09-11 **退役**（见 [`archive/frontend/rust-studio-backend/LEGACY-RUST-BACKEND.md`](./archive/frontend/rust-studio-backend/LEGACY-RUST-BACKEND.md)），因此本文描述的 Rust 后端架构 / 构建 / 测试属**历史参考**。
+> Rust Studio 后端已于 2026-09-11 **退役**（见 [`archive/rust-studio-backend/LEGACY-RUST-BACKEND.md`](./archive/rust-studio-backend/LEGACY-RUST-BACKEND.md)），因此本文描述的 Rust 后端架构 / 构建 / 测试属**历史参考**。
 > **后端开发请看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md)**（TypeScript 后端，生产）；Rust 引擎见 [`/src/celestea_studio-ts/docs/archive/frontend/harness/README.md`](/src/celestea_studio-ts/docs/archive/frontend/harness/README.md)；本仓 `docs/` 索引见 [`README.md`](./README.md)。
 
 > 本文是 Celestea Studio 的**开发者入口文档**，内容全部来自对 `/src/celestea_studio-ts` 实际代码的核对（文件:行号可回溯）。
@@ -25,11 +25,11 @@
 |---|---|---|
 | **本文 `docs/DEVELOPMENT.md`** | 架构总览、模块职责、关键机制、工作流、测试现状、文档索引 | 第一次上手；改任何东西之前 |
 | [`docs/README.md`](./README.md) | **`docs/` 全量索引**：状态（当前 / 设计 / 历史）、一句话、权威入口 | 找文档时先看它 |
-| [`docs/archive/api-contract.md`](./archive/frontend/api-contract.md) | **历史**：已退役 Rust 后端的全部 HTTP 端点契约（method / path / 请求体 / 响应体 / 错误码与错误原文）。TS 侧契约真源见 `/src/celestea_studio-ts/contracts/endpoints.json` | 追溯 Rust 端点语义 |
+| [`docs/archive/frontend/api-contract.md`](./archive/frontend/api-contract.md) | **历史**：已退役 Rust 后端的全部 HTTP 端点契约（method / path / 请求体 / 响应体 / 错误码与错误原文）。TS 侧契约真源见 `/src/celestea_studio-ts/contracts/endpoints.json` | 追溯 Rust 端点语义 |
 | [`docs/data-files.md`](./data-files.md) | `workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json` 的 schema 与格式 | 改持久化、迁移、回放 |
 | [`docs/pitfalls.md`](./pitfalls.md) | **踩坑档案**：每一条都来自真实修复（症状 / 根因 / 正确做法 / 代码位置） | 动 providers、compact、SSE、前端渲染之前**必读** |
-| [`docs/archive/deployment.md`](./archive/frontend/deployment.md) | **历史**：已退役 Rust 后端 `celestea-studio.service` 的 systemd / nginx / 环境变量 / 重启与回滚。TS 部署见 `/src/celestea_studio-ts/scripts/run-studio-ts.sh` | 追溯旧部署形态 |
-| [`frontend/FRONTEND-RULES.md`](../frontend/FRONTEND-RULES.md) | 前端渲染**铁律**（验收硬性标准） | 写任何前端 UI 之前 |
+| [`docs/archive/frontend/deployment.md`](./archive/frontend/deployment.md) | **历史**：已退役 Rust 后端 `celestea-studio.service` 的 systemd / nginx / 环境变量 / 重启与回滚。TS 部署见 `/src/celestea_studio-ts/scripts/run-studio-ts.sh` | 追溯旧部署形态 |
+| [`apps/web/FRONTEND-RULES.md`](../apps/web/FRONTEND-RULES.md) | 前端渲染**铁律**（验收硬性标准） | 写任何前端 UI 之前 |
 | [`docs/archive/`](./archive/frontend/)（7 篇） | **历史文档**（2026-09-11 归档，正文保留 + 顶部 📦 横幅）：`api-contract.md`、`deployment.md`、`backend-language-eval.md`、`backend-ts-rewrite-eval.md`、`frontend-session-persistence-eval.md`、`prompt-injection-eval.md`、`frontend-freeze-stop-button-plan.md` | 追溯"为什么这样设计" |
 
 **一句话职责边界（Rust 期口径）**：后端是唯一真源（状态、文件、引擎代际都在 Rust 进程里）；前端只是"渲染 + 转发"，不持有业务真值。
@@ -46,7 +46,7 @@ Celestea Studio 是架在 **celestea-runtime 引擎**之上的本地 Web 工作�
 - 它把引擎的会话（`cli-main.jsonl`）、模型提供商（`providers.json`）、提示词段（`prompts.json`）、工作区（`workspaces.json`）做成可管理的 HTTP 面；
 - 前端是 **无框架 TypeScript + Vite** 构建产物，由后端从磁盘静态服务。
 
-引擎本身（`/src/celestea_harness/crates/*`）**不因 Studio 而改**：Studio 通过 `CELESTEA_SESSION_DIR` + `Runtime::compose` 复用引擎的持久化与工具注册表，这是全仓最重要的设计约束（`src/workspaces.rs:17-26`、`src/main.rs:18-23`）。
+引擎本身（原 Rust 参照实现 `/src/celestea_harness/crates/*`，该仓已于 2026-09-11 删除）**不因 Studio 而改**：Studio 通过 `CELESTEA_SESSION_DIR` + `Runtime::compose` 复用引擎的持久化与工具注册表，这是全仓最重要的设计约束（`src/workspaces.rs:17-26`、`src/main.rs:18-23`）。
 
 ### 1.1 快速开始（本机）
 
@@ -356,7 +356,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 | P6 | `/compact` | 409 守卫 → 摘要轮 + 最近 K=4 轮重编号 → 原子写 + `.precompact` → 引擎重绑；重绑失败不回滚日志 |
 | P7 | SSE 信封 | `turn` 字段必须随事件传递（`sse.ts` 只发 payload 会丢 `turn`） |
 | P8 | 主题/版本 | 只有 `mono` 单主题；`version.ts` 需**手动 bump** 并与 `package.json` 同步 |
-| P9 | 前端铁律 | 见 `frontend/FRONTEND-RULES.md`：禁止"先清空后加载"、禁止整树 `innerHTML` 重建、切换必须防竞态 |
+| P9 | 前端铁律 | 见 `apps/web/FRONTEND-RULES.md`：禁止"先清空后加载"、禁止整树 `innerHTML` 重建、切换必须防竞态 |
 | P10 | session id 编码 | 路径参数里的 `/` 必须 `%2F`，否则被 axum 当成两段路径 → 404 |
 
 ---
@@ -413,7 +413,7 @@ CELESTEA_API_KEY="$CELESTEA_API_KEY" \
 ### 7.3 改动的自检清单
 
 - 后端：`cargo build --release` + `cargo test --release` 全绿；新端点要在 `docs/archive/api-contract.md` 补一行。
-- 前端：`pnpm typecheck` + `pnpm build` 通过；对照 `frontend/FRONTEND-RULES.md` 逐条自查（空白帧 / 整树闪动 / 旧结果覆盖新状态 任一出现即不合格）。
+- 前端：`pnpm typecheck` + `pnpm build` 通过；对照 `apps/web/FRONTEND-RULES.md` 逐条自查（空白帧 / 整树闪动 / 旧结果覆盖新状态 任一出现即不合格）。
 - 改了 `AppState` / `swap_gen` / busy 槽：确认**所有**释放路径（成功、取消、错误、409 前置返回）都不漏。
 - 改了 provider / prompts / 会话写盘：确认"先判 409 再落盘"的顺序没有被破坏（否则会出现"返回 409 但已经写盘"）。
 - 提交前：`git status` 只包含你改的文件；**禁止 `git add -A` / `commit -am` / `push`**。
@@ -453,7 +453,7 @@ cargo test --release
 
 ### 8.2 前端：`pnpm build` = `tsc --noEmit`（strict）+ `vite build`
 
-没有单元测试框架；前端质量门 = **strict 类型检查 + 铁律人工核对**（`frontend/FRONTEND-RULES.md`）。`pnpm typecheck` 单独跑类型检查更快。
+没有单元测试框架；前端质量门 = **strict 类型检查 + 铁律人工核对**（`apps/web/FRONTEND-RULES.md`）。`pnpm typecheck` 单独跑类型检查更快。
 
 ### 8.3 如何加测试
 

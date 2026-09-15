@@ -111,12 +111,12 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 
 | 文件 | 内容 | 数量 | 校验方式 |
 |---|---|---|---|
-| `endpoints.json` | 39 端点：method/path/请求字段/响应字段/错误码原文/只读探针结果 | **39** | `tests/contracts.test.ts` + `pnpm contracts:verify` |
-| `rust-route-table.snapshot.json` | 从 `src/main.rs:1333-1376` 提取的路由表快照 | 38 条声明 = **43** method+path（39 API + 4 静态） | 测试断言 39 API 与契约逐条相等 |
+| `endpoints.json` | 47 端点：method/path/请求字段/响应字段/错误码原文/只读探针结果 | **47** | `tests/contracts.test.ts` + `pnpm contracts:verify` |
+| `rust-route-table.snapshot.json` | 从 `src/main.rs:1333-1376` 提取的路由表快照 | 38 条声明 = **43** method+path（39 Rust API + 4 静态）；另有 8 条 TS-only | 测试断言「Rust 39 + TS-only 8 = 契约 47」逐条相等 |
 | `sse-events.json` | 8 个 SSE 事件名 + 信封 `{turn,seq,payload}` + `lagged` 语义 + 512 容量 | **8** | 测试 + 实机 content-type 探针 |
 | `session-event.schema.json` | `SessionEvent` 7 变体 + `TurnOutcome` 5 态 + `turn-<n>` 单调规则 + 两套投影 | 7 / 5 | 测试 + 回放 |
 | `tools.json` | 10 个工具 spec（描述取自运行中的引擎 `/api/tools`，parameters 逐字转写自 Rust `ToolSpec`） | **10** | 测试 + 实机工具名集合比对 |
-| `data-files/*.schema.json` | `workspaces.json`(v2) / `providers.json`(+public_view 不含 key) / `prompts.json` / `session.json` / `cli-main.jsonl` / `cli-main.jsonl.precompact` / `registry.tsv` + `index.json` | **8** | 测试（含"无 version 字段"与 round-trip 要求） |
+| `data-files/*.schema.json` | `workspaces.json`(v2) / `providers.json`(+public_view 不含 key) / `prompts.json` / `session.json` / `cli-main.jsonl` / `cli-main.jsonl.precompact` / `registry.tsv` / `pricing.json` / `usage-ledger.jsonl` / `checkpoint.json`，外加 `index.json` | **10**（+ `index.json`） | 测试（含"无 version 字段"与 round-trip 要求） |
 | `probe-evidence.json` | `pnpm contracts:verify` 的实机证据 | 25 checks | 生成 |
 
 **实机校验抽样**：12 个 GET 端点（health/status/tools/config/sessions/sessions-id-messages/workspaces/providers/prompts/fs-browse/worker-status + events 头）+ 8 个只读安全错误分支 = **20 个端点**，全部通过。错误分支的"不可写"性在 Rust 源码中逐条举证（见 `reports/contract-probe.md` 末表）。
@@ -230,7 +230,7 @@ pnpm check
 
 ## P4: apps/studio（Hono HTTP 层 + 数据存储）
 
-> 契约真源：`contracts/endpoints.json`（39 端点）、`contracts/sse-events.json`、
+> 契约真源：`contracts/endpoints.json`（47 端点）、`contracts/sse-events.json`、
 > `contracts/data-files/`、`docs/archive/frontend/api-contract.md`（旧 Rust 后端契约，已归档）。
 
 ### 一句话
@@ -243,7 +243,7 @@ pnpm check
 
 | 文件 | 职责 |
 |---|---|
-| `src/app.ts` | `createStudioApp`：compose → 注册 39 端点 → `/api/*` 404 → 静态/SPA |
+| `src/app.ts` | `createStudioApp`：compose → 注册全部契约端点 → `/api/*` 404 → 静态/SPA |
 | `src/routes.ts` | 冻结路由表（contract id → method + path，`{x}`→`:x`） |
 | `src/runtime-adapter.ts` | **唯一的引擎 seam**（`RuntimeAdapter` 接口 + 错误类型） |
 | `src/fake-runtime-adapter.ts` | P4 假引擎：抢 busy 槽、脚本化 turn、worker/compact 确定应答 |
@@ -254,7 +254,7 @@ pnpm check
 | `src/handlers/` | 按端点组拆分的处理器（health / dialog / config / sessions / session-move / workspaces / fs / providers / prompts / worker） |
 | `src/store/` | 数据存储：`workspaces.json` v2、`providers.json`(0600)、`prompts.json` + 模板引擎 |
 
-### 端点覆盖（39/39）
+### 端点覆盖（47/47）
 
 `createStudioApp` 在启动期断言「契约里的每个 id 都恰好绑定一次」，缺一个直接抛错，
 所以**不存在静默漏掉的端点**。分组：
@@ -317,7 +317,7 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
 | `src/store/sessions.test.ts` | 扫描/投影（撕裂尾部丢弃）、四种 id 错误码、创建、改名/分支/归档/回收站/批量 |
 | `src/store/providers.test.ts` | round-trip、0600、public_view 脱敏、keep-key 语义、探测三分支 + keyless 借用 |
 | `src/store/prompts.test.ts` | 模板三错、插值、四级组装、默认链、CRUD round-trip |
-| `src/app.test.ts` / `src/app-domains.test.ts` | 39 端点形状/状态码/409 守卫/错误码/redaction/SSE 帧 |
+| `src/app.test.ts` / `src/app-domains.test.ts` | 契约全部端点形状/状态码/409 守卫/错误码/redaction/SSE 帧 |
 | `src/config-models.test.ts` | W750：`available.models` 每个 (provider, model) 一条（provider 内去重、撞名 id 不合并）、`active` 归属、`POST /api/providers/default` 的 `provider_id` 消歧与拒绝分支 |
 | `tests/model-icon.test.ts` | W750：跨仓直测前端 `model-icon.ts` 纯函数（前缀/大小写/分隔符、未知 → null、SVG 零硬编码颜色） |
 | `tests/studio-routes.test.ts` | 跨包契约：路由表与契约逐条一致，无端点漏绑 |
