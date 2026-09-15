@@ -1,6 +1,6 @@
 # Contract probe evidence (live :3777, read-only)
 
-- generated: 2026-09-15T06:18:12.836Z
+- generated: 2026-09-15T12:25:35.120Z
 - target: http://127.0.0.1:3777
 - policy: read-only: GET probes + error branches proven mutation-free in the Rust source
 
@@ -20,11 +20,11 @@
 
 | endpoint | kind | status | observed | detail |
 |---|---|---|---|---|
-| contracts/endpoints.json | contract-count | pass | - | 49 endpoints (contract declares 49) |
+| contracts/endpoints.json | contract-count | pass | - | 50 endpoints (contract declares 50) |
 | contracts/sse-events.json | contract-count | pass | - | 9 SSE events (contract declares 9) |
 | contracts/tools.json | contract-count | pass | - | 11 tool specs (contract declares 11) |
 | GET /api/health | response-shape | pass | 200 | HTTP 200; 6 key(s) |
-| GET /api/status | response-shape | pass | 200 | HTTP 200; 10 key(s); additive (not in contract doc): busy, grants_active |
+| GET /api/status | response-shape | pass | 200 | HTTP 200; 13 key(s); additive (not in contract doc): busy, effective_model, fallback, grants_active |
 | GET /api/tools | response-shape | pass | 200 | HTTP 200; 1 key(s) |
 | GET /api/config | response-shape | pass | 200 | HTTP 200; 10 key(s) |
 | GET /api/sessions | response-shape | pass | 200 | HTTP 200; 2 key(s) |

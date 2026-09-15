@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-15T06:18:12.836Z",
+  "generatedAt": "2026-09-15T12:25:35.120Z",
   "studio": "http://127.0.0.1:3777",
   "policy": "read-only: GET probes + error branches proven mutation-free in the Rust source",
   "counts": {
@@ -16,7 +16,7 @@
       "endpoint": "contracts/endpoints.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "49 endpoints (contract declares 49)"
+      "detail": "50 endpoints (contract declares 50)"
     },
     {
       "endpoint": "contracts/sse-events.json",
@@ -41,7 +41,7 @@
       "endpoint": "GET /api/status",
       "kind": "response-shape",
       "status": "pass",
-      "detail": "HTTP 200; 10 key(s); additive (not in contract doc): busy, grants_active",
+      "detail": "HTTP 200; 13 key(s); additive (not in contract doc): busy, effective_model, fallback, grants_active",
       "observedStatus": 200
     },
     {
