@@ -85,6 +85,7 @@ export { runShellSpec, runShellTool, type RunShellToolOptions } from "./tools/ru
 export { processControlSpec, processControlTool } from "./tools/process-control.js";
 export { RegistryHandle, runCodeSpec, runCodeTool, runCodeToolWithHandle, type RunCodeToolOptions } from "./tools/run-code.js";
 export { httpRequestSpec, httpRequestTool, type HttpRequestToolOptions } from "./tools/http-request.js";
+export { ASK_USER_DESCRIPTION, askUserSpec, askUserTool, type AskUserToolOptions } from "./tools/ask-user.js";
 export { builtinTools, type BuiltinToolsOptions } from "./builtin.js";
 
 // --- http policy + transport contract -----------------------------------------

@@ -15,12 +15,13 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { loadSse, type LoopEvent } from "@celestea/core";
+import { questionFrame } from "@celestea/runtime";
 import { loopEventToSse } from "@celestea/agent-loop";
 import { createStudioBus } from "@celestea/studio";
 import { getJson, jsonRequest, makeHarness, type StudioHarness } from "../apps/studio/src/harness.test-util.js";
 import { productionMapper, runProductionTurn } from "./lib/engine-corpus.js";
 import { validateSchema } from "./lib/json-schema.js";
-import { checkPayload, describeFrameViolations, payloadKeyTable } from "./lib/sse-parity.js";
+import { checkPayload, describeFrameViolations, descriptorTable, payloadKeyTable } from "./lib/sse-parity.js";
 
 const SSE = loadSse();
 /** The 6 contract events a `LoopEvent` can produce (status/compact are host-emitted). */
@@ -97,11 +98,38 @@ describe("W744 · SSE payloads: the production runtime/frames.ts vs contracts/ss
     }
   });
 
-  it("binds all 8 contract events to a named producer (none unbound, none invented)", () => {
+  it("binds all 9 contract events to a named producer (none unbound, none invented)", () => {
     const loopNames = LOOP_EVENTS.map((r) => r.contractName);
-    const hostNames = ["status", "compact"];
+    // W783: `question` is host-emitted by the user-questions service while the
+    // turn is parked — a LoopEvent can never produce it, so it is named here.
+    const hostNames = ["status", "compact", "question"];
     expect([...loopNames, ...hostNames].sort()).toEqual(SSE.events.map((e) => e.name).sort());
     expect(payloadKeyTable(SSE, "status").extensions.length).toBeGreaterThan(0);
+    // W783: `question` is host-emitted but a first-class contract event, so its
+    // payload is declared in the events table itself (not in payloadExtensions).
+    expect(payloadKeyTable(SSE, "question").frozen).toEqual(["id", "questions", "expires_at", "timeout_ms", "session"]);
+  });
+
+  /**
+   * W783: `question` has no LoopEvent producer — a parked tool call emits no
+   * loop event — so the check above only proves it is DECLARED. Here the
+   * PRODUCTION builder (`packages/runtime/src/frames.ts`) is executed and its
+   * frame is validated against the frozen table, which is what stops the payload
+   * from drifting the moment somebody edits it.
+   */
+  it("checks the production question frame against the contract", () => {
+    const frame = questionFrame({
+      session: "sample-ws/s1",
+      id: "q-7",
+      questions: [{ id: "mode", question: "选哪个？", options: [{ label: "A（推荐）" }, { label: "B" }] }],
+      expiresAt: 1_700_000_300_000,
+      timeoutMs: 300_000,
+    });
+    expect(frame.event).toBe("question");
+    expect(describeFrameViolations(checkPayload(SSE, frame.event, frame.payload))).toBe("");
+    // Every declared key must actually be produced (a key that is never written
+    // is a contract promise the host does not keep).
+    expect(Object.keys(frame.payload).sort()).toEqual(Object.keys(descriptorTable(SSE, "question")).sort());
   });
 
   it("checks the host-emitted compact payload (production endpoint) against the contract", async () => {

@@ -25,6 +25,7 @@ import {
   type Sandbox,
   type Tool,
   type ToolGuard,
+  type UserQuestionService,
 } from "@celestea/core";
 
 import { builtinTools } from "./builtin.js";
@@ -78,6 +79,12 @@ export interface ToolsPluginOptions {
    * assembly's exact pipeline (Rust runtime compose parity).
    */
   runCode?: RunCodeMount | false;
+  /**
+   * W783: the host's user-question service. Supplied = the default tool set also
+   * carries `ask_user_question`; absent = it does not (an embedding with no human
+   * answerer must not offer a tool that could only ever hang).
+   */
+  questions?: UserQuestionService | null;
 }
 
 /** The wired handles a compose root keeps after mounting the plugin. */
@@ -101,7 +108,12 @@ export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
   // the path tools may touch" are the same directory by construction.
   const sandbox = options.sandbox ?? selectSandbox({ env, grants, config: sessionSandboxConfig(scope, env) });
   const registry = new ToolRegistryImpl();
-  const tools = options.tools ?? builtinTools({ sandbox, processes, http: httpOptions(env, grants) });
+  // W783: the injected question service must reach the DEFAULT tool set too, not
+  // only an explicitly supplied one — otherwise a host that mounts the service
+  // through `assembleTools` would silently lose the tool.
+  const tools =
+    options.tools
+    ?? builtinTools({ sandbox, processes, http: httpOptions(env, grants), ...(options.questions === undefined ? {} : { questions: options.questions }) });
   for (const tool of tools) registry.register(tool);
   const runCode = mountRunCode(registry, sandbox, options);
 

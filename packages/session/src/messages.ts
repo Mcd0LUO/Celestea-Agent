@@ -51,6 +51,29 @@ export function sessionEventToMessage(ev: SessionEvent): StudioMessage | null {
       if (ev.parent_id !== undefined) out.tool_parent_id = ev.parent_id;
       return out;
     }
+    // W783 §7: the two host-side question rows. The Studio projection is the
+    // per-event transcript surface the UI replays, so a parked question and its
+    // answer stay visible there (an unanswered row is how a restart looks).
+    case "user_question": {
+      const out: StudioMessage = {
+        role: "question",
+        kind: "question",
+        question_id: ev.id,
+        content: ev.questions,
+      };
+      if (ev.expires_at !== undefined) out.question_expires_at = ev.expires_at;
+      return out;
+    }
+    case "user_answer": {
+      const out: StudioMessage = {
+        role: "question",
+        kind: "answer",
+        question_id: ev.id,
+        content: ev.answers,
+      };
+      if (ev.timed_out !== undefined) out.question_timed_out = ev.timed_out;
+      return out;
+    }
   }
 }
 

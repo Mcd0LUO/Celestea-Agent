@@ -16,7 +16,16 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { fixturePath, loadSessionEventSchema, loadTools, validateSessionEvent, type Sandbox, type SessionEvent } from "@celestea/core";
+import {
+  fixturePath,
+  loadSessionEventSchema,
+  loadTools,
+  validateSessionEvent,
+  type AskUserQuestionRequest,
+  type Sandbox,
+  type SessionEvent,
+  type UserQuestionService,
+} from "@celestea/core";
 import { assembleTools } from "@celestea/tools";
 import { compareToolSpecs, describeFindings, uncoveredTools } from "./lib/tool-parity.js";
 import { describeViolations, schemaAccepts, unsupportedKeywords, validateSchema } from "./lib/json-schema.js";
@@ -24,9 +33,15 @@ import { runProductionTurn } from "./lib/engine-corpus.js";
 
 const SCHEMA = loadSessionEventSchema();
 const CONTRACT = loadTools();
-/** The 7 specs `assembleTools` mounts (the worker trio comes from the contract). */
+/**
+ * The 7 specs `assembleTools` mounts on its own (the worker trio comes from the
+ * frozen contract, and W783's `ask_user_question` is mounted only when the host
+ * supplies a user-question service — see `REGISTRY_TOOLS_WITH_QUESTIONS`).
+ */
 const REGISTRY_TOOLS = ["http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "write_file"];
 const WORKER_TOOLS = ["session_send_message", "spawn_worker", "worker_status"];
+/** W783: the same registry once the host mounts the user-question capability. */
+const QUESTION_TOOLS = ["ask_user_question"];
 
 /** The golden fixtures are exported on demand (`pnpm golden:export`). */
 const HAS_FIXTURES = existsSync(fixturePath("index.json"));
@@ -157,9 +172,44 @@ describe("W744 · all 7 builtin tool specs match the implementation registry", (
     expect(specs).toHaveLength(REGISTRY_TOOLS.length);
   });
 
-  it("leaves no contract tool uncovered (the trio comes from the frozen contract)", () => {
-    expect(CONTRACT.tools).toHaveLength(10);
-    expect(uncoveredTools(CONTRACT, specs, WORKER_TOOLS)).toEqual([]);
+  it("leaves no contract tool uncovered (worker trio + W783 question tool come from elsewhere)", () => {
+    // W783: 10 -> 11; `ask_user_question` is covered by its own check below.
+    expect(CONTRACT.tools).toHaveLength(11);
+    expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS])).toEqual([]);
+  });
+
+  /**
+   * W783: `ask_user_question` is OPTIONAL — `builtinTools` mounts it only when the
+   * host hands over a user-question service. Both halves are asserted here, so
+   * "the tool is missing" and "the tool is always mounted" both fail loudly: the
+   * contract declares it, so a host that CAN ask must offer exactly this spec.
+   */
+  it("mounts ask_user_question when (and only when) a question service is supplied", () => {
+    const without = assembleTools({ guard: null, env: {}, sandbox: stubSandbox() }).registry.schemas().map((s) => s.name);
+    expect(without).not.toContain("ask_user_question");
+
+    const mount = questionStub();
+    const withQuestions = assembleTools({ guard: null, env: {}, sandbox: stubSandbox(), questions: mount.service }).registry.schemas();
+    expect(withQuestions.map((s) => s.name)).toEqual([...REGISTRY_TOOLS, "ask_user_question"].sort());
+    // The spec the model is offered must equal the frozen contract entry, field
+    // for field — otherwise the tool would drift from what the contract promises.
+    expect(describeFindings(compareToolSpecs(CONTRACT, withQuestions.filter((s) => s.name === "ask_user_question")))).toBe("");
+  });
+
+  it("the mounted question tool parks on the service and returns its answers verbatim", async () => {
+    const mount = questionStub();
+    const registry = assembleTools({ guard: null, env: {}, sandbox: stubSandbox(), questions: mount.service }).registry;
+    const out = await registry.dispatch({
+      call_id: "q1",
+      name: "ask_user_question",
+      args: { questions: [{ id: "mode", question: "选哪个？", options: [{ label: "A" }, { label: "B" }] }], timeout_ms: 1000 },
+    });
+    expect(out.error).toBeNull();
+    expect(out.value).toEqual({ answers: [{ id: "mode", selected: ["B"], custom: "自定义" }], timed_out: false });
+    // The tool forwards exactly what the model asked, and its own timeout.
+    expect(mount.seen).toHaveLength(1);
+    expect(mount.seen[0]?.timeoutMs).toBe(1000);
+    expect(mount.seen[0]?.questions[0]?.id).toBe("mode");
   });
 
   it("catches a single mutated field, naming the tool and the JSON path", () => {
@@ -185,6 +235,23 @@ function withoutKey(parameters: Record<string, unknown>, parent: string, key: st
   const inner = { ...(parameters[parent] as Record<string, unknown>) };
   delete inner[key];
   return { ...parameters, [parent]: inner };
+}
+
+/**
+ * W783: a user-question service that answers immediately, plus the request it
+ * saw. The tool's job is to translate model arguments into a seam request and
+ * the outcome back into a tool result; the host's own parking behaviour is
+ * covered by the studio-side tests.
+ */
+function questionStub(): { service: UserQuestionService; seen: AskUserQuestionRequest[] } {
+  const seen: AskUserQuestionRequest[] = [];
+  const service: UserQuestionService = {
+    ask: (request) => {
+      seen.push(request);
+      return Promise.resolve({ answers: [{ id: "mode", selected: ["B"], custom: "自定义" }], timed_out: false });
+    },
+  };
+  return { service, seen };
 }
 
 /** A sandbox that never runs: the specs are read, no command is executed. */

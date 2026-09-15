@@ -91,6 +91,13 @@ export function projectEvent(event: SessionEvent): Message | null {
     case "turn_end":
     case "thinking_delta":
       return null;
+    // W783 §7: the host's user-question audit rows describe a PAUSED turn. The
+    // model sees the outcome as the ordinary `tool_result` of
+    // `ask_user_question`, so projecting these would invent history the model
+    // never received (and would break the tool_call/tool_result pairing).
+    case "user_question":
+    case "user_answer":
+      return null;
     case "tool_call":
       // Rust: unreachable!("ToolCall must be accumulated by derive_messages…")
       throw new Error("ToolCall must be accumulated by derive_messages, not projected");

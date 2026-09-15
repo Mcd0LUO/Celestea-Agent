@@ -40,7 +40,9 @@ import { join } from "node:path";
 import { CapacityError } from "../runtime-adapter.js";
 import { bindingFor, closeLog, workerSessionPrefix, type CheckpointWiring, type SessionTarget } from "./engine-session.js";
 import { sessionIdOfDir } from "./engine-grants.js";
-import { enginePlugins } from "./engine-plugins.js";
+import { enginePlugins, type QuestionWiring } from "./engine-plugins.js";
+import type { PendingQuestion, QuestionRegistry } from "../question-registry.js";
+import { questionAnsweredRow, questionAskedRow } from "../question-rows.js";
 import { EMPTY_GRANTS } from "./engine-grants.js";
 import { createEngineLlm } from "./llm-assembly.js";
 import type { SessionGrantsReader } from "./session-grants.js";
@@ -50,7 +52,11 @@ export const MAX_LIVE_SESSIONS = 4;
 export const MAX_CONCURRENT_TURNS = 2;
 export const SESSION_IDLE_TTL_MS = 15 * 60 * 1_000;
 
-/** Per-session injection wiring the host supplies (placement over SSE, W515 §2). */
+/**
+ * Per-session injection wiring the host supplies (placement over SSE, W515 §2).
+ * The HOST builds it in `session-publisher.ts`; the fields are optional here
+ * because a session with no observers gets a plain inbox and no callback.
+ */
 export interface SessionInjectionHooks {
   /** The session's inbox (default: a plain one with no observers). */
   inbox?: SessionInbox;
@@ -123,6 +129,18 @@ export interface SessionComposerOptions {
    */
   checkpoint?: CheckpointWiring;
   now?: () => number;
+  /**
+   * W783: the process-wide pending-question table. Present = every composed
+   * session offers `ask_user_question`; absent = no session does (tests and
+   * embeddings that have no human answerer).
+   */
+  questionRegistry?: QuestionRegistry | null;
+  /**
+   * W783: publish one parked question as a `question` SSE frame. The composer
+   * supplies it (it knows the session id and can reach the bus); absent = the
+   * frame is not emitted, which no production host wants.
+   */
+  publishQuestion?: (sessionId: string | null, question: PendingQuestion) => void;
 }
 
 /** Non-negative integer from the environment, else the frozen default. */
@@ -164,9 +182,16 @@ export class SessionComposer {
     const read = reader?.read(sessionId, dir) ?? { grants: EMPTY_GRANTS, warnings: [] };
     // W728: the ledger must exist before the Llm wrapper (every step books).
     const ledger = this.usageLedger(sessionId, dir);
+    // W783: the question wiring of THIS generation. The runtime handle does not
+    // exist until `compose()` below returns, so the wiring reaches it through a
+    // holder it fills in immediately afterwards — the same late-binding the
+    // `isLive` probe and the log write both need.
+    const questionHolder: { runtime: Runtime | null } = { runtime: null };
+    const questions = this.questionWiring(sessionId, questionHolder);
     const engine = enginePlugins({
       profile,
       workspace: workspace === null ? null : { workspace: workspace.path },
+      ...(questions === null ? {} : { questions }),
       llm: this.stepObservedLlm(this.llmFactory()(profile), profile, ledger),
       workers: null, // the workers plugin registers the three tools, in compose order
       ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),
@@ -181,7 +206,7 @@ export class SessionComposer {
     reader?.onComposed(sessionId, dir, read);
     const usage = createUsageTracker();
     const hooks = this.opts.sessionHooks?.(sessionId) ?? {};
-    return compose({
+    const composed = compose({
       profile,
       plugins: engine.plugins,
       sessionBinding: this.bindingTo(sessionId, dir),
@@ -203,6 +228,36 @@ export class SessionComposer {
       ...(this.opts.watchdog === undefined ? {} : { watchdog: this.opts.watchdog }),
       ...(this.opts.now === undefined ? {} : { now: this.opts.now }),
     });
+    // W783: bind the just-composed runtime into the question wiring, so
+    // `isLive` and the `user_question` log row address THIS generation.
+    questionHolder.runtime = composed;
+    return composed;
+  }
+
+  /**
+   * W783: the user-question wiring of ONE session generation, or null when the
+   * host mounted no table (the tool is then not offered to the model at all).
+   *
+   * The bus is the SESSION's own (`compose()` provides it), filled in by the
+   * plugin body: an answerer chain per generation is what stops a question asked
+   * in one session from being answered into another.
+   */
+  private questionWiring(
+    sessionId: string | null,
+    holder: { runtime: Runtime | null },
+  ): QuestionWiring | null {
+    const registry = this.opts.questionRegistry;
+    if (registry === undefined || registry === null) return null;
+    return {
+      registry,
+      sessionId,
+      bus: { current: null },
+      isLive: () => holder.runtime !== null && !holder.runtime.isReleased,
+      publish: (question) => this.opts.publishQuestion?.(sessionId, question),
+      record: (question) => holder.runtime?.session.append(questionAskedRow(question)),
+      recordAnswer: (requestId, answers, timedOut) =>
+        holder.runtime?.session.append(questionAnsweredRow(requestId, answers, timedOut)),
+    };
   }
 
   /**

@@ -54,3 +54,34 @@ export function loopEventToFrame(ev: LoopEvent): TurnFrame {
 function frame(event: SseEventName, payload: Record<string, unknown>): TurnFrame {
   return { event, payload };
 }
+
+/**
+ * W783: one parked user question.
+ *
+ * This frame is NOT produced by the agent loop — a question parks the tool call,
+ * so no `LoopEvent` exists to map. It is host-emitted, which is why it is built
+ * here rather than in `loopEventToFrame`: the module that owns every frozen SSE
+ * payload owns this one too, so the two can never drift apart.
+ *
+ * `expires_at` is an absolute deadline and `timeout_ms` the resolved wait (§6.1),
+ * so a client can draw the countdown from the frame alone and judge expiry with
+ * the server's clock rather than its own.
+ */
+export function questionFrame(input: QuestionFrameInput): TurnFrame {
+  return frame("question", {
+    session: input.session,
+    id: input.id,
+    questions: [...input.questions],
+    expires_at: input.expiresAt,
+    timeout_ms: input.timeoutMs,
+  });
+}
+
+/** What [questionFrame] needs: the request as the pending table holds it. */
+export interface QuestionFrameInput {
+  session: string | null;
+  id: string;
+  questions: readonly unknown[];
+  expiresAt: number;
+  timeoutMs: number;
+}

@@ -18,7 +18,8 @@
  *   injection.ts     mid-turn delivery seam: lanes / placement / envelope (W513)
  *   plugin.ts        Plugin seam + NamedRegistry                   (plugin.rs)
  *   context.ts       Context service container                     (context.rs)
- *   event-bus.ts     EventBus seam (on/bail/waterfall)             (event_bus.rs)
+ *   event-bus.ts     EventBus seam (on/bail/waterfall/waterfallAsync) (event_bus.rs)
+ *   question.ts      user-question seam: service iface + error codes (W783)
  *   llm.ts           Llm seam + LlmRegistry                        (llm.rs)
  *   tool.ts          Tool / ToolGuard / ToolRegistry seams         (tool.rs)
  *   sandbox.ts       Sandbox seam (execution boundary)             (tools/src/sandbox.rs)
@@ -42,6 +43,7 @@ export * from "./injection.js";
 export * from "./plugin.js";
 export * from "./context.js";
 export * from "./event-bus.js";
+export * from "./question.js";
 export * from "./llm.js";
 export * from "./tool.js";
 export * from "./sandbox.js";

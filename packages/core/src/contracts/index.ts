@@ -121,16 +121,18 @@ export function loadEndpoints(): EndpointsContract {
   // W725: 43 -> 44 (GET /api/sessions/{id}/context).
   // W767: 44 -> 47 (GET /login, POST /auth/login, GET /auth/check — Studio's own
   // login-cookie gate; the two non-/api paths are declared in the contract too).
-  if (c.count !== 47 || c.endpoints.length !== 47) {
-    throw new Error(`endpoints contract must hold 47 endpoints, got ${c.endpoints.length}`);
+  // W783 (2): 47 -> 49 — GET|POST /api/questions (+ the pending list on GET).
+  if (c.count !== 49 || c.endpoints.length !== 49) {
+    throw new Error(`endpoints contract must hold 49 endpoints, got ${c.endpoints.length}`);
   }
   return c;
 }
 
 export function loadSse(): SseContract {
   const c = readJson<SseContract>("sse-events.json");
-  if (c.count !== 8 || c.events.length !== 8) {
-    throw new Error(`SSE contract must hold 8 events, got ${c.events.length}`);
+  // W783: 8 -> 9 (the host-emitted `question` frame, while a turn is parked).
+  if (c.count !== 9 || c.events.length !== 9) {
+    throw new Error(`SSE contract must hold 9 events, got ${c.events.length}`);
   }
   return c;
 }
@@ -141,8 +143,9 @@ export function loadRouteSnapshot(): RouteSnapshot {
 
 export function loadTools(): ToolsContract {
   const c = readJson<ToolsContract>("tools.json");
-  if (c.count !== 10 || c.tools.length !== 10) {
-    throw new Error(`tools contract must hold 10 tools, got ${c.tools.length}`);
+  // W783: 10 -> 11 (`ask_user_question`).
+  if (c.count !== 11 || c.tools.length !== 11) {
+    throw new Error(`tools contract must hold 11 tools, got ${c.tools.length}`);
   }
   return c;
 }

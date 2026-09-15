@@ -20,8 +20,12 @@ import {
   LLM_SERVICE,
   SANDBOX_SERVICE,
   TOOL_REGISTRY_SERVICE,
+  USER_QUESTION_SERVICE,
+  EVENT_BUS_SERVICE,
   SandboxError,
+  type AskUserQuestionAnswerItem,
   type Context,
+  type EventBus,
   type Llm,
   type Plugin,
   type Sandbox,
@@ -36,6 +40,8 @@ import {
   type ToolRegistry,
 } from "@celestea/core";
 import { agentLoopPlugin } from "@celestea/agent-loop";
+import { createUserQuestionService, type HostUserQuestionService } from "../user-questions.js";
+import { PendingQuestion, type QuestionRegistry } from "../question-registry.js";
 import { agentConfigFromProfile, type Profile } from "@celestea/runtime";
 import {
   assembleTools,
@@ -85,6 +91,43 @@ export interface EnginePluginInput {
    * follow the session, not the process. `null`/absent = the env posture.
    */
   workspace?: SessionFsScope | null;
+  /**
+   * W783: the pending-question table of this process. Supplied = the session
+   * mounts `ask_user_question` and answers through the waterfall; absent = the
+   * feature is not mounted at all (the tool is then not offered to the model).
+   */
+  questions?: QuestionWiring | null;
+}
+
+/**
+ * W783: a one-slot holder for the session's event bus. `engineTools()` runs
+ * before `compose()` provides the bus and the plugin body runs after, so the
+ * value travels through this object instead of a compose-time argument.
+ */
+export interface BusHolder {
+  current: EventBus | null;
+}
+
+/** W783: everything the engine needs to mount the user-question capability. */
+export interface QuestionWiring {
+  /** Process-wide pending table (shared by every session generation). */
+  registry: QuestionRegistry;
+  /**
+   * The session's async answerer chain (the runtime's own event bus). The plugin
+   * body fills this in, so the wiring can be built BEFORE `compose()` runs while
+   * the bus only exists DURING it.
+   */
+  bus: BusHolder;
+  /** The session id this generation is composed for (`null` = detached). */
+  sessionId: string | null;
+  /** Is this generation still live? (§5.3 `CALLER_NOT_LIVE` when it is not.) */
+  isLive?: () => boolean;
+  /** Publish one request to the UI (`question` SSE frame). */
+  publish: (question: PendingQuestion) => void;
+  /** Record the request in the session log (`user_question` row, §7). */
+  record: (question: PendingQuestion) => void;
+  /** Record how it ended (`user_answer` row, §7) — answer and timeout alike. */
+  recordAnswer: (requestId: string, answers: AskUserQuestionAnswerItem[], timedOut: boolean) => void;
 }
 
 export interface EngineTools {
@@ -109,7 +152,16 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
   if (http.policy?.netHostsIneffective) {
     opts.audit?.({ event: "net_hosts_ineffective", cap: "net_hosts", reason: "neither CELESTEA_HTTP_ALLOW nor CELESTEA_HTTP_DENY is set: the policy stays inactive" });
   }
-  const tools: Tool[] = [...builtinTools({ sandbox, processes, http }), ...(opts.tools ?? [])];
+  // W783 §5.3: the service refuses a DELEGATED caller itself (a worker turn has
+  // no human), so the guard is mounted unconditionally here.
+  // W783: the bus holder is filled in by the plugin body below, which runs
+  // inside `compose()` AFTER the runtime provided EVENT_BUS_SERVICE.
+  const busHolder: BusHolder = { current: null };
+  const questions = opts.questions === undefined || opts.questions === null ? null : userQuestionsOf(opts.questions, busHolder);
+  const tools: Tool[] = [
+    ...builtinTools({ sandbox, processes, http, ...(questions === null ? {} : { questions }) }),
+    ...(opts.tools ?? []),
+  ];
   if (opts.workers !== null) tools.push(...workerTools(opts.workers));
   const assembly = assembleTools({
     tools,
@@ -124,6 +176,12 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
     ctx.provide(TOOL_REGISTRY_SERVICE, assembly.registry);
     ctx.provide(SANDBOX_SERVICE, assembly.sandbox);
     ctx.provide(PROCESS_REGISTRY_SERVICE, assembly.processes);
+    // W783: the same service instance the tool was constructed with, published
+    // as a seam too so an answerer layer (or a test) can reach it.
+    if (questions !== null) {
+      busHolder.current = ctx.require(EVENT_BUS_SERVICE);
+      ctx.provide(USER_QUESTION_SERVICE, questions);
+    }
   });
   return { plugin, registry: assembly.registry, sandbox, decision: choice.decision };
 }
@@ -334,5 +392,50 @@ export function enginePlugins(input: EnginePluginInput): { plugins: Plugin[]; to
   return {
     plugins: [engineLlmPlugin(input.llm), engineLoopPlugin(input.profile), tools.plugin],
     tools,
+  };
+}
+
+/**
+ * W783: the session's user-question service. `isLive` answers "is this
+ * generation still the live one?" — a settled/released instance must refuse
+ * instead of parking a question nobody can ever answer (§5.3 `CALLER_NOT_LIVE`).
+ *
+ * The bus is the runtime's own `EVENT_BUS_SERVICE` instance, handed in by the
+ * composer (`session-compose.ts` reads it from the Context at compose time, by
+ * which point `compose()` has already provided it).
+ */
+function userQuestionsOf(wiring: QuestionWiring, bus: BusHolder): HostUserQuestionService {
+  return createUserQuestionService({
+    registry: wiring.registry,
+    bus: lazyBus(bus),
+    sessionId: wiring.sessionId,
+    ...(wiring.isLive === undefined ? {} : { isLive: wiring.isLive }),
+    publish: wiring.publish,
+    record: wiring.record,
+    recordAnswer: wiring.recordAnswer,
+  });
+}
+
+/**
+ * A deferred view of the session's event bus. The service holds this for its
+ * whole life while the real bus only exists from the moment `compose()` provides
+ * it, so the first question resolves it and every later one reuses that answer.
+ */
+function lazyBus(holder: BusHolder): EventBus {
+  const get = (): EventBus => {
+    const bus = holder.current;
+    if (bus === null) throw new Error("the session EventBus is not mounted yet: ask_user_question cannot reach the answerer waterfall");
+    return bus;
+  };
+  return {
+    on: (key, listener) => get().on(key, listener),
+    emit: (key, event) => get().emit(key, event),
+    bail: (key, listener) => get().bail(key, listener),
+    runBail: (key, event) => get().runBail(key, event),
+    waterfall: (key, listener) => get().waterfall(key, listener),
+    runWaterfall: (key, event, init) => get().runWaterfall(key, event, init),
+    waterfallAsync: (key, listener) => get().waterfallAsync(key, listener),
+    runWaterfallAsync: (key, event, init) => get().runWaterfallAsync(key, event, init),
+    counts: (key) => get().counts(key),
   };
 }
