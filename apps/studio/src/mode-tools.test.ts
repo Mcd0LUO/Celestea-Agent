@@ -20,6 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ModelRequest } from "@celestea/core";
 import { getJson, busyRuntime, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
 import { activate, makeEngineHarness, waitIdle } from "./runtime/test-util.js";
 import type { OfflineStep } from "./runtime/offline-llm.js";
@@ -30,14 +31,21 @@ const EXECUTION_MARK = "Execution mode — prefer one program over many round tr
 
 const harnesses: StudioHarness[] = [];
 
+const requests: ModelRequest[] = [];
+
 function engine(): StudioHarness {
   const script: OfflineStep[] = [{ text: "ok" }, { text: "ok" }, { text: "ok" }];
-  const h = makeEngineHarness({ sessions: { std: [], exec: [], plain: [] }, meta: { std: { mode: "standard" }, exec: { mode: "execution" } }, llm: { script } });
+  const h = makeEngineHarness({
+    sessions: { std: [], exec: [], plain: [] },
+    meta: { std: { mode: "standard" }, exec: { mode: "execution" } },
+    llm: { script, onRequest: (req) => requests.push(req) },
+  });
   harnesses.push(h);
   return h;
 }
 
 afterEach(() => {
+  requests.length = 0;
   for (const h of harnesses.splice(0)) h.cleanup();
 });
 
@@ -156,15 +164,18 @@ describe("W791 P1 mode tool face (real engine)", () => {
     expect(await getJson(h.app, "/api/sessions/sample-ws%2Fs1/mode", jsonRequest("POST", { mode: "execution" }))).toMatchObject({ status: 409 });
   });
 
-  it("a turn actually runs on the folded face (the model is offered 6 tools, run_code still works)", async () => {
+  it("a turn really OFFERS the folded face to the model (the request carries 6 schemas)", async () => {
     const h = engine();
     await activate(h, "sample-ws/exec");
     const res = await h.app.request("/api/turn", jsonRequest("POST", { input: "执行任务", session: "sample-ws/exec" }));
     expect(res.status).toBe(202);
     await waitIdle(h);
     // The folded tools are gone from the direct face but still registered (M8's
-    // program path); the session log therefore keeps recording tool rows with the
-    // same names as before.
+    // program path); the log therefore keeps naming them.
     expect(await toolsOf(h, "sample-ws/exec")).toEqual(EXECUTION_FACE);
+    // What the provider was ACTUALLY sent — not a re-derivation of the face.
+    const sent = requests.filter((r) => r.tools.some((t) => t.name === "run_code" || t.name === "read_file"));
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent[0]?.tools.map((t) => t.name).sort()).toEqual(EXECUTION_FACE);
   });
 });
