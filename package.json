@@ -2,6 +2,7 @@
   "name": "celestea-studio-ts",
   "version": "0.1.0-p0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Celestea Studio backend - TypeScript rewrite (P0: contract freeze + skeleton + golden-sample toolchain)",
   "packageManager": "pnpm@11.22.0",
