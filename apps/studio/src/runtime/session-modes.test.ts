@@ -107,7 +107,9 @@ describe("W729 per-session mode prompts (real engine, one process)", () => {
         .sessionContext(id)
         .tools.map((t) => t.name)
         .sort();
-      expect(names).toEqual(["http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"]);
+      // W783: `ask_user_question` is mounted by the real adapter (it always
+      // supplies a question service), so it is part of each session's own face.
+      expect(names).toEqual(["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"]);
       // The rendered list is the SAME list the session exposes (S2/M9 shape).
       expect(systemOf(h, id)).toContain(`directly (${names.join(", ")})`);
     }
@@ -119,7 +121,8 @@ describe("W729 per-session mode prompts (real engine, one process)", () => {
     await activate(h, "sample-ws/exec");
     const faceOf = (id: string): string[] => h.runtime.sessionContext(id).tools.map((t) => t.name).sort();
     expect(faceOf("sample-ws/exec")).toEqual(faceOf("sample-ws/std"));
-    expect(faceOf("sample-ws/std")).toHaveLength(10);
+    // W783: 10 -> 11.
+    expect(faceOf("sample-ws/std")).toHaveLength(11);
   });
 
   it("P0 invariant ①: a session WITHOUT session.json.mode keeps the DEFAULT mode prompt", async () => {

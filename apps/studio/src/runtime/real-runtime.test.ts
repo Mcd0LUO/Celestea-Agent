@@ -128,13 +128,14 @@ describe("POST /api/turn over the real engine", () => {
   });
 });
 
-describe("GET /api/events — the frozen 8 event names", () => {
+// W783: 8 -> 9 (`question`).
+describe("GET /api/events — the frozen 9 event names", () => {
   it("streams every contract event in the frozen envelope", async () => {
     const h = make();
     const res = await h.app.request("/api/events");
     expect(res.headers.get("content-type")).toContain("text/event-stream");
     const reader = res.body?.getReader();
-    const names = ["text", "thinking", "tool", "tool_result", "done", "turn_end", "status", "compact"];
+    const names = ["text", "thinking", "tool", "tool_result", "done", "turn_end", "status", "compact", "question"];
     expect([...SSE_EVENT_NAMES].sort()).toEqual([...names].sort());
     const first = reader?.read();
     for (const [i, name] of names.entries()) {
@@ -149,7 +150,7 @@ describe("GET /api/events — the frozen 8 event names", () => {
       wire += decoder.decode(chunk.value);
     }
     for (const name of names) expect(wire).toContain(`event: ${name}`);
-    expect(wire).toContain('"turn":8');
+    expect(wire).toContain('"turn":9');
     expect(wire).toContain('"payload":{"probe":"compact"}');
     await reader?.cancel();
   });
@@ -264,10 +265,13 @@ describe("GET /api/sessions/{id}/context over the real engine", () => {
     expect(tools).toContain("read_file");
     expect(tools).toEqual([...tools].sort());
     // W779 T1: this surface is `registry.schemas()` verbatim, so it is where the
-    // `desc` label actually reaches the model — all 10 tools, builtins AND the
+    // `desc` label actually reaches the model — every tool, builtins AND the
     // three contract-driven worker tools. (`GET /api/tools` keeps its frozen
     // two-field {name, description} view and never carried `parameters`.)
-    expect(toolViews).toHaveLength(10);
+    // W783: 10 -> 11 — the real engine mounts the user-question service, so
+    // `ask_user_question` is part of the face the model is offered.
+    expect(toolViews).toHaveLength(11);
+    expect(tools).toContain("ask_user_question");
     for (const view of toolViews) {
       const desc = (view.parameters["properties"] as Record<string, unknown>)["desc"] as { type?: string };
       expect(desc?.type, view.name).toBe("string");

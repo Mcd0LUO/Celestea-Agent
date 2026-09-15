@@ -226,8 +226,75 @@
             }
           },
           "additionalProperties": true
+        },
+        {
+          "title": "user_question",
+          "type": "object",
+          "required": [
+            "type",
+            "id",
+            "questions"
+          ],
+          "properties": {
+            "type": {
+              "const": "user_question"
+            },
+            "id": {
+              "type": "string",
+              "description": "W783: the request id ('q-<n>'), echoed by the matching user_answer row."
+            },
+            "questions": {
+              "type": "array",
+              "description": "The question batch as the model asked it (the same shape the tool received).",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "expires_at": {
+              "type": "integer",
+              "description": "W783: absolute deadline in ms; judged at READ time so a replay still knows whether the question expired."
+            },
+            "timeout_ms": {
+              "type": "integer",
+              "description": "W783: the resolved maximum wait in ms."
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "title": "user_answer",
+          "type": "object",
+          "required": [
+            "type",
+            "id",
+            "answers"
+          ],
+          "properties": {
+            "type": {
+              "const": "user_answer"
+            },
+            "id": {
+              "type": "string",
+              "description": "W783: the request id this row answers."
+            },
+            "answers": {
+              "type": "array",
+              "description": "selected holds option LABELS, never indices; custom is the optional free-text answer.",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "timed_out": {
+              "type": "boolean",
+              "description": "W783: true = the deadline expired and NO answer exists; the system decided nothing for the model."
+            }
+          },
+          "additionalProperties": true
         }
-      ]
+      ],
+      "note": "W783 added user_question/user_answer (7 -> 9 variants). They are ADDITIVE rows: the engine never emits them, the host does, and a reader that does not know them treats the row as a torn tail exactly as before."
     }
   },
   "type": "object",
@@ -255,6 +322,12 @@
     },
     {
       "$ref": "#/$defs/SessionEvent/oneOf/6"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/7"
+    },
+    {
+      "$ref": "#/$defs/SessionEvent/oneOf/8"
     }
   ],
   "projections": {
@@ -291,10 +364,25 @@
         "tool_error": "<error>",
         "tool_parent_id": "<parent_id> (only when present)",
         "content": "ABSENT"
+      },
+      "user_question": {
+        "role": "question",
+        "kind": "question",
+        "content": "<questions>",
+        "question_id": "<id>",
+        "expires_at": "<expires_at> (when present)"
+      },
+      "user_answer": {
+        "role": "question",
+        "kind": "answer",
+        "content": "<answers>",
+        "question_id": "<id>",
+        "timed_out": "<timed_out> (when present)"
       }
     },
-    "engineDeriveMessages": "model-visible history: turn_start/turn_end/thinking_delta are SKIPPED; tool rows carrying parent_id are SKIPPED (run_code sub-calls); everything else is projected in log order.",
-    "orphanRule": "an orphan tool_result (no preceding tool_call) is still emitted by the Studio projection; nothing is paired or filtered."
+    "engineDeriveMessages": "model-visible history: turn_start/turn_end/thinking_delta are SKIPPED; tool rows carrying parent_id are SKIPPED (run_code sub-calls); everything else is projected in log order. W783: user_question/user_answer are host-side audit rows about a PAUSED turn — they are SKIPPED too (the answer reaches the model as the ordinary tool_result of ask_user_question, never as invented history).",
+    "orphanRule": "an orphan tool_result (no preceding tool_call) is still emitted by the Studio projection; nothing is paired or filtered.",
+    "questionRecovery": "W783 §7: user_question/user_answer exist so a client that reconnects can rebuild the card and so a replay shows how a parked turn ended. The pending TABLE is in-memory: after a restart a question is unanswerable, and the row reads as an unanswered/expired question instead of blocking the model."
   },
   "serialization": {
     "fieldOrder": "serde struct order",

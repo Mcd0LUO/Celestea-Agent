@@ -100,6 +100,19 @@ export function validateSessionEvent(raw: unknown): ValidateResult {
       }
       optionalString(raw, "parent_id", errors);
       break;
+    // W783: the two host-side user-question rows. `questions` / `answers` are
+    // required and must be arrays; the timing fields are optional numbers.
+    case "user_question":
+      requireString(raw, "id", errors);
+      requireArray(raw, "questions", errors);
+      optionalNumber(raw, "expires_at", errors);
+      optionalNumber(raw, "timeout_ms", errors);
+      break;
+    case "user_answer":
+      requireString(raw, "id", errors);
+      requireArray(raw, "answers", errors);
+      optionalBoolean(raw, "timed_out", errors);
+      break;
   }
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, event: normalizeSessionEvent(raw, type) };
@@ -140,6 +153,21 @@ function normalizeSessionEvent(raw: Record<string, unknown>, type: SessionEventT
     if (parent !== undefined) ev.parent_id = parent;
     return ev;
   }
+  if (type === "user_question") {
+    // Optional timing fields are OMITTED when absent, exactly like `parent_id`
+    // (the row is host-written, so its own writer defines the byte shape).
+    const ev: SessionEvent = { type, id: raw["id"] as string, questions: raw["questions"] as unknown[] };
+    const expires = optionalNumberValue(raw["expires_at"]);
+    if (expires !== undefined) ev.expires_at = expires;
+    const timeout = optionalNumberValue(raw["timeout_ms"]);
+    if (timeout !== undefined) ev.timeout_ms = timeout;
+    return ev;
+  }
+  if (type === "user_answer") {
+    const ev: SessionEvent = { type, id: raw["id"] as string, answers: raw["answers"] as unknown[] };
+    if (typeof raw["timed_out"] === "boolean") ev.timed_out = raw["timed_out"];
+    return ev;
+  }
   if (type === "turn_end") {
     // `#[serde(default)]` fills the missing outcome on the Rust side, so the
     // in-memory event ALWAYS carries one (a legacy row reads as completed).
@@ -158,6 +186,28 @@ function requireString(raw: Record<string, unknown>, name: string, errors: strin
 
 function requirePresent(raw: Record<string, unknown>, name: string, errors: string[]): void {
   if (!(name in raw)) errors.push(`field '${name}' is required`);
+}
+
+function requireArray(raw: Record<string, unknown>, name: string, errors: string[]): void {
+  if (!Array.isArray(raw[name])) errors.push(`field '${name}' must be an array`);
+}
+
+function optionalNumber(raw: Record<string, unknown>, name: string, errors: string[]): void {
+  const v = raw[name];
+  if (v !== undefined && v !== null && (typeof v !== "number" || !Number.isFinite(v))) {
+    errors.push(`field '${name}' must be a number when present`);
+  }
+}
+
+function optionalNumberValue(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function optionalBoolean(raw: Record<string, unknown>, name: string, errors: string[]): void {
+  const v = raw[name];
+  if (v !== undefined && v !== null && typeof v !== "boolean") {
+    errors.push(`field '${name}' must be a boolean when present`);
+  }
 }
 
 function optionalString(raw: Record<string, unknown>, name: string, errors: string[]): void {
@@ -203,6 +253,19 @@ export function serializeSessionEvent(ev: SessionEvent): string {
       parts.push(`"value":${serdeJsonString(ev.value === undefined ? null : ev.value)}`);
       parts.push(`"error":${ev.error === undefined || ev.error === null ? "null" : JSON.stringify(ev.error)}`);
       if (ev.parent_id !== undefined && ev.parent_id !== null) parts.push(`"parent_id":${JSON.stringify(ev.parent_id)}`);
+      break;
+    // W783: tag first, then the fields in declaration order; the optional ones
+    // are omitted when absent (never written as null).
+    case "user_question":
+      parts.push(`"id":${JSON.stringify(ev.id)}`);
+      parts.push(`"questions":${serdeJsonString(ev.questions)}`);
+      if (ev.expires_at !== undefined) parts.push(`"expires_at":${JSON.stringify(ev.expires_at)}`);
+      if (ev.timeout_ms !== undefined) parts.push(`"timeout_ms":${JSON.stringify(ev.timeout_ms)}`);
+      break;
+    case "user_answer":
+      parts.push(`"id":${JSON.stringify(ev.id)}`);
+      parts.push(`"answers":${serdeJsonString(ev.answers)}`);
+      if (ev.timed_out !== undefined) parts.push(`"timed_out":${JSON.stringify(ev.timed_out)}`);
       break;
   }
   return `{${parts.join(",")}}`;

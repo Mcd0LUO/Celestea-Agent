@@ -30,10 +30,11 @@ describe("studio SSE bus", () => {
     expect(frame.envelope.session).toBeNull();
   });
 
-  it("carries all 8 contract event names and rejects anything else", () => {
+  // W783: 8 -> 9 (`question`).
+  it("carries all 9 contract event names and rejects anything else", () => {
     const bus = createStudioBus();
     for (const name of SSE_EVENT_NAMES) expect(() => bus.emit(name, 0, {})).not.toThrow();
-    expect(SSE_EVENT_NAMES).toHaveLength(8);
+    expect(SSE_EVENT_NAMES).toHaveLength(9);
     expect(() => bus.emit("context" as never, 0, {})).toThrow(/unknown SSE event/);
   });
 

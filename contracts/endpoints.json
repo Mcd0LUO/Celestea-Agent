@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (47 endpoints)",
+  "title": "Celestea Studio HTTP API contract (49 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -8,7 +8,7 @@
     "routes": "docs/archive/rust-studio-backend/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes)."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 47,
+  "count": 49,
   "endpoints": [
     {
       "id": "get_health",
@@ -3113,6 +3113,135 @@
         "W767: consumed by nginx `auth_request` only (proxied as the internal location `/__auth_check`); it is not part of the UI surface.",
         "Checks shape, HMAC signature (constant-time) and expiry; the secret is never sent to a client."
       ]
+    },
+    {
+      "id": "get_questions",
+      "method": "GET",
+      "path": "/api/questions",
+      "group": "questions",
+      "rustHandler": "(none - TypeScript-only, W783)",
+      "docRef": "docs/feature-ask-user.md#7-断线恢复",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "session",
+            "type": "string",
+            "required": false,
+            "note": "Only this session's pending questions; absent = every session."
+          },
+          {
+            "name": "pending",
+            "type": "string",
+            "required": false,
+            "note": "`1` = only questions that are still answerable. `0`/absent = the same list (the table never holds settled questions), so the flag documents intent rather than filtering."
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "questions",
+            "type": "array<{id:string,session:string|null,questions:array,expires_at:integer,timeout_ms:integer,remaining_ms:integer,expired:boolean}>",
+            "required": true,
+            "note": "`expired` is evaluated at READ time (`now >= expires_at`, the grants isExpired pattern) and `remaining_ms` is what the UI counts down, so a client that reconnects rebuilds the card without trusting its own clock."
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Reconnect recovery (design 7): the SSE frame can be missed; this list is the authoritative rebuild source.",
+        "After a process restart the pending table is empty, so a question the model asked before the restart is NOT answerable — the client must render the `user_question` row as unanswered/expired instead of blocking (design 7.2 rule 4)."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "post_question_answer",
+      "method": "POST",
+      "path": "/api/questions/{id}/answer",
+      "group": "questions",
+      "rustHandler": "(none - TypeScript-only, W783)",
+      "docRef": "docs/feature-ask-user.md#42-数据流关键答案直接-resolve",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "answers",
+            "type": "array<{id:string,selected:string[],custom?:string}>",
+            "required": true,
+            "note": "One entry per question in the batch. `selected` holds option LABELS (never indices, design 3.2 rule 1); `custom` is the optional free-text answer. A question may be answered with `selected:[]` plus `custom`, or with both."
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": false,
+            "note": "Optional guard: when present it must match the session that asked, so a stale UI cannot answer another session's question by guessing an id."
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": true,
+            "note": "the request id that was answered"
+          },
+          {
+            "name": "session",
+            "type": "string|null",
+            "required": true
+          },
+          {
+            "name": "timed_out",
+            "type": "boolean",
+            "required": true,
+            "note": "always false on this path: a real answer arrived (design 6.2: whoever arrives first wins)"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown or already settled question '<id>'",
+          "note": "a question that expired, was cancelled, or belonged to a previous process reads exactly like an unknown one — the pending table is in-memory (design 7.2 rule 4)"
+        },
+        {
+          "status": 409,
+          "error": "question '<id>' already settled",
+          "note": "the race of design 6.2: the answer arrived after the deadline (or after a cancel). `timed_out` in the body says which side won"
+        },
+        {
+          "status": 422,
+          "error": "field 'answers' must be an array of {id,selected[],custom?} objects"
+        }
+      ],
+      "notes": [
+        "This is the endpoint that makes the answer reach a PARKED tool call: it resolves the pending promise the answerer waterfall is awaiting, so the answer NEVER travels as a message (design 4.2).",
+        "`selected` carrying labels is what lets a UI answer without knowing the option order.",
+        "The answer is recorded as a `user_answer` session row (design 7) before the tool resumes."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/questions route"
+      }
     }
   ]
 }

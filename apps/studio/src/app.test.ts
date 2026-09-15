@@ -41,7 +41,8 @@ afterEach(() => {
 });
 
 describe("route table coverage", () => {
-  it("binds exactly the 47 contract endpoints with the contract method+path", () => {
+  // W783: 47 -> 49 (the two user-question endpoints).
+  it("binds exactly the 49 contract endpoints with the contract method+path", () => {
     const h = make();
     expect(h.studio.endpointIds).toHaveLength(API_ENDPOINT_COUNT);
     expect(new Set(h.studio.endpointIds).size).toBe(API_ENDPOINT_COUNT);
@@ -52,12 +53,12 @@ describe("route table coverage", () => {
 });
 
 describe("W729 P0 invariants", () => {
-  it("③ adds NO endpoint of its own: API_ENDPOINT_COUNT === endpoints.json#count === 47", () => {
+  it("③ adds NO endpoint of its own: API_ENDPOINT_COUNT === endpoints.json#count", () => {
     // The design's "43" was the baseline of the day it was written; the context
-    // snapshot (W725) moved it to 44, W767's login-cookie gate to 47 — W729
-    // itself adds none.
-    expect(API_ENDPOINT_COUNT).toBe(47);
-    expect(loadEndpoints().count).toBe(47);
+    // snapshot (W725) moved it to 44, W767's login-cookie gate to 47 and W783's
+    // user questions to 49 — W729 itself adds none.
+    expect(API_ENDPOINT_COUNT).toBe(49);
+    expect(loadEndpoints().count).toBe(49);
     expect(loadEndpoints().endpoints.map((e) => e.id)).not.toContain("post_session_mode");
   });
 });

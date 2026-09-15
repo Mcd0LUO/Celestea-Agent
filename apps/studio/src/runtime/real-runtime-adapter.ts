@@ -39,7 +39,7 @@
  * (`llm-assembly.ts`), i.e. production is a real model.
  */
 
-import type { InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome, WorkerEntry } from "@celestea/core";
+import type { AskUserQuestionAnswerItem, InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome, WorkerEntry } from "@celestea/core";
 import { getExtra, hasInProgressTurn, type Watchdog, type WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
@@ -56,8 +56,9 @@ import {
   type SessionRuntime,
 } from "@celestea/runtime";
 import { join } from "node:path";
-import { CapacityError, EngineError, toolSpecView } from "../runtime-adapter.js";
+import { CapacityError, EngineError, toolSpecView, type PendingQuestionView, type QuestionAnswerOutcome } from "../runtime-adapter.js";
 import { HostAutowake, autowakeLog } from "./host-autowake.js";
+import { injectionHooksOf, type SessionInjectionHooks } from "./session-publisher.js";
 import { sessionContextOf } from "./context-snapshot.js";
 import { mergedWorkerRows, sendWorkerThrough, spawnWorkerThrough, workerMessagesAcross } from "./worker-bridge.js";
 import type {
@@ -78,6 +79,7 @@ import type {
   WorkerSpawnRequest,
   WorkerStatusReport,
 } from "../runtime-adapter.js";
+import { QuestionHost } from "./question-host.js";
 import type { StudioBus } from "../sse.js";
 import { contextViewOf } from "./context-snapshot.js";
 import { applyProfilePatch, defaultEngineProfile, engineProfileOf, profileFromEngine } from "./engine-profile.js";
@@ -165,6 +167,12 @@ class RealEngine implements RealRuntimeAdapter {
    * They carry no turn logic: the adapter supplies the wake callback below.
    */
   private readonly autowake: HostAutowake;
+  /** W783: process-wide user-question capability (table + host view). */
+  private readonly questions = new QuestionHost({
+    emit: (sessionId, turn, f) => void this.bus?.emit(f.event, turn, f.payload, sessionId),
+    turnOf: (sessionId) => this.registry.peek(sessionId)?.turnNo ?? 0,
+  });
+
 
   constructor(opts: RealRuntimeAdapterOptions = {}) {
     this.opts = opts;
@@ -183,6 +191,10 @@ class RealEngine implements RealRuntimeAdapter {
       env: this.env,
       baseProfile: () => this.profileValue,
       sessionHooks: (sessionId) => this.injectionHooks(sessionId),
+      // W783: every composed session offers `ask_user_question` and publishes a
+      // parked request on the bus as a `question` frame.
+      questionRegistry: this.questions.table(),
+      publishQuestion: (sessionId, question) => this.questions.publish(sessionId, question),
     });
     this.registry = new SessionRuntimeRegistry({
       build: (sessionId, dir) => {
@@ -214,6 +226,14 @@ class RealEngine implements RealRuntimeAdapter {
 
   attach(bus: StudioBus): void {
     this.bus = bus;
+  }
+
+  // --- W783: user questions (the capability itself lives in QuestionHost) ---
+  answerQuestion(requestId: string, answers: AskUserQuestionAnswerItem[], sessionId?: string): QuestionAnswerOutcome {
+    return this.questions.answer(requestId, answers, sessionId);
+  }
+  pendingQuestions(sessionId?: string | null): PendingQuestionView[] {
+    return this.questions.list(sessionId);
   }
 
   generationEpoch(): number {
@@ -285,41 +305,13 @@ class RealEngine implements RealRuntimeAdapter {
 
   /**
    * W515 §2/§4: the session's inbox publishes every placement change on the bus
-   * (`queued`/`steering` when a message is accepted, `context` when a boundary
-   * consumes it), carrying the envelope so a settlement notice stays
-   * distinguishable from a deliberate relay message.
+   * (see `session-publisher.ts` for the shapes).
    */
-  private injectionHooks(sessionId: string | null): { inbox: SessionInbox; onInjected: (messages: readonly PendingInjection[], boundary: "turn-start" | "step") => void } {
-    const publish = (placement: InjectionPlacement, message: InjectedMessage, boundary?: "turn-start" | "step"): void => {
-      this.bus?.emit(
-        "status",
-        0,
-        {
-          phase: "progress",
-          placement,
-          ...(boundary === undefined ? {} : { boundary }),
-          message: {
-            id: message.id,
-            kind: message.kind,
-            from: message.from,
-            lane: message.lane,
-            source: message.source,
-            summary: message.source.summary ?? message.text.slice(0, 120),
-          },
-          statusline: {},
-        },
-        sessionId,
-      );
-    };
-    return {
-      // Only the ACCEPT side is observed here: the `context` placement is
-      // published once, by `onInjected`, which also knows WHICH boundary
-      // consumed the message (a mailbox receipt never enters the inbox).
-      inbox: createSessionInbox(this.now, { onQueued: (message, placement) => publish(placement, message) }),
-      onInjected: (messages, boundary) => {
-        for (const message of messages) publish("context", inboxMessageOf(message), boundary);
-      },
-    };
+  private injectionHooks(sessionId: string | null): SessionInjectionHooks {
+    return injectionHooksOf(sessionId, {
+      emitStatus: (id, payload) => void this.bus?.emit("status", 0, payload, id),
+      now: this.now,
+    });
   }
 
   // --- sessions ----------------------------------------------------------

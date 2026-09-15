@@ -1,7 +1,7 @@
 /**
  * Route table derived from the frozen contract.
  *
- * 47 endpoints (51 method+path combos minus the 4 static routes).
+ * 49 endpoints (53 method+path combos minus the 4 static routes).
  * Rust path params use `{id}`; Hono uses `:id`, so paths are translated here
  * once and the translation is asserted in tests.
  *
@@ -48,7 +48,7 @@ export function studioRoutes(): RegisteredRoute[] {
   }));
 }
 
-export const API_ENDPOINT_COUNT = 47;
+export const API_ENDPOINT_COUNT = 49;
 export const STATIC_ROUTE_COUNT = 4;
 
 /** Id-keyed view of the contract routes: a handler asks for its id, never a path. */

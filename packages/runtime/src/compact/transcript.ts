@@ -68,6 +68,13 @@ export function transcriptLine(ev: SessionEvent): string {
       return ev.error === null
         ? `【工具结果】${clip(serdeJsonString(ev.value ?? null), quarter)}\n`
         : `【工具结果】错误：${clip(ev.error, quarter)}\n`;
+    // W783: a question and its answer are host-side audit rows about a PAUSED
+    // turn. The transcript already carries what the model saw — the ordinary
+    // `tool_result` of `ask_user_question` — so projecting them too would
+    // summarise the same decision twice.
+    case "user_question":
+    case "user_answer":
+      return "";
   }
 }
 

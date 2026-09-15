@@ -21,6 +21,7 @@
  *   prompts.ts       /api/prompts (+delete/default)
  *   worker.ts        /api/worker/spawn | send | status
  *   grants.ts        GET+POST+DELETE /api/sessions/{id}/grants | grants/confirm-token
+ *   questions.ts     W783: GET /api/questions | POST /api/questions/{id}/answer
  *   auth.ts          W767: GET /login | POST /auth/login | GET /auth/check
  *
  * W725: the context endpoint (44th) lives in sessions.ts; its shaping is in
@@ -37,6 +38,7 @@ import { registerGrants } from "./grants.js";
 import { registerHealth } from "./health.js";
 import { registerPrompts } from "./prompts.js";
 import { registerProviders } from "./providers.js";
+import { registerQuestions } from "./questions.js";
 import { registerSessionMoves } from "./session-move.js";
 import { registerSessions } from "./sessions.js";
 import { registerWorker } from "./worker.js";
@@ -56,6 +58,8 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     ...registerPrompts(app, deps, table),
     ...registerWorker(app, deps, table),
     ...registerGrants(app, deps, table),
+    // W783: the user-question answer + pending-list endpoints (47 -> 49).
+    ...registerQuestions(app, deps, table),
     // W767: Studio's OWN login-cookie gate (page + login + nginx auth_request).
     ...registerAuth(app, deps, table),
   ];

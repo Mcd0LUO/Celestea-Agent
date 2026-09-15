@@ -68,6 +68,39 @@ export interface ToolResultEvent {
   parent_id?: string;
 }
 
+/**
+ * W783 §7: the model ASKED the user something. A host-side audit row (the engine
+ * never writes one) recording the request while the turn is parked, so a client
+ * that reconnects can rebuild the card and a replay can see what was asked.
+ */
+export interface UserQuestionEvent {
+  type: "user_question";
+  /** Request id (`q-<n>`), echoed by the matching `user_answer` row. */
+  id: string;
+  /** The question batch as the model asked it. */
+  questions: unknown[];
+  /**
+   * Absolute deadline in ms, judged at READ time (§6.1) — so a replay still
+   * knows whether the question had expired, with no timer involved.
+   */
+  expires_at?: number;
+  /** The resolved maximum wait in ms. */
+  timeout_ms?: number;
+}
+
+/**
+ * W783 §7: the question was answered (or expired). `answers` holds the same
+ * items the tool returned, with `selected` as option LABELS.
+ */
+export interface UserAnswerEvent {
+  type: "user_answer";
+  /** The request id this row answers. */
+  id: string;
+  answers: unknown[];
+  /** `true` = the deadline expired and no answer exists (§6.3). */
+  timed_out?: boolean;
+}
+
 export type SessionEvent =
   | TurnStartEvent
   | TurnEndEvent
@@ -75,7 +108,9 @@ export type SessionEvent =
   | AssistantMessageEvent
   | ThinkingDeltaEvent
   | ToolCallEvent
-  | ToolResultEvent;
+  | ToolResultEvent
+  | UserQuestionEvent
+  | UserAnswerEvent;
 
 export const SESSION_EVENT_TYPES = [
   "turn_start",
@@ -85,6 +120,8 @@ export const SESSION_EVENT_TYPES = [
   "thinking_delta",
   "tool_call",
   "tool_result",
+  "user_question",
+  "user_answer",
 ] as const;
 
 export type SessionEventType = (typeof SESSION_EVENT_TYPES)[number];
@@ -122,12 +159,41 @@ export interface ToolResultMessageOut {
   tool_parent_id?: string;
 }
 
+/**
+ * W783 §7: a question the model asked, as the transcript surface shows it.
+ * `content` carries the raw batch the tool received.
+ */
+export interface QuestionAskedMessageOut {
+  role: "question";
+  kind: "question";
+  /** Request id (`q-<n>`), matching the `user_answer` row. */
+  question_id: string;
+  content: unknown;
+  /** Absolute deadline in ms (absent on a legacy/hand-written row). */
+  question_expires_at?: number;
+}
+
+/**
+ * W783 §7: the answer to a question (or the fact that it expired). `content`
+ * carries the answer items, whose `selected` entries are option LABELS.
+ */
+export interface QuestionAnsweredMessageOut {
+  role: "question";
+  kind: "answer";
+  question_id: string;
+  content: unknown;
+  /** `true` = the deadline expired; nothing was chosen on the model's behalf. */
+  question_timed_out?: boolean;
+}
+
 export type StudioMessage =
   | UserMessageOut
   | AssistantMessageOut
   | ThinkingMessageOut
   | ToolCallMessageOut
-  | ToolResultMessageOut;
+  | ToolResultMessageOut
+  | QuestionAskedMessageOut
+  | QuestionAnsweredMessageOut;
 
 // ---------------------------------------------------------------------------
 // SSE (GET /api/events)
@@ -142,6 +208,8 @@ export const SSE_EVENT_NAMES = [
   "done",
   "status",
   "compact",
+  // W783: the model asked the user something and the turn is PARKED on it.
+  "question",
 ] as const;
 
 export type SseEventName = (typeof SSE_EVENT_NAMES)[number];

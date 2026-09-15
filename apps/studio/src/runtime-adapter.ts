@@ -33,7 +33,7 @@
  * `createStudioApp({ runtime })` — no handler changes, no route changes.
  */
 
-import type { InjectionPlacement, Statusline } from "@celestea/core";
+import type { AskUserQuestionAnswerItem, AskUserQuestionItem, InjectionPlacement, Statusline } from "@celestea/core";
 /**
  * W737: the busy-slot error is part of the ENGINE contract, so it has exactly
  * one definition — `packages/runtime/src/errors.ts`. It is imported (never
@@ -328,4 +328,39 @@ export interface RuntimeAdapter {
   workerSessions(): WorkerSessionRow[];
   /** Transcript of an engine-memory worker session, or null when unknown. */
   workerMessages(sessionId: string): unknown[] | null;
+  /**
+   * W783: answer one pending user question (`POST /api/questions/{id}/answer`).
+   * Optional — an embedded adapter without the user-question feature simply does
+   * not implement it, and the handler then reports the question as unknown.
+   */
+  answerQuestion?(requestId: string, answers: AskUserQuestionAnswerItem[], sessionId?: string): QuestionAnswerOutcome;
+  /** W783: every question still answerable (`GET /api/questions`, §7 recovery). */
+  pendingQuestions?(sessionId?: string | null): PendingQuestionView[];
+}
+
+/** W783: why an answer was refused (`ok:false`), never a silent no-op. */
+export type QuestionAnswerRefusal = "unknown" | "settled" | "timed_out" | "mismatch";
+
+/**
+ * W783: the outcome of one answer attempt. The accepted case echoes the asking
+ * session, because the pending entry is gone by the time the handler answers the
+ * HTTP request (reading it back from the table would always find nothing).
+ */
+export type QuestionAnswerOutcome =
+  | { ok: true; session: string | null }
+  | { ok: false; reason: QuestionAnswerRefusal };
+
+/**
+ * W783: one still-answerable question as the recovery endpoint reports it.
+ * `expired`/`remaining_ms` are computed at READ time from `expires_at`, so the
+ * client never has to trust its own clock (§6.1).
+ */
+export interface PendingQuestionView {
+  id: string;
+  session: string | null;
+  questions: readonly AskUserQuestionItem[];
+  expires_at: number;
+  timeout_ms: number;
+  remaining_ms: number;
+  expired: boolean;
 }

@@ -18,9 +18,9 @@ import {
 describe("contracts/endpoints.json", () => {
   const c = loadEndpoints();
 
-  it("holds exactly 47 endpoints (W725 added the context snapshot; W767 the cookie gate)", () => {
-    expect(c.count).toBe(47);
-    expect(c.endpoints).toHaveLength(47);
+  it("holds exactly 49 endpoints (W725 context, W767 cookie gate, W783 two question endpoints)", () => {
+    expect(c.count).toBe(49);
+    expect(c.endpoints).toHaveLength(49);
   });
 
   // W767: Studio's own login-cookie gate is served on `/login` + `/auth/*` — the
@@ -53,11 +53,12 @@ describe("contracts/endpoints.json", () => {
     // W516/W725/W767: the Rust extraction stays verbatim; the four grants
     // endpoints, the context snapshot and the three login-cookie endpoints are
     // declared as a TypeScript-only delta instead of being written into it.
-    expect(snap.tsOnlyRoutes).toHaveLength(8);
-    expect(snap.tsApiEndpoints).toBe(47);
-    expect(snap.tsMethodPathCombos).toBe(51);
+    // W783: 8 -> 10 (GET /api/questions + POST /api/questions/{id}/answer).
+    expect(snap.tsOnlyRoutes).toHaveLength(10);
+    expect(snap.tsApiEndpoints).toBe(49);
+    expect(snap.tsMethodPathCombos).toBe(53);
     const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
-    expect(fromSnapshot.size).toBe(47);
+    expect(fromSnapshot.size).toBe(49);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });
@@ -80,8 +81,9 @@ describe("contracts/endpoints.json", () => {
 describe("contracts/sse-events.json", () => {
   const s = loadSse();
 
-  it("holds the 8 SSE event names", () => {
-    expect(s.count).toBe(8);
+  // W783: 8 -> 9 (`question`).
+  it("holds the 9 SSE event names", () => {
+    expect(s.count).toBe(9);
     expect(s.events.map((e) => e.name)).toEqual([...SSE_EVENT_NAMES]);
   });
 
@@ -107,9 +109,10 @@ describe("contracts/sse-events.json", () => {
 describe("contracts/tools.json", () => {
   const t = loadTools();
 
-  it("holds the 10 engine tools with parameters", () => {
-    expect(t.count).toBe(10);
-    expect(t.tools).toHaveLength(10);
+  // W783: 10 -> 11 (`ask_user_question`).
+  it("holds the 11 engine tools with parameters", () => {
+    expect(t.count).toBe(11);
+    expect(t.tools).toHaveLength(11);
     for (const tool of t.tools) {
       expect(tool.name).toMatch(/^[a-z_]+$/);
       expect(tool.description.length).toBeGreaterThan(10);
@@ -120,7 +123,7 @@ describe("contracts/tools.json", () => {
 
   it("matches the live /api/tools name set", () => {
     expect(t.tools.map((x) => x.name).sort()).toEqual(
-      ["http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"],
+      ["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"],
     );
   });
 });
@@ -129,9 +132,10 @@ describe("contracts/session-event.schema.json", () => {
   const s = loadSessionEventSchema();
   const defs = s["$defs"] as Record<string, { oneOf: unknown[] }>;
 
-  it("declares the 7 SessionEvent variants", () => {
+  // W783: 7 -> 9 (user_question / user_answer).
+  it("declares the 9 SessionEvent variants", () => {
     expect(defs["SessionEvent"]?.oneOf).toHaveLength(SESSION_EVENT_TYPES.length);
-    expect(SESSION_EVENT_TYPES).toHaveLength(7);
+    expect(SESSION_EVENT_TYPES).toHaveLength(9);
   });
 
   it("declares the 5 TurnOutcome states", () => {
@@ -190,7 +194,7 @@ describe("contracts/data-files", () => {
     expect(kind?.enum).toEqual(["ok", "error"]);
     expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
 
-    expect(loadEndpoints().count).toBe(47);
+    expect(loadEndpoints().count).toBe(49);
   });
 });
 
@@ -203,9 +207,10 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     expect(entry?.mode).toBe("0600");
     expect(idx.durability["checkpoint.json"]).toContain("tmp-<pid> + rename");
     expect(idx.recovery?.implemented).toContain("turn_end: interrupted");
-    // P0 adds NO endpoint: /api/status.recovery is P1 and stays out.
-    expect(loadEndpoints().count).toBe(47);
-    expect(loadEndpoints().endpoints).toHaveLength(47);
+    // P0 adds NO endpoint: /api/status.recovery is P1 and stays out. The count is
+    // W783's 49 for the unrelated reason that the question endpoints exist.
+    expect(loadEndpoints().count).toBe(49);
+    expect(loadEndpoints().endpoints).toHaveLength(49);
   });
 
   it("freezes the sidecar shape (version, open_turn, repaired[])", () => {
@@ -228,7 +233,9 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     const defs = s["$defs"] as Record<string, { oneOf: Array<{ const?: string }> }>;
     expect(TURN_OUTCOMES).toContain("interrupted");
     expect(defs["TurnOutcome"]?.oneOf).toHaveLength(5);
-    expect(defs["SessionEvent"]?.oneOf).toHaveLength(7);
+    // W783 appended the two host-side question variants; interrupted legality is
+    // unaffected.
+    expect(defs["SessionEvent"]?.oneOf).toHaveLength(9);
   });
 });
 
@@ -243,8 +250,9 @@ describe("W729 session modes (P0 contract delta)", () => {
     expect(String(byId.get("get_sessions")?.response.fields[0]?.type)).toContain("mode:");
     expect(byId.get("get_status")?.response.fields.map((f) => f.name)).toContain("mode");
     expect(String(byId.get("get_health")?.response.fields.find((f) => f.name === "capabilities")?.type)).toContain("session_mode");
-    expect(c.count).toBe(47);
-    expect(c.endpoints).toHaveLength(47);
+    // W729 added no endpoint; the frozen count is W783's 49.
+    expect(c.count).toBe(49);
+    expect(c.endpoints).toHaveLength(49);
   });
 
   it("declares spawn_worker.mode without changing the tool count", () => {
@@ -253,8 +261,9 @@ describe("W729 session modes (P0 contract delta)", () => {
     expect(properties["mode"]?.enum).toEqual(["standard", "execution"]);
     // `additionalProperties: false` means an undeclared argument is a schema error.
     expect(spawn?.parameters["additionalProperties"]).toBe(false);
-    expect(tools.count).toBe(10);
-    expect(tools.tools).toHaveLength(10);
+    // W729 changed no tool count; W783 later took it to 11.
+    expect(tools.count).toBe(11);
+    expect(tools.tools).toHaveLength(11);
   });
 
   it("freezes the session.json mode enum and the W779 title, unknown keys tolerated", () => {

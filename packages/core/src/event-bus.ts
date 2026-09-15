@@ -40,6 +40,18 @@ export interface EventBus {
   waterfall<E, R>(key: EventKey<E>, listener: (event: E, value: R) => R): void;
   /** The value after every waterfall listener has run, in order. */
   runWaterfall<E, R>(key: EventKey<E>, event: E, init: R): R;
+  /**
+   * W783: ASYNC delegate chain. Each layer receives `(event, next)`: returning a
+   * value CLAIMS the request, calling `next()` delegates to the layer behind it.
+   * This is the cordis waterfall the sync `waterfall` cannot express, because a
+   * claiming layer may have to PARK on a promise (user questions, §5.2).
+   */
+  waterfallAsync<E, R>(key: EventKey<E>, listener: (event: E, next: () => Promise<R>) => Promise<R>): void;
+  /**
+   * W783: run the async chain outermost-first. `init` is the bottom of the
+   * chain (the fallback), reached only when every layer delegates.
+   */
+  runWaterfallAsync<E, R>(key: EventKey<E>, event: E, init: () => Promise<R>): Promise<R>;
   /** Registered listener counts per mode (diagnostics / tests). */
   counts(key: EventKey<unknown>): { on: number; bail: number; waterfall: number };
 }
@@ -52,6 +64,10 @@ export function createEventBus(): EventBus {
   const subs = new Map<unknown, Listener[]>();
   const bailers = new Map<unknown, Listener[]>();
   const waterfalls = new Map<unknown, Listener[]>();
+  // W783: the async delegate chain lives in its own map, so a listener
+  // registered in one mode can never interfere with another (same rule as the
+  // three original modes).
+  const asyncWaterfalls = new Map<unknown, Listener[]>();
 
   const push = (map: Map<unknown, Listener[]>, key: EventKey<unknown>, fn: Listener): void => {
     const k = busKey(key);
@@ -87,12 +103,28 @@ export function createEventBus(): EventBus {
       }
       return value;
     },
+    waterfallAsync(key, listener) {
+      push(asyncWaterfalls, key, listener as Listener);
+    },
+    runWaterfallAsync(key, event, init) {
+      // Outermost-first: each layer gets a `next` that walks to the layer
+      // behind it and finally to `init`. Building the chain lazily (inside
+      // `next`) keeps a delegating layer from running anything downstream
+      // until it actually delegates.
+      const layers = asyncWaterfalls.get(busKey(key)) ?? [];
+      const step = (index: number): Promise<unknown> => {
+        const fn = layers[index];
+        if (fn === undefined) return init();
+        return (fn as (e: unknown, n: () => Promise<unknown>) => Promise<unknown>)(event, () => step(index + 1));
+      };
+      return step(0) as never;
+    },
     counts(key) {
       const k = busKey(key);
       return {
         on: (subs.get(k) ?? []).length,
         bail: (bailers.get(k) ?? []).length,
-        waterfall: (waterfalls.get(k) ?? []).length,
+        waterfall: (waterfalls.get(k) ?? []).length + (asyncWaterfalls.get(k) ?? []).length,
       };
     },
   };
