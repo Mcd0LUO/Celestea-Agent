@@ -31,6 +31,8 @@ import type {
   PromptsResp,
   SessionCreateReq,
   SessionCreateResp,
+  SessionMode,
+  SessionModeResp,
   SessionContextResp,
   SessionsResp,
   StatusSnapshot,
@@ -204,6 +206,14 @@ export const api = {
   batchDeleteWorkspaces: (names: string[]) =>
     postJson<ClearResp>('/api/workspaces/batch-delete', { names } as BatchNamesReq),
   createSession: (req: SessionCreateReq) => postJson<SessionCreateResp>('/api/sessions', req),
+  /**
+   * W788：切换该会话的工作方式 —— POST /api/sessions/{id}/mode {mode}。
+   * 200 = {ok,session,mode,effective:'next_turn'}（不打断在飞轮次，下一轮生效）；
+   * 409 = 该会话有在飞轮次（调用方按冻结文案提示，不重试）；400 = 非法 mode；
+   * 404/405 = 该部署未提供此端点（老服务）→ 调用方只读降级，不假装成功。
+   */
+  setSessionMode: (id: string, mode: SessionMode) =>
+    postJson<SessionModeResp>('/api/sessions/' + encodeURIComponent(id) + '/mode', { mode }),
   /** 重命名会话（W243）：POST /api/sessions/{id}/rename {"new_title"}。 */
   renameSession: (id: string, newTitle: string) =>
     postJson<ClearResp>('/api/sessions/' + encodeURIComponent(id) + '/rename', {

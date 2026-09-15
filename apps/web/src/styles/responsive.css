@@ -64,11 +64,12 @@ button,
     margin-left: calc(-1 * (var(--tap-min) - 14px) / 2);
   }
   .sl-model,
-  .sl-effort {
+  .sl-effort,
+  .sl-mode {
     display: inline-flex; align-items: center;
     min-height: var(--tap-min); min-width: var(--tap-min);
   }
-  .sl-effort { padding: 0 8px; }
+  .sl-effort, .sl-mode { padding: 0 8px; }
   .sl-grant, .sl-stop { width: var(--tap-min); height: var(--tap-min); }
   .sl-grant svg { width: 14px; height: 14px; }
 

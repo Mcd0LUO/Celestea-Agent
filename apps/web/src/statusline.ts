@@ -22,7 +22,7 @@ import { api, userErrorText } from './api';
 import { contextSupported, openContextView } from './ui/contextview'; // W726 只读上下文浮层
 import { need } from './utils/dom';
 import type { OverlayHandle } from './utils/overlays';
-import type { ConfigPatch, StatusPayload, StatusSnapshot } from './types';
+import type { ConfigPatch, SessionMode, StatusPayload, StatusSnapshot } from './types';
 import { pickStatusFields } from './statusline/fields';
 import { fixed1 } from './statusline/icons';
 import {
@@ -33,6 +33,13 @@ import {
   type PickerHost,
   type SwitchKind,
 } from './statusline/picker';
+import {
+  closeModePopup,
+  modePopupContains,
+  renderModeBadge,
+  toggleModePopup,
+  type ModeHost,
+} from './statusline/mode';
 import {
   RING_C,
   renderCacheCell,
@@ -46,7 +53,7 @@ const POLL_MS = 2000;
 /** W514：状态字段筛选（statusline 渲染 + chat.ts 的每会话快照共用）。 */
 export { pickStatusFields };
 
-export class Statusline implements PickerHost {
+export class Statusline implements PickerHost, ModeHost {
   private snapshot: StatusSnapshot = {};
   private timer: number | null = null;
   private el: HTMLElement;
@@ -60,6 +67,8 @@ export class Statusline implements PickerHost {
   private cacheEl: HTMLElement;
   private stepsEl: HTMLElement;
   private hintEl: HTMLElement;
+  /** W788：会话工作方式徽标（只读；点击弹层切换）。 */
+  private modeEl: HTMLElement;
 
   // ---- 快速切换（W227 / W750）：弹层状态由 ./statusline/picker.ts 读写（PickerHost） ----
   /** W514: 当前聚焦会话 id（'' = 未解析/旧单会话）；轮询与快照按会话缓存。 */
@@ -89,6 +98,7 @@ export class Statusline implements PickerHost {
     this.cacheEl = need<HTMLElement>('#slCache', this.el);
     this.stepsEl = need<HTMLElement>('#slSteps', this.el);
     this.hintEl = need<HTMLElement>('#slHint', this.el);
+    this.modeEl = need<HTMLElement>('#slMode', this.el);
     this.ringProg.style.strokeDasharray = String(RING_C);
     this.el.title = '上下文占用 · 模型 · 思考强度 · 吞吐 · 缓存命中';
 
@@ -105,19 +115,40 @@ export class Statusline implements PickerHost {
     // W227：模型/档位点击快速切换
     this.modelEl.addEventListener('click', () => togglePopup(this, 'model'));
     this.effortEl.addEventListener('click', () => togglePopup(this, 'effort'));
+    // W788：工作方式徽标（只读）→ 弹层切换
+    this.modeEl.addEventListener('click', () => toggleModePopup(this));
     // Esc 关闭统一由 utils/overlays 层级栈处理（任务 3：唯一 document Esc 监听）
     document.addEventListener('click', (e) => {
-      if (!this.popup) return;
       const t = e.target as Node;
-      if (this.popup.contains(t)) return;
-      if (this.modelEl.contains(t) || this.effortEl.contains(t)) return;
-      closePopup(this);
+      if (this.popup) {
+        const inside = this.popup.contains(t) || this.modelEl.contains(t) || this.effortEl.contains(t);
+        if (!inside) closePopup(this);
+      }
+      // W788：工作方式弹层同款——点自己/徽标不开倒，点别处关掉
+      if (!modePopupContains(t) && !this.modeEl.contains(t)) closeModePopup();
     });
   }
 
   /** PickerHost：弹层挂载点（#statusline 元素）。 */
   get root(): HTMLElement {
     return this.el;
+  }
+
+  /** ModeHost：当前聚焦会话 id（'' = 未解析）。 */
+  get sessionId(): string {
+    return this.session;
+  }
+
+  /** ModeHost：快照里的工作方式（'' = 未知/老服务不返回）。 */
+  get currentMode(): string {
+    return typeof this.snapshot.mode === 'string' ? this.snapshot.mode : '';
+  }
+
+  /** ModeHost：切换成功 → 写回本会话快照并重渲染徽标（不重建 DOM）。 */
+  applyMode(mode: SessionMode): void {
+    this.snapshot = { ...this.snapshot, mode };
+    this.cache.set(this.session, this.snapshot);
+    this.render();
   }
 
   /** PickerHost：当前快照里的模型（全局配置，跨会话保留显示）。 */
@@ -278,6 +309,9 @@ export class Statusline implements PickerHost {
 
     // W263 缓存命中率：只改文本（铁律 1/2/5——不重建 DOM，不重渲染背景）
     renderCacheCell(this.cacheEl, s.usage);
+
+    // W788：工作方式徽标（未知 → 隐藏入口，不显示错误——设计 §6.5）
+    renderModeBadge(this.modeEl, s.mode);
 
     const steps = s.steps;
     this.stepsEl.textContent = typeof steps === 'number' && steps >= 1 ? '第 ' + steps + ' 步' : '— 步';

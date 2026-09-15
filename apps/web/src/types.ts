@@ -7,6 +7,7 @@
 //         GET /api/status · POST /api/clear
 // 视图层合同（AssistantView / ToolOpView）见 ui/view.ts（与 API 合同分离）。
 // ============================================================================
+import type { SessionMode } from './types/mode';
 
 // ---- SSE -------------------------------------------------------------------
 
@@ -76,6 +77,11 @@ export interface StatusSnapshot {
    * 仅用于侧栏会话叶子的小盾牌标记；字段缺失 = 旧服务，不显示标记。
    */
   grants_active?: string[];
+  /**
+   * W788：该会话的工作方式（标准/执行）。随快照**按会话**缓存（statusline 的
+   * cache: Map<session, StatusSnapshot>）；缺省 = 老服务不返回该字段，徽标隐藏。
+   */
+  mode?: SessionMode;
 }
 
 /**
@@ -173,40 +179,6 @@ export interface CompactPayload {
 }
 
 // ---- REST -------------------------------------------------------------------
-
-/**
- * W701：能力位（设计 §6.5）——某项特性在当前服务上是否可用。
- * 只有显式 `true` 才算可用；字段缺失/为 false（旧服务）一律按不可用处理：
- * 入口**隐藏**而不是置灰报错（设计 §6.5）。
- */
-export interface HealthCapabilities {
-  grants?: boolean;
-  /** W726：只读上下文快照（点状态栏上下文圆环可查看）。 */
-  context?: boolean;
-  /** 其它能力位（未知键原样保留，本层不解释）。 */
-  [key: string]: unknown;
-}
-
-export interface HealthInfo {
-  ok?: boolean;
-  name?: string;
-  model?: string;
-  base_url?: string;
-  bind?: string;
-  /** W701：能力位（缺失 = 旧服务，全部按不可用处理）。 */
-  capabilities?: HealthCapabilities;
-}
-
-export interface ToolInfo {
-  name: string;
-  description?: string;
-}
-
-export interface ToolsResp {
-  ok?: boolean;
-  tools?: ToolInfo[];
-  error?: string;
-}
 
 export interface SessionInfo {
   id?: string;
@@ -340,6 +312,11 @@ export interface SessionCreateReq {
   model?: string;
   /** W245：绑定提示词（空=跟随默认）。 */
   prompt?: string;
+  /**
+   * W788：工作方式（设计 §2.2；缺省 standard）。前端只在**非默认**（execution）
+   * 时携带该键，让默认路径与今天逐字节一致（K8：无 mode 键 = standard）。
+   */
+  mode?: SessionMode;
 }
 
 /** POST /api/sessions 响应（W243 起携带新会话 id）。 */
@@ -621,8 +598,9 @@ export interface GrantRevokeResp {
 }
 
 // ---- W784：模型向用户提问（契约见 docs/feature-ask-user.md §3） ------------------
-// 线格式实现见 ./types/question；W726 上下文快照见 ./types/context —— 两者都是为
-// 守住本文件的模块体积棘轮（≤ 登记行数）而拆出，此处原样再导出，调用方零改动。
+// 线格式实现见 ./types/question；W726 上下文快照见 ./types/context；只读自省端点
+// 见 ./types/health、工作方式（W788）见 ./types/mode —— 都是为守住本文件的模块体积
+// 棘轮（≤ 登记行数）而拆出，此处原样再导出，调用方零改动。
 
 export type {
   PendingQuestionInfo,
@@ -642,3 +620,7 @@ export type {
   ContextUsageInfo,
   SessionContextResp,
 } from './types/context';
+
+export type { HealthCapabilities, HealthInfo, ToolInfo, ToolsResp } from './types/health';
+
+export type { SessionMode, SessionModeResp } from './types/mode';

@@ -68,6 +68,7 @@
 #statusline.sl-stale .sl-model,
 #statusline.sl-stale .sl-ctx,
 #statusline.sl-stale .sl-effort,
+#statusline.sl-stale .sl-mode,
 #statusline.sl-stale .sl-tps,
 #statusline.sl-stale .sl-steps,
 #statusline.sl-stale .sl-cache { opacity: .55; }
@@ -78,7 +79,7 @@
 
 #statusline { position: relative; }
 
-.sl-model, .sl-effort {
+.sl-model, .sl-effort, .sl-mode {
   background: transparent;
   border: none;
   padding: 0;
@@ -93,7 +94,9 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   border-bottom: 1px dashed var(--c-border-subtle);
 }
-.sl-effort {
+/* W788：会话工作方式徽标复用档位胶囊的几何（同一行、同一视觉族） */
+.sl-effort,
+.sl-mode {
   color: var(--c-text-2);
   border: 1px solid var(--c-border-subtle);
   border-radius: 4px;
@@ -101,12 +104,18 @@
   font-size: 10.5px;
   line-height: 14px;
 }
-.sl-effort:empty { display: none; }
-.sl-model:hover, .sl-effort:hover {
+.sl-effort:empty, .sl-mode:empty { display: none; }
+/* W788：执行模式给一点强调（标准模式保持默认灰阶） */
+.sl-mode.exec {
+  color: var(--c-text-1);
+  border-color: var(--c-accent-ring);
+  background: var(--c-accent-soft);
+}
+.sl-model:hover, .sl-effort:hover, .sl-mode:hover {
   color: var(--c-text-1);
   border-color: var(--c-accent-ring);
 }
-.sl-model:focus-visible, .sl-effort:focus-visible {
+.sl-model:focus-visible, .sl-effort:focus-visible, .sl-mode:focus-visible {
   outline: 1px solid var(--c-accent-ring);
   outline-offset: 1px;
 }
