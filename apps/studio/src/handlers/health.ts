@@ -19,6 +19,9 @@
  * (an operator can see which session is widened without leaking a filesystem
  * layout into a status poll).
  *
+ * W791 (P1): `GET /api/tools` takes `?session=` (absent = the focused session)
+ * and `/api/health` advertises `capabilities.session_mode_tools = true`.
+ *
  * W785 (E-P1, capability 3 ②): `/api/status` adds `cost` — the session's
  * engine-side cost estimate read from the append-only usage ledger (§3.2.4). The
  * key is a PURE ADDITION and is present ONLY when the adapter has a ledger, so a
@@ -49,7 +52,11 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       // that does not see exactly `true` degrades to no context viewer.
       // W729: `session_mode: true` gates the (P1) mode selector; a client that
       // does not see exactly `true` must not offer to set a session mode.
-      capabilities: { grants: true, context: true, session_mode: true },
+      // W791 (P1, U8): `session_mode_tools: true` additionally promises that the
+      // mode is OBSERVABLE in the tool face (`GET /api/tools?session=`) and that
+      // the mode switch endpoint exists — a Rust-backend client that sees only
+      // `session_mode` must not call `POST /api/sessions/{id}/mode` (TS-only).
+      capabilities: { grants: true, context: true, session_mode: true, session_mode_tools: true },
     }),
   );
 
@@ -84,8 +91,18 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
     });
   });
 
+  // W791 (P1, §5.2 #5 / S2 / M9): `?session=` answers for THAT session's own
+  // generation — the very registry its Context provides, so an `execution`
+  // session reports its folded face. Absent/blank = the FOCUSED session (the
+  // active one); with nothing active it is the detached default generation,
+  // which is the pre-P1 answer byte for byte.
   const tools = table.get("get_tools");
-  app.on(tools.method, tools.honoPath, (c) => c.json({ tools: deps.runtime.tools() }));
+  app.on(tools.method, tools.honoPath, (c) => {
+    const asked = c.req.query("session");
+    const focus = asked === undefined || asked === "" ? activeSession(deps) : asked;
+    if (focus === null) return c.json({ tools: deps.runtime.tools() });
+    return c.json({ tools: deps.runtime.sessionTools?.(focus) ?? deps.runtime.tools() });
+  });
 
   return [health.id, status.id, tools.id];
 }

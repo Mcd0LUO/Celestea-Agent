@@ -47,6 +47,8 @@ import {
   assembleTools,
   builtinTools,
   ENV_SANDBOX_FALLBACK,
+  executionExposure,
+  exposedRegistry,
   fallbackMode,
   httpOptions,
   PROCESS_REGISTRY_SERVICE,
@@ -61,11 +63,19 @@ import {
 } from "@celestea/tools";
 import { workerTools, type WorkerRegistry } from "@celestea/workers";
 import { EMPTY_GRANTS, type EffectiveGrants, type EngineGrantAudit } from "./engine-grants.js";
+import { DEFAULT_SESSION_MODE, type SessionMode } from "../store/mode.js";
 
 /** Everything the engine context needs from the host. */
 export interface EnginePluginInput {
   profile: Profile;
   llm: Llm;
+  /**
+   * W791 (P1, §5.2 #2): the session's working mode. `execution` folds the SDK
+   * tools out of the DIRECT face (the inner registry keeps them, so `run_code`
+   * sub-calls still run); absent/`standard` = the whole registry, byte-for-byte
+   * what every pre-P1 generation exposed.
+   */
+  mode?: SessionMode;
   /** Worker registry to expose the three orchestration tools over (null = none). */
   workers: WorkerRegistry | null;
   /** Extra tools appended after the builtins. */
@@ -133,6 +143,11 @@ export interface QuestionWiring {
 export interface EngineTools {
   /** Plugin providing TOOL_REGISTRY_SERVICE / SANDBOX_SERVICE / PROCESS_REGISTRY_SERVICE. */
   plugin: Plugin;
+  /**
+   * The registry the session's Context provides (and therefore the face `GET
+   * /api/tools?session=` and `{{tools}}` read). W791: in `execution` mode this is
+   * the EXPOSED view — the inner registry stays reachable to `run_code` only.
+   */
   registry: ToolRegistry;
   /** The sandbox actually mounted (W741: annotated with the policy decision). */
   sandbox: Sandbox;
@@ -172,8 +187,14 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
     grants: { readRoots: grants.readRoots, writeRoots: grants.writeRoots },
     ...(opts.guard === undefined ? {} : { guard: opts.guard }),
   });
+  // W791 (P1, §5.2 #2 — the "关键机关"): the CONTEXT sees the mode's model-visible
+  // face while `run_code`'s RegistryHandle stays bound to the INNER registry
+  // (`assembleTools` bound it above), so a program's `tools.read_file(...)` is
+  // dispatched exactly like a direct call was before the fold.
+  const face = (opts.mode ?? DEFAULT_SESSION_MODE) === "execution" ? executionExposure(assembly.registry.names()) : null;
+  const exposed = face === null ? assembly.registry : exposedRegistry(assembly.registry, face);
   const plugin = definePlugin("studio.engine.tools", (ctx: Context) => {
-    ctx.provide(TOOL_REGISTRY_SERVICE, assembly.registry);
+    ctx.provide(TOOL_REGISTRY_SERVICE, exposed);
     ctx.provide(SANDBOX_SERVICE, assembly.sandbox);
     ctx.provide(PROCESS_REGISTRY_SERVICE, assembly.processes);
     // W783: the same service instance the tool was constructed with, published
@@ -183,7 +204,7 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
       ctx.provide(USER_QUESTION_SERVICE, questions);
     }
   });
-  return { plugin, registry: assembly.registry, sandbox, decision: choice.decision };
+  return { plugin, registry: exposed, sandbox, decision: choice.decision };
 }
 
 // --- the provider policy, decided out loud (W516 grants, W741 fail semantics) --

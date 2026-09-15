@@ -40,6 +40,7 @@ import { join } from "node:path";
 import { CapacityError } from "../runtime-adapter.js";
 import { bindingFor, closeLog, workerSessionPrefix, type CheckpointWiring, type SessionTarget } from "./engine-session.js";
 import { sessionIdOfDir } from "./engine-grants.js";
+import { DEFAULT_SESSION_MODE, effectiveMode } from "../store/mode.js";
 import { enginePlugins, type QuestionWiring } from "./engine-plugins.js";
 import type { PendingQuestion, QuestionRegistry } from "../question-registry.js";
 import { questionAnsweredRow, questionAskedRow } from "../question-rows.js";
@@ -215,6 +216,11 @@ export class SessionComposer {
     const questions = this.questionWiring(sessionId, questionHolder);
     const engine = enginePlugins({
       profile,
+      // W791 (P1, §5.2 #2): the mode decided at compose time. The DETACHED
+      // generation never asks the hook (its id is not addressable), a session
+      // without a declared mode reads as `standard` (K8), and both compose the
+      // whole registry — so nothing about a pre-P1 generation changes.
+      mode: sessionId === null ? DEFAULT_SESSION_MODE : effectiveMode(this.opts.sessionMode?.(sessionId) ?? null),
       workspace: workspace === null ? null : { workspace: workspace.path },
       ...(questions === null ? {} : { questions }),
       llm: this.engineLlm(sessionId, profile, ledger),

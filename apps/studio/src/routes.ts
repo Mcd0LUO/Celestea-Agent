@@ -1,7 +1,7 @@
 /**
  * Route table derived from the frozen contract.
  *
- * 50 endpoints (54 method+path combos minus the 4 static routes).
+ * 51 endpoints (55 method+path combos minus the 4 static routes).
  * Rust path params use `{id}`; Hono uses `:id`, so paths are translated here
  * once and the translation is asserted in tests.
  *
@@ -10,7 +10,9 @@
  * `GET /api/sessions/{id}/context` (43 -> 44). W767 added Studio's own login
  * cookie gate: `GET /login`, `POST /auth/login`, `GET /auth/check` (44 -> 47;
  * the first two are deliberately NOT under `/api/`). W785 added
- * `GET /api/usage/ledger` (49 -> 50). All of them have NO Rust counterpart:
+ * `GET /api/usage/ledger` (49 -> 50). W791 added
+ * `POST /api/sessions/{id}/mode` (50 -> 51; the P1 session working mode). All of
+ * them have NO Rust counterpart:
  * `contracts/rust-route-table.snapshot.json` keeps the Rust extraction intact and
  * lists the TypeScript-only additions separately.
  */
@@ -49,7 +51,7 @@ export function studioRoutes(): RegisteredRoute[] {
   }));
 }
 
-export const API_ENDPOINT_COUNT = 50;
+export const API_ENDPOINT_COUNT = 51;
 export const STATIC_ROUTE_COUNT = 4;
 
 /** Id-keyed view of the contract routes: a handler asks for its id, never a path. */

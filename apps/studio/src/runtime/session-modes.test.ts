@@ -10,8 +10,12 @@
  *   ① a session without `session.json.mode` behaves exactly as before (no
  *     per-session override at all: it keeps the base prompt; its meta file is
  *     byte-identical — `store/sessions.test.ts`);
- *   ② both modes expose the SAME tool face in P0 (`registry.schemas()` names);
- *   ③ `API_ENDPOINT_COUNT` is unchanged by this work (44 on that day; 47 since W767).
+ *   ② **superseded by P1 (W791)**: P0 asserted both modes expose the SAME tool
+ *     face; P1 folds the SDK tools out of `execution`'s direct face, so the
+ *     invariant is now the M7 difference (11 standard / 6 execution) asserted in
+ *     `mode-exposure.test.ts` and, over the real engine, below;
+ *   ③ `API_ENDPOINT_COUNT` was unchanged by W729 itself (44 on that day; W791's
+ *     `POST /api/sessions/{id}/mode` moved it 50 -> 51).
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -98,7 +102,7 @@ describe("W729 per-session mode prompts (real engine, one process)", () => {
     expect(systemOf(h, "sample-ws/plain")).not.toContain(EXECUTION_MARK);
   });
 
-  it("M5: the {{tools}} variable of each prompt is that session's own tool face", async () => {
+  it("M5/M9: the {{tools}} variable of each prompt is that session's own tool face", async () => {
     const h = twoModes();
     await activate(h, "sample-ws/std");
     await activate(h, "sample-ws/exec");
@@ -107,22 +111,20 @@ describe("W729 per-session mode prompts (real engine, one process)", () => {
         .sessionContext(id)
         .tools.map((t) => t.name)
         .sort();
-      // W783: `ask_user_question` is mounted by the real adapter (it always
-      // supplies a question service), so it is part of each session's own face.
-      expect(names).toEqual(["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"]);
-      // The rendered list is the SAME list the session exposes (S2/M9 shape).
+      // The rendered list is the SAME list the session exposes (S2/M9 shape) —
+      // and since W791 the two modes differ, so the list itself is the mode.
       expect(systemOf(h, id)).toContain(`directly (${names.join(", ")})`);
     }
   });
 
-  it("P0 invariant ②: both modes expose the same registry.schemas() name set", async () => {
+  it("M7 (P1, supersedes P0 invariant ②): execution folds the direct face, standard does not", async () => {
     const h = twoModes();
     await activate(h, "sample-ws/std");
     await activate(h, "sample-ws/exec");
     const faceOf = (id: string): string[] => h.runtime.sessionContext(id).tools.map((t) => t.name).sort();
-    expect(faceOf("sample-ws/exec")).toEqual(faceOf("sample-ws/std"));
-    // W783: 10 -> 11.
-    expect(faceOf("sample-ws/std")).toHaveLength(11);
+    // W783: 10 -> 11 (ask_user_question); W791: execution = the 6 kept names.
+    expect(faceOf("sample-ws/std")).toEqual(["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"]);
+    expect(faceOf("sample-ws/exec")).toEqual(["http_request", "process_control", "run_code", "session_send_message", "spawn_worker", "worker_status"]);
   });
 
   it("P0 invariant ①: a session WITHOUT session.json.mode keeps the DEFAULT mode prompt", async () => {
