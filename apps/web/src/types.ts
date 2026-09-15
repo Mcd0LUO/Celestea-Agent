@@ -44,7 +44,9 @@ export type SseEventName =
   | 'context'
   | 'compact'
   /** W515：Agent Inbox / worker 回执等系统注入（kind='inbox' 的转录条目）。 */
-  | 'inbox';
+  | 'inbox'
+  /** W784：模型向用户提问（挂起等待作答；答案不经 POST /api/turn 回传）。 */
+  | 'question';
 
 export type ConnState = 'connecting' | 'online' | 'down';
 
@@ -245,7 +247,7 @@ export interface SessionsResp {
 
 // ---- 会话历史（GET /api/sessions/{id}/messages，回放/恢复用） --------------------
 
-export type HistoryRole = 'user' | 'assistant' | 'tool' | 'thinking' | 'inbox';
+export type HistoryRole = 'user' | 'assistant' | 'tool' | 'thinking' | 'inbox' | 'question';
 
 /**
  * 消息契约（W252 结构化，无兼容层）：
@@ -260,9 +262,20 @@ export interface HistoryMsg {
   /**
    * tool 消息：'call' | 'result'；
    * user 消息（W515）：'steering'（插话）/ 'queued'（排队）；
-   * 'inbox'（worker 回执 / 系统注入）。
+   * 'inbox'（worker 回执 / 系统注入）；
+   * W784 提问行：'question'（模型问了）/ 'answer'（作答或超时结算）。
    */
-  kind?: 'call' | 'result' | 'steering' | 'queued' | 'inbox';
+  kind?: 'call' | 'result' | 'steering' | 'queued' | 'inbox' | 'question' | 'answer';
+  /**
+   * W784：提问/回答两行的请求 id（靠它配对；设计 §7.2 的「有问无答」判定）。
+   * 注：这两行的 `content` 承载**数组**（问题 / 答案），而 content 字段是文本口径
+   * —— 读取收口在 ui/question/format.ts 的 payloadOf()。
+   */
+  question_id?: string;
+  /** W784：'question' 行的绝对时限。 */
+  question_expires_at?: number;
+  /** W784：'answer' 行是否因时限到期而结算。 */
+  question_timed_out?: boolean;
   /** W515：inbox 条目的来源标记（worker id 等）。 */
   source?: string;
   tool_call_id?: string;
@@ -607,51 +620,25 @@ export interface GrantRevokeResp {
   error?: string;
 }
 
-// ---- W726：上下文快照（只读完整上下文，点状态栏上下文圆环查看） ----------------
+// ---- W784：模型向用户提问（契约见 docs/feature-ask-user.md §3） ------------------
+// 线格式实现见 ./types/question；W726 上下文快照见 ./types/context —— 两者都是为
+// 守住本文件的模块体积棘轮（≤ 登记行数）而拆出，此处原样再导出，调用方零改动。
 
-/** 工具（名称 + 说明 + 参数结构）。 */
-export interface ContextToolInfo {
-  name: string;
-  description?: string;
-  parameters?: unknown;
-  /** 该条目超长被服务端截断。 */
-  truncated?: boolean;
-}
+export type {
+  PendingQuestionInfo,
+  QuestionAnswerItem,
+  QuestionAnswerResp,
+  QuestionIntent,
+  QuestionItem,
+  QuestionOption,
+  QuestionPayload,
+  QuestionsResp,
+} from './types/question';
 
-/** 一条消息（role: user / assistant / tool）。 */
-export interface ContextMessage {
-  role: 'user' | 'assistant' | 'tool' | string;
-  content?: string;
-  tool_name?: string;
-  tool_call_id?: string;
-  /** 该条目超长被服务端截断。 */
-  truncated?: boolean;
-}
-
-export interface ContextCounts {
-  system_chars?: number;
-  tool_count?: number;
-  message_count?: number;
-}
-
-export interface ContextUsageInfo {
-  used?: number;
-  window?: number;
-  ratio?: number;
-  /** 用量为估算值（非精确计量）。 */
-  estimated?: boolean;
-}
-
-export interface SessionContextResp {
-  ok?: boolean;
-  session?: string;
-  model?: string;
-  system?: string;
-  tools?: ContextToolInfo[];
-  messages?: ContextMessage[];
-  counts?: ContextCounts;
-  context?: ContextUsageInfo;
-  /** 整份快照存在被截断的条目。 */
-  truncated?: boolean;
-  error?: string;
-}
+export type {
+  ContextCounts,
+  ContextMessage,
+  ContextToolInfo,
+  ContextUsageInfo,
+  SessionContextResp,
+} from './types/context';

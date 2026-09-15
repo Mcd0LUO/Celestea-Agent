@@ -16,6 +16,7 @@ import './styles/views.css'; // W514 多会话视图容器 / 聚焦会话条 / �
 import './styles/sessions.css';
 import './styles/grants.css'; // W701 提权通道（本会话权限盾牌 / 面板 / 二次确认）
 import './styles/rail.css'; // 灵动选择条 v3（W238 重做）
+import './styles/question.css'; // W784 模型提问卡片（选项 / 自由输入 / 倒计时）
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
 
 import { api } from './api';

@@ -10,6 +10,7 @@ import type {
   ContextPayload,
   DonePayload,
   InboxPayload,
+  QuestionPayload,
   SseEnvelope,
   SseEventName,
   StatusPayload,
@@ -30,6 +31,11 @@ export interface SseHandlerMap {
   compact: (p: CompactPayload) => void;
   /** W515：Agent Inbox / worker 回执（系统注入，与普通用户消息分类展示）。 */
   inbox: (p: InboxPayload) => void;
+  /**
+   * W784：模型向用户提问（挂起等待作答）。信封的 turn = 挂起那个 turn 的会话
+   * 本地序号；payload 带 id/questions/expires_at/timeout_ms。
+   */
+  question: (p: QuestionPayload) => void;
 }
 
 export type SseHandler<K extends SseEventName> = SseHandlerMap[K];
@@ -68,6 +74,7 @@ const EVENT_NAMES: readonly SseEventName[] = [
   'context',
   'compact',
   'inbox',
+  'question',
 ];
 
 export class SseClient {
