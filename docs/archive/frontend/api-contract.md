@@ -23,7 +23,7 @@
 
 | status | 语义 |
 |---|---|
-| 400 | 参数非法（空值、格式、路径非绝对/不存在、id 形态错误、活动会话保护） |
+| 400 | 参数非法（空值、格式、路径非绝对/不存在、id 形态错误） |
 | 404 | 未知 workspace / session / provider / prompt |
 | 405 | 路径存在但 method 不匹配（后端默认） |
 | 409 | 冲突：turn 进行中（busy 槽）、重复注册、目标已存在、已归档 |
@@ -292,10 +292,10 @@
 
 | 端点 | 目标位置 | 错误 |
 |---|---|---|
-| archive | `<ws>/.celestea-archived/<name>` | 400 `active session '{id}' cannot be archived`；404 `unknown session '{id}'`；409 `session '{id}' is already archived`；500 `mkdir failed: {e}` / `move failed: {e}` |
+| archive | `<ws>/.celestea-archived/<name>` | 404 `unknown session '{id}'`；409 `session '{id}' is already archived`；500 `mkdir failed: {e}` / `move failed: {e}` |
 | unarchive | 回到 `<ws>/<name>` | 404 `session '{id}' is not archived`；409 `a live session already exists at '{id}'`；500 `move failed: {e}` |
 
-归档保持目录原名 → id 不变、可 unarchive；删除（trash）会加 `-<ts>` 后缀 → **之后无法按 id 寻址**。
+归档保持目录原名 → id 不变、可 unarchive；删除（trash）会加 `-<ts>` 后缀 → **之后无法按 id 寻址**。W794 起活动会话与普通会话同款、不再返回 400：先切断该会话在飞回合并释放该会话自己的引擎实例，目录移动成功后再把 `active_session` 置 null 落盘（标记不会停在已归档的 id 上）。
 
 ### `POST /api/sessions/batch-archive`
 `src/workspaces.rs:1605-1623`。请求：`{"ids":["<ws>/<s>", ...]}`。恒 **200**：
@@ -309,7 +309,7 @@
 ```json
 {"ok":true,"deleted":2,"failed":[{"id":"...","error":"..."}]}
 ```
-目标是 `<ws>/.celestea-trash/<name>-<ts>`（**可恢复**）；active 会话被拒（400）。
+目标是 `<ws>/.celestea-trash/<name>-<ts>`（**可恢复**）。W794 起活动会话**可删**：删除前先走协作式取消切断该会话在飞回合并释放该会话自己的引擎实例，目录移动成功后再把 `active_session` 置 null 落盘；响应形状不变（仍恒 200 + per-id `failed[]`）。
 
 ---
 
