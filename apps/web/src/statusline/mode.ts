@@ -122,9 +122,21 @@ export function closeModePopup(): void {
   host = null;
 }
 
-/** 点击外部/别的弹层时的判定：该节点是否落在工作方式弹层内。 */
-export function modePopupContains(node: Node): boolean {
-  return popup !== null && popup.contains(node);
+/**
+ * 点击外部/别的弹层时的判定：这次点击是否落在工作方式弹层内。
+ *
+ * W795 为什么用**事件路径**而不是 `popup.contains(node)`：乐观切换会**当帧重绘**清单
+ * （被点的那一项正是要被标成「当前」的那一项），重绘把它从 DOM 上摘了下来，
+ * 于是 `contains()` 对同一个节点返回 false —— 一次本意「点在里面」的点击会被误判成
+ * 「点了外面」，弹层在请求发出前就被收起（真机 Blink 实测：409 时弹层不再留在屏幕上）。
+ * `composedPath()` 在事件派发时就固定了路径，不受随后的重绘影响。
+ * 兼容路径：环境没有 composedPath 时退回 contains()（旧行为）。
+ */
+export function modePopupHit(e: Event): boolean {
+  if (popup === null) return false;
+  const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+  const target = e.target;
+  return path.some((n) => n === popup) || (target instanceof Node && popup.contains(target));
 }
 
 /** 徽标点击：已开则关，未开则开（与模型/档位弹层的 toggle 语义一致）。 */
@@ -137,7 +149,7 @@ export function toggleModePopup(h: ModeHost): void {
 }
 
 /**
- * 打开弹层：**先按可用渲染**（零等待，不闪「加载中…」），能力位探测返回不可用时
+ * 打开弹层：**先按可用渲染**（零等待、无任何占位文案），能力位探测返回不可用时
  * 再原地替换成只读态（铁律 1/3：不先清空，晚到的结果不与新状态打架）。
  */
 export function openModePopup(h: ModeHost): void {
@@ -181,24 +193,38 @@ function modeRow(value: SessionMode, label: string, current: boolean, can: boole
   return b;
 }
 
-/** 选中一项：切换中 → 成功/失败就地反馈，绝不假装成功。 */
+/**
+ * 选中一项（W795 乐观更新）：
+ *   点下去**同一帧**就把徽标与清单画成目标模式的终态（零占位文案），请求在后台跑；
+ *   失败则把徽标退回原模式并说明原因 —— 三态（busy / unsupported / invalid）的分支
+ *   与文案逐字未改，只是「进度占位」换成了「先画终态、失败回滚」。
+ */
 async function pickMode(mode: SessionMode): Promise<void> {
   const h = host;
   const p = popup;
   if (h === null || p === null) return;
-  const status = el('div', 'sl-popup-status busy', '切换中…');
-  p.appendChild(status);
+  // 会话 id 未解析 ⇒ 必然失败的请求不发、也不先画终态（免得白闪一下）
+  if (h.sessionId === '') {
+    h.setNote('当前会话尚未就绪，请稍后再试', 6000);
+    return;
+  }
+  const prev = h.currentMode;
+  const body = p.querySelector('.sl-popup-body');
+  // 终态：徽标 = 目标模式，清单里目标项标「当前」并禁用
+  h.applyMode(mode);
+  if (body !== null) renderModeList(body as HTMLElement, mode, true);
+
   const out = await requestModeSwitch(h.sessionId, mode);
   if (out.kind === 'ok') {
-    h.applyMode(out.mode);
     h.setNote('已切换工作方式 · ' + MODE_NOTES.applied, 6000);
     closeModePopup();
     return;
   }
+  // 失败回滚：徽标退回原模式（乐观的显示不许留在错的模式上）
+  h.applyMode(prev as SessionMode);
   if (out.kind === 'unsupported') {
     // 老服务：只读降级（弹层留在屏幕上，把清单换成禁用态，不假装成功）
-    const body = p.querySelector('.sl-popup-body');
-    if (body !== null) renderModeList(body as HTMLElement, h.currentMode, false);
+    if (body !== null) renderModeList(body as HTMLElement, prev, false);
   }
   const text =
     out.kind === 'busy'
@@ -210,6 +236,5 @@ async function pickMode(mode: SessionMode): Promise<void> {
           : out.text;
   h.setNote(text, 6000);
   if (popup !== p) return; // 期间弹层被关掉/重开：只留状态栏提示
-  status.className = 'sl-popup-status err';
-  status.textContent = text;
+  p.appendChild(el('div', 'sl-popup-status err', text));
 }

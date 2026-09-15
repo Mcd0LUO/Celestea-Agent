@@ -3,6 +3,9 @@
 //   「新建工作区」与「提权 · 选择目录」共用同一套浏览体验，避免用户手打路径出错。
 //   行为与抽出前逐字一致：面包屑（'/' 起）+ 子目录列表 + 可编辑路径 + 跳转，
 //   懒加载（GET /api/fs/browse）；该端点在旧服务上不可用时降级为「手输路径 + 跳转」。
+//   W795：目录跳转改成**乐观**（面包屑/地址栏当帧就到目标目录，删掉「加载中…」占位），
+//   浏览失败则回滚面包屑并说明原因；「确认」按钮的提交态文案（busyLabel）保持不变 ——
+//   它标的是**注册/创建**这类写操作，见报告里的「无法乐观项」说明。
 //   挂到 body 的弹窗打开时压入 Esc 层级栈（utils/overlays），一次 Esc 只关栈顶一层。
 //   离屏构建 + 单次替换（FRONTEND-RULES 铁律 1）；打开/关闭不触碰背景视图（铁律 5）。
 // ============================================================================
@@ -103,14 +106,34 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
     crumbs.replaceChildren(...off.childNodes);
   }
 
+  /**
+   * 面包屑回滚：把动作前的那批节点**原样放回**（节点对象还在，事件监听与当前项标记
+   * 一并复原；离屏构建时它们只是被摘下来，没有被销毁）。
+   */
+  function rollbackCrumbs(nodes: ChildNode[]): void {
+    crumbs.replaceChildren(...nodes);
+  }
+
+  /**
+   * 跳到某个目录（W795 乐观更新）。
+   *
+   * 可推断的终态 = **目标目录的面包屑与地址栏**：用户点了子目录/跳转，期望就是「到了那里」，
+   * 因此当帧即画（零占位、「加载中…」已删除），子目录清单保留旧的到新清单就绪再换（铁律 1）。
+   * 失败 ⇒ 把面包屑**回滚**到动作前的位置（没跳过去就不装作到了那里），状态行说明原因；
+   * 地址栏保留用户的目标路径 —— 「确认」用的就是它，旧服务的降级手输路径因此仍然可用。
+   */
   async function loadDirs(path: string): Promise<void> {
-    // 目录跳转双缓冲：旧目录列表保留到新列表就绪，一次替换。
+    const prevCrumbs = Array.from(crumbs.childNodes);
     status.className = 'ws-fs-status';
-    status.textContent = '加载中…';
+    status.textContent = '';
+    renderCrumbs(path);
+    addrInput.value = path;
+    curPath = path;
     let r;
     try {
       r = await api.fsBrowse(path);
     } catch {
+      rollbackCrumbs(prevCrumbs);
       status.className = 'ws-fs-status err';
       status.textContent = '文件浏览暂不可用 · 请直接在下方输入路径';
       const off = document.createElement('div');
@@ -118,17 +141,19 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
         el('div', 'side-note', opts.fallbackNote ?? '可编辑底部路径后点「跳转」再确认'),
       );
       tree.replaceChildren(...off.childNodes);
-      addrInput.value = path;
-      curPath = path;
       return;
     }
     if (r.error) {
+      // 服务端说这个目录不行 ⇒ 回滚面包屑（没跳过去就不装作到了那里），
+      // 子目录清单也保持原样（它是上面那个目录的清单，与面包屑一致）；
+      // 地址栏与待选路径仍保留用户的目标 —— 「确认」用的就是它，手输降级不受影响。
+      rollbackCrumbs(prevCrumbs);
       status.className = 'ws-fs-status err';
       status.textContent = '浏览失败：' + userErrorText(r.error, '请手动输入目录路径');
-    } else {
-      status.textContent = '已选择目录：' + (r.path || '/');
-      status.className = 'ws-fs-status ok';
+      return;
     }
+    status.textContent = '已选择目录：' + (r.path || '/');
+    status.className = 'ws-fs-status ok';
     curPath = r.path ?? path;
     addrInput.value = r.path ?? path;
     renderCrumbs(r.path ?? path);

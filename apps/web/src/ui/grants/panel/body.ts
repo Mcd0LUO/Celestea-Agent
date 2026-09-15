@@ -13,6 +13,7 @@ import { popOverlay, pushOverlay } from '../../../utils/overlays';
 import { CAPS } from '../caps';
 import {
   getData,
+  getDataSession,
   getPanelEl,
   getPanelNote,
   getPanelOverlay,
@@ -68,20 +69,27 @@ export async function openPanel(host: GrantsHost): Promise<void> {
   popup.appendChild(el('div', 'sl-popup-title', '本会话权限'));
   const body = el('div', 'sl-popup-body');
   popup.appendChild(body);
-  body.appendChild(el('div', 'sl-popup-loading', '正在读取当前权限…'));
-  // 先按「加载中」的尺寸落位（同一帧内完成，不会闪一次未定位的面板）
-  positionPanel();
-  attachPosition();
 
   if (host.focusedSession() === '') {
     body.replaceChildren(
       el('div', 'sl-popup-note', '尚未打开任何会话：请先在左侧选择一个会话。'),
     );
     positionPanel();
+    attachPosition();
     return;
   }
+
+  // W795：**同一帧内先画终态**，没有任何「读取中」占位。
+  //   ① 已有本会话快照（常态：点开盾牌前 refresh 早就跑过了）→ 立刻整块画出来；
+  //   ② 首次打开、还没有任何快照 → 面板整体先隐藏（不是空壳给用户看），
+  //      快照一到再一次性显示 + 落位（内容与位置一起出现，不会闪一次未定位的面板）。
+  const known = getData() !== null && getDataSession() === host.focusedSession();
+  if (!known) popup.classList.add('hidden');
+  if (known) renderPanel(host);
+  attachPosition();
   await host.refresh(true);
   if (getPanelEl() !== popup) return; // 期间被关闭
+  popup.classList.remove('hidden');
   renderPanel(host);
 }
 

@@ -33,6 +33,7 @@ import { startGrant, revoke } from './grants/flow';
 import { noteProbed, setMark, setMarksEnabled } from './grants/marks';
 import { closePanel, renderPanel, renderShield, togglePanel } from './grants/panel';
 import {
+  clearOptimistic,
   getCapability,
   getCapProbeAt,
   getData,
@@ -46,6 +47,7 @@ import {
   setPanelNote,
   setShieldBadge,
   setShieldButton,
+  settleOptimistic,
   type GrantsHost,
 } from './grants/state';
 
@@ -132,10 +134,13 @@ async function refresh(force = false): Promise<void> {
     return;
   }
   const asked = id;
+  const askedAt = Date.now(); // 快照的发起时刻：乐观项的「已结束」判定要用它比先后
   try {
     const r = await api.grants(asked);
     if (asked !== focusedSession()) return; // 竞态：期间已切换会话，丢弃
     setData(r, asked);
+    // W795：新鲜快照就是真源 ⇒ 作废**已被它确认**的乐观项；仍在飞的乐观项不被竞态快照带走
+    settleOptimistic(r.grants ?? [], askedAt);
     noteProbed(asked);
     const active = (r.grants ?? []).filter((g) => typeof g.cap === 'string' && !isExpired(g));
     const caps = active.map((g) => String(g.cap));
@@ -189,11 +194,15 @@ export function initGrants(): void {
       togglePanel(HOST);
     });
   }
-  // 点击面板外 / 盾牌外 → 收起（与 statusline 的弹层行为一致）
+  // 点击面板外 / 盾牌外 → 收起（与 statusline 的弹层行为一致）。
+  // W795：判定用**事件路径** —— 授予/撤销会当帧重绘面板，被点的那颗按钮随即被摘下来，
+  // contains() 会把这次点击误判成「点了外面」而把面板收起（真机 Blink 实测）。
   document.addEventListener('click', (e) => {
-    if (!getPanelEl()) return;
+    const panelEl = getPanelEl();
+    if (!panelEl) return;
     const t = e.target as Node;
-    if (getPanelEl()!.contains(t)) return;
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    if (path.some((n) => n === panelEl) || panelEl.contains(t)) return;
     if (btn && btn.contains(t)) return;
     closePanel();
   });
@@ -201,6 +210,7 @@ export function initGrants(): void {
   onPaneChange(() => {
     inlineError.clear();
     setPanelNote(null);
+    clearOptimistic(); // W795：乐观层只属于「当时聚焦的那个会话」，换会话即作废
     if (getCapability() === 'on') void refresh(true);
   });
   // 回到页面时补一次（长时间后台期间可能已过期）

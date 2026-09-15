@@ -32,8 +32,13 @@ import {
   type HistoryQuestion,
 } from './format';
 
-/** 卡片状态：pending 可作答 → sending 提交中 → done/expired/closed 终态。 */
-export type QuestionCardState = 'pending' | 'sending' | 'done' | 'expired' | 'closed';
+/**
+ * 卡片状态：pending 可作答 → done/expired/closed 终态。
+ *
+ * W795：去掉了中间的 `sending` 态 —— 提交改成**乐观**（点下去当帧就画 `done` 终态，
+ * 请求后台跑，失败回滚到 pending 并说明原因），因此不再存在「提交中…」这种过渡态。
+ */
+export type QuestionCardState = 'pending' | 'done' | 'expired' | 'closed';
 
 const STATE_TEXT: Record<string, string> = {
   done: '已作答',
@@ -110,7 +115,7 @@ function tickAll(): void {
       live.delete(h);
       continue;
     }
-    if (h.state === 'pending' || h.state === 'sending') paintTimer(h, now);
+    if (h.state === 'pending') paintTimer(h, now);
   }
   if (live.size === 0 && ticker !== null) {
     window.clearInterval(ticker);
@@ -136,10 +141,10 @@ function setState(h: CardHandle, state: QuestionCardState, resultText?: string):
   h.state = state;
   if (state === 'done' || state === 'closed') h.settled = true;
   h.card.dataset.state = state;
-  const terminal = state !== 'pending' && state !== 'sending';
+  const terminal = state !== 'pending';
   for (const c of h.controls) c.disabled = terminal;
   h.submit.disabled = terminal;
-  h.submit.textContent = state === 'sending' ? '提交中…' : '提交作答';
+  h.submit.textContent = '提交作答';
   h.timer.textContent = terminal ? '' : h.timer.textContent;
   h.result.textContent = terminal ? (resultText ?? STATE_TEXT[state] ?? '') : '';
 }
@@ -159,15 +164,18 @@ function submitOrRefuse(ctx: SessionPane, h: CardHandle): void {
   void submit(ctx, h);
 }
 
+/**
+ * 提交作答（W795 乐观）：
+ *   点下去**同一帧**就画「已作答 + 选了什么」这个终态（控件同时禁用 = 防重复提交），
+ *   请求在后台发；失败则**回滚**到可作答态并说明原因（绝不假装成功、绝不静默）。
+ */
 async function submit(ctx: SessionPane, h: CardHandle): Promise<void> {
-  h.hint.textContent = '正在提交…';
-  setState(h, 'sending');
   const items = answerItemsOf(h.questions, h.picks);
   const sid = ctx.id === LOCAL_ID ? undefined : ctx.id;
+  setState(h, 'done', '已作答：' + summarizeAnswer(items));
+  h.hint.textContent = '';
   try {
     await api.answerQuestion(h.id, items, sid);
-    setState(h, 'done', '已作答：' + summarizeAnswer(items));
-    h.hint.textContent = '';
   } catch (err) {
     // 404/409 = 该提问已结算（时限先到，或已在别处作答）：再点也不会成功 → 终态。
     if (err instanceof ApiError && isSettledFailure(err.status)) {
@@ -175,6 +183,8 @@ async function submit(ctx: SessionPane, h: CardHandle): Promise<void> {
       h.hint.textContent = '';
       return;
     }
+    // 回滚：控件重新可用（settled 也必须清掉 —— 那是「权威结算」的标记）
+    h.settled = false;
     setState(h, 'pending');
     h.hint.textContent = '提交失败：' + userErrorText(err) + '（可重试）';
     paintTimer(h, Date.now());

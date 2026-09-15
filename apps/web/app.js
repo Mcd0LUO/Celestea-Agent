@@ -578,7 +578,6 @@ function renderTools(tools) {
 
 function loadTools() {
   var box = $('#toolList');
-  box.innerHTML = '<div class="side-note">加载中…</div>';
   api('/api/tools').then(function (d) {
     renderTools(d.tools || []);
     $('#sideFoot').textContent = '工具接口正常 · ' + (d.tools || []).length + ' 项';
@@ -632,7 +631,6 @@ function renderSessions(sessions) {
 
 function loadSessions() {
   var box = $('#sessionList');
-  box.innerHTML = '<div class="side-note">加载中…</div>';
   api('/api/sessions').then(function (d) {
     S.sessions = d.sessions || [];
     renderSessions(S.sessions);
@@ -673,7 +671,6 @@ var CfgLabels = {
 
 function loadConfig() {
   var box = $('#configBody');
-  box.innerHTML = '<div class="side-note">加载中…</div>';
   api('/api/config').then(function (cfg) {
     box.innerHTML = '';
     Object.keys(CfgLabels).forEach(function (k) {

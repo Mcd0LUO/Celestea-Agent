@@ -33,9 +33,10 @@ import {
   type PickerHost,
   type SwitchKind,
 } from './statusline/picker';
+import { optimisticPatchView, revertPointOf } from './statusline/optimistic';
 import {
   closeModePopup,
-  modePopupContains,
+  modePopupHit,
   renderModeBadge,
   toggleModePopup,
   type ModeHost,
@@ -130,13 +131,14 @@ export class Statusline implements PickerHost, ModeHost {
     this.modeEl.addEventListener('click', () => toggleModePopup(this));
     // Esc 关闭统一由 utils/overlays 层级栈处理（任务 3：唯一 document Esc 监听）
     document.addEventListener('click', (e) => {
-      const t = e.target as Node;
-      if (this.popup) {
-        const inside = this.popup.contains(t) || this.modelEl.contains(t) || this.effortEl.contains(t);
-        if (!inside) closePopup(this);
-      }
+      // W795：一律用**事件路径**判定「点在不在里面」——乐观渲染会当帧重绘弹层内容，
+      // 被点的那一项随即被摘下来，contains() 会把这一次点击误判成「点了外面」而收起弹层。
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+      const hit = (...targets: (HTMLElement | null)[]): boolean =>
+        targets.some((t) => t !== null && (path.some((n) => n === t) || t.contains(e.target as Node)));
+      if (this.popup && !hit(this.popup, this.modelEl, this.effortEl)) closePopup(this);
       // W788：工作方式弹层同款——点自己/徽标不开倒，点别处关掉
-      if (!modePopupContains(t) && !this.modeEl.contains(t)) closeModePopup();
+      if (!modePopupHit(e) && !this.modeEl.contains(e.target as Node)) closeModePopup();
     });
   }
 
@@ -174,6 +176,11 @@ export class Statusline implements PickerHost, ModeHost {
   /** PickerHost：当前快照里的模型（全局配置，跨会话保留显示）。 */
   get snapshotModel(): string {
     return this.snapshot.model ?? '';
+  }
+
+  /** PickerHost（W795）：当前快照里的推理档位；乐观渲染与失败回滚都要用它。 */
+  get snapshotEffort(): string | null {
+    return this.snapshot.reasoning_effort ?? null;
   }
 
   /** Begin polling /api/status. */
@@ -236,7 +243,10 @@ export class Statusline implements PickerHost, ModeHost {
     if (!this.pendingPatch) return;
     const patch = this.pendingPatch;
     this.pendingPatch = null;
-    this.setNote('本轮已结束，正在应用切换…', 0);
+    // W795 乐观：本轮已结束 ⇒ 同一帧内先把补丁画进状态栏（终态），请求在后台跑；
+    // 失败再把模型/档位退回原值并说明原因（不再有「正在应用切换…」这类占位文案）。
+    const prev = revertPointOf({ model: this.snapshotModel, effort: this.snapshotEffort });
+    this.merge(optimisticPatchView(patch));
     void api
       .saveConfig(patch)
       .then((d) => {
@@ -245,7 +255,11 @@ export class Statusline implements PickerHost, ModeHost {
         window.dispatchEvent(new Event('studio:config-saved'));
       })
       .catch((err: unknown) => {
-        this.setNote('切换失败：' + (err instanceof Error ? err.message : String(err)), 6000);
+        this.merge(prev);
+        this.setNote(
+          '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）',
+          6000,
+        );
       });
   }
 
