@@ -2,8 +2,7 @@
 
 > 本页是 `/src/celestea_studio-ts/docs/` 的**全量索引**：每份文档的状态、一句话定位与权威入口。
 > 状态：**当前** = 与代码/生产同步；**设计** = 目标设计与契约（未必已实现）。
-> 历史归档在 [`archive/`](./archive/)（Rust 期评估、旧契约、旧部署）与
-> [`archive/rust-studio-backend/`](./archive/rust-studio-backend/)（旧后端源码）；上表只登记**当前与设计**。
+> 历史归档在 [`archive/`](./archive/)（旧契约、旧部署、旧评估）；上表只登记**当前与设计**。
 
 ## 索引
 
@@ -16,7 +15,7 @@
 | [`feature-session-context.md`](./feature-session-context.md) | 当前（已实现） | 特性设计：**只读上下文快照** `GET /api/sessions/{id}/context`（W725）——模型实际看到的系统提示词 / 工具面 / 消息流的按需组装口径（不起 turn、不写日志、不耗步骤预算） | [`contracts/endpoints.json`](../contracts/endpoints.json) `get_session_context`；本文 |
 | [`performance-baseline.md`](./performance-baseline.md) | 当前（快照） | 引擎热路径性能基线（`pnpm bench` 产物，含机器/commit 指纹）：状态栏 tick、token 估算与裁剪、会话日志投影、SSE 信封编解码；后续性能回归以此为参照 | 本文；机器可读孪生 `../benchmarks/baseline-*.json` |
 | [`README-frontend.md`](./README-frontend.md) | 当前 | **前端仓（并入前）的 docs 索引**：原先独立仓的文档地图，W781 并入后原样保留 | 本文（现役总索引）；前端规则见 `../apps/web/FRONTEND-RULES.md` |
-| [`DEVELOPMENT.md`](./DEVELOPMENT.md) | 历史参考 | Rust 期开发者权威入口（架构总览、模块职责表、关键机制、工作流）；**文中路径以并入前旧布局为准** | 本文；现役见 [`README-frontend.md`](./README-frontend.md) |
+| [`DEVELOPMENT.md`](./DEVELOPMENT.md) | 历史参考 | 旧后端的开发者权威入口（架构总览、模块职责表、关键机制、工作流）；**文中路径以并入前旧布局为准** | 本文；现役见 [`README-frontend.md`](./README-frontend.md) |
 | [`data-files.md`](./data-files.md) | 当前 | **共享数据文件 schema**：`workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json`；数据现位于 `/var/lib/celestea-agent/` | 本文；字段变更以 `../contracts/data-files/` 为准 |
 | [`pitfalls.md`](./pitfalls.md) | 当前 | **踩坑档案**：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证（每条来自真实修复）；前端渲染与数据文件类条目仍适用 | 本文 |
 | [`feature-ask-user.md`](./feature-ask-user.md) | 当前（**已实现，W783/W784**） | 特性设计：**模型向用户提问**（`ask_user_question`）——选项 + 自定义输入、挂起等待、答案回传模型、最大等待时间；架构对齐 DSH 官方三层实现（服务 seam / 工具 / UI answerer），本仓增量为异步 waterfall、超时、断线恢复、本地化 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §3.1；`packages/core/src/question.ts`、`apps/web/src/ui/question/` |
@@ -28,7 +27,7 @@
 另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）、[`archive/`](./archive/)（历史，只存史）。
 契约类真源不在 `docs/`，而在
 [`../contracts/`](../contracts/)（`endpoints.json` 47 端点、`sse-events.json`、`tools.json`、`data-files/`）——
-它们的 `docRef` 若指向旧 Rust 契约，路径已更新为
+它们的 `docRef` 若指向旧契约，路径已更新为
 `docs/archive/frontend/api-contract.md`（历史文档，仅存史）。
 
 ## 仓库角色与互链
@@ -37,7 +36,7 @@
 | --- | --- | --- |
 | `/src/celestea_studio-ts`（本仓） | Studio 后端（TypeScript，**生产**）+ 线上前端 `apps/web/` + 模型同步脚本 | 本页 / [`../README.md`](../README.md) |
 | `/var/lib/celestea-agent` | 运行数据（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/` / 账本） | [`../scripts/run-studio-ts.sh`](../scripts/run-studio-ts.sh) |
-| `/src/celestea_harness` | Rust 引擎**原址**（2026-09-11 已删除，仅存说明 README；历史文档在 [`archive/frontend/harness/`](./archive/frontend/harness/)） | [`./archive/frontend/harness/README.md`](./archive/frontend/harness/README.md) |
+| `/src/celestea_harness` | 引擎**原址**（2026-09-11 已删除，仅存说明 README；历史文档在 [`archive/frontend/harness/`](./archive/frontend/harness/)） | [`./archive/frontend/harness/README.md`](./archive/frontend/harness/README.md) |
 
 ## 维护约定
 
@@ -45,4 +44,4 @@
 - 设计落地后 → 把状态从 **设计** 改为 **当前**，并回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) 的 seam/例外表；
   设计文档里写作时的「未实现」状态行也应一并订正。
 - 文档过时 → 移入 [`archive/`](./archive/)（`git mv` 保历史）+ 顶部 `📦 历史文档` 横幅 + 更新全仓引用路径；**不删除正文**。
-  属旧前端仓事实的归 [`archive/frontend/`](./archive/frontend/)，旧后端源码归 [`archive/rust-studio-backend/`](./archive/rust-studio-backend/)。
+  属旧前端仓事实的归 [`archive/frontend/`](./archive/frontend/)。

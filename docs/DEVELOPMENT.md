@@ -6,8 +6,8 @@
 
 
 > 🧭 **仓库角色（2026-09-11）**：本仓现役 = **线上前端（`frontend/`）+ 共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）。
-> Rust Studio 后端已于 2026-09-11 **退役**（见 [`archive/rust-studio-backend/LEGACY-RUST-BACKEND.md`](./archive/rust-studio-backend/LEGACY-RUST-BACKEND.md)），因此本文描述的 Rust 后端架构 / 构建 / 测试属**历史参考**。
-> **后端开发请看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md)**（TypeScript 后端，生产）；Rust 引擎见 [`/src/celestea_studio-ts/docs/archive/frontend/harness/README.md`](/src/celestea_studio-ts/docs/archive/frontend/harness/README.md)；本仓 `docs/` 索引见 [`README.md`](./README.md)。
+> 本文描述的是**并入前的旧 Studio 后端**（架构 / 构建 / 测试），属**历史参考**。
+> **后端开发请看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md)**（TypeScript 后端，生产）；引擎见 [`/src/celestea_studio-ts/docs/archive/frontend/harness/README.md`](/src/celestea_studio-ts/docs/archive/frontend/harness/README.md)；本仓 `docs/` 索引见 [`README.md`](./README.md)。
 
 > 本文是 Celestea Studio 的**开发者入口文档**，内容全部来自对 `/src/celestea_studio-ts` 实际代码的核对（文件:行号可回溯）。
 > 契约字段名 / 代码标识符保留英文原文，其余以中文叙述。
@@ -25,14 +25,14 @@
 |---|---|---|
 | **本文 `docs/DEVELOPMENT.md`** | 架构总览、模块职责、关键机制、工作流、测试现状、文档索引 | 第一次上手；改任何东西之前 |
 | [`docs/README.md`](./README.md) | **`docs/` 全量索引**：状态（当前 / 设计 / 历史）、一句话、权威入口 | 找文档时先看它 |
-| [`docs/archive/frontend/api-contract.md`](./archive/frontend/api-contract.md) | **历史**：已退役 Rust 后端的全部 HTTP 端点契约（method / path / 请求体 / 响应体 / 错误码与错误原文）。TS 侧契约真源见 `/src/celestea_studio-ts/contracts/endpoints.json` | 追溯 Rust 端点语义 |
+| [`docs/archive/frontend/api-contract.md`](./archive/frontend/api-contract.md) | **历史**：已退役后端的全部 HTTP 端点契约（method / path / 请求体 / 响应体 / 错误码与错误原文）。TS 侧契约真源见 `/src/celestea_studio-ts/contracts/endpoints.json` | 追溯旧端点语义 |
 | [`docs/data-files.md`](./data-files.md) | `workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json` 的 schema 与格式 | 改持久化、迁移、回放 |
 | [`docs/pitfalls.md`](./pitfalls.md) | **踩坑档案**：每一条都来自真实修复（症状 / 根因 / 正确做法 / 代码位置） | 动 providers、compact、SSE、前端渲染之前**必读** |
-| [`docs/archive/frontend/deployment.md`](./archive/frontend/deployment.md) | **历史**：已退役 Rust 后端 `celestea-studio.service` 的 systemd / nginx / 环境变量 / 重启与回滚。TS 部署见 `/src/celestea_studio-ts/scripts/run-studio-ts.sh` | 追溯旧部署形态 |
+| [`docs/archive/frontend/deployment.md`](./archive/frontend/deployment.md) | **历史**：已退役后端 `celestea-studio.service` 的 systemd / nginx / 环境变量 / 重启与回滚。TS 部署见 `/src/celestea_studio-ts/scripts/run-studio-ts.sh` | 追溯旧部署形态 |
 | [`apps/web/FRONTEND-RULES.md`](../apps/web/FRONTEND-RULES.md) | 前端渲染**铁律**（验收硬性标准） | 写任何前端 UI 之前 |
-| [`docs/archive/`](./archive/frontend/)（7 篇） | **历史文档**（2026-09-11 归档，正文保留 + 顶部 📦 横幅）：`api-contract.md`、`deployment.md`、`backend-language-eval.md`、`backend-ts-rewrite-eval.md`、`frontend-session-persistence-eval.md`、`prompt-injection-eval.md`、`frontend-freeze-stop-button-plan.md` | 追溯"为什么这样设计" |
+| [`docs/archive/`](./archive/frontend/)（5 篇） | **历史文档**（2026-09-11 归档，正文保留 + 顶部 📦 横幅）：`api-contract.md`、`deployment.md`、`frontend-session-persistence-eval.md`、`prompt-injection-eval.md`、`frontend-freeze-stop-button-plan.md` | 追溯"为什么这样设计" |
 
-**一句话职责边界（Rust 期口径）**：后端是唯一真源（状态、文件、引擎代际都在 Rust 进程里）；前端只是"渲染 + 转发"，不持有业务真值。
+**一句话职责边界（旧口径）**：后端是唯一真源（状态、文件、引擎代际都在后端进程里）；前端只是"渲染 + 转发"，不持有业务真值。
 > 2026-09-11 起后端已换为 TypeScript（`celestea-studio-ts`），该边界仍然成立，只是"后端进程"指 TS 服务。
 
 ---
@@ -41,22 +41,16 @@
 
 Celestea Studio 是架在 **celestea-runtime 引擎**之上的本地 Web 工作台：
 
-- 一个 **Rust axum 单二进制**（`celestea-studio`），监听 `127.0.0.1:3777`；
+- 一个**单进程后端**（`celestea-studio`），监听 `127.0.0.1:3777`；
 - 它把引擎的一次 `Runtime::run_turn` 变成前端可见的 **SSE 事件流**；
 - 它把引擎的会话（`cli-main.jsonl`）、模型提供商（`providers.json`）、提示词段（`prompts.json`）、工作区（`workspaces.json`）做成可管理的 HTTP 面；
 - 前端是 **无框架 TypeScript + Vite** 构建产物，由后端从磁盘静态服务。
 
-引擎本身（原 Rust 参照实现 `/src/celestea_harness/crates/*`，该仓已于 2026-09-11 删除）**不因 Studio 而改**：Studio 通过 `CELESTEA_SESSION_DIR` + `Runtime::compose` 复用引擎的持久化与工具注册表，这是全仓最重要的设计约束（`src/workspaces.rs:17-26`、`src/main.rs:18-23`）。
+引擎本身（参照实现 `/src/celestea_harness/crates/*`，该仓已于 2026-09-11 删除）**不因 Studio 而改**：Studio 通过 `CELESTEA_SESSION_DIR` + `Runtime::compose` 复用引擎的持久化与工具注册表，这是全仓最重要的设计约束（`src/workspaces.rs:17-26`、`src/main.rs:18-23`）。
 
 ### 1.1 快速开始（本机）
 
 ```bash
-# 后端
-export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
-cd /src/celestea_studio-ts
-cargo build --release
-./target/release/celestea-studio            # 需要 CELESTEA_API_KEY（见 docs/archive/deployment.md）
-
 # 前端
 cd frontend
 pnpm install                                # 首次
@@ -70,12 +64,12 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 | 改了什么 | 需要做什么 | 需要重启服务吗 |
 |---|---|---|
 | `frontend/src/**`、`frontend/index.html`、样式 | `cd frontend && pnpm build` | **不需要**。`get_static` 每次请求都从磁盘读 `frontend/dist/`（`src/main.rs:741-783`） |
-| `src/*.rs`、`Cargo.toml` | `cargo build --release` + 重启 systemd 单元 | **需要** |
+| 后端源码 | 重编 + 重启 systemd 单元 | **需要** |
 | `celestea.toml`（模型/网关） | 重启服务（或走 `POST /api/config` 热改） | 需要 |
 | `providers.json` / `prompts.json` | 走 API 写入即可热生效；手工改文件后建议重启 | 视情况 |
 | `docs/**` | 什么都不用做 | 不需要 |
 
-> 后端改动必须 `cargo build --release` 后重启 `celestea-studio.service`；前端改动**只**需要 `pnpm build`——但 `dist/` 被 `.gitignore` 忽略，别指望它进版本库。
+> 后端改动必须重编后重启 `celestea-studio.service`；前端改动**只**需要 `pnpm build`——但 `dist/` 被 `.gitignore` 忽略，别指望它进版本库。
 
 ---
 
@@ -92,7 +86,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 5. 加载 `providers.json`（`CELESTEA_PROVIDERS_FILE` 可覆盖，`src/main.rs:1278-1290`），`apply_startup_default` 用持久化的 `default_model` 覆盖 `celestea.toml` 的 model（`src/main.rs:1291-1295`、`src/providers.rs:594-616`）；
 6. `build_gen` 组装第一个引擎代际（`src/main.rs:1301-1307`）；
 7. 构建 `AppState`，按需启动 autowake 循环（`src/main.rs:1309-1331`）；
-8. 注册路由（`src/main.rs:1333-1377`）并 `axum::serve` 绑定 `STUDIO_BIND`（默认 `127.0.0.1:3777`，`src/main.rs:1379-1393`）。
+8. 注册路由（`src/main.rs:1333-1377`）并绑定 `STUDIO_BIND`（默认 `127.0.0.1:3777`，`src/main.rs:1379-1393`）。
 
 路由共 **38 条 `route()` 声明（43 个 method+path 组合，其中 `/api/config`、`/api/sessions`、`/api/workspaces`、`/api/providers`、`/api/prompts` 各挂 GET+POST）+ 1 条 fallback**（fallback 也走 `get_static`，未知 `/api/*` 由 `get_static` 内部返回 404 JSON，`src/main.rs:1333-1376`、`744-750`）。
 
@@ -280,12 +274,6 @@ user_override() 有值（POST /api/config 传了 system_prompt）
 ## 3. 构建与运行
 
 ```bash
-# ---- 后端（改动后必须重编 + 重启）----
-export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
-cd /src/celestea_studio-ts
-cargo build --release                       # 产物 ./target/release/celestea-studio
-cargo test --release                        # 69 个测试（校对时实测），见 §8
-
 # ---- 前端（改动后只需 build，无需重启后端）----
 cd frontend
 pnpm install                                # 首次
@@ -320,7 +308,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 | Worker | `POST /api/worker/spawn`、`POST /api/worker/send`、`GET /api/worker/status` |
 | 静态 | `GET /`、`GET /index.html`、`GET /assets/{*path}`、`GET /favicon.ico`、fallback（SPA 路由） |
 
-**Session id 形态（必记）**：`"<workspace>/<session>"`，其中 `<workspace>` 是注册路径的**文件夹 basename**，`<session>` 是会话目录名。因为含 `/`，**URL 路径里必须 `%2F` 编码**（`GET /api/sessions/server-center%2Fmy-session/messages`）；axum 会把 `{id}` 解码回带斜杠的字符串。前端统一用 `encodeURIComponent`（`frontend/src/api.ts:90,111,117,121,123,126,129`）。第三种 id `worker:<sid>` 只在 `GET /api/sessions/{id}/messages` 里被识别。
+**Session id 形态（必记）**：`"<workspace>/<session>"`，其中 `<workspace>` 是注册路径的**文件夹 basename**，`<session>` 是会话目录名。因为含 `/`，**URL 路径里必须 `%2F` 编码**（`GET /api/sessions/server-center%2Fmy-session/messages`）；路由层会把 `{id}` 解码回带斜杠的字符串。前端统一用 `encodeURIComponent`（`frontend/src/api.ts:90,111,117,121,123,126,129`）。第三种 id `worker:<sid>` 只在 `GET /api/sessions/{id}/messages` 里被识别。
 
 ---
 
@@ -357,7 +345,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 | P7 | SSE 信封 | `turn` 字段必须随事件传递（`sse.ts` 只发 payload 会丢 `turn`） |
 | P8 | 主题/版本 | 只有 `mono` 单主题；`version.ts` 需**手动 bump** 并与 `package.json` 同步 |
 | P9 | 前端铁律 | 见 `apps/web/FRONTEND-RULES.md`：禁止"先清空后加载"、禁止整树 `innerHTML` 重建、切换必须防竞态 |
-| P10 | session id 编码 | 路径参数里的 `/` 必须 `%2F`，否则被 axum 当成两段路径 → 404 |
+| P10 | session id 编码 | 路径参数里的 `/` 必须 `%2F`，否则会被当成两段路径 → 404 |
 
 ---
 
@@ -369,8 +357,6 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 
 ```bash
 cd /src/celestea_studio-ts
-export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
-cargo build --release
 
 TMP=$(mktemp -d)
 mkdir -p "$TMP/sessions/scratch"
@@ -412,7 +398,7 @@ CELESTEA_API_KEY="$CELESTEA_API_KEY" \
 
 ### 7.3 改动的自检清单
 
-- 后端：`cargo build --release` + `cargo test --release` 全绿；新端点要在 `docs/archive/api-contract.md` 补一行。
+- 后端：改动后重编 + 测试全绿；新端点要在 `docs/archive/api-contract.md` 补一行。
 - 前端：`pnpm typecheck` + `pnpm build` 通过；对照 `apps/web/FRONTEND-RULES.md` 逐条自查（空白帧 / 整树闪动 / 旧结果覆盖新状态 任一出现即不合格）。
 - 改了 `AppState` / `swap_gen` / busy 槽：确认**所有**释放路径（成功、取消、错误、409 前置返回）都不漏。
 - 改了 provider / prompts / 会话写盘：确认"先判 409 再落盘"的顺序没有被破坏（否则会出现"返回 409 但已经写盘"）。
@@ -421,35 +407,6 @@ CELESTEA_API_KEY="$CELESTEA_API_KEY" \
 ---
 
 ## 8. 测试现状
-
-### 8.1 后端：`cargo test --release` → **69 个测试，0 failed**（校对时实测）
-
-```bash
-cd /src/celestea_studio-ts
-export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
-cargo test --release
-# test result: ok. 69 passed; 0 failed; 0 ignored
-```
-
-分布（`cargo test --release -- --list` 按模块统计）：
-
-> 测试数量**随开发增长**：本文校对期间工作区正在做 W263 收尾，实测从 65 → 69 变动过。上表是校对时快照，**以 `cargo test` 实际输出为准**。
-
-| 模块 | 数量 | 覆盖重点 |
-|---|---|---|
-| `workspaces::tests` | 16 | 路径穿越防护、legacy/v1 迁移幂等、激活重放、重命名碰撞、分支复制、归档保护、worker 条目契约 |
-| `providers::tests` | 13 | upsert 保 key、`public_view` 不泄 key、默认模型热应用与持久化、格式/URL 校验、keyless 同源借用引擎 key |
-| `prompts::tests` | 12 | builtin 顺序、四级装配优先级、插值失败回退、8192 字节截断、scope 落盘、409 不落盘、compose 失败回滚 |
-| `compact::tests` | 12 | 摘要轮 + K 轮重编号、未闭合轮丢弃、阈值跳过、原子写 + 备份、key redact、busy 槽守卫 |
-| `w240_tests`（`main.rs`） | 5 | autowake：空闲唤醒 / busy 保留 / 代际切换重绑 / 开关解析 / 提示词契约 |
-| `w262_tests`（`main.rs`） | 3 | `available.models` 从 provider store 构建、去重、绝不带 key |
-| `w263_statusline_tests`（`main.rs`） | 4 | usage 驱动缓存命中率与真实上下文占用、SSE status 与 `/api/status` 一致 |
-| `api::w228_tests` | 4 | 模型名校验、JSONL 撕裂尾部、`session_event_to_message` 全 kind 映射 |
-
-测试约定：
-- **不联网**：需要 LLM 的地方用 `FakeLlm` 替换 `LlmService`（`src/main.rs:1409-1437`）；
-- **不碰生产数据**：一律 `std::env::temp_dir()` + 进程 id + 纳秒时间戳建 scratch 目录（如 `src/workspaces.rs:1655-1665`）；
-- **进程级 env 必须串行**：改 `CELESTEA_SESSION_DIR` / key env 的测试要拿 `crate::COMPOSE_ENV_LOCK`（`src/main.rs:126-130`），否则 cargo test 多线程会互相污染。
 
 ### 8.2 前端：`pnpm build` = `tsc --noEmit`（strict）+ `vite build`
 

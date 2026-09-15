@@ -193,9 +193,9 @@ originalId: p?.id                         // 打开编辑器时记录
 
 **症状**：`GET /api/sessions/server-center/my-session/messages` → 404 / 路由不匹配。
 
-**根因**：session id 是 `"<workspace>/<session>"`，而 axum 的 `{id}` 是**单段**路径参数；未编码的 `/` 会被当成路径分隔符。
+**根因**：session id 是 `"<workspace>/<session>"`，而路由的 `{id}` 是**单段**路径参数；未编码的 `/` 会被当成路径分隔符。
 
-**正确做法**：路径里 `encodeURIComponent(id)`（`frontend/src/api.ts:90,111,117,121,123,126,129`），axum 会自动解码回带斜杠的值（`src/main.rs:1345-1348` 有注释）。`curl` 里同样要写 `%2F`。
+**正确做法**：路径里 `encodeURIComponent(id)`（`frontend/src/api.ts:90,111,117,121,123,126,129`），路由层会自动解码回带斜杠的值（`src/main.rs:1345-1348` 有注释）。`curl` 里同样要写 `%2F`。
 
 ---
 

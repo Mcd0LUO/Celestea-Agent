@@ -554,7 +554,7 @@
 
 | 设计条目 | 状态 | 落点 / 说明 |
 |---|---|---|
-| ① `GET /api/usage/ledger` 聚合端点 | **已实现** | `apps/studio/src/handlers/usage.ts` + `packages/runtime/src/ledger-query.ts`（`queryLedger`）；`session`/`since`/`until`/`group_by=session\|turn\|model\|day`；非法 query → 422。端点数 49 → **50**（`contracts/endpoints.json` + `API_ENDPOINT_COUNT` + `rust-route-table.snapshot.json` 的 `tsOnlyRoutes`/`tsApiEndpoints`/`tsMethodPathCombos` + `packages/core/src/contracts/index.ts` 的加载期断言） |
+| ① `GET /api/usage/ledger` 聚合端点 | **已实现** | `apps/studio/src/handlers/usage.ts` + `packages/runtime/src/ledger-query.ts`（`queryLedger`）；`session`/`since`/`until`/`group_by=session\|turn\|model\|day`；非法 query → 422。端点数 49 → **50**（`contracts/endpoints.json` + `API_ENDPOINT_COUNT` + `contracts/` 路由表快照的 `tsOnlyRoutes`/`tsApiEndpoints`/`tsMethodPathCombos` + `packages/core/src/contracts/index.ts` 的加载期断言） |
 | ② `/api/status.cost` | **已实现** | `ledgerCostBlock()`（runtime）+ 适配器可选方法 `costBlock?()`；**纯增**可选字段，账本关闭/无适配器时不出现该键 |
 | ③ `scripts/sync-pricing.ts`（只读同步 + version） | **未实现（有意）** | 依 R3-1/U1：newapi 侧 `PRICING-ARCHITECTURE.md` 读取被拒，同步脚本落地前须先确权；`pricing.json` 仍由运维提供，缺表即全 `unpriced`（不低报为 0） |
 | ④ 轮转（> 16 MiB） | **已实现** | `UsageLedgerFile`：超 `USAGE_LEDGER_MAX_BYTES` 时 `close` → `rename` 为 `usage-ledger.jsonl.1` → 下次 append 重建；轮转失败只 stderr 告警、不抛（观测纪律） |
@@ -639,7 +639,7 @@ interface FallbackPolicy {
   "policy": { "maxAttempts": 2, "cooldownMs": 60000, "failureThreshold": 3 } }
 ```
 
-**诚实取舍**：也可以把回退链放进 `Profile`，但 `Profile` 是**冻结的 12 键契约**（`profile.ts:1-6`），扩它要向 `contracts/` 与 Rust 侧同步；本条能力选择"侧车配置 + 装饰器"，使回退对引擎其余部分**零侵入**（`SessionComposer.llmFactory()` 一行替换）。
+**诚实取舍**：也可以把回退链放进 `Profile`，但 `Profile` 是**冻结的 12 键契约**（`profile.ts:1-6`），扩它要向 `contracts/` 同步；本条能力选择"侧车配置 + 装饰器"，使回退对引擎其余部分**零侵入**（`SessionComposer.llmFactory()` 一行替换）。
 
 ### 4.3 分期
 

@@ -239,7 +239,7 @@ pretty JSON → `providers.json.tmp` → `OpenOptions` 带 `mode(0o600)` → `wr
 
 ### 4.1 格式
 
-引擎 v1 持久化格式：**一行一个 `SessionEvent`**，serde 内部 tag 为 `"type"`、variant 名 snake_case（原 Rust 参照实现 `/src/celestea_harness/crates/core/src/session_log.rs:44-85`；该仓已于 2026-09-11 删除，现行真源见 [`../contracts/session-event.schema.json`](../contracts/session-event.schema.json)）。
+引擎 v1 持久化格式：**一行一个 `SessionEvent`**，serde 内部 tag 为 `"type"`、variant 名 snake_case（参照实现 `/src/celestea_harness/crates/core/src/session_log.rs:44-85`；该仓已于 2026-09-11 删除，现行真源见 [`../contracts/session-event.schema.json`](../contracts/session-event.schema.json)）。
 
 ```jsonc
 {"type":"turn_start","id":"turn-1"}
