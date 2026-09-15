@@ -15,12 +15,16 @@
 | [`feature-studio-auth.md`](./feature-studio-auth.md) | 当前（已实现，W767） | 特性设计：**Studio 自己的登录 cookie 门**——后端自渲染 `/login`、`POST /auth/login`（`htpasswd -vbi` 校验 + 30 天 HMAC cookie）、`GET /auth/check` 供 nginx `auth_request`；含 nginx 配置与回滚命令 | 本文；[`contracts/endpoints.json`](../contracts/endpoints.json) `get_login` / `post_auth_login` / `get_auth_check` |
 | [`feature-session-context.md`](./feature-session-context.md) | 当前（已实现） | 特性设计：**只读上下文快照** `GET /api/sessions/{id}/context`（W725）——模型实际看到的系统提示词 / 工具面 / 消息流的按需组装口径（不起 turn、不写日志、不耗步骤预算） | [`contracts/endpoints.json`](../contracts/endpoints.json) `get_session_context`；本文 |
 | [`performance-baseline.md`](./performance-baseline.md) | 当前（快照） | 引擎热路径性能基线（`pnpm bench` 产物，含机器/commit 指纹）：状态栏 tick、token 估算与裁剪、会话日志投影、SSE 信封编解码；后续性能回归以此为参照 | 本文；机器可读孪生 `../benchmarks/baseline-*.json` |
+| [`README-frontend.md`](./README-frontend.md) | 当前 | **前端仓（并入前）的 docs 索引**：原先独立仓的文档地图，W781 并入后原样保留 | 本文（现役总索引）；前端规则见 `../apps/web/FRONTEND-RULES.md` |
+| [`DEVELOPMENT.md`](./DEVELOPMENT.md) | 历史参考 | Rust 期开发者权威入口（架构总览、模块职责表、关键机制、工作流）；**文中路径以并入前旧布局为准** | 本文；现役见 [`README-frontend.md`](./README-frontend.md) |
+| [`data-files.md`](./data-files.md) | 当前 | **共享数据文件 schema**：`workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json`；数据现位于 `/var/lib/celestea-agent/` | 本文；字段变更以 `../contracts/data-files/` 为准 |
+| [`pitfalls.md`](./pitfalls.md) | 当前 | **踩坑档案**：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证（每条来自真实修复）；前端渲染与数据文件类条目仍适用 | 本文 |
 | [`feature-ask-user.md`](./feature-ask-user.md) | 设计（待实现） | 特性设计：**模型向用户提问**（`ask_user_question`）——选项 + 自定义输入、挂起等待、答案回传模型、最大等待时间；架构对齐 DSH 官方三层实现（服务 seam / 工具 / UI answerer），本仓增量为异步 waterfall、超时、断线恢复、本地化 | [`ARCHITECTURE.md`](./ARCHITECTURE.md)、`packages/core/src/event-bus.ts` |
 | [`iteration-e-capabilities.md`](./iteration-e-capabilities.md) | 设计 | 迭代方向 E（能力深水区）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | 本文；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见 `docs/archive/frontend/harness/archive/dsh-ptc-mode-eval.md` |
 | [`ui-copy-tech-notes.md`](./ui-copy-tech-notes.md) | 当前（审计清单） | 共用前端「面向用户可见的技术文案」只读审计：27 个文件 + `index.html` 的问题清单与建议改法 | 本文；前端规则见 `apps/web/FRONTEND-RULES.md` |
 
-上表与本目录**一一对应**（10 篇文档 + 本索引）；**新增文档必须在上表登记**。
+上表与本目录**一一对应**（14 篇文档 + 本索引）；**新增文档必须在上表登记**。
 契约类真源不在 `docs/`，而在
 [`../contracts/`](../contracts/)（`endpoints.json` 47 端点、`sse-events.json`、`tools.json`、`data-files/`）——
 它们的 `docRef` 若指向旧 Rust 契约，路径已更新为
