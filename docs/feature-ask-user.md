@@ -1,7 +1,7 @@
 # 特性设计 · 模型向用户提问（ask_user_question）
 
-> 状态：**设计完成，待实现**（2026-09-14）。
-> 依赖：[`ARCHITECTURE.md`](./ARCHITECTURE.md) 的 seam 纪律；`packages/core/src/event-bus.ts` 的 waterfall 原语（**当前同步，本设计新增异步版本**）。
+> 状态：**已实现**（W783 后端 + W784 前端，2026-09-15）。落地见 `packages/core/src/question.ts`、`apps/studio/src/user-questions.ts`、`packages/tools/src/tools/ask-user.ts`、`apps/web/src/ui/question/`；seam 已登记进 [`ARCHITECTURE.md`](./ARCHITECTURE.md) §3.1。
+> 依赖：[`ARCHITECTURE.md`](./ARCHITECTURE.md) 的 seam 纪律；`packages/core/src/event-bus.ts` 的 waterfall 原语（**本设计新增的异步版本 `runWaterfallAsync` 已落地，同步 API 未动**）。
 > 借鉴来源：**DSH 官方实现**（`@deepseek-ai/dsh-user-questions` + `dsh-tool-ask-user` + `dsh-client-ui-user-questions`）—— 三层拆分、工具 schema、答案编码、挂起/唤醒机制**均对齐官方**；本仓只做四项增量：异步 waterfall 适配、最大等待时间、断线恢复、本地化。
 > 一句话目标：模型在回合中调用 `ask_user_question` 向用户提问（选项 + 自定义输入），**挂起等待**作答，答案作为**普通工具结果**回传模型继续推理。
 

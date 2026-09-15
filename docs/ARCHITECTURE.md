@@ -115,7 +115,8 @@ TS 侧保持同一形状：`packages/core` 只放接口与容器，实现全在 
 |---|---|---|---|---|
 | **Plugin** | `plugin.ts` | `plugin.rs` | `interface Plugin { name: string; mount(ctx: Context): void }` | 插件唯一的自我安装方式：往 `Context` 里 provide 服务、往注册表里 insert 行 |
 | **Context** | `context.ts` | `context.rs` | 类型键服务容器 `provide / get / scoped` | 后注册覆盖先注册（patch 语义）；`scoped()` 给每个 agent 一层子作用域，查不到回退父级 |
-| **EventBus** | `event-bus.ts` | `event_bus.rs` | `on / emit`、`bail / runBail`、`waterfall / runWaterfall` | 三种派发模式分别存放，互不干扰：广播=观察；bail=首个 `Some` 短路；waterfall=按序折叠变换 |
+| **EventBus** | `event-bus.ts` | `event_bus.rs` | `on / emit`、`bail / runBail`、`waterfall / runWaterfall`（同步）、`waterfallAsync / runWaterfallAsync`（异步） | 三种派发模式分别存放，互不干扰：广播=观察；bail=首个 `Some` 短路；waterfall=按序折叠变换。**W783 新增异步版**：`(event, next)` 逐层委托（对齐 DSH cordis），走独立表，同步 API 一行未动 |
+| **UserQuestionService** | `question.ts` | —（本仓新增，无 Rust 对应；对齐 DSH `dsh-user-questions`） | `interface UserQuestionService { ask(req): Promise<AskUserQuestionOutcome> }` + token `USER_QUESTION_SERVICE` + 7 个稳定错误码 | 模型向用户提问。答案经 **waterfall 返回值**唤醒挂起的 `await`，**绝不走消息注入**（挂起时 turn 单槽被占，`POST /api/turn` 只会变成永远送不到的 steering）；宿主（`apps/studio`）实现 `PendingQuestion` 表，`packages/tools` 的 `ask_user_question` 以**构造注入**消费（工具层不接触 `Context`）。本仓增量为最大等待时间（超时返回**空答案集**，不替模型决策）与本地化 |
 | **SessionLog** | `session-log.ts` | `session_log.rs` | `append / events / deriveMessages / clear / nextTurnId` | **append-only 日志是唯一真源**；模型可见历史是派生物，绝不另存一份；`turn-<n>` 计数器归日志所有（重启后从磁盘最大值恢复，不复用 id） |
 | **Llm** | `llm.ts` | `llm.rs` | `interface Llm { generate(req): Promise<LlmStream> }` + `LlmRegistry` | 生成返回**流**而非字符串；注册表按名字注册，**last-wins**（同名后注册覆盖先注册），compose 期注册一次 |
 | **ToolGuard** | `tool.ts` | `tool.rs` | `check(input) → Allow / Deny(reason) / Ask(reason)` | guard 链是 waterfall/intercept：按注册顺序跑，**首个非 Allow 短路**；判定是结果的一等字段（`decision`），不是错误字符串 |

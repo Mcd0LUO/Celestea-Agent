@@ -30,16 +30,33 @@ export type PasswordVerdict = "ok" | "denied" | "error";
 export function verifyPassword(file: string, user: string, password: string): PasswordVerdict {
   if (password === "" || !HTPASSWD_USER_RE.test(user)) return "denied";
   if (!isReadable(file)) return "error";
-  const run = spawnSync(HTPASSWD_BIN, ["-vbi", file, user], {
-    input: `${password}\n`,
-    encoding: "utf8",
-    timeout: HTPASSWD_TIMEOUT_MS,
-  });
+  let run = runHelper(file, user, password);
+  // A transient SPAWN failure (EAGAIN/EMFILE while the host is loaded — observed
+  // as an intermittent `error` verdict under a full parallel test run) is not
+  // "the credential store is unusable": retry ONCE before calling it an operator
+  // problem. A genuine timeout is NOT retried — the 5 s bound stays the bound.
+  if (run.error !== undefined && !isTimeout(run.error)) {
+    run = runHelper(file, user, password);
+  }
   if (run.error !== undefined) return "error";
   if (run.status === 0) return "ok";
   // 3 = password mismatch, 6 = user not found (both are "denied"); anything
   // else (4 = file error, a signal, a timeout) is an operator problem.
   return run.status === 3 || run.status === 6 ? "denied" : "error";
+}
+
+/** One `htpasswd -vbi` attempt (the password travels on stdin, never argv). */
+function runHelper(file: string, user: string, password: string): ReturnType<typeof spawnSync> {
+  return spawnSync(HTPASSWD_BIN, ["-vbi", file, user], {
+    input: `${password}\n`,
+    encoding: "utf8",
+    timeout: HTPASSWD_TIMEOUT_MS,
+  });
+}
+
+/** `spawnSync` hit its own `timeout` — a bound we must not silently double. */
+function isTimeout(error: Error): boolean {
+  return (error as NodeJS.ErrnoException).code === "ETIMEDOUT";
 }
 
 function isReadable(file: string): boolean {
