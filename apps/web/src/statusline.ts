@@ -47,6 +47,12 @@ import {
   renderModelCell,
   type ModelCellState,
 } from './statusline/ring';
+import {
+  createTpsSamples,
+  pushTpsSamples,
+  tpsDisplay,
+  type TpsSamples,
+} from './statusline/tps';
 
 const POLL_MS = 2000;
 
@@ -83,6 +89,11 @@ export class Statusline implements PickerHost, ModeHost {
   pendingPick: ModelPick | null = null;
   /** W750：状态栏已渲染的模型名/图标键（避免每次轮询重建同一行）。 */
   private modelCell: ModelCellState = { label: '', iconKey: null };
+  /**
+   * W789：吞吐的近期采样缓冲（按会话隔离，像 snapshot 一样跨切换保留）——
+   * 会话 inactive 时服务端给 0/缺省，状态栏改为显示近期均值而不是 0.0 tok/s。
+   */
+  private tpsCache = new Map<string, TpsSamples>();
   private staleMsg = '';
   private note = '';
   private noteTimer: number | null = null;
@@ -127,6 +138,15 @@ export class Statusline implements PickerHost, ModeHost {
       // W788：工作方式弹层同款——点自己/徽标不开倒，点别处关掉
       if (!modePopupContains(t) && !this.modeEl.contains(t)) closeModePopup();
     });
+  }
+
+  /** W789：本会话的吞吐采样缓冲（首次访问即建，按会话隔离）。 */
+  private tpsSamplesFor(id: string): TpsSamples {
+    const cur = this.tpsCache.get(id);
+    if (cur) return cur;
+    const fresh = createTpsSamples();
+    this.tpsCache.set(id, fresh);
+    return fresh;
   }
 
   /** PickerHost：弹层挂载点（#statusline 元素）。 */
@@ -304,8 +324,13 @@ export class Statusline implements PickerHost, ModeHost {
     this.effortEl.textContent = effort ? String(effort) : '—';
     this.effortEl.title = '思考强度：' + (effort ? String(effort) : '标准') + '（点击快速切换）';
 
-    const tps = s.tokens_per_sec;
-    this.tpsEl.textContent = tps !== undefined && tps !== null ? fixed1(tps) + ' tok/s' : '— tok/s';
+    // W789：吞吐 —— 有效采样原样显示；服务端给 0/缺省（会话 inactive）时显示最近
+    // N 次采样的均值并带 `≈` 前缀，不再从「42.5 tok/s」直接跳成「0.0 tok/s」。
+    const samples = pushTpsSamples(this.tpsSamplesFor(this.session), s.tokens_per_sec);
+    this.tpsCache.set(this.session, samples);
+    const tps = tpsDisplay(samples, s.tokens_per_sec, s.busy === true, fixed1);
+    this.tpsEl.textContent = tps.text;
+    this.tpsEl.title = tps.title;
 
     // W263 缓存命中率：只改文本（铁律 1/2/5——不重建 DOM，不重渲染背景）
     renderCacheCell(this.cacheEl, s.usage);

@@ -129,8 +129,14 @@ body.resizing { cursor: col-resize; user-select: none; }
   background: var(--c-code-bg);
   font-size: 14px; padding: 10px 12px;
 }
+/* W789：运行态会多出 #btnMode（插话/排队）与 #btnCancel 两个按钮。竖排时按钮列
+   66px → 126px，把 #inputbar 整体撑高 60px（headless Blink 实测 88 → 148），
+   消息区（flex:1）被顶掉同样高度 —— 用户看到的就是「发送后下方窗口浮动」。
+   改横排后按钮行高恒等于单个按钮高：空闲 1 个、运行 3 个，composer 几何逐像素一致。
+   align-items: flex-end 保持按钮贴底（等价于原 justify-content: flex-end）。 */
 .input-side {
-  display: flex; flex-direction: column; justify-content: flex-end; gap: 8px;
+  display: flex; flex-direction: row; align-items: flex-end; gap: 8px;
+  flex: 0 0 auto;
 }
 #btnSend, #btnCancel { min-width: 88px; padding: 9px 14px; }
 

@@ -238,7 +238,7 @@
   display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 10px;
   padding: 8px 0 2px;
 }
-.prov-adv-label { font-size: 11px; color: var(--c-text-3); text-align: right; line-height: 30px; }
+.prov-adv-label { font-size: 11px; color: var(--c-text-3); text-align: left; line-height: 30px; } /* W789：与 .cfg-label/.prov-field-label 同步改左对齐 */
 
 /* ---- 推理强度档位片（W258 任务 3：low/high/max 可点击多选） ---- */
 .prov-effort-chips {

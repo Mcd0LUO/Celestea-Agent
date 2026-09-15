@@ -45,6 +45,32 @@ export const PANEL_MARGIN = 8;
 export const PANEL_MIN_HEIGHT = 120;
 
 /**
+ * 面板的**自然**高度（= 不受 max-height 限制时的高度），由当前（受限）布局**推算**。
+ *
+ * W789 为什么需要它：旧实现靠「先把内联 max-height 清空、量 offsetHeight、再写回」
+ * 拿自然高度，而这一层 max-height 正是 .sl-popup-body 唯一的可滚动高度来源 ——
+ * 清空的瞬间 body 溢出消失，浏览器把 body.scrollTop 夹回 0，于是每次滚轮都「滚一格
+ * 就被弹回顶部」（headless Blink 实测：scroll 事件序列 120 → 0）。改为推算：
+ *   自然高 = 面板外框高 + 滚动容器内容高（外框高 − 可视高 = 标题/边框等非滚动部分）。
+ *
+ * 纯函数：三个数字进、一个数字出，零 DOM、零副作用。
+ */
+export function panelNaturalHeight(input: {
+  /** 面板**当前**外框高（受 max-height 限制时即上限值）。 */
+  panelHeight: number;
+  /** 面板内部滚动容器（.sl-popup-body）的可视高；无内部滚动容器时传 0。 */
+  bodyClientHeight: number;
+  /** 同一容器的内容高（scrollHeight）；无内部滚动容器时传 0。 */
+  bodyScrollHeight: number;
+}): number {
+  const panelH = Math.max(0, input.panelHeight);
+  const clientH = Math.max(0, input.bodyClientHeight);
+  const contentH = Math.max(clientH, input.bodyScrollHeight);
+  const chromeH = Math.max(0, panelH - clientH); // 标题 / 边框 / 内边距等非滚动部分
+  return Math.max(panelH, chromeH + contentH);
+}
+
+/**
  * 面板几何：输入锚点 rect（盾牌按钮）+ 面板自然尺寸 + 视口尺寸，输出落位与高度上限。
  *
  * 纯函数：不读 DOM、不写样式、不依赖时间；同样的输入永远给同样的输出。
