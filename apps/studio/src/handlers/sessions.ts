@@ -17,6 +17,9 @@
  * (the W729 `session.json.mode`, rewritten through the same writer) at a turn
  * boundary — see `registerMode`.
  *
+ * W791 (B): `GET /api/sessions?archived=1` lists the ARCHIVED sessions (the
+ * `<ws>/.celestea-archived/` rows `list()` skips); the default body is unchanged.
+ *
  * W725: `GET /api/sessions/{id}/context` is the read-only "what does the model
  * actually see" snapshot. The body is assembled by the ENGINE (the agent loop's
  * own `buildRequest`, reached through `runtime.sessionContext`) and the usage
@@ -43,14 +46,32 @@ function withBusy(deps: Deps, row: SessionRow): SessionRow {
   return row.kind === "worker" ? row : { ...row, busy: deps.runtime.isBusy(row.id) };
 }
 
+/**
+ * W791 (B2): `?archived=1` (or `true`) selects the ARCHIVED listing.
+ *
+ * The default listing is untouched — archived sessions still live in a hidden
+ * sibling directory and are therefore absent from it, and the rows below are the
+ * only place an `archived` key ever appears. `0`, `false`, an empty value or an
+ * unrecognised value all read as "the default listing", so a client can poll the
+ * parameter without inventing a second default.
+ */
+function wantsArchived(raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  const value = raw.trim().toLowerCase();
+  return value === "1" || value === "true";
+}
+
 function registerList(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("get_sessions");
-  app.on(route.method, route.honoPath, (c) =>
-    c.json({
-      sessions: deps.sessions.list(workerRows(deps)).map((row) => withBusy(deps, row)),
-      active_session: deps.workspaces.activeSession(),
-    }),
-  );
+  app.on(route.method, route.honoPath, (c) => {
+    // W791: the ARCHIVED source answers with `listArchived()` only — archived
+    // sessions are filesystem rows, never worker rows, and none of them can be
+    // active or busy (archiving refuses the active session).
+    const rows = wantsArchived(c.req.query("archived"))
+      ? deps.sessions.listArchived()
+      : deps.sessions.list(workerRows(deps)).map((row) => withBusy(deps, row));
+    return c.json({ sessions: rows, active_session: deps.workspaces.activeSession() });
+  });
   return route.id;
 }
 

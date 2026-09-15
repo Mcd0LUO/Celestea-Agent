@@ -5,6 +5,10 @@
  * holds `cli-main.jsonl`. The id is `<workspace-basename>/<dir>`; the
  * `worker:<sid>` space is served by the engine (RuntimeAdapter) instead.
  *
+ * W791: the ARCHIVED sessions (moved to `<ws>/.celestea-archived/<dir>`, see
+ * `session-ops.ts`) are a second source of the same row shape — `listArchived()`
+ * — because `list()` skips dot-directories by design.
+ *
  * The transcript endpoint is a pure projection of the append-only log
  * (`projectMessages` from `@celestea/session`), stopping at the first
  * unparsable line so a torn tail is dropped rather than reported.
@@ -18,7 +22,7 @@ import { isDirectory, isFile, listEntries, statOf, writeFileRaw, removeDir, ensu
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { DEFAULT_SESSION_MODE, parseMode, validateMode, type SessionMode } from "./mode.js";
 import { readSessionMeta, writeSessionMeta, type SessionMeta } from "./session-meta.js";
-import { sessionDirName, sanitizeComponent, stripCreationSuffix, workspaceBasename } from "./session-id.js";
+import { ARCHIVED_DIR, sessionDirName, sanitizeComponent, stripCreationSuffix, workspaceBasename } from "./session-id.js";
 import { validateModelName, validatePromptId } from "./validate.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
 
@@ -80,6 +84,12 @@ export interface SessionRow {
   modified: number;
   active: boolean;
   /**
+   * W791: present (and `true`) ONLY on rows produced by `listArchived()` — the
+   * default listing never carries the key, so the frozen response body of
+   * `GET /api/sessions` is unchanged for every pre-W791 client.
+   */
+  archived?: true;
+  /**
    * W513 row kind: `session` = a filesystem session directory, `worker` = an
    * engine-memory worker conversation (`workspace: "engine"`).
    */
@@ -110,24 +120,59 @@ export class SessionsStore {
         if (!e.isDir || e.name.startsWith(".")) continue;
         const log = `${w.path}/${e.name}/${SESSION_FILE}`;
         if (!isFile(log)) continue;
-        const st = statOf(log);
-        const meta = readSessionMeta(`${w.path}/${e.name}`);
-        rows.push({
-          id: `${name}/${e.name}`,
-          workspace: name,
-          kind: "session" as const,
-          title: displayTitle(meta, e.name),
-          model: meta?.model ?? null,
-          mode: meta?.mode ?? DEFAULT_SESSION_MODE,
-          size: st?.size ?? 0,
-          modified: st?.modified ?? 0,
-          active: active === `${name}/${e.name}`,
-        });
+        const row = this.rowOf(name, e.name, readSessionMeta(`${w.path}/${e.name}`), statOf(log));
+        rows.push({ ...row, active: active === row.id });
       }
     }
     rows.push(...extra);
     rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     return rows;
+  }
+
+  /**
+   * W791 (B1): every ARCHIVED session of every registered workspace.
+   *
+   * Archiving MOVES a session directory to `<ws>/.celestea-archived/<name>` and
+   * keeps its id (`<wsName>/<session>`) — it is the same session, parked in a
+   * hidden sibling. `list()` deliberately skips dot-directories, so before this
+   * method the ONLY endpoint that could name an archived session was
+   * `unarchive`; the GUI's archive panel (`?archived=1`) and the
+   * delete-an-archived-session path both need to enumerate them.
+   *
+   * The rows have EXACTLY the shape `list()` produces — same id/workspace/title/
+   * model/mode/size/modified derivation, same sort — plus `archived: true` and
+   * `active: false` (an archived session can never be the active one: archiving
+   * refuses the active session).
+   */
+  listArchived(): SessionRow[] {
+    const rows: SessionRow[] = [];
+    for (const w of this.ws.registry().workspaces) {
+      const name = workspaceBasename(w.path) ?? w.path;
+      const root = `${w.path}/${ARCHIVED_DIR}`;
+      for (const e of listEntries(root)) {
+        if (!e.isDir || e.name.startsWith(".")) continue;
+        const log = `${root}/${e.name}/${SESSION_FILE}`;
+        if (!isFile(log)) continue;
+        rows.push({ ...this.rowOf(name, e.name, readSessionMeta(`${root}/${e.name}`), statOf(log)), archived: true });
+      }
+    }
+    rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return rows;
+  }
+
+  /** One row of the frozen shape (shared by `list` and `listArchived`). */
+  private rowOf(workspace: string, dirName: string, meta: SessionMeta | null, st: { size: number; modified: number } | null): SessionRow {
+    return {
+      id: `${workspace}/${dirName}`,
+      workspace,
+      kind: "session" as const,
+      title: displayTitle(meta, dirName),
+      model: meta?.model ?? null,
+      mode: meta?.mode ?? DEFAULT_SESSION_MODE,
+      size: st?.size ?? 0,
+      modified: st?.modified ?? 0,
+      active: false,
+    };
   }
 
   /** Registry lookup + sanitization, no existence check. */

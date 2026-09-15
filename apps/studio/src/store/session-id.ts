@@ -82,6 +82,20 @@ export function workspaceBasename(path: string): string | null {
   return base === "" || base === "/" ? null : base;
 }
 
+/**
+ * W791: the two hidden sibling directories a session can be MOVED into.
+ *
+ * They live here (the session-directory vocabulary module) rather than in
+ * `session-ops.ts` because BOTH sides need them: the mover writes into them, and
+ * the scanner (`SessionsStore.listArchived`) reads `<ws>/.celestea-archived/`
+ * back. Importing the mover from the scanner would make the two modules
+ * circular, which the repo's dependency gate forbids.
+ *
+ * The names never change: a rename would orphan every archived session on disk.
+ */
+export const ARCHIVED_DIR = ".celestea-archived";
+export const TRASH_DIR = ".celestea-trash";
+
 /** A hidden name can never become a visible session/workspace directory. */
 export function isHiddenName(name: string): boolean {
   return name === "" || name === "." || name === ".." || name.startsWith(".");
