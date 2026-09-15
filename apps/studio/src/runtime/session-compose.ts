@@ -45,6 +45,7 @@ import type { PendingQuestion, QuestionRegistry } from "../question-registry.js"
 import { questionAnsweredRow, questionAskedRow } from "../question-rows.js";
 import { EMPTY_GRANTS } from "./engine-grants.js";
 import { createEngineLlm } from "./llm-assembly.js";
+import type { FallbackWiring } from "./fallback-host.js";
 import type { SessionGrantsReader } from "./session-grants.js";
 
 /** W510 resource caps (overridable through the adapter options or the env). */
@@ -87,6 +88,14 @@ export interface SessionComposerOptions {
    * the base profile prompt" (a session with no declared mode, K8).
    */
   sessionSystemPrompt?: (id: string) => string | null;
+  /**
+   * E §4 P1 (W785): the model-fallback wiring. `wrap()` returns null while the
+   * capability is off (`CELESTEA_LLM_FALLBACK` unset — the default), so the
+   * pre-P1 path stays byte-for-byte identical (D9); when armed it returns the
+   * decorated seam and the ledger is booked PER ATTEMPT by the decorator
+   * instead of once per call, which is what makes D6's rows possible.
+   */
+  fallback?: FallbackWiring | null;
   /** LLM seam factory; default = the assembled engine LLM (live provider). */
   llm?: (profile: Profile) => Llm;
   /** Extra tools registered after the six builtins. */
@@ -192,7 +201,7 @@ export class SessionComposer {
       profile,
       workspace: workspace === null ? null : { workspace: workspace.path },
       ...(questions === null ? {} : { questions }),
-      llm: this.stepObservedLlm(this.llmFactory()(profile), profile, ledger),
+      llm: this.engineLlm(sessionId, profile, ledger),
       workers: null, // the workers plugin registers the three tools, in compose order
       ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),
       ...(this.opts.sandbox === undefined ? {} : { sandbox: this.opts.sandbox }),
@@ -268,6 +277,25 @@ export class SessionComposer {
     const file = this.opts.ledgerFile;
     if (file === undefined || file === null) return null;
     return createUsageLedger({ session: dir === null ? (sessionId ?? HOST_SESSION_ID) : sessionIdOfDir(dir), file });
+  }
+
+  /**
+   * E §4 P1 (W785): the ONE place a composed generation decides which `Llm` it
+   * runs on. Fallback OFF (or unwired) = the W728 path unchanged (ledger wrapper
+   * around the raw seam). Fallback ON = the decorator, which books one ledger
+   * row per ATTEMPT and hands the switch to the next target.
+   */
+  private engineLlm(sessionId: string | null, profile: Profile, ledger: UsageLedger | null): Llm {
+    const inner = this.llmFactory()(profile);
+    const wrapped =
+      this.opts.fallback?.wrap({
+        inner,
+        profile,
+        sessionId,
+        steps: ledger,
+        provider: this.opts.providerLabel ?? null,
+      }) ?? null;
+    return wrapped ?? this.stepObservedLlm(inner, profile, ledger);
   }
 
   /**

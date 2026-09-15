@@ -52,9 +52,13 @@ import {
   SessionRuntimeRegistry,
   statuslineOf,
   TurnBusyError,
+  type LedgerCostBlock,
+  type LedgerQuery,
+  type LedgerQueryResult,
   type Profile,
   type SessionRuntime,
 } from "@celestea/runtime";
+import { costBlockView, usageLedgerView } from "./ledger-view.js";
 import { join } from "node:path";
 import { CapacityError, EngineError, toolSpecView, type PendingQuestionView, type QuestionAnswerOutcome } from "../runtime-adapter.js";
 import { HostAutowake, autowakeLog } from "./host-autowake.js";
@@ -80,6 +84,7 @@ import type {
   WorkerStatusReport,
 } from "../runtime-adapter.js";
 import { QuestionHost } from "./question-host.js";
+import { AdapterFallback, type FallbackStatusView } from "./fallback-host.js";
 import type { StudioBus } from "../sse.js";
 import { contextViewOf } from "./context-snapshot.js";
 import { applyProfilePatch, defaultEngineProfile, engineProfileOf, profileFromEngine } from "./engine-profile.js";
@@ -119,6 +124,11 @@ export interface RealRuntimeAdapterOptions extends Omit<SessionComposerOptions, 
   maxConcurrentTurns?: number;
   /** Idle TTL for the reclaimer (default [SESSION_IDLE_TTL_MS]). */
   idleTtlMs?: number;
+  /**
+   * `<data dir>` — where `fallbacks.json` / `fallbacks-audit.jsonl` live.
+   * Defaults to the ledger's directory (both are process-level data files).
+   */
+  dataDir?: string;
 }
 
 /** `RuntimeAdapter` + the lifecycle handles the host needs beyond the seam. */
@@ -167,6 +177,8 @@ class RealEngine implements RealRuntimeAdapter {
    * They carry no turn logic: the adapter supplies the wake callback below.
    */
   private readonly autowake: HostAutowake;
+  /** E §4 P1 (W785): the process-wide fallback glue (see `fallback-host.ts`). */
+  private readonly fallback: AdapterFallback;
   /** W783: process-wide user-question capability (table + host view). */
   private readonly questions = new QuestionHost({
     emit: (sessionId, turn, f) => void this.bus?.emit(f.event, turn, f.payload, sessionId),
@@ -186,10 +198,14 @@ class RealEngine implements RealRuntimeAdapter {
       wake: (session, input) => this.startAutowakeTurn(session, input),
     });
     this.profileValue = profileFromEngine(opts.profile ?? defaultEngineProfile(this.env, "CELESTEA_API_KEY"));
+    // E §4 P1 (W785): OFF unless `CELESTEA_LLM_FALLBACK` says on — `wrap()`
+    // then returns null and the composer keeps the pre-P1 path (D9).
+    this.fallback = new AdapterFallback({ dataDir: opts.dataDir ?? null, ledgerFile: opts.ledgerFile ?? null, env: this.env, bus: () => this.bus, peek: (s) => this.registry.peek(s), ...(opts.now === undefined ? {} : { now: opts.now }) });
     this.composer = new SessionComposer({
       ...opts,
       env: this.env,
       baseProfile: () => this.profileValue,
+      fallback: this.fallback.wiring,
       sessionHooks: (sessionId) => this.injectionHooks(sessionId),
       // W783: every composed session offers `ask_user_question` and publishes a
       // parked request on the bus as a `question` frame.
@@ -344,17 +360,11 @@ class RealEngine implements RealRuntimeAdapter {
    * idle instance is recomposed now, a busy one at its next turn boundary — and
    * no other session is touched (that is why this is not `invalidateAll`).
    */
-  invalidateSession(session: string | null): boolean {
-    return this.registry.invalidateSession(session);
-  }
+  invalidateSession(session: string | null): boolean { return this.registry.invalidateSession(session); }
 
-  liveSessions(): string[] {
-    return this.registry.liveSessionIds();
-  }
+  liveSessions(): string[] { return this.registry.liveSessionIds(); }
 
-  busySessions(): string[] {
-    return this.registry.busySessionIds();
-  }
+  busySessions(): string[] { return this.registry.busySessionIds(); }
 
   // --- turns -------------------------------------------------------------
 
@@ -488,6 +498,9 @@ class RealEngine implements RealRuntimeAdapter {
     return sessionContextOf(this.entryFor(session).runtime, this.composer.profileFor(session));
   }
 
+  /** E §4.2.3 #4 (W785): the fallback block of `/api/status` (null = off). */
+  fallbackView(session: string | null): FallbackStatusView | null { return this.fallback.view(session); }
+
   /** The requested session's statusline (no instance yet = an empty one). */
   statusline(session?: string | null): Statusline {
     const entry = this.registry.peek(session ?? null);
@@ -495,6 +508,19 @@ class RealEngine implements RealRuntimeAdapter {
     // W755: a cold session measures nothing — `coldStatusline` owns that shape.
     const profile = this.profileValue;
     return coldStatusline({ ...profile, context_window: profile.context_window_tokens, now: this.now });
+  }
+
+  // --- E-P1 (capability 3, W785): the usage ledger's aggregate views --------
+  // Both read the ONE process-shared ledger file through `ledger-view.ts` (no
+  // cache: a row booked a moment ago is visible to the next poll).
+
+  /** `GET /api/usage/ledger` (see `ledger-view.ts`). */
+  usageLedger(q: LedgerQuery): LedgerQueryResult | { ok: false; error: string } { return usageLedgerView(this.opts.ledgerFile ?? null, q); }
+
+  /** `/api/status.cost`: `null` (no ledger) makes the handler omit the key. */
+  costBlock(session: string | null): LedgerCostBlock | null {
+    const dir = session === null ? null : (this.opts.resolveSession?.(session)?.dir ?? null);
+    return costBlockView(this.opts.ledgerFile ?? null, session, dir);
   }
 
   async configure(patch: ProfilePatch): Promise<EngineProfile> {

@@ -18,9 +18,9 @@ import {
 describe("contracts/endpoints.json", () => {
   const c = loadEndpoints();
 
-  it("holds exactly 49 endpoints (W725 context, W767 cookie gate, W783 two question endpoints)", () => {
-    expect(c.count).toBe(49);
-    expect(c.endpoints).toHaveLength(49);
+  it("holds exactly 50 endpoints (W725 context, W767 cookie gate, W783 two questions, W785 usage ledger)", () => {
+    expect(c.count).toBe(50);
+    expect(c.endpoints).toHaveLength(50);
   });
 
   // W767: Studio's own login-cookie gate is served on `/login` + `/auth/*` — the
@@ -54,11 +54,12 @@ describe("contracts/endpoints.json", () => {
     // endpoints, the context snapshot and the three login-cookie endpoints are
     // declared as a TypeScript-only delta instead of being written into it.
     // W783: 8 -> 10 (GET /api/questions + POST /api/questions/{id}/answer).
-    expect(snap.tsOnlyRoutes).toHaveLength(10);
-    expect(snap.tsApiEndpoints).toBe(49);
-    expect(snap.tsMethodPathCombos).toBe(53);
+    // W785: 10 -> 11 (GET /api/usage/ledger).
+    expect(snap.tsOnlyRoutes).toHaveLength(11);
+    expect(snap.tsApiEndpoints).toBe(50);
+    expect(snap.tsMethodPathCombos).toBe(54);
     const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
-    expect(fromSnapshot.size).toBe(49);
+    expect(fromSnapshot.size).toBe(50);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });
@@ -163,8 +164,10 @@ describe("contracts/session-event.schema.json", () => {
 describe("contracts/data-files", () => {
   const idx = loadDataFilesIndex();
 
-  it("freezes 11 data-file schemas and forbids a version field", () => {
-    expect(idx.files).toHaveLength(11);
+  // W785 (E §4.2.4 P1): 11 -> 12 — `fallbacks.json` (the model-fallback
+  // sidecar) joined the frozen set; no existing schema changed.
+  it("freezes 12 data-file schemas and forbids a version field", () => {
+    expect(idx.files).toHaveLength(12);
     expect(idx.freezeRule).toContain("NO format changes");
     for (const f of idx.files) expect(f.schema.endsWith(".schema.json")).toBe(true);
   });
@@ -178,9 +181,10 @@ describe("contracts/data-files", () => {
     expect(idx.roundTripRequirement).toContain("read -> write -> re-read");
   });
 
-  // W728 §3 P0: the ledger and its price snapshot are data files and added no
-  // endpoint of their own; the frozen count is W767's 47 (`API_ENDPOINT_COUNT`).
-  it("registers the usage ledger and the pricing snapshot (W728), still on 47 endpoints", () => {
+  // W728 §3 P0: the ledger and its price snapshot are data files; P0 added no
+  // endpoint of its own. W785's aggregate endpoint is the ledger's ONLY endpoint,
+  // and the frozen count is W785's 50 (`API_ENDPOINT_COUNT`).
+  it("registers the usage ledger and the pricing snapshot (W728), 50 endpoints after W785", () => {
     const names = idx.files.map((f) => f.file);
     expect(names).toContain("usage-ledger.jsonl");
     expect(names).toContain("pricing.json");
@@ -194,7 +198,7 @@ describe("contracts/data-files", () => {
     expect(kind?.enum).toEqual(["ok", "error"]);
     expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
 
-    expect(loadEndpoints().count).toBe(49);
+    expect(loadEndpoints().count).toBe(50);
   });
 });
 
@@ -208,9 +212,9 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     expect(idx.durability["checkpoint.json"]).toContain("tmp-<pid> + rename");
     expect(idx.recovery?.implemented).toContain("turn_end: interrupted");
     // P0 adds NO endpoint: /api/status.recovery is P1 and stays out. The count is
-    // W783's 49 for the unrelated reason that the question endpoints exist.
-    expect(loadEndpoints().count).toBe(49);
-    expect(loadEndpoints().endpoints).toHaveLength(49);
+    // W785's 50 for the unrelated reason that the question and ledger endpoints exist.
+    expect(loadEndpoints().count).toBe(50);
+    expect(loadEndpoints().endpoints).toHaveLength(50);
   });
 
   it("freezes the sidecar shape (version, open_turn, repaired[])", () => {
@@ -250,9 +254,9 @@ describe("W729 session modes (P0 contract delta)", () => {
     expect(String(byId.get("get_sessions")?.response.fields[0]?.type)).toContain("mode:");
     expect(byId.get("get_status")?.response.fields.map((f) => f.name)).toContain("mode");
     expect(String(byId.get("get_health")?.response.fields.find((f) => f.name === "capabilities")?.type)).toContain("session_mode");
-    // W729 added no endpoint; the frozen count is W783's 49.
-    expect(c.count).toBe(49);
-    expect(c.endpoints).toHaveLength(49);
+    // W729 added no endpoint; the frozen count is W785's 50.
+    expect(c.count).toBe(50);
+    expect(c.endpoints).toHaveLength(50);
   });
 
   it("declares spawn_worker.mode without changing the tool count", () => {
@@ -275,7 +279,8 @@ describe("W729 session modes (P0 contract delta)", () => {
     // W779 T2: the display name the GUI shows, next to the sanitized dir name.
     expect(schema.properties["title"]?.type).toBe("string");
     expect(schema.additionalProperties).toBe(true);
-    expect(loadDataFilesIndex().files).toHaveLength(11);
+    // W785: 11 -> 12 (`fallbacks.json`, the model-fallback sidecar).
+    expect(loadDataFilesIndex().files).toHaveLength(12);
   });
 
   it("M14: one mode semantics — no host preset token in the Studio tree", () => {

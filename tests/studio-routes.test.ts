@@ -49,9 +49,16 @@ describe("apps/studio contract surface", () => {
     expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "capabilities", "model", "name", "ok"]);
     expect(health["capabilities"]).toEqual({ grants: true, context: true, session_mode: true });
     const status = (await (await app.request("/api/status")).json()) as Record<string, unknown>;
+    // W785: capability 4 always adds `effective_model` + `fallback`; capability
+    // 3's `cost` key only exists when the adapter HAS a ledger (this harness runs
+    // the fake adapter, which has none — the real adapter's key set is asserted in
+    // `runtime/real-runtime.test.ts`). The SET is asserted, so an undeclared field
+    // still fails here.
     expect(Object.keys(status).sort()).toEqual([
       "busy",
       "context_usage",
+      "effective_model",
+      "fallback",
       "grants_active",
       "mode",
       "model",

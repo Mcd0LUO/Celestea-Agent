@@ -97,6 +97,45 @@ export function streamIdleTimeoutMessage(ms: number): string {
   return `stream idle timeout: no data chunk for ${ms}ms`;
 }
 
+/**
+ * `Retry-After` of a failed response, kept OUT of `LlmError`.
+ *
+ * E §4.2.2 P1 honours the header, but `LlmError` lives in `@celestea/core` and
+ * K7/§4.6 forbid widening it for a host-side policy detail. The header is
+ * therefore attached on a side channel keyed by the error object: still
+ * zero-copy, still invisible to every existing reader (`errors.test.ts` asserts
+ * the core fields, which are unchanged), and it never leaks into a message.
+ */
+const RETRY_AFTER_MS = new WeakMap<object, number>();
+
+/** Attach a parsed `Retry-After` (ms) to the error that carries it. */
+export function setRetryAfterMs(error: unknown, ms: number | null): void {
+  if (ms === null || !Number.isFinite(ms) || ms < 0) return;
+  if (typeof error === "object" && error !== null) RETRY_AFTER_MS.set(error, Math.floor(ms));
+}
+
+/** The parsed `Retry-After` of an error, or null when it carried none. */
+export function retryAfterMsOf(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) return null;
+  return RETRY_AFTER_MS.get(error) ?? null;
+}
+
+/**
+ * `Retry-After` -> milliseconds. Both forms of RFC 9110 are accepted: a
+ * delta-seconds value and an HTTP-date. An unparsable header (or a date in the
+ * past) is "no wait", never a thrown error.
+ */
+export function parseRetryAfterHeader(value: string | string[] | undefined, now = Date.now()): number | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw === undefined) return null;
+  const text = raw.trim();
+  if (text === "") return null;
+  if (/^\d+$/.test(text)) return Number.parseInt(text, 10) * 1000;
+  const at = Date.parse(text);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, at - now);
+}
+
 /** True for timeout errors (these map to kind "generate" out of generate()). */
 export function isTimeoutError(e: unknown): boolean {
   return e instanceof LlmError && e.isTimeout;

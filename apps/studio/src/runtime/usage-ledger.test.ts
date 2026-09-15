@@ -1,11 +1,13 @@
 /**
- * Usage ledger, end to end through the PRODUCTION app (W728 §3 P0).
+ * Usage ledger, end to end through the PRODUCTION app (W728 §3 P0 + W785 P1).
  *
  * What only this level can prove: the wiring (a real turn through a REAL
  * `@celestea/llm` client → the ledger file), the failure path with W723's
- * structured cause (a 503 books ONE error row whose cost is UNKNOWN, not 0),
- * the price snapshot in production, and that P0 added NO endpoint (§3.3: the
- * aggregate `GET /api/usage/ledger` is P1 and must still be 404).
+ * structured cause (a 503 books ONE error row whose cost is UNKNOWN, not 0), the
+ * price snapshot in production, and — W785 — that the P1 aggregate view reads the
+ * SAME file the turn just wrote: `GET /api/usage/ledger` (rows/totals per
+ * `group_by`, 422 on a malformed dimension) and `/api/status.cost` (C5's file
+ * half: everything is derived from the file, so a restart cannot change it).
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -126,6 +128,35 @@ function ledgerRows(path: string): Row[] {
   }
 }
 
+/** Σ of one session's STEP rows in the file (`turn_total` excluded, like the view). */
+function sessionStepTotals(path: string, session: string): { records: number; prompt: number; completion: number } {
+  let records = 0;
+  let prompt = 0;
+  let completion = 0;
+  for (const row of ledgerRows(path)) {
+    if (row["kind"] === "turn_total" || row["session"] !== session) continue;
+    records += 1;
+    const usage = row["usage"] as Row | null;
+    if (usage === null) continue;
+    prompt += usage["prompt_tokens"] as number;
+    completion += usage["completion_tokens"] as number;
+  }
+  return { records, prompt, completion };
+}
+
+/** The `ts` of the first step row (the ledger's own clock, in seconds). */
+function firstStepTs(path: string): number {
+  const row = ledgerRows(path).find((r) => r["kind"] !== "turn_total") ?? {};
+  return row["ts"] as number;
+}
+
+/** `GET` a ledger URL and parse the body (the query is the test's subject). */
+async function getJsonRow(app: Hono, url: string): Promise<Row> {
+  const res = await app.request(url);
+  expect(res.status).toBe(200);
+  return (await res.json()) as Row;
+}
+
 describe("production app books every model step", () => {
   it("books an ok row and a turn_total row for a completed turn", async () => {
     const upstream = await startMockProvider([[textDelta("收"), usageChunk(1000, 200), DONE_FRAME]]);
@@ -194,10 +225,19 @@ describe("production app books every model step", () => {
     expect(total["billed_unknown_steps"]).toBe(1);
     expect(total["outcome"]).toMatchObject({ error: { kind: "generate" } });
 
-    // P0 added no endpoint and no status block: both are P1 (§3.3).
-    expect((await host.app.request("/api/usage/ledger")).status).toBe(404);
+    // W785 P1 ②: the SAME session's cost block comes from the SAME rows — an
+    // unbilled attempt is UNKNOWN (null), never 0, and `attempts` counts it.
     const status = (await (await host.app.request("/api/status")).json()) as Row;
-    expect(status["cost"]).toBeUndefined();
+    expect(status["cost"]).toEqual({
+      session_total: null,
+      turn_total: null,
+      attempts: 1,
+      currency: "CNY",
+      priced_by: "unpriced",
+      unpriced_models: [],
+      records: 1,
+      cost_complete: false,
+    });
   });
 
   it("writes nothing at all when CELESTEA_USAGE_LEDGER=off", async () => {
@@ -208,9 +248,110 @@ describe("production app books every model step", () => {
       await waitIdle(host.studio);
       expect(existsSync(host.ledgerPath)).toBe(false);
       expect(ledgerRows(host.ledgerPath)).toEqual([]);
+
+      // W785: "off" is not an error — the endpoint answers 200 with ok:false, and
+      // /api/status omits `cost` entirely instead of inventing a null block.
+      const ledger = await host.app.request("/api/usage/ledger");
+      expect(ledger.status).toBe(200);
+      expect(await ledger.json()).toEqual({ ok: false, error: "usage ledger disabled" });
+      const status = (await (await host.app.request("/api/status")).json()) as Row;
+      expect(status["cost"]).toBeUndefined();
     } finally {
       await upstream.close();
     }
   });
 
+});
+
+describe("aggregate view over the ledger file (W785 P1 ①/②)", () => {
+  it("serves one row per session, keyed and totalled like the ledger's own step rows", async () => {
+    const upstream = await startMockProvider([[textDelta("收"), usageChunk(1000, 200), DONE_FRAME]]);
+    try {
+      const host = makeHost(upstream.v1BaseUrl);
+      await runTurn(host.app, "aggregate please");
+      await waitIdle(host.studio);
+
+      const res = await host.app.request("/api/usage/ledger?session=ws%2Fs1");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Row;
+      expect(body["ok"]).toBe(true);
+      expect(body["group_by"]).toBe("session");
+      expect(body["currency"]).toBe("CNY");
+      expect(body["price_version"]).toBe("2026-09-11");
+      expect(body["unpriced_models"]).toEqual([]);
+
+      const rows = body["rows"] as Row[];
+      expect(rows).toHaveLength(1);
+      const row = rows[0] ?? {};
+      expect(row["key"]).toBe("ws/s1");
+      // ONE step row: the `turn_total` row restates it and is never counted twice.
+      expect(row["records"]).toBe(1);
+      expect(row["unpriced_records"]).toBe(0);
+      expect(row["cost"]).toEqual({ in: 0.001, out: 0.0004, cache: 0, total: 0.0014 });
+
+      // `totals` equals the sums of THAT session's step rows in the file.
+      const expected = sessionStepTotals(host.ledgerPath, "ws/s1");
+      const totals = body["totals"] as Row;
+      expect(totals["records"]).toBe(expected.records);
+      expect(totals["tokens"]).toMatchObject({ prompt_tokens: expected.prompt, completion_tokens: expected.completion });
+      expect(totals["cost"]).toEqual({ in: 0.001, out: 0.0004, cache: 0, total: 0.0014 });
+      expect(totals["cost_complete"]).toBe(true);
+
+      // W785 P1 ②: /api/status answers the same session's cost block.
+      const status = (await (await host.app.request("/api/status")).json()) as Row;
+      expect(status["cost"]).toEqual({
+        session_total: 0.0014,
+        turn_total: 0.0014,
+        attempts: 1,
+        currency: "CNY",
+        priced_by: "table",
+        unpriced_models: [],
+        records: 1,
+        cost_complete: true,
+      });
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  it("folds by model and honours the inclusive since/until window", async () => {
+    const upstream = await startMockProvider([[textDelta("m"), usageChunk(1000, 200), DONE_FRAME]]);
+    try {
+      const host = makeHost(upstream.v1BaseUrl);
+      await runTurn(host.app, "fold by model");
+      await waitIdle(host.studio);
+      const ts = firstStepTs(host.ledgerPath);
+
+      const byModel = await getJsonRow(host.app, `/api/usage/ledger?group_by=model`);
+      expect(byModel["group_by"]).toBe("model");
+      expect((byModel["rows"] as Row[]).map((r) => r["key"])).toEqual([MODEL]);
+
+      // Both bounds are INCLUSIVE, so the row's own second is inside the window...
+      const inside = await getJsonRow(host.app, `/api/usage/ledger?since=${ts}&until=${ts}`);
+      expect((inside["rows"] as Row[]).map((r) => r["key"])).toEqual(["ws/s1"]);
+      // ...and a window that starts one second later excludes it without failing.
+      const outside = await getJsonRow(host.app, `/api/usage/ledger?since=${ts + 1}`);
+      expect(outside["rows"]).toEqual([]);
+      expect((outside["totals"] as Row)["records"]).toBe(0);
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  it("rejects a malformed dimension and a non-integer bound with 422", async () => {
+    const upstream = await startMockProvider([[textDelta("x"), usageChunk(1, 1), DONE_FRAME]]);
+    try {
+      const host = makeHost(upstream.v1BaseUrl);
+
+      const bogus = await host.app.request("/api/usage/ledger?group_by=bogus");
+      expect(bogus.status).toBe(422);
+      expect(await bogus.json()).toEqual({ ok: false, error: "field 'group_by' must be one of session, turn, model, day" });
+
+      const since = await host.app.request("/api/usage/ledger?since=yesterday");
+      expect(since.status).toBe(422);
+      expect(await since.json()).toEqual({ ok: false, error: "field 'since' must be an integer" });
+    } finally {
+      await upstream.close();
+    }
+  });
 });

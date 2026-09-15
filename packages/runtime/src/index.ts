@@ -51,6 +51,7 @@ export * from "./usage.js";
 export * from "./pricing.js";
 export * from "./ledger.js";
 export * from "./ledger-llm.js";
+export * from "./ledger-query.js";
 export * from "./status.js";
 export * from "./frames.js";
 export * from "./session-binding.js";

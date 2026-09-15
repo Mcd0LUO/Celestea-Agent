@@ -18,10 +18,18 @@
  * `grants_active` — the CAP NAMES in force for that session, never the paths
  * (an operator can see which session is widened without leaking a filesystem
  * layout into a status poll).
+ *
+ * W785 (E-P1, capability 3 ②): `/api/status` adds `cost` — the session's
+ * engine-side cost estimate read from the append-only usage ledger (§3.2.4). The
+ * key is a PURE ADDITION and is present ONLY when the adapter has a ledger, so a
+ * host with the ledger switched off answers exactly the pre-W785 body and an old
+ * client never receives a `null` it would have to interpret.
  */
 
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
+import type { LedgerCostBlock } from "@celestea/runtime";
+import type { FallbackStatusView } from "../runtime/fallback-host.js";
 import { activeSession, modeOfSession, type Deps } from "./common.js";
 import { baseUrlOf } from "./config-shape.js";
 import { effectiveGrantsOf, grantsActiveCaps } from "../runtime/engine-grants.js";
@@ -48,13 +56,26 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
   app.on(status.method, status.honoPath, (c) => {
     const asked = c.req.query("session");
     const session = asked === undefined || asked === "" ? activeSession(deps) : asked;
+    const line = deps.runtime.statusline(session);
     return c.json({
-      ...deps.runtime.statusline(session),
+      ...line,
       session,
       // W729: the mode of the QUERIED session (absent = standard, K8).
       mode: modeOfSession(deps, session),
       busy: deps.runtime.isBusy(session),
       grants_active: activeGrantCaps(deps, session),
+      ...costField(deps, session),
+      // E §4.2.3 #4 (W785): `model` stays the CONFIGURED value; these two are
+      // the only place a downgrade shows. Pure additions, always present.
+      effective_model: fallbackView(deps, session)?.effective_model ?? line.model,
+      fallback: fallbackView(deps, session) ?? {
+        active: false,
+        chain: [],
+        effective_model: null,
+        last_reason: null,
+        targets: [],
+        problems: [],
+      },
     });
   });
 
@@ -62,6 +83,20 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
   app.on(tools.method, tools.honoPath, (c) => c.json({ tools: deps.runtime.tools() }));
 
   return [health.id, status.id, tools.id];
+}
+
+/** E §4.2.3 #4 (W785): the fallback view of this session (null = not armed). */
+function fallbackView(deps: Deps, session: string | null): FallbackStatusView | null {
+  return deps.runtime.fallbackView?.(session) ?? null;
+}
+
+/**
+ * W785: the optional `cost` key (see the header). `{}` = no ledger / no estimate,
+ * which keeps the field truly optional instead of a `cost: null` placeholder.
+ */
+function costField(deps: Deps, session: string | null): { cost?: LedgerCostBlock } {
+  const cost = deps.runtime.costBlock?.(session);
+  return cost === undefined || cost === null ? {} : { cost };
 }
 
 /** Cap names in force for the session (never paths) — §5.7. */

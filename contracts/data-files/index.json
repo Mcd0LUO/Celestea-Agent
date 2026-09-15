@@ -71,6 +71,12 @@
       "schema": "checkpoint.schema.json",
       "version": "sidecar v1 (its own `version: 1` is the SIDECAR schema, not a data-file format version)",
       "mode": "0600"
+    },
+    {
+      "file": "fallbacks.json",
+      "schema": "fallbacks.schema.json",
+      "version": "sidecar v1 (`version: 1` is the sidecar's own field, not a data-file format version)",
+      "mode": "read-only (never written by the engine)"
     }
   ],
   "durability": {
@@ -82,13 +88,14 @@
     "session.json": "plain write, NOT atomic",
     "registry.tsv": "tmp+rename",
     "pricing.json": "read-only snapshot (never written by the engine); missing/unparsable -> empty table (every model unpriced)",
-    "usage-ledger.jsonl": "append-only, one writeSync per record on an O_APPEND fd (no fsync, no rotation in P0)",
-    "checkpoint.json": "tmp-<pid> + rename, mode 0600, no fsync (observation only: a lost sidecar reads as 'no checkpoint', which is fail-safe)"
+    "usage-ledger.jsonl": "append-only, one writeSync per record on an O_APPEND fd (no fsync); rotated at 16 MiB to `<path>.1` (replaced), read() reads the current file only (W785 §3.3 P1 ④)",
+    "checkpoint.json": "tmp-<pid> + rename, mode 0600, no fsync (observation only: a lost sidecar reads as 'no checkpoint', which is fail-safe)",
+    "fallbacks.json": "read-only sidecar config (never written by the engine); missing/unparsable -> chain assembled from the composed profile + the problem reported in /api/status.fallback.problems"
   },
   "roundTripRequirement": "Every file needs a read -> write -> re-read round-trip test; both implementations must agree byte-for-byte on the written form.",
   "ledger": {
-    "implemented": "W728 P0 (iteration E §3): step-granular append-only ledger + pricing snapshot + unpriced marking",
-    "notImplemented": "GET /api/usage/ledger, /api/status.cost, sync-pricing script, rotation, three-way reconciliation (P1/P2)"
+    "implemented": "W728 P0 (iteration E §3): step-granular append-only ledger + pricing snapshot + unpriced marking; W785 P1: GET /api/usage/ledger aggregate view (session|turn|model|day + since/until) + /api/status.cost + 16 MiB rotation",
+    "notImplemented": "scripts/sync-pricing.ts (the price snapshot is operator-supplied), SSE status.cost_delta, three-way reconciliation + budget stop-loss (P1/P2)"
   },
   "recovery": {
     "implemented": "E-P0③ (§1.3 P0): checkpoint.json sidecar + idempotent boot synthesis of `turn_end: interrupted` + turnNo restored from the log; API_ENDPOINT_COUNT stays 44 (no endpoint in P0)",

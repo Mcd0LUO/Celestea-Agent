@@ -24,6 +24,7 @@ import {
   resolveLlmMode,
   type LiveLlmView,
   type LlmMode,
+  type LlmTarget,
 } from "@celestea/llm";
 import type {
   Llm,
@@ -41,7 +42,7 @@ import {
   type ProviderLookup,
   type ProviderTarget,
 } from "./provider-target.js";
-import type { LlmStream as ProviderStream, StreamEvent as ProviderEvent } from "@celestea/llm";
+import type { Llm as ProviderLlm, LlmStream as ProviderStream, StreamEvent as ProviderEvent } from "@celestea/llm";
 
 /**
  * The profile fields a live client needs, from either profile shape (`Profile`
@@ -95,14 +96,41 @@ async function* coreStream(stream: ProviderStream): LlmStream {
   for await (const event of stream) yield coreEvent(event);
 }
 
-/** The live provider behind the core `Llm` seam. */
-export function liveEngineLlm(profile: Profile, env: NodeJS.ProcessEnv): Llm {
-  const client = createLiveLlm(llmProfileOf(profile), env);
+/**
+ * The ONE provider-seam -> core-seam bridge: requests pass through unchanged and
+ * every event is copied field by field. Shared by [liveEngineLlm] and by the
+ * fallback decorator (E §4 P1), so a fallback turn is bridged exactly once and
+ * the two paths cannot drift.
+ */
+export function bridgeProviderLlm(inner: ProviderLlm): Llm {
   return {
     async generate(req: ModelRequest): Promise<LlmStream> {
-      return coreStream(await client.generate(req));
+      return coreStream(await inner.generate(req));
     },
   };
+}
+
+/** The live provider behind the core `Llm` seam. */
+export function liveEngineLlm(profile: Profile, env: NodeJS.ProcessEnv): Llm {
+  return bridgeProviderLlm(createLiveLlm(llmProfileOf(profile), env));
+}
+
+/**
+ * ONE fallback target's client (E §4.2.1 P1): the composed profile with that
+ * target's own `model` / `base_url` / key env applied, so each target keeps its
+ * own credential and its own three timeout tiers (§4.2.1 "三档超时语义逐字不变").
+ * Only env var NAMES travel here; the value is resolved inside `createLiveLlm`.
+ */
+export function liveEngineLlmFor(base: Profile, target: LlmTarget, env: NodeJS.ProcessEnv): Llm {
+  return liveEngineLlm(
+    {
+      ...base,
+      model: target.model,
+      base_url: target.baseUrl ?? base.base_url,
+      api_key_env: target.apiKeyEnv ?? base.api_key_env,
+    },
+    env,
+  );
 }
 
 /** The engine's `Llm` for this generation: live, or the offline test seam. */

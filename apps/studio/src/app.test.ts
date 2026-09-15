@@ -41,8 +41,9 @@ afterEach(() => {
 });
 
 describe("route table coverage", () => {
-  // W783: 47 -> 49 (the two user-question endpoints).
-  it("binds exactly the 49 contract endpoints with the contract method+path", () => {
+  // W783: 47 -> 49 (the two user-question endpoints); W785: 49 -> 50
+  // (GET /api/usage/ledger).
+  it("binds exactly the 50 contract endpoints with the contract method+path", () => {
     const h = make();
     expect(h.studio.endpointIds).toHaveLength(API_ENDPOINT_COUNT);
     expect(new Set(h.studio.endpointIds).size).toBe(API_ENDPOINT_COUNT);
@@ -55,10 +56,10 @@ describe("route table coverage", () => {
 describe("W729 P0 invariants", () => {
   it("③ adds NO endpoint of its own: API_ENDPOINT_COUNT === endpoints.json#count", () => {
     // The design's "43" was the baseline of the day it was written; the context
-    // snapshot (W725) moved it to 44, W767's login-cookie gate to 47 and W783's
-    // user questions to 49 — W729 itself adds none.
-    expect(API_ENDPOINT_COUNT).toBe(49);
-    expect(loadEndpoints().count).toBe(49);
+    // snapshot (W725) moved it to 44, W767's login-cookie gate to 47, W783's user
+    // questions to 49 and W785's usage-ledger view to 50 — W729 itself adds none.
+    expect(API_ENDPOINT_COUNT).toBe(50);
+    expect(loadEndpoints().count).toBe(50);
     expect(loadEndpoints().endpoints.map((e) => e.id)).not.toContain("post_session_mode");
   });
 });
@@ -83,9 +84,16 @@ describe("health / status / tools / config", () => {
   it("serves GET /api/status with the statusline + session", async () => {
     const h = make();
     const { body } = await getJson(h.app, "/api/status");
+    // W785: capability 4 always adds `effective_model` + `fallback`; capability
+    // 3's `cost` key only exists when the adapter HAS a ledger (this harness runs
+    // the fake adapter, which has none — the real adapter's key set is asserted in
+    // `runtime/real-runtime.test.ts`). The SET is asserted, so an undeclared field
+    // still fails here.
     expect(Object.keys(body).sort()).toEqual([
       "busy",
       "context_usage",
+      "effective_model",
+      "fallback",
       "grants_active",
       "mode",
       "model",
@@ -186,6 +194,22 @@ describe("health / status / tools / config", () => {
     expect(JSON.stringify(res.body)).not.toContain(SECRET);
     expect(process.env["CELESTEA_API_KEY"]).toBe(SECRET);
     delete process.env["CELESTEA_API_KEY"];
+  });
+
+  it("W785: /api/usage/ledger answers ok:false (200) when the adapter has no ledger", async () => {
+    // The fake runtime adapter implements no `usageLedger`: the request was
+    // understood, there is simply no ledger here — an error, not a 404/500, and
+    // the `error` field is registered optional for exactly this case.
+    const h = make();
+    const res = await getJson(h.app, "/api/usage/ledger");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: false, error: "usage ledger unavailable" });
+    // A malformed query is still the client's 422, capability or not.
+    const bad = await getJson(h.app, "/api/usage/ledger?group_by=bogus");
+    expect(bad.status).toBe(422);
+    expect(bad.body).toEqual({ ok: false, error: "field 'group_by' must be one of session, turn, model, day" });
+    // And no adapter ledger means no `cost` key on /api/status (pure addition).
+    expect((await getJson(h.app, "/api/status")).body["cost"]).toBeUndefined();
   });
 
   it("409s POST /api/config while a turn is running", async () => {

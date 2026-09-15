@@ -75,14 +75,19 @@
     "codeRef": "src/main.rs:883-892"
   },
   "payloadExtensions": {
-    "note": "Keys the TypeScript host adds to an event payload beyond the frozen Rust table above (W513 per-session frames + W515 injection placements). They are contract too: `payloadExtensions.<event>` is the ONLY place a host-only payload key may be declared, and the W744 parity test fails on any produced key that appears in neither the event's `payload` table nor here.",
+    "note": "Keys the TypeScript host adds to an event payload beyond the frozen Rust table above (W513 per-session frames + W515 injection placements). They are contract too: `payloadExtensions.<event>` is the ONLY place a host-only payload key may be declared, and the W744 parity test fails on any produced key that appears in neither the event's `payload` table nor here. W785 added the `phase:\"fallback\"` value (a payload VALUE, not a new event name) and its five companion keys under `payloadExtensions.status`; the 9 event names are untouched (K5/D8).",
     "status": {
       "session": "string|null (the session the frame belongs to; null = process-level)",
       "dropped": "integer (per-session bucket overflow counter, lagged frames only)",
       "hint": "string (the lagged hint, equal to `lagged.payload.hint`)",
       "placement": "'queued'|'steering'|'context' (W515 injection placement)",
       "boundary": "'turn-start'|'step'? (the boundary that consumed an injected message)",
-      "message": "object (the injected-message view {id,kind,from,lane,source,summary})"
+      "message": "object (the injected-message view {id,kind,from,lane,source,summary})",
+      "effective_model": "string (E §4.2.3 #4, W785: the model actually serving; present on a fallback frame and readable from /api/status.effective_model)",
+      "from": "string|null (W785: the target that just failed and is being left behind; `phase:\"fallback\"` frames only)",
+      "to": "string (W785: the target about to run; `phase:\"fallback\"` frames only)",
+      "reason": "string (W785: `http_503` / `timeout_idle` / `stream` / `network` / `generate`)",
+      "attempt": "integer (W785: index of the attempt ABOUT to run, §5.2 numbering)"
     }
   },
   "count": 9,
@@ -153,13 +158,13 @@
     {
       "name": "status",
       "payload": {
-        "phase": "'start'|'progress'|'completed'|'cancelled'|'error'|'step_limit'|'interrupted'|'lagged'",
+        "phase": "'start'|'progress'|'completed'|'cancelled'|'error'|'step_limit'|'interrupted'|'lagged'|'fallback'",
         "statusline": "object",
         "error": "string?",
         "source": "'autowake'?"
       },
       "source": "execute_turn / post_turn / slow-client degrade",
-      "codeRef": "src/main.rs:883-892,951-973,1005-1011,1172-1178",
+      "codeRef": "src/main.rs:883-892,951-973,1005-1011,1172-1178 ; W785: phase 'fallback' (E §4.2.3 #2)",
       "frontendListens": true
     },
     {
