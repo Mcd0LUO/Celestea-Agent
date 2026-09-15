@@ -12,7 +12,7 @@
  * userspace implementation in `@celestea/tools`; the real OS isolation lands in
  * P2c behind this exact interface (ARCHITECTURE.md §3.1, §7.4).
  *
- * Invariants kept from Rust:
+ * Invariants kept from the legacy engine:
  * - the effective isolation mode travels *inside* every result (`SandboxMeta`):
  *   a caller never infers the isolation level, and silent degradation stays
  *   visible;
@@ -123,7 +123,7 @@ export interface Sandbox {
   spawn(req: SandboxSpawnRequest): Promise<SandboxSpawned>;
 }
 
-/** Stable error kinds (mirrors Rust `SandboxError::code`). */
+/** Stable error kinds (mirrors the engine's `SandboxError::code`). */
 export type SandboxErrorKind = "timeout" | "workdir" | "arg" | "config" | "spawn";
 
 /** Stable prefix of every structured sandbox error (contract, not decoration). */

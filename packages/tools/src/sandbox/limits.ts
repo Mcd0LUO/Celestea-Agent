@@ -5,7 +5,7 @@
  * thread owned by the *real UID across the whole host*. W274 §3.2 measured this
  * the hard way: with 347 threads owned by uid 1003 on this machine, `--nproc`
  * below that number makes bwrap fail to even `clone()` its pid-1
- * (`Resource temporarily unavailable`), while the Rust default of 512 left only
+ * (`Resource temporarily unavailable`), while the legacy default of 512 left only
  * ~165 threads of slack before production commands start failing.
  *
  * So the cap is **derived at probe time**: `threads(uid) + headroom`, with a
@@ -30,7 +30,7 @@ export const NPROC_HEADROOM = 512;
 /** Floor used when the thread count cannot be measured (and a sane minimum). */
 export const NPROC_FLOOR = 1024;
 
-/** The six limits the OS layer enforces (mirrors Rust `V2Limits::default()`). */
+/** The six limits the OS layer enforces (mirrors the legacy `V2Limits::default()`). */
 export interface SandboxLimits {
   cpuSec: number;
   memMb: number;
@@ -40,7 +40,7 @@ export interface SandboxLimits {
   core: boolean;
 }
 
-/** Rust defaults, except `nproc` which is always derived (see module docs). */
+/** Legacy defaults, except `nproc` which is always derived (see module docs). */
 export const DEFAULT_LIMITS: Omit<SandboxLimits, "nproc"> = {
   cpuSec: 20,
   memMb: 2048,

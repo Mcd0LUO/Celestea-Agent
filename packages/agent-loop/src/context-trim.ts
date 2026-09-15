@@ -17,7 +17,7 @@
  * of a second full estimate. `pickCut` / `safeCutPositions` are unchanged, so
  * the chosen cut is bit-for-bit the same as before.
  *
- * Contract notes (all mirrored by unit tests, same as the Rust module):
+ * Contract notes (all mirrored by unit tests, same as the legacy module):
  *   - `contextWindowTokens === 0` disables trimming entirely;
  *   - over budget, the `contextKeepRecent` most-recent messages survive, plus
  *     every `system` message (always kept, always first);

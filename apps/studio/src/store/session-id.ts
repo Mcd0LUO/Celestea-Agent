@@ -45,7 +45,7 @@ export function parseSessionId(raw: string): ParsedSessionId | null {
   return { workspace, session, id: `${workspace}/${session}` };
 }
 
-/** `"<secs>.<nanos>"` — the creation / trash suffix (Rust `now_ts`). */
+/** `"<secs>.<nanos>"` — the creation / trash suffix (`now_ts`). */
 export function timestampSuffix(nowMs: number): string {
   const secs = Math.floor(nowMs / 1000);
   const nanos = Math.floor((nowMs - secs * 1000) * 1e6);

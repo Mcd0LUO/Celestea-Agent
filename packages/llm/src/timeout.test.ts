@@ -1,6 +1,6 @@
 /**
  * Acceptance tests for the three timeout tiers, driven against a local mock
- * HTTP upstream (no network, dummy key). Mirrors the Rust regression suite
+ * HTTP upstream (no network, dummy key). Mirrors the legacy regression suite
  * `crates/llm/tests/timeout_upstream.rs`:
  *   1. an upstream that never answers trips the response-header timeout;
  *   2. an upstream that sends one chunk and then stalls trips the stream idle

@@ -6,7 +6,7 @@ plugin seams every other package is built on.
 
 Ports (1:1, field names are contract):
 
-| TS module | Rust source |
+| TS module | Legacy source |
 |---|---|
 | `message.ts` | `crates/core/src/message.rs` (Role / Content / ToolCall / Message / Usage) |
 | `stream.ts` | `crates/core/src/message.rs` + `llm.rs` (ModelRequest / StreamEvent / LlmError) |

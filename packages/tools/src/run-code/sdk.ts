@@ -2,8 +2,8 @@
  * The engine-injected Python SDK preamble + runner (W255).
  *
  * Byte-for-byte port of `RUN_CODE_SDK` / `RUN_CODE_RUNNER` in
- * `crates/tools/src/run_code.rs` (the Rust raw strings are re-encoded here as
- * escape-safe template literals; `run-code/sdk.test.ts` re-extracts the Rust
+ * `crates/tools/src/run_code.rs` (the raw strings are re-encoded here as
+ * escape-safe template literals; `run-code/sdk.test.ts` re-extracts the
  * blocks and diffs them, so drift cannot hide).
  *
  * The program the broker actually runs is `SDK + user code + RUNNER`:
@@ -253,7 +253,7 @@ export const DEFAULT_RUN_CODE_LANGUAGE: RunCodeLanguage = "typescript";
  *
  * When the first non-blank line of the user code is indented it is treated as a
  * **function body** and wrapped (`async def main():` / `async function main()`);
- * otherwise it must be a complete script defining `main` itself (Rust
+ * otherwise it must be a complete script defining `main` itself (legacy
  * `assemble_program`). The Python path is byte-for-byte what it always was; the
  * TypeScript path lays the file out the same way and deliberately does NOT
  * re-indent a wrapped body — JavaScript does not need it, and re-indenting would
@@ -298,7 +298,7 @@ function terminate(userCode: string): string {
   return userCode.endsWith("\n") ? userCode : `${userCode}\n`;
 }
 
-/** Rust `str::lines()`: split on `\n`, drop a trailing `\r`, no final empty line. */
+/** Split on `\n`, drop a trailing `\r`, no final empty line. */
 function splitProgramLines(code: string): string[] {
   const lines = code.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();

@@ -12,7 +12,7 @@
  * packages (`@celestea/llm`) re-export these symbols instead of redeclaring
  * them, so `instanceof LlmError` and every structural type agree across
  * packages. `LlmError` here carries the structured classification TS needs
- * (Rust keeps a plain `String`) — see the class doc.
+ * (see the class doc).
  */
 
 import type { Message, Usage } from "./message.js";
@@ -58,8 +58,8 @@ export type StreamEventKind = (typeof STREAM_EVENT_KINDS)[number];
  *
  * "generate" = the pre-stream `generate()` call failed; "stream" = the stream
  * broke mid-flight; "timeout" = a guard tripped (connect / response-header /
- * SSE idle). Rust carries the classification in the `llm timeout:` message
- * prefix; TS carries it as a field AS WELL (never instead of the text).
+ * SSE idle). The classification rides the `llm timeout:` message prefix;
+ * TS carries it as a field AS WELL (never instead of the text).
  */
 export type LlmErrorKind = "generate" | "stream" | "timeout";
 
@@ -77,10 +77,10 @@ export interface LlmErrorOptions {
 }
 
 /**
- * `LlmError` — the provider-facing failure (`LlmError(String)` in Rust).
+ * `LlmError` — the provider-facing failure (`LlmError(String)` in the legacy engine).
  *
- * Rust encodes the semantics in the canonical `llm timeout: …` message prefix;
- * TS adds the machine-readable fields on top of the unchanged text:
+ * The semantics ride the canonical `llm timeout: …` message prefix; TS adds the
+ * machine-readable fields on top of the unchanged text:
  * `kind` (the turn-outcome kind a caller should report), `isTimeout` +
  * `timeoutStage`, `httpStatus` and `retryable` (the conservative default pair
  * is `(null, false)`: a failure with no evidence of being transient is a

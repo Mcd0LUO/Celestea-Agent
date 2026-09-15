@@ -1,10 +1,10 @@
 /**
- * Cooperative cancellation — the AbortSignal counterpart of the Rust loop's
+ * Cooperative cancellation — the AbortSignal counterpart of the legacy loop's
  * `watch::Receiver<bool>` checkpoints (`cancel_set` / `wait_cancel`).
  *
- * Rust awaits every interruptible step inside a `tokio::select!` against a
- * cancellation future; the TS port races the same checkpoints against an
- * [AbortSignal]. The differences are deliberate and documented in README.md:
+ * The legacy loop awaited every interruptible step inside a `tokio::select!`
+ * against a cancellation future; the TS port races the same checkpoints against
+ * an [AbortSignal]. The differences are deliberate and documented in README.md:
  *   - the signal is owned by the CALLER (host HTTP route / CLI), not built by
  *     the loop, so one controller can abort a whole turn and be reused by the
  *     next one;

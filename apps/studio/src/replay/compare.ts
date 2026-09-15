@@ -5,12 +5,12 @@
  * report is to say WHICH claims are golden and which are self-consistency):
  *   - `byte-exact`   the artifact was reproduced byte for byte (JSONL logs,
  *                    SSE wire frames, backups);
- *   - `golden`       compared against a capture of the RUNNING Rust
- *                    implementation (`messages-expected.json`);
+ *   - `golden`       compared against a capture of the retired backend
+ *                    (`messages-expected.json`);
  *   - `spec-derived` compared against an independent re-derivation of the
  *                    frozen spec (compaction planning), i.e. cross-implementation;
  *   - `self-check`   compared against a TS-derived artifact (SSE transcript of a
- *                    session whose transcript was never captured from Rust);
+ *                    session whose transcript was never captured);
  *   - `info` / `skip` — reported, never a failure.
  */
 

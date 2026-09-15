@@ -4,7 +4,7 @@
  * `workersPlugin` mounts one [WorkerRegistry] and:
  *   1. provides it under `WORKER_REGISTRY_SERVICE` (the host resolves it there),
  *   2. registers the three worker tools into whatever `ToolRegistry` is already
- *      provided — the same wiring as Rust `build_registry(workers, …)`, which is
+ *      provided — the same wiring as `build_registry(workers, …)`, which is
  *      why the compose order is "tools plugin first, workers plugin last".
  *
  * A later mount of the same token wins, so a test can swap in its own registry.

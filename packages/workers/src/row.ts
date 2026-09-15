@@ -81,7 +81,7 @@ export function setToken(extra: string, key: string, value: string): string {
   return setTokens(extra, { [key]: value });
 }
 
-/** The AI-facing view of one row (Rust `WorkerEntry::to_json`, + E §2.3 P1). */
+/** The AI-facing view of one row (`WorkerEntry::to_json`, + E §2.3 P1). */
 export function entryView(entry: WorkerEntry): Record<string, unknown> {
   const proc = getExtra(entry, "proc");
   return {

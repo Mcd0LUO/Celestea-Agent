@@ -3,7 +3,7 @@
  *
  * Error bodies follow the frozen convention: `{"ok":false,"error":"<verbatim
  * source string>"}` (`contracts/endpoints.json` §conventions). Two handlers in
- * the Rust source return only `{"error":…}` (POST /api/turn's empty-input case
+ * the retired backend return only `{"error":…}` (POST /api/turn's empty-input case
  * and the static/API 404); those keep their special shape and say so locally.
  */
 
@@ -47,7 +47,7 @@ export function errorOnly(c: Context, status: number, error: string): Response {
 export type BodyRead = { ok: true; body: JsonObject } | { ok: false; response: Response };
 
 /**
- * Read a JSON object body. Axum's rejections are mirrored:
+ * Read a JSON object body. The retired backend's rejections are mirrored:
  * missing body -> 415, unparsable -> 400, non-object -> 422.
  */
 export async function readJsonBody(c: Context, required = true): Promise<BodyRead> {

@@ -45,14 +45,14 @@ describe("contracts/endpoints.json", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("matches the Rust route table snapshot plus the declared TS-only delta", () => {
+  it("matches the frozen route table snapshot plus the declared TS-only delta", () => {
     const snap = loadRouteSnapshot();
     expect(snap.routeDeclarations).toBe(38);
     expect(snap.methodPathCombos).toBe(43);
     expect(snap.staticRoutes).toHaveLength(4);
     const api = snap.routes.filter((r) => r.path.startsWith("/api/"));
     expect(api).toHaveLength(39);
-    // W516/W725/W767: the Rust extraction stays verbatim; the four grants
+    // W516/W725/W767: the frozen extraction stays verbatim; the four grants
     // endpoints, the context snapshot and the three login-cookie endpoints are
     // declared as a TypeScript-only delta instead of being written into it.
     // W783: 8 -> 10 (GET /api/questions + POST /api/questions/{id}/answer).
@@ -357,7 +357,7 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     // The 409 guard is /compact's sentence with this action's verb (U8).
     expect(mode?.errors).toContainEqual({ status: 409, error: "turn 进行中，无法切换模式" });
     expect(mode?.errors).toContainEqual({ status: 400, error: "invalid mode: {v}" });
-    // Declared as TypeScript-only (the Rust backend has no counterpart).
+    // Declared as TypeScript-only (the retired backend has no counterpart).
     const tsOnly = loadRouteSnapshot().tsOnlyRoutes ?? [];
     expect(tsOnly.map((r) => `${r.method} ${r.path}`)).toContain("POST /api/sessions/{id}/mode");
     expect(c.count).toBe(51);

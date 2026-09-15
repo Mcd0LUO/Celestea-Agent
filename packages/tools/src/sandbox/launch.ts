@@ -152,13 +152,13 @@ export async function readCapped(stream: Readable | null, cap: number): Promise<
     }
   } catch {
     // A killed child tears its pipes down mid-read; the bytes captured so far
-    // are still the honest answer (the Rust path drains to EOF the same way).
+    // are still the honest answer (the legacy path drains to EOF the same way).
     return { text: Buffer.concat(chunks).toString("utf8"), bytes: size, truncated };
   }
   return { text: Buffer.concat(chunks).toString("utf8"), bytes: size, truncated };
 }
 
-/** Single-line, truncated preview for error messages (Rust `preview`). */
+/** Single-line, truncated preview for error messages (legacy `preview`). */
 export function preview(text: string, max: number): string {
   const folded = text.replace(/\r?\n/g, "\\n");
   return folded.length > max ? `${folded.slice(0, max)}…` : folded;

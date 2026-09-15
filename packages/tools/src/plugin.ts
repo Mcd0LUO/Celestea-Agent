@@ -12,7 +12,7 @@
  *
  * `run_code` (W255) is mounted here too, not in `builtinTools`: it needs a
  * late-bound handle on the very registry it will dispatch sub-calls through,
- * which only the assembly can bind — exactly like the Rust runtime compose
+ * which only the assembly can bind — exactly like the runtime compose
  * (`crates/runtime/src/tools.rs`). Pass `runCode: false` to leave it out.
  */
 
@@ -76,7 +76,7 @@ export interface ToolsPluginOptions {
   /**
    * `run_code` mount: default = mounted; `false` = not registered. The tool is
    * registered *before* its registry handle is bound, so sub-calls ride this
-   * assembly's exact pipeline (Rust runtime compose parity).
+   * assembly's exact pipeline (runtime compose parity).
    */
   runCode?: RunCodeMount | false;
   /**

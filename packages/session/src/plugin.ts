@@ -4,7 +4,7 @@
  * `packages/session` never gets imported by `core`: it only provides a
  * [SessionLog] implementation into a [Context] under the well-known
  * `SESSION_LOG_SERVICE` token, exactly like `celestea-session` is plugged into
- * the Rust harness at compose time. A later mount of the same token wins, so a
+ * the harness at compose time. A later mount of the same token wins, so a
  * test can swap in an in-memory log over a persistent one.
  */
 

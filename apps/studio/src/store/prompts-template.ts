@@ -101,7 +101,7 @@ export function renderTemplate(template: string, vars: PromptVars): string {
   return out;
 }
 
-/** Truncate to the byte cap on a char boundary (Rust `truncate_prompt`). */
+/** Truncate to the byte cap on a char boundary (`truncate_prompt`). */
 export function truncateToCap(text: string): string {
   if (byteLength(text) <= PROMPT_MAX_LEN) return text;
   let acc = "";

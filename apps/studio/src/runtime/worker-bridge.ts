@@ -1,6 +1,6 @@
 /**
  * Worker orchestration bridge: the `POST /api/worker/*` surface is a thin proxy
- * over the engine's own worker tools (Rust `src/api.rs:437-503`), and the two
+ * over the engine's own worker tools (`src/api.rs:437-503`), and the two
  * `GET` surfaces read the in-process registries directly.
  *
  * Keeping the mapping here means the adapter never re-implements orchestration:

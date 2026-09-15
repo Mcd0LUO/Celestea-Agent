@@ -14,7 +14,7 @@
  *      optional authored `render`, captured `error`, and the guard `decision`
  *      as a first-class field.
  *
- * Errors are captured, never thrown across the seam (Rust parity:
+ * Errors are captured, never thrown across the seam (parity:
  * `crates/tools/src/registry.rs`).
  *
  * **The verdict never lies (W738 P1)**: `decision` describes what the seam did
@@ -128,7 +128,7 @@ function refused(callId: string, error: string): ToolOutput {
 }
 
 function decisionFailure(callId: string, kind: "deny" | "ask", reason: string): ToolOutput {
-  // Rust parity: a Deny surfaces as `denied: <reason>`, an Ask as `ask: <reason>`.
+  // parity: a Deny surfaces as `denied: <reason>`, an Ask as `ask: <reason>`.
   return {
     call_id: callId,
     value: null,
@@ -147,7 +147,7 @@ export function createToolRegistry(tools: readonly Tool[] = [], guards: readonly
 }
 
 /**
- * Best-effort human-readable rendering of a successful result (Rust
+ * Best-effort human-readable rendering of a successful result (legacy
  * `human_render`): a `{stdout, stderr, exit_code}` object condenses to a stream
  * summary; plain text and everything else keep the generic value view (`null`).
  */

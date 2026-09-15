@@ -51,7 +51,7 @@ import { absorbDone, emptyStreamOutcome, terminalFromStreamEvent, type GenerateR
 import { ThinkingBuffer } from "./thinking.js";
 import { UsageTracker } from "./usage.js";
 
-/** Optional collaborators of one loop instance (Rust `with_bindings`). */
+/** Optional collaborators of one loop instance (`with_bindings`). */
 export interface AgentLoopBindings {
   /** Cooperative cancellation; absent = the turn can never be cancelled. */
   signal?: AbortSignal;
@@ -265,7 +265,7 @@ export class DefaultAgentLoop implements AgentLoop {
       seams.session.append({ type: "assistant_message", text: stream.assistantText });
       return { kind: "final", outcome: stream.terminal ?? "completed" };
     }
-    // Deliberate divergence from the Rust loop (README §Divergences): a torn
+    // Deliberate divergence from the legacy loop (README §Divergences): a torn
     // stream after a done frame ends the turn instead of dispatching tools
     // under a sticky error outcome.
     if (stream.terminal !== null) return { kind: "final", outcome: stream.terminal };

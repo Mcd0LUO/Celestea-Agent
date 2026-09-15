@@ -1,11 +1,11 @@
 /**
- * RUST PARITY — the P1 acceptance test.
+ * GOLDEN PARITY — the P1 acceptance test.
  *
  * For every exported golden session it asserts, field for field:
- *   1. `deriveMessages` === the Rust engine's `derive_messages` output
- *      (`derive-messages-expected.json`, regenerated from celestea-session by a
- *      read-only probe that links crates/core + crates/session);
- *   2. `projectMessages` === the Rust Studio HTTP projection
+ *   1. `deriveMessages` === the frozen golden's `derive_messages` output
+ *      (`derive-messages-expected.json`, recorded from the engine by a one-off
+ *      read-only probe and frozen ever since);
+ *   2. `projectMessages` === the frozen Studio HTTP projection
  *      (`messages-expected.json`, fetched from GET /api/sessions/{id}/messages);
  *   3. the JSONL round-trip is byte-identical to the persisted file
  *      (`serializeSessionEvent` === the raw line, per event).
@@ -39,7 +39,7 @@ function readSession(slug: string): { raw: string; goldenDerived: unknown[]; gol
   };
 }
 
-describe.skipIf(!hasFixtures)("Rust parity (golden sessions)", () => {
+describe.skipIf(!hasFixtures)("Golden parity (golden sessions)", () => {
   it("covers the exported sessions", () => {
     expect(slugs.length).toBeGreaterThanOrEqual(5);
   });
@@ -54,7 +54,7 @@ describe.skipIf(!hasFixtures)("Rust parity (golden sessions)", () => {
         expect(parsed.events.length).toBeGreaterThan(0);
       });
 
-      it("derive_messages matches the Rust engine field for field", () => {
+      it("derive_messages matches the frozen golden field for field", () => {
         const actual = deriveMessages(parsed.events);
         expect(actual, "message count").toHaveLength(goldenDerived.length);
         for (let i = 0; i < goldenDerived.length; i++) {
@@ -62,7 +62,7 @@ describe.skipIf(!hasFixtures)("Rust parity (golden sessions)", () => {
         }
       });
 
-      it("Studio projection matches the Rust HTTP golden", () => {
+      it("Studio projection matches the frozen HTTP golden", () => {
         const actual = projectMessages(parsed.events);
         expect(actual, "message count").toHaveLength(goldenStudio.length);
         for (let i = 0; i < goldenStudio.length; i++) {
@@ -81,7 +81,7 @@ describe.skipIf(!hasFixtures)("Rust parity (golden sessions)", () => {
   }
 });
 
-describe.skipIf(hasFixtures)("Rust parity (fixtures not exported)", () => {
+describe.skipIf(hasFixtures)("Golden parity (fixtures not exported)", () => {
   it("explains how to export them", () => {
     console.warn("fixtures/sessions not found - run `pnpm golden:export` to enable the parity tests");
     expect(hasFixtures).toBe(false);

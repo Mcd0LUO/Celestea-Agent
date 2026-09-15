@@ -3,7 +3,7 @@
  *
  * Everything runs on an ephemeral 127.0.0.1 port with a dummy key: no network
  * access, no secrets. The behaviours mirror the fake TCP upstreams used by the
- * Rust regression tests (crates/llm/tests/timeout_upstream.rs).
+ * legacy regression tests (crates/llm/tests/timeout_upstream.rs).
  */
 
 import http from "node:http";

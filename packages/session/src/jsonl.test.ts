@@ -45,7 +45,7 @@ describe("parseSessionJsonl", () => {
     expect(r.tornTail?.error).toContain("unknown event type");
   });
 
-  it("treats a whitespace-only line as unparsable, like Rust replay", () => {
+  it("treats a whitespace-only line as unparsable, like the legacy replay", () => {
     const r = parseSessionJsonl('{"type":"user_message","text":"a"}\n   \n{"type":"user_message","text":"b"}\n');
     expect(r.events).toHaveLength(1);
     expect(r.tornTail?.line).toBe(2);

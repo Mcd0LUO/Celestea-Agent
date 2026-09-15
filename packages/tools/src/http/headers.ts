@@ -1,6 +1,6 @@
 /**
  * Header handling for `http_request`: a validated request-header set and the
- * response-header subset echoed back to the caller (Rust `HEADER_SUBSET`).
+ * response-header subset echoed back to the caller (legacy `HEADER_SUBSET`).
  *
  * Request headers are validated once and re-applied on every redirect hop;
  * response headers are filtered to the subset that actually carries protocol

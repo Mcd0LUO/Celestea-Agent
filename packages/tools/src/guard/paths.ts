@@ -10,7 +10,7 @@
  *   suffix, so a new file is arbitrated by the directory it would land in.
  *
  * This closes `..` traversal and symlink escape at once: both are collapsed by
- * canonicalization before the containment test (Rust parity:
+ * canonicalization before the containment test (parity:
  * `crates/tools/src/guard.rs`).
  */
 

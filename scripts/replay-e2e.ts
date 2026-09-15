@@ -2,7 +2,7 @@
 /**
  * P5 end-to-end replay (`pnpm replay:e2e`).
  *
- * Golden fixtures (from the running Rust implementation) are replayed through the
+ * Golden fixtures (from the frozen legacy capture) are replayed through the
  * TS host — real runtime, real agent loop, real JSONL session log, offline LLM
  * (NO network) — and compared artifact by artifact:
  *

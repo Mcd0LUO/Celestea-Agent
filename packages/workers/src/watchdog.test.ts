@@ -114,7 +114,7 @@ describe("watchdog tick", () => {
     const row = h.registry.getEntry("W3")!;
     expect(row.status).toBe("DONE");
     expect(getExtra(row, "ended_at")).toBe(utcNow(NOW_MS));
-    // Rust F2: a settled worker gives up its session and its queue.
+    // Legacy F2: a settled worker gives up its session and its queue.
     expect(h.registry.sessions.get(sid)).toBeUndefined();
   });
 

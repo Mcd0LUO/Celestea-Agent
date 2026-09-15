@@ -26,7 +26,7 @@ import type { SseContract, SseEventContract } from "@celestea/core";
 
 /** Where a contract event's payload keys come from (frozen + host extension). */
 export interface PayloadKeyTable {
-  /** Keys of `events[<name>].payload` — the frozen Rust payload. */
+  /** Keys of `events[<name>].payload` — the frozen payload. */
   frozen: string[];
   /** Keys declared in `payloadExtensions[<name>]` (W513/W515 host deltas). */
   extensions: string[];

@@ -5,7 +5,7 @@
  * (the same JSON, inline), and the capability is gated by `CELESTEA_LLM_FALLBACK`
  * (`on|1|true|yes`; **default off** — §4.3 P1, D9). Keeping it here instead of in
  * `Profile` is deliberate: `Profile` is the frozen 12-key contract, so widening it
- * would drag `contracts/` and the Rust side along (§4.2.4 "诚实取舍").
+ * would drag `contracts/` and the legacy side along (§4.2.4 "诚实取舍").
  *
  * Two disciplines are enforced in code, not in prose:
  *   - the config records env var NAMES only — a key value can never reach here

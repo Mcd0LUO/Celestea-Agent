@@ -6,8 +6,8 @@
  * message views. A2 (W746): the projection algorithm and the turn-id math are
  * CORE's (`deriveMessagesFrom` / `formatTurnId`), re-exported here — this package
  * owns storage, not seam semantics:
- *   - the Studio projection (`projectMessages`, per-event, golden vs Rust HTTP);
- *   - the engine model-visible history (`deriveMessages`, Rust derive_messages).
+ *   - the Studio projection (`projectMessages`, per-event, golden vs frozen HTTP);
+ *   - the engine model-visible history (`deriveMessages`, derive_messages).
  *
  * This package depends only on `@celestea/core` and is consumed by mounting
  * `inMemorySessionLogPlugin` / `persistentSessionLogPlugin` into a Context.

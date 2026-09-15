@@ -1,5 +1,5 @@
 /**
- * Startup provider-target resolution (W511) — the TS port of Rust
+ * Startup provider-target resolution (W511) — the TS port of the legacy
  * `providers::apply_startup_default` + `resolve_base_url` + `resolve_api_key`.
  *
  * providers.json is the operator's registry of upstreams; resolving a target
@@ -15,11 +15,11 @@
  *             against the provider rows instead of trusting a stale string.
  *   base_url  the provider that OWNS the resolved model, when its
  *             request_format is chat_completions and its base_url is non-empty
- *             (Rust writes it into the profile before compose);
+ *             (written into the profile before compose);
  *             else env `CELESTEA_BASE_URL` -> else the profile's own base_url.
  *   api key   env[api_key_env] when non-empty; otherwise a plaintext key stored
  *             on the owning provider row is injected into the PROCESS ENV (the
- *             engine's only key channel, exactly like Rust's `env::set_var`).
+ *             engine's only key channel, exactly like the engine's `env::set_var`).
  *             In-memory only: never written to a data file, never returned in a
  *             response, never logged.
  *
@@ -64,7 +64,7 @@ export type ModelSource = "providers.json default_model" | "env CELESTEA_MODEL" 
  * Where the api key came from; "none" means unauthenticated requests.
  *
  * W747: named `ProviderKeySource` in the engine because `profile.ts` already
- * exports a `KeySource` — the Rust resolve_api_key ORDER (`env` / `api_key_file`
+ * exports a `KeySource` — the `resolve_api_key` ORDER (`env` / `api_key_file`
  * / `home_config` / `provider_store` / `borrowed_engine_key` / `none`), which is a
  * different, wider vocabulary. Two exports cannot share one name in a package's
  * single public API, and the host's narrower 3-value union is what the startup
@@ -82,7 +82,7 @@ export interface ProviderTarget {
   key_source: ProviderKeySource;
 }
 
-/** The request format that has a live adapter today (Rust `ENGINE_FORMAT`). */
+/** The request format that has a live adapter today (`ENGINE_FORMAT`). */
 export const CHAT_COMPLETIONS_FORMAT = "chat_completions";
 
 function trimmed(value: string | null | undefined): string {
@@ -111,7 +111,7 @@ export function resolveModel(
   return { model: fallbackModel, source: "profile default" };
 }
 
-/** The first provider row listing `model` (Rust `find_provider_with_model`). */
+/** The first provider row listing `model` (`find_provider_with_model`). */
 export function ownerOf(lookup: ProviderLookup, model: string): ProviderRef | null {
   for (const p of lookup.rows()) {
     if (p.models.some((m) => m.id === model)) return p;
@@ -119,7 +119,7 @@ export function ownerOf(lookup: ProviderLookup, model: string): ProviderRef | nu
   return null;
 }
 
-/** Rust `resolve_base_url(profile, env)` restricted to the TS channels. */
+/** `resolve_base_url(profile, env)` restricted to the TS channels. */
 export function resolveBaseUrl(owner: ProviderRef | null, env: NodeJS.ProcessEnv, profileBaseUrl: string): string {
   if (owner !== null && owner.request_format === CHAT_COMPLETIONS_FORMAT && trimmed(owner.base_url) !== "") {
     return owner.base_url;

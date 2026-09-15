@@ -52,9 +52,10 @@ export type {
 /**
  * `StreamEvent` — core's streamed-turn union with exactly ONE member widened.
  *
- * A provider's SSE idle guard is a terminal `failed{kindOf:"timeout"}` (Rust:
- * `StreamEvent::Failed { kind, .. }` with a free-form kind whose live values
- * are "stream" and "timeout"), while core's union lists "generate" | "stream".
+ * A provider's SSE idle guard is a terminal `failed{kindOf:"timeout"}` (the
+ * legacy engine's `StreamEvent::Failed { kind, .. }` carried a free-form kind,
+ * whose live values were "stream" and "timeout"), while core's union lists
+ * "generate" | "stream".
  *
  * TODO(core-timeout-kind) — why the widening stays HERE for now: folding it
  * into core needs three files this cut may not touch or must not change:

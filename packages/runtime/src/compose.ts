@@ -1,6 +1,6 @@
 /**
- * compose — the composition root of `packages/runtime` (Rust
- * `crates/runtime/src/compose.rs:74-234`).
+ * compose — the composition root of `packages/runtime`
+ * (`crates/runtime/src/compose.rs:74-234`).
  *
  * Assembly order is SEMANTICS, not taste (ARCHITECTURE.md §3.2), so it is
  * explicit and tested:

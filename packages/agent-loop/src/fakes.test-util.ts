@@ -4,7 +4,7 @@
  * Every dependency of the loop is faked at the `core` seam (Llm / SessionLog /
  * ToolRegistry): no network, no filesystem, and no import of a sibling L1
  * package — `packages/agent-loop` may only depend on `core`
- * (ARCHITECTURE.md §1). The fakes mirror the Rust `#[cfg(test)]` doubles of
+ * (ARCHITECTURE.md §1). The fakes mirror the `#[cfg(test)]` doubles of
  * `crates/agent-loop/src/lib.rs` one for one, so the TS suite checks the same
  * contracts.
  */

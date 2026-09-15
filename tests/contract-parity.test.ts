@@ -131,7 +131,7 @@ describe("W744 · session-event schema EXECUTED against the real event streams",
     // 1. `turn-<n>` is a frozen schema pattern; the core codec only checks "string"
     //    (@celestea/session enforces the arithmetic on the ids it mints).
     // 2. `TurnOutcome.error.kind` is an enum in the contract; `isTurnOutcome` only
-    //    checks "string" (the Rust enum has exactly generate|stream).
+    //    checks "string" (the contract enum has exactly generate|stream).
     // The third delta (the deserializer tolerates ABSENT `Option` fields while the
     // schema freezes the serialized wire shape) is pinned by the test below.
     expect(disagreements).toEqual([

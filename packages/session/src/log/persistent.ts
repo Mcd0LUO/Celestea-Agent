@@ -12,8 +12,8 @@
  * ([writeErrorCount]) and warned on stderr. Only open/replay/sync surface
  * errors to the caller.
  *
- * Deviation from Rust (documented, safe direction): Rust buffers through a
- * `BufWriter`, so `flushEachAppend=false` batches records and a crash can lose
+ * Deviation from the legacy implementation (documented, safe direction): it buffers
+ * through a `BufWriter`, so `flushEachAppend=false` batches records and a crash can lose
  * them. `fs.writeSync` is unbuffered, so every append already reaches the OS;
  * `flush()` is therefore a no-op and `flushEachAppend=false` cannot lose data.
  * `sync()` is the real durability point (fsync), matching `sync_each_append`.
@@ -127,7 +127,7 @@ export class PersistentSessionLog implements SessionLog {
     return this.writeErrors;
   }
 
-  /** Flush + release the descriptor (Rust `Drop`). Idempotent. */
+  /** Flush + release the descriptor (`Drop`). Idempotent. */
   close(): void {
     this.closeFd();
   }

@@ -44,7 +44,7 @@ export interface WorkerVerdict {
   reason?: string | null;
 }
 
-/** `SessionSpec` of the Rust session registry. */
+/** `SessionSpec` of the legacy session registry. */
 export interface WorkerSessionSpec {
   title: string;
   workspace?: string | null;

@@ -1,5 +1,5 @@
 /**
- * The worker driver: one mailbox event loop per driven session (Rust W232,
+ * The worker driver: one mailbox event loop per driven session (W232,
  * `WorkerRegistry::run_driver_loop`).
  *
  * Sequence per driven worker:
@@ -35,7 +35,7 @@ import type { SessionMailbox } from "./mailbox.js";
 import type { SessionRegistry } from "./sessions.js";
 import type { WorkerSession } from "./types.js";
 
-/** The three seams a driven worker needs (Rust `attach_drivers`). */
+/** The three seams a driven worker needs (`attach_drivers`). */
 export interface WorkerDrivers {
   llm: Llm;
   tools: ToolRegistry;
@@ -117,7 +117,7 @@ async function runMailboxLoop(opts: DriverLoopOptions, ctx: Context): Promise<vo
       await opts.drivers.agentLoop.runTurn(ctx, msg.content);
     } catch {
       // A failed mailbox turn must not kill the loop: the worker stays
-      // addressable (the next message is a new turn), exactly like Rust.
+      // addressable (the next message is a new turn), exactly like the legacy driver.
     }
   }
 }

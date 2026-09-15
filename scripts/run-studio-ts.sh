@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Celestea Studio TS launcher (systemd): same env/data files as the Rust unit.
+# Celestea Studio TS launcher (systemd): same env/data files as the retired unit.
 # Resolves CELESTEA_API_KEY from dsh credentials; never persists the key.
 #
 # W781（2026-09-14）：前端/后端已并成同一仓，运行数据移出仓外。

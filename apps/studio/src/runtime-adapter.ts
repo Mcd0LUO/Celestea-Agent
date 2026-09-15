@@ -49,7 +49,7 @@ import type { LedgerCostBlock, LedgerQuery, LedgerQueryResult } from "@celestea/
 import type { FallbackStatusView } from "./runtime/fallback-contract.js";
 import type { StudioBus } from "./sse.js";
 
-/** Verbatim engine error text (Rust `{e}` placeholders). */
+/** Verbatim engine error text (`{e}` placeholders). */
 export class EngineError extends Error {
   readonly kind = "engine";
   constructor(message: string) {

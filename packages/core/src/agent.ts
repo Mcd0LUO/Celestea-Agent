@@ -22,7 +22,7 @@ export interface AgentConfig {
   context_keep_recent: number;
 }
 
-/** Rust `AgentConfig::default()` — values are contract (identity prompt included). */
+/** The engine's `AgentConfig::default()` — values are contract (identity prompt included). */
 export function defaultAgentConfig(): AgentConfig {
   return {
     model: "deepseek-chat",

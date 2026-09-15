@@ -1,6 +1,6 @@
 # Replay diff report (P0 toolchain)
 
-- generated: 2026-09-10T03:41:42.403Z
+- generated: 2026-09-15T16:26:41.784Z
 - fixtures generated: 2026-09-09T17:28:54.740Z
 - strict: true
 
@@ -36,6 +36,6 @@
 
 ## What is (and is not) golden at P0
 
-- **Golden (from the running Rust implementation)**: the Studio `messages` projection via `GET /api/sessions/{id}/messages`.
+- **Golden (from the frozen legacy capture)**: the Studio `messages` projection via `GET /api/sessions/{id}/messages`.
 - **Self-check only**: engine `derive_messages` and the SSE transcript — the engine exposes no HTTP surface for them, so the TS reference implementation is compared against its own stored derivation. P1 turns both into golden comparisons.
 - A non-empty diff at this stage is expected to be reported, not hidden: `pnpm replay:compare --strict` fails the run when the golden comparison diverges.

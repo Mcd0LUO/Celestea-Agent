@@ -8,7 +8,7 @@
  * pass `builtinTools({ processes, sandbox })` a shared pair.
  *
  * W783: `ask_user_question` is mounted here too when the caller supplies the
- * user-question service. It is NOT one of the six Rust builtins, and it is
+ * user-question service. It is NOT one of the six builtins, and it is
  * OPTIONAL: `packages/tools` may only depend on `@celestea/core`, so the service
  * arrives by construction and an embedding that has no human answerer simply
  * leaves `questions` out instead of registering a tool that can never work.

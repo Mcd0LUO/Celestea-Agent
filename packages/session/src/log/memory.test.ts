@@ -1,4 +1,4 @@
-/** InMemorySessionLog — port of the Rust log.rs tests. */
+/** InMemorySessionLog — port of the legacy log.rs tests. */
 
 import { describe, expect, it } from "vitest";
 import type { SessionEvent } from "@celestea/core";

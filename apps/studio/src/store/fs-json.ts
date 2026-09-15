@@ -43,7 +43,7 @@ export interface WriteOptions {
   mode?: number;
   /** fsync the file before renaming (providers.json only). */
   fsync?: boolean;
-  /** Trailing newline (Rust `to_string_pretty` + file write has none). */
+  /** Trailing newline (`to_string_pretty` + file write has none). */
   newline?: boolean;
 }
 

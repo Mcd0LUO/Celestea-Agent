@@ -22,7 +22,7 @@ function probeOptions(deps: Deps): ProbeOptions {
   return { engineBaseUrl: baseUrlOf(deps), engineKey: process.env[deps.config.apiKeyEnv] ?? null };
 }
 
-/** Validate a candidate the way Rust validates `ProviderReq` before probing. */
+/** Validate a candidate the way the retired backend validated `ProviderReq` before probing. */
 function candidateError(candidate: ProbeCandidate): string | null {
   if (candidate.base_url.trim() === "") return "base_url is required";
   if (!isHttpUrl(candidate.base_url)) return "base_url must be an http:// or https:// URL";

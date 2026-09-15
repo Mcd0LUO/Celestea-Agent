@@ -42,7 +42,7 @@ export const EXIT_GRACE_MS = 2_000;
 /** Env var: default whole-run wall clock in ms (clamped to [1, 120000]). */
 export const ENV_RUN_CODE_TIMEOUT_MS = "CELAESTEA_RUN_CODE_TIMEOUT_MS";
 
-/** Tuning knobs for the broker (Rust `RunCodeConfig`). */
+/** Tuning knobs for the broker (legacy `RunCodeConfig`). */
 export interface RunCodeConfig {
   /** Default wall clock; a per-call `timeout_ms` is bounded by [`MAX_TIMEOUT_MS`]. */
   timeoutMs: number;
@@ -83,7 +83,7 @@ export function runCodeFailure(code: string, message: string): ToolFailure {
 
 /**
  * The effective wall clock: `config.timeoutMs` unless the call passes
- * `timeout_ms`, which must be an integer in [1, 120000] (Rust `invalid_arg`).
+ * `timeout_ms`, which must be an integer in [1, 120000] (legacy `invalid_arg`).
  */
 export function resolveTimeoutMs(raw: unknown, config: RunCodeConfig): number {
   if (raw === undefined || raw === null) return config.timeoutMs;

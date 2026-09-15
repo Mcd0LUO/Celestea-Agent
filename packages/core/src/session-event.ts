@@ -169,8 +169,8 @@ function normalizeSessionEvent(raw: Record<string, unknown>, type: SessionEventT
     return ev;
   }
   if (type === "turn_end") {
-    // `#[serde(default)]` fills the missing outcome on the Rust side, so the
-    // in-memory event ALWAYS carries one (a legacy row reads as completed).
+    // `#[serde(default)]` fills the missing outcome, so the in-memory event
+    // ALWAYS carries one (a legacy row reads as completed).
     return { type, id: raw["id"] as string, outcome: effectiveOutcome(raw["outcome"] as TurnOutcome | undefined) };
   }
   return raw as unknown as SessionEvent;

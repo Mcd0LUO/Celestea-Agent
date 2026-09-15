@@ -1,7 +1,7 @@
 /**
- * `list_dir` — list the entry names of a directory (Rust
+ * `list_dir` — list the entry names of a directory (legacy
  * `builtin.rs::list_dir_spec`). Names are sorted for a deterministic result
- * (Rust inherits `read_dir` order), and a long listing is capped with the
+ * (the legacy engine inherits `read_dir` order), and a long listing is capped with the
  * truncation note in `render`.
  */
 

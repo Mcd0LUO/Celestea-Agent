@@ -45,7 +45,7 @@ describe("apps/studio contract surface", () => {
     const health = (await (await app.request("/api/health")).json()) as Record<string, unknown>;
     // W516/W725/W729/W791: `capabilities.grants|context|session_mode` is how the
     // frontend knows the permission panel / context viewer / mode selector exists
-    // at all (the Rust backend answered 404 on the first two);
+    // at all (the retired backend answered 404 on the first two);
     // `session_mode_tools` (P1) additionally promises the mode is observable in
     // the tool face and that the TS-only switch endpoint is there.
     expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "capabilities", "model", "name", "ok"]);

@@ -33,7 +33,7 @@ describe("UsageTracker", () => {
     expect(tracker.total()).toEqual(usage(30, 10, 4, 2));
   });
 
-  it("hands out detached copies (Rust Copy semantics)", () => {
+  it("hands out detached copies (copy semantics)", () => {
     const tracker = createUsageTracker();
     tracker.record(usage(1, 1));
     const latest = tracker.latest();

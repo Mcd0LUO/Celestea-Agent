@@ -98,8 +98,8 @@ export interface RouteSnapshot {
   staticRoutes: RouteSnapshotEntry[];
   routes: RouteSnapshotEntry[];
   /**
-   * W516: routes that exist ONLY in the TypeScript backend (no Rust
-   * counterpart). The Rust extraction above stays intact; a contract endpoint
+   * W516: routes that exist ONLY in the TypeScript backend (no legacy
+   * counterpart). The legacy extraction above stays intact; a contract endpoint
    * must appear in `routes` or here.
    */
   tsOnlyRoutes?: RouteSnapshotEntry[];

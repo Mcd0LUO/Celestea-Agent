@@ -13,7 +13,7 @@
  * fixed at creation, so the capability is a read-only announcement).
  *
  * W516: `/api/health` advertises `capabilities.grants = true` (the frontend
- * hides the permission panel when it is not exactly `true`, so the retired Rust
+ * hides the permission panel when it is not exactly `true`, so the retired
  * backend cannot show a panel that does nothing), and `/api/status` adds
  * `grants_active` — the CAP NAMES in force for that session, never the paths
  * (an operator can see which session is widened without leaking a filesystem
@@ -54,7 +54,7 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       // does not see exactly `true` must not offer to set a session mode.
       // W791 (P1, U8): `session_mode_tools: true` additionally promises that the
       // mode is OBSERVABLE in the tool face (`GET /api/tools?session=`) and that
-      // the mode switch endpoint exists — a Rust-backend client that sees only
+      // the mode switch endpoint exists — a legacy-backend client that sees only
       // `session_mode` must not call `POST /api/sessions/{id}/mode` (TS-only).
       capabilities: { grants: true, context: true, session_mode: true, session_mode_tools: true },
     }),

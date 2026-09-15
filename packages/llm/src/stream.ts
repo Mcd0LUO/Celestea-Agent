@@ -219,7 +219,7 @@ export async function* streamEvents(
     response.destroy();
   }
 
-  // Usage rides just before the terminal event (Rust order), so consumers that
+  // Usage rides just before the terminal event, so consumers that
   // treat the terminal event as the end still observe it.
   if (turn.usage !== null) yield { kind: "usage", usage: turn.usage };
   if (failure !== null) {

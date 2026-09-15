@@ -5,11 +5,11 @@
  * consumers resolve services out of it. A parent chain lets an agent carry a
  * scoped Context layered over the global one.
  *
- * Rust keys services by `TypeId::of::<T>()`; TypeScript has no TypeId, so the
- * key is an explicit token: a well-known string (see `*_SERVICE` constants), a
- * symbol, or a class constructor used by identity. Same semantics otherwise:
- * a later `provide` of the same token replaces the earlier one, and `get` falls
- * back to the parent scope.
+ * TypeScript has no TypeId, so services are keyed by an explicit token: a
+ * well-known string (see `*_SERVICE` constants), a symbol, or a class
+ * constructor used by identity. Same semantics otherwise: a later `provide` of
+ * the same token replaces the earlier one, and `get` falls back to the parent
+ * scope.
  */
 
 /** What can key a service slot. */
@@ -27,7 +27,7 @@ export class Context {
     this.parent = parent;
   }
 
-  /** A fresh root context (Rust `Context::new`). */
+  /** A fresh root context (`Context::new`). */
   static root(): Context {
     return new Context(null);
   }

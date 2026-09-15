@@ -1,7 +1,7 @@
 /**
  * Host-side field validation shared by several endpoints.
  *
- * The Rust host validates before it hands anything to the engine, and the
+ * The host validates before it hands anything to the engine, and the
  * error strings are contract text (`contracts/endpoints.json` errors[]), so
  * they live here verbatim instead of being re-typed per handler.
  */

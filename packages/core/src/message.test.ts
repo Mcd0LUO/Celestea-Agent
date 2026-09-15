@@ -1,4 +1,4 @@
-/** Message / Role / Content / ToolCall / Usage — port of the Rust message.rs tests. */
+/** Message / Role / Content / ToolCall / Usage — port of the message.rs tests. */
 
 import { describe, expect, it } from "vitest";
 import {
@@ -23,7 +23,7 @@ import {
 } from "./message.js";
 
 describe("Message constructors", () => {
-  it("shapes content exactly like Rust (message_constructors_shape_content)", () => {
+  it("shapes content exactly like the legacy engine (message_constructors_shape_content)", () => {
     const m = userMessage("hi");
     expect(m.role).toBe("user");
     expect(m.content).toEqual([{ type: "text", content: "hi" }]);
@@ -44,13 +44,13 @@ describe("Message constructors", () => {
     expect(tr.content).toEqual([{ type: "text", content: "ok" }]);
   });
 
-  it("exposes the Rust-style namespace", () => {
+  it("exposes the static namespace facade", () => {
     expect(Message.user("x")).toEqual(userMessage("x"));
     expect(Message.assistantText("x")).toEqual(assistantText("x"));
     expect(Message.toolResult("c1", "x")).toEqual(toolResultMessage("c1", "x"));
   });
 
-  it("serializes to the Rust serde tagged shape", () => {
+  it("serializes to the serde tagged shape", () => {
     expect(JSON.stringify(assistantText("hi"))).toBe('{"role":"assistant","content":[{"type":"text","content":"hi"}],"tool_call_id":null}');
     expect(JSON.stringify(assistantToolCall({ id: "c1", name: "f", args: {} }))).toBe(
       '{"role":"assistant","content":[{"type":"tool_call","content":{"id":"c1","name":"f","args":{}}}],"tool_call_id":null}',

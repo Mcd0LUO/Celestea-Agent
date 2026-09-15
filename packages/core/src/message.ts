@@ -2,7 +2,7 @@
  * The model-visible message model — a 1:1 port of
  * `celestea_harness/crates/core/src/message.rs`.
  *
- * Rust shapes ported here:
+ * Shapes ported here:
  *   Role      enum { System, User, Assistant, Tool }      (serde lowercase)
  *   ToolCall  { id, name, args: Value }
  *   Content   enum { Text(String), ToolCall(ToolCall) }   (tag="type", content="content")
@@ -57,7 +57,7 @@ export interface Message {
   tool_call_id: string | null;
 }
 
-// Constructors mirror Rust's `impl Message` (same names, camelCase).
+// Constructors mirror the engine's `impl Message` (same names, camelCase).
 
 /** `Message::user`. */
 export function userMessage(text: string): Message {
@@ -84,7 +84,7 @@ export function toolResultMessage(id: string, text: string): Message {
   return { role: "tool", content: [{ type: "text", content: text }], tool_call_id: id };
 }
 
-/** Rust-style namespace: `Message::user(…)` → `Message.user(…)`. */
+/** Static namespace facade: `Message::user(…)` → `Message.user(…)`. */
 export const Message = {
   user: userMessage,
   system: systemMessage,
@@ -94,7 +94,7 @@ export const Message = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Content helpers (the Rust code pattern-matches; these are the TS equivalents)
+// Content helpers (the engine pattern-matches; these are the TS equivalents)
 // ---------------------------------------------------------------------------
 
 export function isTextContent(c: Content): c is TextContent {
@@ -139,7 +139,7 @@ export function hasToolCalls(m: Message): boolean {
 // Usage (message.rs:81-108)
 // ---------------------------------------------------------------------------
 
-/** Provider-reported token usage for one LLM response (`Usage` in Rust). */
+/** Provider-reported token usage for one LLM response (`Usage`). */
 export interface Usage {
   prompt_tokens: number;
   completion_tokens: number;

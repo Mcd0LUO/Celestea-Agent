@@ -184,7 +184,7 @@ function registerContext(app: Hono, deps: Deps, table: RouteTable): string {
  *     recomposes it, which is what makes the response's `effective:"next_turn"`
  *     a fact rather than a promise. Sessions other than this one are untouched.
  *
- * TS-only (U8): the Rust backend has no such endpoint, so the contract registers
+ * TS-only (U8): the retired backend has no such endpoint, so the contract registers
  * it under `tsOnlyRoutes` and the frontend gates on
  * `capabilities.session_mode_tools`.
  */

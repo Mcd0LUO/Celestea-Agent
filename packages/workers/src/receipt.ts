@@ -1,5 +1,5 @@
 /**
- * The worker receipt protocol (Rust W235/W241, registry.rs:551-620).
+ * The worker receipt protocol (W235/W241, registry.rs:551-620).
  *
  * When a spawn carried a non-empty `report_to`, the driver mechanically closes
  * the loop after the brief turn — Ok or Err alike, once, without any model
@@ -16,7 +16,7 @@
  * `[A-Za-z0-9._-]` becomes `_`, so a hostile `wid` cannot escape the results dir.
  *
  * Backward compatibility is a READ-side rule, not a second write: the
- * deliverable probe accepts ANY `results/<wid>*.md` (`hasDeliverable`, the Rust
+ * deliverable probe accepts ANY `results/<wid>*.md` (`hasDeliverable`, the legacy
  * prefix rule), so a report written before this change still counts — and we
  * never write the attempt-less name again (it is the collision we removed).
  */

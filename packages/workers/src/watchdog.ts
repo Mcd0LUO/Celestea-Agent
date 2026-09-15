@@ -2,7 +2,7 @@
  * W736 / ARCHITECTURE.md §7.3 step 5 — the worker watchdog.
  *
  * The architecture doc is explicit about the SHAPE: liveness judgement must be
- * "注册为独立插件（参考 Rust `WatchdogPlugin`），不要塞进后端实现里" — an
+ * "注册为独立插件（参考 `WatchdogPlugin`），不要塞进后端实现里" — an
  * independent plugin, never a branch inside the driver or the registry backend.
  * This module is the TS port of `celestea_harness/crates/workers/src/watchdog.rs`
  * (W186) and the only owner of the question "is this RUNNING row still alive?".
@@ -25,9 +25,9 @@
  *
  * Every status write goes through `WorkerRegistry.finalize` — the single terminal
  * write point, atomic tmp+rename — and a terminal row is frozen, so the watchdog
- * can never turn a DONE/FAILED row back into RUNNING (Rust registry.rs:474).
+ * can never turn a DONE/FAILED row back into RUNNING (registry.rs:474).
  *
- * Deliberate deviations from the Rust original:
+ * Deliberate deviations from the legacy implementation:
  *   - only THIS process's rows are adjudicated (`ownEntries`, the `proc=` token
  *     rule of the status view): a stale row written by a dead process is left to
  *     its own watchdog rather than rewritten from here;
@@ -65,7 +65,7 @@ export interface WatchdogConfig {
   now?: () => number;
 }
 
-/** Production defaults (Rust `WatchdogConfig::defaults`, minus the fixed paths). */
+/** Production defaults (`WatchdogConfig::defaults`, minus the fixed paths). */
 export const WATCHDOG_DEFAULTS: Omit<WatchdogConfig, "now"> = {
   intervalMs: 30_000,
   resultsDir: "results",
@@ -79,7 +79,7 @@ export function watchdogConfig(overrides: Partial<WatchdogConfig> = {}): Watchdo
   return { ...WATCHDOG_DEFAULTS, ...overrides };
 }
 
-/** One verdict of a sweep, per row (Rust `WatchAction`). */
+/** One verdict of a sweep, per row (`WatchAction`). */
 export type WatchAction =
   | { kind: "keep-running"; wid: string }
   | { kind: "done"; wid: string }
@@ -111,7 +111,7 @@ export function parseUtc(text: string): number | null {
 
 /**
  * Is a turn still running? A `turn_start` without its `turn_end` is the only
- * liveness a log can prove (Rust W224 F3: pending mailbox mail does NOT count,
+ * liveness a log can prove (W224 F3: pending mailbox mail does NOT count,
  * otherwise an ended worker is pinned at RUNNING forever).
  */
 export function hasInProgressTurn(events: readonly SessionEvent[]): boolean {
@@ -129,7 +129,7 @@ export interface DeliverableProbe {
   error: string | null;
 }
 
-/** Deliverable judgement: does `results/<wid>*.md` exist? (prefix rule as in Rust.) */
+/** Deliverable judgement: does `results/<wid>*.md` exist? (prefix rule.) */
 export function hasDeliverable(resultsDir: string, wid: string): DeliverableProbe {
   let names: string[];
   try {
@@ -204,7 +204,7 @@ export class Watchdog {
     }
   }
 
-  /** Adjudicate one RUNNING row (Rust `Watchdog::tick_one`). */
+  /** Adjudicate one RUNNING row (`Watchdog::tick_one`). */
   private tickOne(entry: WorkerEntry, nowSecs: number): WatchAction {
     if (this.isAlive(entry)) return { kind: "keep-running", wid: entry.wid };
     const probe = hasDeliverable(this.config.resultsDir, entry.wid);
@@ -245,7 +245,7 @@ export class Watchdog {
     return log !== undefined && hasInProgressTurn(log.events());
   }
 
-  /** Rust F2: a settled worker gives up its session, its queue and its driver. */
+  /** Legacy F2: a settled worker gives up its session, its queue and its driver. */
   private release(entry: WorkerEntry): void {
     const sid = getExtra(entry, "sess") ?? "";
     if (sid !== "") this.registry.releaseSession(sid);

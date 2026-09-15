@@ -2,7 +2,7 @@
 /**
  * Golden fixture exporter (P0).
  *
- * READ-ONLY against the running Rust implementation:
+ * READ-ONLY against the retired implementation:
  *   - session logs are read straight from disk (never written)
  *   - REST snapshots use GET only
  *   - the SSE transcript is a passive connect (no POST /api/turn, because that
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
       messages: liveMessages.messages,
     });
     files["derive-messages-expected.json"] = writeJson(redactor, `${base}/derive-messages-expected.json`, {
-      note: "DERIVED by the TS reference implementation (engine derive_messages has no HTTP surface; P1 validates it against the Rust unit tests)",
+      note: "DERIVED by the TS reference implementation (engine derive_messages has no HTTP surface; P1 validates it against the engine unit tests)",
       messages: deriveMessages(parsed.events),
     });
     const derivedFrames = deriveSseTranscript(parsed.events);
@@ -250,7 +250,7 @@ async function main(): Promise<void> {
     keepalives: sseCapture.keepalives,
     note:
       sseCapture.frames === 0
-        ? "No turn was running and P0 forbids POST /api/turn (it appends to the production cli-main.jsonl). The event NAMES are frozen in contracts/sse-events.json from the Rust source; per-session transcripts are derived from the session log (fixtures/sessions/*/sse-transcript-derived.jsonl)."
+        ? "No turn was running and P0 forbids POST /api/turn (it appends to the production cli-main.jsonl). The event NAMES are frozen in contracts/sse-events.json from the retired backend source; per-session transcripts are derived from the session log (fixtures/sessions/*/sse-transcript-derived.jsonl)."
         : "Captured live SSE frames while a turn was running.",
   });
 

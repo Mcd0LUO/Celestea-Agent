@@ -1,6 +1,6 @@
 /**
- * SessionMailbox — the wake-up channel between sessions (Rust
- * `celestea_session::SessionMailbox`, W232 semantics).
+ * SessionMailbox — the wake-up channel between sessions
+ * (`celestea_session::SessionMailbox`, W232 semantics).
  *
  * Semantics that matter and are all observable:
  *   - `send` delivers to a parked `recv` waiter FIRST (that is the wake-up);

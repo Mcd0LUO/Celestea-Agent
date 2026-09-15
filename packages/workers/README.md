@@ -4,7 +4,7 @@
 会话寻址、mailbox 事件循环（挂起→唤醒→投递）、三个编排工具（`spawn_worker` /
 `session_send_message` / `worker_status`）、brief 轮结束后的**回执协议**（报告文件 + 一行回执），
 以及 **worker 生命周期状态机**（W736：`RUNNING → DONE | FAILED` 真实落盘 + 独立看门狗插件）。
-对应 Rust `crates/workers/src/{types,registry,tools,plugin,watchdog}.rs` + `celestea_session` 的
+对应旧实现 `crates/workers/src/{types,registry,tools,plugin,watchdog}.rs` + `celestea_session` 的
 `SessionRegistry` / `SessionMailbox`。
 
 ```
@@ -75,7 +75,7 @@ driveIfPossible(sid, brief)
 
 | 触发 | 判定 |
 |---|---|
-| 回执协议（brief 轮结束，`closeLoop`） | 轮成功 → `DONE`；轮抛错 → `FAILED fail=<错误>`；报告写不出 → `FAILED fail=receipt-not-written:…`（严格于 Rust 的只 warn） |
+| 回执协议（brief 轮结束，`closeLoop`） | 轮成功 → `DONE`；轮抛错 → `FAILED fail=<错误>`；报告写不出 → `FAILED fail=receipt-not-written:…`（严格于旧实现的只 warn） |
 | 驱动退出（会话被移除 / stopDriver / abort） | 仍 `RUNNING` → `FAILED fail=driver-exited:-session-gone\|stopped` |
 | 宿主停机（`shutdown` / `release`） | 仍 `RUNNING` 的行 → `FAILED fail=registry-shutdown`（不留残行在表里恒 RUNNING） |
 | 看门狗（独立插件，`watchdog.ts`） | 会话仍活（驱动任务在跑 / 有进行中 turn）→ keep-running；已结束且有 `results/<wid>*.md` → `DONE`；宽限期内 → deferred；`retries < maxRetries` 且有**内存态可读 brief** → 重派（新会话 + `retries+1` + `started_at` 刷新）；否则 → `FAILED` |
@@ -93,19 +93,19 @@ driveIfPossible(sid, brief)
 | `attachDrivers({llm, tools, agentLoop})` | 无 → 只登记不驱动 | 由装配层从 Context 解析后交给注册表 |
 | 三个工具对注册表持 **`WeakRef`** | — | registry 释放后工具 fail-closed（`{ok:false,step:"registry",error:"registry released"}`），不复活旧代 |
 
-## 已知迁移差异（与 Rust 的显式分歧）
+## 已知迁移差异（与旧实现的显式分歧）
 
-- Rust 把多词 `title` / `brief` 直接塞进空格分隔的 `extra`，读回时只剩第一个词（`title=Do the thing`
+- 旧实现把多词 `title` / `brief` 直接塞进空格分隔的 `extra`，读回时只剩第一个词（`title=Do the thing`
   只解析出 `Do`）。TS 侧：`title` token 折空白为 `-` 保持单 token（回执文件名因此稳定），
   而报告用的**可读** brief/title 存在注册表的**内存态**（`rememberSpawn`），token 仅作诊断/跨进程兜底。
-- W736 状态机：`fail=<原因>` 同样折空白为单 token；Rust 的 `fail` 只在状态里，不落 token。
-- W736 看门狗只看**本进程行**（`ownEntries`，与 `worker_status` 视图同口径），Rust 会裁决整张 tsv。
-- W736 存活判定在 Rust「有进行中 turn」之外**追加**「驱动任务在跑」（TS 驱动会挂在 mailbox 上等消息，
-  挂起但仍然可寻址的 worker 是活的）。Rust W224 F3 的结论（未消费邮件不判活）保留。
-- W736 交付物探测：`results` 目录不存在视为「暂无交付物」，IO 错误（ENOTDIR/EACCES）才跳过本轮；Rust 两者都跳过。
-- W736 日志（`watcher.log` / `alerts.log`）**可选**（默认 null，不写盘）；Rust 默认硬编码部署路径。
+- W736 状态机：`fail=<原因>` 同样折空白为单 token；旧实现的 `fail` 只在状态里，不落 token。
+- W736 看门狗只看**本进程行**（`ownEntries`，与 `worker_status` 视图同口径），旧实现会裁决整张 tsv。
+- W736 存活判定在旧实现「有进行中 turn」之外**追加**「驱动任务在跑」（TS 驱动会挂在 mailbox 上等消息，
+  挂起但仍然可寻址的 worker 是活的）。旧实现 W224 F3 的结论（未消费邮件不判活）保留。
+- W736 交付物探测：`results` 目录不存在视为「暂无交付物」，IO 错误（ENOTDIR/EACCES）才跳过本轮；旧实现两者都跳过。
+- W736 日志（`watcher.log` / `alerts.log`）**可选**（默认 null，不写盘）；旧实现默认硬编码部署路径。
 - W736 回执路径落终态后**不释放会话**（worker 仍可收 relay 后续消息）；看门狗裁决终态时才 `releaseSession`
-  （对齐 Rust F2：会话 + mailbox 队列 + 驱动一并释放）。
+  （对齐旧实现 F2：会话 + mailbox 队列 + 驱动一并释放）。
 
 ## 测试
 

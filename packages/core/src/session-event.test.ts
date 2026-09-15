@@ -1,6 +1,6 @@
 /**
  * SessionEvent codec — the serde contract of `crates/core/src/session_log.rs`.
- * Every case below mirrors a Rust serde test (legacy rows, parent_id omission,
+ * Every case below mirrors a legacy serde test (legacy rows, parent_id omission,
  * ThinkingDelta round-trip) plus the Option-field rules read off the derive.
  */
 

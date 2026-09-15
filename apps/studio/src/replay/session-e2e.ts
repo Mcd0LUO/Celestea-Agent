@@ -5,7 +5,7 @@
  *      persistent log and re-serialize it: the bytes must come back identical
  *      (codec + replay fidelity), and the file itself must stay untouched;
  *   2. **messages projection** — `GET /api/sessions/{id}/messages` over the REAL
- *      host vs the Rust capture (`messages-expected.json`) + the engine's own
+ *      host vs the frozen capture (`messages-expected.json`) + the engine's own
  *      `derive_messages` vs its stored derivation;
  *   3. **SSE sequence** — the derived transcript vs the stored golden, and the
  *      same frames pushed through the real `GET /api/events` endpoint;

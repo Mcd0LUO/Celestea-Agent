@@ -1,6 +1,6 @@
 /**
  * The TypeScript SDK preamble + runner (W774) — split out of `sdk.ts` (which is
- * the Python/Rust-parity file and stays at its own size budget).
+ * the Python parity file and stays at its own size budget).
  *
  * Same protocol, same four bridges, but executed by Node's NATIVE type stripping
  * (`node .celestea/<file>.ts`): no build step, no `node_modules`, no dependency.

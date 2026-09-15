@@ -77,7 +77,7 @@ export function sessionEventToMessage(ev: SessionEvent): StudioMessage | null {
   }
 }
 
-/** The Studio message list for a whole log (golden-compared against Rust). */
+/** The Studio message list for a whole log (golden-compared against HTTP). */
 export function projectMessages(events: readonly SessionEvent[]): StudioMessage[] {
   const out: StudioMessage[] = [];
   for (const ev of events) {
@@ -88,7 +88,7 @@ export function projectMessages(events: readonly SessionEvent[]): StudioMessage[
 }
 
 /**
- * Engine model-visible projection (`derive_messages`). Returns the Rust
+ * Engine model-visible projection (`derive_messages`). Returns the engine's
  * `Message` shape (`role` / `content[]` / `tool_call_id`), not the Studio shape.
  */
 export function deriveMessages(events: readonly SessionEvent[]): Message[] {

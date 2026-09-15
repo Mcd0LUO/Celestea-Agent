@@ -1,7 +1,7 @@
 # `@celestea/runtime` (L2 · 装配层)
 
 一句职责：**把插件按显式顺序挂进一个 `Context`，交回一个「已装配、可驱动、可换代」的引擎代（Gen）**。
-对应 Rust `crates/runtime/{compose.rs,run.rs}` + `celestea_studio/src/main.rs` 的 statusline / 换代部分。
+对应旧实现 `crates/runtime/{compose.rs,run.rs}` + `celestea_studio/src/main.rs` 的 statusline / 换代部分。
 
 ```
 core ← runtime → session / llm / tools / agent-loop / workers

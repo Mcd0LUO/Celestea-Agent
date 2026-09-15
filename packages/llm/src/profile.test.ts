@@ -20,7 +20,7 @@ import {
 import { OpenAiCompatClient } from "@celestea/llm";
 
 describe("three timeout tiers: defaults and profile keys", () => {
-  it("uses the Rust defaults (15s connect / 60s response / 90s idle)", () => {
+  it("uses the legacy defaults (15s connect / 60s response / 90s idle)", () => {
     expect(DEFAULT_CONNECT_TIMEOUT_MS).toBe(15_000);
     expect(DEFAULT_RESPONSE_TIMEOUT_MS).toBe(60_000);
     expect(DEFAULT_STREAM_IDLE_TIMEOUT_MS).toBe(90_000);
@@ -92,7 +92,7 @@ describe("three timeout tiers: defaults and profile keys", () => {
 });
 
 describe("client construction from config/profile", () => {
-  it("treats 0 as disabled and defaults the rest to the Rust tiers", () => {
+  it("treats 0 as disabled and defaults the rest to the legacy tiers", () => {
     const client = new OpenAiCompatClient({
       baseUrl: "http://127.0.0.1:1",
       apiKey: "dummy",

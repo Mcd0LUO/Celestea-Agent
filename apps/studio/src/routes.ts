@@ -2,7 +2,7 @@
  * Route table derived from the frozen contract.
  *
  * 51 endpoints (55 method+path combos minus the 4 static routes).
- * Rust path params use `{id}`; Hono uses `:id`, so paths are translated here
+ * The contract path params use `{id}`; Hono uses `:id`, so paths are translated here
  * once and the translation is asserted in tests.
  *
  * W516 added `GET|POST|DELETE /api/sessions/{id}/grants` and
@@ -12,7 +12,7 @@
  * the first two are deliberately NOT under `/api/`). W785 added
  * `GET /api/usage/ledger` (49 -> 50). W791 added
  * `POST /api/sessions/{id}/mode` (50 -> 51; the P1 session working mode). All of
- * them have NO Rust counterpart:
+ * them have NO counterpart in the legacy backend:
  * `contracts/route-table.snapshot.json` keeps the frozen extraction intact and
  * lists the TypeScript-only additions separately.
  */

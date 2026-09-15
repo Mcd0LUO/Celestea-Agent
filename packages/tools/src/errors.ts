@@ -3,7 +3,7 @@
  *
  * The pipeline never throws across the `Tool` seam: a tool rejects with a
  * `ToolFailure` whose `message` is the machine-readable contract string
- * `<prefix>: code=<code> msg="<quoted>"` (Rust parity: `toolguard: …`,
+ * `<prefix>: code=<code> msg="<quoted>"` (parity: `toolguard: …`,
  * `run_shell-sandbox: …`, `http_request: code=…`), and the registry captures it
  * into `ToolOutput.error`. Callers branch on `kind`/`code`, never on prose.
  */
@@ -14,7 +14,7 @@ export { ToolFailure, isToolFailure } from "./tool-failure.js";
 
 /** Stable prefix of argument-validation failures (`registry` pipeline stage 1). */
 export const TOOLARG_ERROR_PREFIX = "toolargs";
-/** Stable prefix of guard denials (Rust `GUARD_ERROR_PREFIX`). */
+/** Stable prefix of guard denials (legacy `GUARD_ERROR_PREFIX`). */
 export const GUARD_ERROR_PREFIX = "toolguard";
 
 /** Escape + truncate a message so the one-line error contract stays parseable. */

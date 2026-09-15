@@ -1,5 +1,5 @@
 /**
- * Profile -> `AgentConfig` projection (Rust `runtime/src/compose.rs:196-204`).
+ * Profile -> `AgentConfig` projection (`runtime/src/compose.rs:196-204`).
  *
  * The step cap is floored at [MIN_STEPS]: the engine loop runs
  * `for step in 0..max_steps`, so `max_steps = 0` means ZERO steps (not

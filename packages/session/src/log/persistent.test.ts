@@ -1,5 +1,5 @@
 /**
- * PersistentSessionLog — port of the Rust persistent.rs tests: replay +
+ * PersistentSessionLog — port of the legacy persistent.rs tests: replay +
  * truncate a torn tail, tolerate blank lines, repair a missing final newline,
  * restore the turn counter from disk, and keep derive_messages identical to the
  * in-memory log.
@@ -120,7 +120,7 @@ describe("PersistentSessionLog", () => {
     log.close();
   });
 
-  it("treats a whitespace-only line as unparsable (Rust `record.is_empty()`)", () => {
+  it("treats a whitespace-only line as unparsable (`record.is_empty()`)", () => {
     const dir = tempDir();
     const path = join(dir, "session-g.jsonl");
     writeFileSync(path, `${JSON.stringify(user("one"))}\n   \n${JSON.stringify(user("two"))}\n`);
@@ -152,7 +152,7 @@ describe("PersistentSessionLog", () => {
     log.clear();
     expect(log.events()).toEqual([]);
     expect(readFileSync(path, "utf8")).toBe("");
-    // Rust: clear() stores 0, so the emptied file and the counter stay in sync.
+    // clear() stores 0, so the emptied file and the counter stay in sync.
     expect(log.nextTurnId()).toBe("turn-0");
     log.append(user("two"));
     log.close();

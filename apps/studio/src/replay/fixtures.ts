@@ -1,7 +1,7 @@
 /**
  * Golden-fixture access for the P5 double-run comparison.
  *
- * The fixtures are the P0 export of the running Rust implementation
+ * The fixtures are the P0 export of the retired backend
  * (`fixtures/index.json` + `fixtures/sessions/<slug>/…`): an unmodified session
  * log, the Studio `messages` projection captured over HTTP, and (for small
  * sessions) the derived SSE transcript. Nothing here writes into `fixtures/`:

@@ -8,13 +8,12 @@
  * stays here is provider-side and cannot move to core: the canonical timeout
  * prefix and the error builders.
  *
- * Rust keeps a plain-string `LlmError` and encodes the semantics in the
- * canonical `llm timeout` message prefix: an error thrown out of `generate`
- * maps to `TurnOutcome::Error { kind: "generate" }`, a stalled stream maps to
- * `kind: "timeout"`, a mid-stream decode failure to `kind: "stream"`.
- * TypeScript can carry that distinction explicitly, so `LlmError` exposes
- * `kind` (the turn-outcome kind a caller should report) plus `isTimeout` and
- * the stage that tripped.
+ * The semantics ride the canonical `llm timeout` message prefix: an error
+ * thrown out of `generate` maps to `TurnOutcome::Error { kind: "generate" }`, a
+ * stalled stream maps to `kind: "timeout"`, a mid-stream decode failure to
+ * `kind: "stream"`. TypeScript can also carry that distinction explicitly, so
+ * `LlmError` exposes `kind` (the turn-outcome kind a caller should report) plus
+ * `isTimeout` and the stage that tripped.
  *
  * Iteration E §4 P0 adds the machine-readable *failure cause* on top of the
  * message text: `httpStatus` (the status of the response that failed, `null`
@@ -31,7 +30,7 @@ import { LlmError, type LlmErrorKind, type LlmErrorOptions, type TimeoutStage } 
 export { LlmError };
 export type { LlmErrorKind, LlmErrorOptions, TimeoutStage };
 
-/** Canonical prefix of every timeout error (Rust TIMEOUT_ERROR_PREFIX). */
+/** Canonical prefix of every timeout error (`TIMEOUT_ERROR_PREFIX`). */
 export const TIMEOUT_ERROR_PREFIX = "llm timeout";
 
 /**

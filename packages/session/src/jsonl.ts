@@ -7,7 +7,7 @@
  * the TurnOutcome helpers live in `@celestea/core` (`session-event.ts`) and are
  * re-exported here so existing imports keep working.
  *
- * "Blank" is a truly empty line (or a lone `\r`), matching the Rust replay
+ * "Blank" is a truly empty line (or a lone `\r`), matching the legacy replay
  * (`record.is_empty()`); a whitespace-only line is an unparsable record.
  */
 

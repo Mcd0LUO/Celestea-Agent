@@ -16,7 +16,7 @@
  * composition root (`packages/runtime`), so this package never imports a sibling
  * L1 implementation (ARCHITECTURE.md §1.3 D2).
  *
- * Module map (Rust -> TS):
+ * Module map (legacy -> TS):
  *   registry-tsv.ts  registry.tsv row parse/serialize/summary  (workers/types.rs)
  *   types.ts         session/mailbox value types + UTC stamps  (workers/types.rs)
  *   log.ts           default worker session log (records only)

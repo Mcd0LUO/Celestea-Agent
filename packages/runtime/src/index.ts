@@ -16,7 +16,7 @@
  * package does import are the worker seam (`@celestea/workers`) and the
  * session-log/checkpoint contract (`@celestea/session`, E §1.3 P0).
  *
- * Module map (Rust -> TS):
+ * Module map (legacy -> TS):
  *   profile.ts         frozen 12-key profile + compose step list  (runtime/config.rs)
  *   agent-config.ts    profile -> AgentConfig + step floor       (compose.rs:196-204)
  *   sanitize.ts        sanitized config projection for /api/config

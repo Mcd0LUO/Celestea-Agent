@@ -8,7 +8,7 @@ import { StudioError } from "@celestea/core";
 
 /**
  * A second `runTurn` while one is in flight. The engine has a single
- * concurrency slot per Runtime generation (Rust `AppState::busy`): a turn is
+ * concurrency slot per Runtime generation (`AppState::busy`): a turn is
  * either running or not, and a conflicting start is a 409, never a queue.
  */
 export class TurnBusyError extends StudioError {

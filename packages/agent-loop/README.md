@@ -6,9 +6,9 @@ cooperative cancellation and the five real terminal states. Depends only on
 resolved from the `Context` at turn start, so this package never imports a
 provider, a storage backend or a tool implementation.
 
-Ports (1:1 against the Rust engine unless listed under **Divergences**):
+Ports (1:1 against the legacy engine unless listed under **Divergences**):
 
-| TS module | Rust source |
+| TS module | Legacy source |
 |---|---|
 | `loop.ts` (`DefaultAgentLoop`, the step loop) | `crates/agent-loop/src/loop.rs` (`impl AgentLoop for DefaultAgentLoop`) |
 | `step.ts` (per-step verdict types + folds) | inline in `loop.rs` |
@@ -62,7 +62,7 @@ A partial answer is never flushed as a reply, and `runTurn` only rejects with
 context` / `missing SessionLog service in context` / `missing ToolRegistryService
 in context`) — terminal states always ride the log.
 
-Log ordering contracts (same as Rust):
+Log ordering contracts (same as the legacy engine):
 
 - all `tool_call` rows of a step precede every `tool_result` row of that step;
 - results are appended in the model's call order even when dispatched in
@@ -97,8 +97,8 @@ the reply on the wire.
 ## Usage
 
 Bind a `UsageTracker` and every `usage` stream event is recorded: `latest()` is
-the most recent response, `total()` the cumulative sum (detached copies, Rust
-`Copy` semantics). Without a tracker, `usage` events are consumed and ignored.
+the most recent response, `total()` the cumulative sum (detached copies, `Copy`
+semantics). Without a tracker, `usage` events are consumed and ignored.
 
 ## Extension points
 
@@ -121,7 +121,7 @@ mountPlugins(ctx, [agentLoopPlugin(defaultAgentConfig({ max_steps: 32 }), { usag
 - **Another trimming policy** — `trimContext` is a pure function; call it
   directly or replace the call site in `buildRequest`.
 
-## Divergences from Rust (deliberate, all documented in code)
+## Divergences from the legacy engine (deliberate, all documented in code)
 
 1. **Cancel signal**: `AbortSignal` owned by the caller instead of a
    `tokio::sync::watch::Receiver` built by the loop.
@@ -130,15 +130,15 @@ mountPlugins(ctx, [agentLoopPlugin(defaultAgentConfig({ max_steps: 32 }), { usag
    ARCHITECTURE.md §6.3).
 3. **`max_steps = 0` is unlimited** here (W220 semantics); the studio's
    `MIN_STEPS = 4096` clamp belongs to the host, not the loop.
-4. **Trim marker text** is a single-spaced sentence; Rust's literal carries the
-   source indentation as runs of spaces. Contract-relevant part
+4. **Trim marker text** is a single-spaced sentence; the legacy literal carried
+   the source indentation as runs of spaces. Contract-relevant part
    (`[context-trimmed]`, counts, token estimate) is identical.
 5. **Torn stream after a `done` frame** ends the turn (with the stream's terminal
    state) instead of dispatching that step's tool calls under a sticky error
    outcome — a protocol-violating input that must not look successful.
 6. **Seam violation on dispatch**: a registry that throws is contained as a
-   `tool_result` error (Rust would unwind), so the turn still reaches a terminal
-   state; a batch that somehow rejects is reported as `AgentError`.
+   `tool_result` error (the legacy loop would unwind), so the turn still reaches
+   a terminal state; a batch that somehow rejects is reported as `AgentError`.
 
 ### P0 placeholder cleanup
 

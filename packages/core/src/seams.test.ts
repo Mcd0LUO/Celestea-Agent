@@ -1,6 +1,6 @@
 /**
  * The plugin spine: Plugin / Context / EventBus / Llm / ToolGuard / AgentLoop
- * seams, each mirroring a Rust module in `crates/core/src`.
+ * seams, each mirroring a module in `crates/core/src`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -146,7 +146,7 @@ describe("Llm seam", () => {
     expect(reg.list()).toEqual(["deepseek", "openai"]);
   });
 
-  it("rejects with LlmError (the Rust Err arm)", async () => {
+  it("rejects with LlmError (the error arm)", async () => {
     await expect(noop.generate({} as never)).rejects.toBeInstanceOf(LlmError);
   });
 
@@ -164,7 +164,7 @@ describe("Llm seam", () => {
 });
 
 describe("AgentLoop seam", () => {
-  it("defaults carry the celestea identity (Rust agent.rs test)", () => {
+  it("defaults carry the celestea identity (legacy agent.rs test)", () => {
     const cfg = defaultAgentConfig();
     expect(cfg.system_prompt).toContain("celestea");
     expect(cfg.system_prompt).toContain("concise");

@@ -7,7 +7,7 @@
  * `SessionLog` and `ToolRegistry` from the Context at turn start, so this
  * package never imports a provider, a storage backend or a tool implementation.
  *
- * Module map (Rust -> TS):
+ * Module map (legacy -> TS):
  *   loop.ts          DefaultAgentLoop, the step loop            (loop.rs)
  *   step.ts          per-step verdict types + folds             (loop.rs)
  *   seams.ts         Context -> Llm/SessionLog/ToolRegistry      (loop.rs:204-213)

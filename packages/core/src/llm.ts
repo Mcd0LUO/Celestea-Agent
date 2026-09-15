@@ -2,10 +2,10 @@
  * Llm seam — port of `crates/core/src/llm.rs`.
  *
  * The seam is one async method: `generate` returns a stream of StreamEvents.
- * In Rust it returns `Result<LlmStream, LlmError>`; the TS mapping is a rejected
- * promise carrying [LlmError], so `try/catch` is the `Err` arm.
+ * A failure is a rejected promise carrying [LlmError], so `try/catch` is the
+ * error arm.
  *
- * `LlmRegistry` is the multi-provider seam (Rust W189): named, append-only rows
+ * `LlmRegistry` is the multi-provider seam (W189): named, append-only rows
  * with last-registration-wins resolution, so compose code registers each
  * provider under a stable name and routes requests by name.
  */

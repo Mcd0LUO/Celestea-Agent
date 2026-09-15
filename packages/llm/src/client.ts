@@ -38,7 +38,7 @@ import { streamEvents } from "./stream.js";
 import type { Llm, LlmStream, ModelRequestDraft } from "./seam.js";
 import { DEFAULT_TIMEOUTS, type EnvLike, type TimeoutTiers } from "./timeouts.js";
 
-/** Constructor options. Timeout fields: 0 = disabled (Rust ms_to_duration). */
+/** Constructor options. Timeout fields: 0 = disabled (`ms_to_duration`). */
 export interface OpenAiCompatOptions {
   baseUrl: string;
   apiKey: string;

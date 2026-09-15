@@ -82,14 +82,14 @@ function typeOf(v: unknown): string {
 /**
  * `serde_json::to_string` equivalent for the JSON subset the engine carries.
  *
- * Why not `JSON.stringify`: the Rust engine stores every `args` / `value` as a
+ * Why not `JSON.stringify`: the engine stores every `args` / `value` as a
  * `serde_json::Value`, whose object map is a **BTreeMap** — so a re-serialized
  * value always has its keys in sorted order, and `None` becomes `null` rather
  * than an omitted key. `derive_messages` embeds this text in the model-visible
  * history ("Error: …" or the JSON of the value) and `PersistentSessionLog`
  * writes each event through it, so the difference is observable in the log and
  * in the derived messages. Values that `serde_json::Value` cannot hold
- * (undefined, functions, NaN/Infinity) have no Rust counterpart and map to
+ * (undefined, functions, NaN/Infinity) have no counterpart and map to
  * `null`, matching the `unwrap_or_else(|_| "null")` fallback in
  * `crates/session/src/log.rs:192`.
  */
@@ -118,7 +118,7 @@ function writeValue(v: unknown): string {
 }
 
 /**
- * Rust number formatting (ryu shortest round-trip): integers keep their plain
+ * Engine number formatting (ryu shortest round-trip): integers keep their plain
  * form and exponents lose the JS `+` sign (`1e+21` -> `1e21`).
  * Known residual difference: a JSON literal `1.0` is stored as `f64` by
  * serde_json and prints back as `1.0`, while JS has a single number type and

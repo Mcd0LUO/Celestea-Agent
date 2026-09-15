@@ -1,5 +1,5 @@
 /**
- * One turn, driven through the `AgentLoop` seam (Rust `runtime/src/run.rs`).
+ * One turn, driven through the `AgentLoop` seam (`runtime/src/run.rs`).
  *
  * Responsibilities, in order:
  *   1. **single concurrency slot** — a Runtime generation runs at most one turn;
@@ -47,7 +47,7 @@ export interface TurnOptions {
   sink?: FrameSink;
 }
 
-/** Collaborators handed to a per-turn loop instance (Rust `with_bindings`). */
+/** Collaborators handed to a per-turn loop instance (`with_bindings`). */
 export interface LoopBindings {
   config: AgentConfig;
   signal: AbortSignal;

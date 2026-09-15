@@ -5,7 +5,7 @@
  * The loop records the `usage` stream event of every LLM response; the host
  * reads `latest()` (most recent response) and `total()` (cumulative) to expose
  * the statusline and to drive future trimming decisions. Both accessors return
- * copies, matching Rust's `Copy` semantics — a caller can never mutate the
+ * copies, matching the engine's `Copy` semantics — a caller can never mutate the
  * tracker's state through the returned value.
  */
 

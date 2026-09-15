@@ -2,7 +2,7 @@
  * Driver-seam resolution for one turn.
  *
  * The loop never imports an implementation: it resolves the three seams the
- * Rust `run_turn` resolves from the shared `Context` — `Llm` (how to generate),
+ * legacy `run_turn` resolved from the shared `Context` — `Llm` (how to generate),
  * `SessionLog` (where the single source of truth lives) and `ToolRegistry`
  * (how to dispatch tool calls) — and fails loudly when the composition root
  * forgot one. Same three services, same order, as `crates/agent-loop/src/loop.rs`.
@@ -48,8 +48,9 @@ export function toToolInput(call: ToolCall): ToolInput {
 /**
  * Dispatch one call, containing a seam violation: `ToolRegistry.dispatch`
  * captures tool errors in `ToolOutput.error` and must not throw, so an escaping
- * exception would otherwise leave the turn without a terminal state. Rust can
- * rely on `?`-free unwrapping; TS keeps the same totality explicitly.
+ * exception would otherwise leave the turn without a terminal state. The
+ * legacy loop could rely on `?`-free unwrapping; TS keeps the same totality
+ * explicitly.
  */
 export async function dispatchCall(registry: ToolRegistry, input: ToolInput): Promise<ToolOutput> {
   try {

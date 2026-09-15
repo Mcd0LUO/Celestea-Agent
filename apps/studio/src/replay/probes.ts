@@ -201,7 +201,7 @@ export function sseFindings(id: string, derived: unknown[], golden: unknown[] | 
   if (golden === null) {
     findings.push(note(`${id} :: sse-transcript`, "self-check", `golden transcript not stored for this session; ${derived.length} frame(s) regenerated in-memory`));
   } else {
-    findings.push(compareJson(`${id} :: sse-transcript`, "self-check", golden, derived, "TS-derived transcript (Rust capture is a P6 gap)"));
+    findings.push(compareJson(`${id} :: sse-transcript`, "self-check", golden, derived, "TS-derived transcript (legacy capture is a P6 gap)"));
   }
   const expected = (derived as Array<{ event: string; data: { turn: number; payload: Record<string, unknown> } }>).map((f) => ({
     event: f.event,

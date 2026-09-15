@@ -1,6 +1,6 @@
 /**
- * `write_file` — create or overwrite a text file, answering `"ok"` like Rust
- * (`builtin.rs::write_file`). The path policy (workspace-only writes) is
+ * `write_file` — create or overwrite a text file, answering `"ok"` like the
+ * legacy `builtin.rs::write_file`. The path policy (workspace-only writes) is
  * enforced by the guard chain, not here.
  */
 

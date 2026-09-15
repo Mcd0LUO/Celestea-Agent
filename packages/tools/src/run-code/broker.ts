@@ -50,7 +50,7 @@ import {
 import { LineReader, appendBounded, jsonByteLength, tail, truncateValue, type BoundedLine } from "./lines.js";
 import { assembleProgram, DEFAULT_RUN_CODE_LANGUAGE, type RunCodeLanguage } from "./sdk.js";
 
-/** Session-log sink for sub-call rows (Rust `Fn(SessionEvent)` sink). */
+/** Session-log sink for sub-call rows (legacy `Fn(SessionEvent)` sink). */
 export type RunCodeEventSink = (event: SessionEvent) => void;
 
 /** Everything one broker run needs (the tool binds the registry + call id). */
@@ -302,7 +302,7 @@ async function handleLine(
   return "continue";
 }
 
-/** Objects only: a JSON scalar / array on stdout is a log line (Rust parity). */
+/** Objects only: a JSON scalar / array on stdout is a log line (parity). */
 function decodeObject(text: string): Record<string, unknown> | null {
   if (!text.startsWith("{")) return null;
   try {
@@ -401,7 +401,7 @@ function writeReply(stdin: Writable, line: string): Promise<void> {
 // ---- logs, render, outcome ---------------------------------------------------
 
 /**
- * Append one log line to the bounded stdout log. Rust appends lines back to
+ * Append one log line to the bounded stdout log. Lines append back to
  * back (no separator): the budget is a byte ledger, not a pretty printer.
  */
 function logLine(state: RunState, config: RunCodeConfig, text: string, truncated = false): void {
@@ -449,7 +449,7 @@ function outcomeOf(ctx: BrokerContext, state: RunState): ToolExecOutcome {
   return { value: state.hasFinal ? state.finalValue : null, render };
 }
 
-/** Attach the bounded render tail to a failure (Rust `FailureCtx`). */
+/** Attach the bounded render tail to a failure (legacy `FailureCtx`). */
 function withLogsText(error: string, render: string | null): string {
   if (render === null || render === "") return error;
   return `${error}\n[run_code] logs:\n${tail(render, 2048)}`;

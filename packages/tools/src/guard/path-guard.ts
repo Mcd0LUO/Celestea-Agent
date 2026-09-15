@@ -92,7 +92,7 @@ export const PATH_ARG_KEYS: readonly string[] = [
 
 /**
  * Platform path-list separator: `:` on unix, `;` on windows — the same
- * semantics as Rust `std::env::split_paths`. A comma is ALSO accepted (the
+ * semantics as `std::env::split_paths`. A comma is ALSO accepted (the
  * earlier TS-only documentation used commas), so `CELESTEA_TOOL_ROOTS` may be
  * written either way.
  *

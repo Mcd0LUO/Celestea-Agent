@@ -62,7 +62,7 @@ export class LineReader {
 
   /**
    * The next complete line, `null` at EOF, or [`TIMED_OUT`] when `remainingMs`
-   * elapses first. A partial tail at EOF is dropped (Rust parity: only
+   * elapses first. A partial tail at EOF is dropped (parity: only
    * `\n`-terminated lines are protocol candidates).
    */
   async next(remainingMs: number): Promise<BoundedLine | null | typeof TIMED_OUT> {
@@ -178,7 +178,7 @@ export function jsonByteLength(value: unknown): number | null {
   return encoded === undefined ? null : Buffer.byteLength(encoded, "utf8");
 }
 
-/** Append up to `maxBytes` of `chunk` to `current` (UTF-8 safe, Rust parity). */
+/** Append up to `maxBytes` of `chunk` to `current` (UTF-8 safe, parity). */
 export function appendBounded(current: string, chunk: string, maxBytes: number): BoundedLine {
   if (chunk === "") return { text: current, truncated: false };
   const room = maxBytes - Buffer.byteLength(current, "utf8");
@@ -190,7 +190,7 @@ export function appendBounded(current: string, chunk: string, maxBytes: number):
 /**
  * Truncate a sub-call result to `budget` serialized bytes: strings keep a
  * UTF-8 safe prefix; non-strings collapse to a placeholder (there is no
- * lossless way to cut an object/array). Rust `truncate_value`.
+ * lossless way to cut an object/array). Legacy `truncate_value`.
  */
 export function truncateValue(value: unknown, budget: number): unknown {
   if (typeof value === "string") return utf8Prefix(value, budget);

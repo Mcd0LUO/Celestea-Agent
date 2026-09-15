@@ -67,7 +67,7 @@ export function applyProfilePatch(profile: Profile, patch: ProfilePatch): Profil
 
 /**
  * The startup profile: the host's frozen constants (`MIN_STEPS`,
- * `CONTEXT_WINDOW`, both read off the Rust `/api/config` snapshot) plus the env
+ * `CONTEXT_WINDOW`, both read off the frozen `/api/config` snapshot) plus the env
  * overrides the host honors. The loop budget derives from this profile
  * (`agentConfigFromProfile`), so the statusline window and the trim budget can
  * never disagree.

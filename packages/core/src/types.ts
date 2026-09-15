@@ -1,7 +1,7 @@
 /**
  * Core shared types for the Celestea TS rewrite.
  *
- * These mirror the frozen Rust contracts 1:1:
+ * These mirror the frozen contracts 1:1:
  *  - SessionEvent / TurnOutcome : celestea_harness/crates/core/src/session_log.rs
  *  - SSE envelope + LoopEvent   : celestea_studio/src/main.rs:640-732
  *  - Studio message projection  : celestea_studio/src/api.rs:94-135

@@ -1,7 +1,7 @@
 /**
  * `StoreResult` — how every data-store operation reports failure.
  *
- * The HTTP layer must reproduce the Rust error strings verbatim together with
+ * The HTTP layer must reproduce the contract error strings verbatim together with
  * their status code, so a store never throws for an expected failure: it
  * returns `{ok:false, status, error}` and the handler turns that into
  * `{ok:false, error}` with the status. Store *bugs* still throw.
@@ -11,7 +11,7 @@ export interface StoreFailure {
   ok: false;
   /** HTTP status the contract assigns to this failure. */
   status: number;
-  /** Verbatim contract text (Rust `format!` template filled in). */
+  /** Verbatim contract text (`format!` template filled in). */
   error: string;
   /** Extra fields folded into the response body (fs/browse uses `path`). */
   extra?: Record<string, unknown>;

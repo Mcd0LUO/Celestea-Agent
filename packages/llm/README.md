@@ -1,6 +1,6 @@
 # @celestea/llm — OpenAI-compatible LLM provider (P2a)
 
-Rust parity target: `celestea_harness/crates/llm` (+ `crates/runtime/src/compose.rs`
+Parity target: `celestea_harness/crates/llm` (+ `crates/runtime/src/compose.rs`
 for profile resolution). Raw SSE transport, usage/cache-hit parsing, three
 timeout tiers, free-form `reasoning_effort` passthrough.
 
@@ -105,7 +105,7 @@ export type { Content, LlmError, Message, ModelRequest, Role, StreamEvent, … }
 
 | 项 | core | 本包 | 处置 |
 |---|---|---|---|
-| `StreamEvent.failed.kindOf` | `"generate" \| "stream"` | `"generate" \| "stream" \| "timeout"` | **本包唯一放宽的成员**（SSE 空闲守卫 → `"timeout"`，Rust 侧 `Failed{kind}` 本是自由字符串）。其余成员由 core 的联合类型派生（`Exclude<CoreStreamEvent, {kind:"failed"}>`），core 新增变体会自动出现。见 `src/seam.ts` 的 `TODO(core-timeout-kind)` |
+| `StreamEvent.failed.kindOf` | `"generate" \| "stream"` | `"generate" \| "stream" \| "timeout"` | **本包唯一放宽的成员**（SSE 空闲守卫 → `"timeout"`，旧实现侧 `Failed{kind}` 本是自由字符串）。其余成员由 core 的联合类型派生（`Exclude<CoreStreamEvent, {kind:"failed"}>`），core 新增变体会自动出现。见 `src/seam.ts` 的 `TODO(core-timeout-kind)` |
 | `ModelRequest` | 全字段必填 | `ModelRequest` 照旧 re-export；另有 `ModelRequestDraft = Partial<ModelRequest> & { messages }` 作为**直连调用**的入参 | 引擎交给本包的一定是全字段 core `ModelRequest`（可直接当 draft 用）；一次性调用只给 `messages` 也合法，wire 映射的「缺省即空」回退语义未变 |
 | `LlmError` | 结构化类（`kind`/`isTimeout`/`timeoutStage`/`httpStatus`/`retryable`） | 同一个类 | 类本体已在 core，本包只留 `TIMEOUT_ERROR_PREFIX` 与构造器 |
 | seam 词汇（`Role`/`Content`/`ToolCall`/`Message`/`ToolSpec`/`Usage`） | `message.ts` + `types.ts` | re-export | 无差异 |

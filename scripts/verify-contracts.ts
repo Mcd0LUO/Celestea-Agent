@@ -1,10 +1,10 @@
 #!/usr/bin/env tsx
 /**
- * Live contract verification against the running Rust implementation (:3777).
+ * Live contract verification against the running backend (:3777).
  *
  * READ-ONLY policy:
  *   - GET probes only for the 10 read endpoints
- *   - error-branch probes are restricted to paths that the Rust source proves
+ *   - error-branch probes are restricted to paths that the retired backend source proves
  *     return BEFORE any mutation (validation guards) — see `safeBecause`
  *   - no POST /api/turn, no /api/clear, no provider/workspace/prompt writes
  *
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     ((sessionList.json as { sessions?: Array<{ id?: string }> }).sessions ?? []).find((x) => typeof x.id === "string")?.id ?? "sample-ws/sample-session";
 
   // W516: the four grant endpoints are TypeScript-only (probe.checked === false
-  // points at the retired Rust reference) — they are not probed here.
+  // points at the retired backend) — they are not probed here.
   const probeable = contract.endpoints.filter((x) => x.probe?.checked !== false);
   for (const e of probeable.filter((x) => x.method === "GET" && x.id !== "get_events")) {
     const probePath = concreteProbePath(e.path, sampleSessionId);
@@ -257,7 +257,7 @@ async function main(): Promise<void> {
   const evidence = {
     generatedAt: new Date().toISOString(),
     studio: STUDIO,
-    policy: "read-only: GET probes + error branches proven mutation-free in the Rust source",
+    policy: "read-only: GET probes + error branches proven mutation-free in the retired backend source",
     counts: { checks: checks.length, passed, failed, endpointsSampled, sseEvents: sse.events.length, tools: tools.tools.length },
     verdict: failed === 0 ? "consistent" : "INCONSISTENT",
     checks,

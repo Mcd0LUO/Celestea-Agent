@@ -1,5 +1,5 @@
 /**
- * Usage accounting — the `usage` half of the statusline (Rust W220/W263).
+ * Usage accounting — the `usage` half of the statusline (W220/W263).
  *
  * The `AgentLoop` records the provider's `usage` stream event for every LLM
  * response; the host reads two views:
@@ -8,7 +8,7 @@
  *   - `total()`  — cumulative across every response of this generation.
  *
  * Both accessors return copies, so a caller can never mutate tracked state
- * (Rust `Usage` is `Copy`).
+ * (`Usage` is `Copy` in the legacy engine).
  *
  * The seam is structural (`UsageRecorder` / `UsageAccounting`), not a class
  * identity: `packages/agent-loop` ships its own `UsageTracker` with the same
@@ -62,7 +62,7 @@ export function createUsageTracker(): UsageTracker {
 
 /**
  * `cache_read / prompt_tokens`, clamped to [0,1] and rounded to 4 decimals;
- * 0 when the denominator is 0 (no usage recorded yet). Rust `cache_hit_ratio`.
+ * 0 when the denominator is 0 (no usage recorded yet). `cache_hit_ratio`.
  */
 export function cacheHitRatioRounded(u: Usage): number {
   if (u.prompt_tokens === 0) return 0;

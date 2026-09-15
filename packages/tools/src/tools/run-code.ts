@@ -13,7 +13,7 @@
  *
  * Wiring is late-bound on purpose ([`RegistryHandle`]): the tool must be
  * registered *into* the registry it will dispatch through, so the handle is
- * bound right after registration (Rust `RegistryHandle` / `run_code_tool_with_handle`).
+ * bound right after registration (the `RegistryHandle` / `run_code_tool_with_handle`).
  */
 
 import type { Sandbox, Tool, ToolExecOutcome, ToolInput, ToolRegistry, ToolSpec } from "@celestea/core";
@@ -35,7 +35,7 @@ import {
 /**
  * Late-bound handle to the composed registry: `run_code` is registered before
  * the registry can be handed to it, so the assembly binds this afterwards and
- * dispatch resolves at execution time. The FIRST binding wins (Rust
+ * dispatch resolves at execution time. The FIRST binding wins (legacy
  * `OnceLock<Weak<dyn ToolRegistry>>`).
  */
 export class RegistryHandle {

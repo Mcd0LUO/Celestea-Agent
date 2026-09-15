@@ -10,7 +10,7 @@
 import type { Context } from "./context.js";
 
 export interface Plugin {
-  /** Stable plugin name (Rust defaults to `type_name`; explicit here). */
+  /** Stable plugin name (the legacy engine defaults to `type_name`; explicit here). */
   name(): string;
   /** Provide services / listen on the context. */
   mount(ctx: Context): void;

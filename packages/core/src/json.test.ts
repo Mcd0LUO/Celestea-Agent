@@ -2,7 +2,7 @@
  * serde_json-compatible text + a guard on the fixtures the parity tests rely
  * on: no engine-written log contains a float literal, so the single difference
  * between JS numbers and serde_json's `f64`/integer split (a literal `1.0`
- * round-trips as `1.0` in Rust and `1` in JS) cannot affect any golden.
+ * round-trips as `1.0` in serde_json and `1` in JS) cannot affect any golden.
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";

@@ -5,7 +5,7 @@
  * `packages/workers` cannot reach the `Llm` / `ToolRegistry` / `AgentLoop`
  * implementations and cannot build a session log with a real projection. The
  * composition root can: it resolves the three driver seams from the Context and
- * hands them to the registry (`attach_drivers`, Rust W206/W232), injects the
+ * hands them to the registry (`attach_drivers`, W206/W232), injects the
  * worker session log factory, registers the HOST conversation so worker
  * receipts have an address, and returns the drain hook the turn runner uses.
  *

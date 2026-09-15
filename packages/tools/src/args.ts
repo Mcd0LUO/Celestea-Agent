@@ -3,7 +3,7 @@
  *
  * The registry validates `args` against the tool's JSON Schema before dispatch,
  * so these helpers exist for two reasons: direct `execute()` calls (tests,
- * embeddings) that bypass the pipeline, and Rust-parity error text
+ * embeddings) that bypass the pipeline, and parity error text
  * (`missing 'path' (expected string)`).
  */
 
@@ -16,7 +16,7 @@ export function objectArg(args: unknown): Record<string, unknown> {
   throw new ToolFailure("invalid_arg", "args must be an object");
 }
 
-/** Required string argument (Rust `arg_str`). */
+/** Required string argument (legacy `arg_str`). */
 export function stringArg(args: unknown, key: string): string {
   const value = objectArg(args)[key];
   if (typeof value !== "string") throw new ToolFailure("invalid_arg", `missing '${key}' (expected string)`);

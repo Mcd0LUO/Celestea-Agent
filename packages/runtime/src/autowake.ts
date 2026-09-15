@@ -1,5 +1,5 @@
 /**
- * Host auto-wake (W769) — the TS counterpart of the Rust `autowake_loop`
+ * Host auto-wake (W769) — the TS counterpart of the legacy `autowake_loop`
  * (`crates/../src/main.rs:1044-1187`, semantics in
  * `docs/DEVELOPMENT.md` §2.6).
  *
@@ -8,18 +8,18 @@
  * boundary — so without a loop the receipt lies in the queue until the user
  * happens to type something. Auto-wake is "delivery wakes the agent".
  *
- * The shape here is the Rust one, adapted to this repo's per-session
+ * The shape here is the legacy one, adapted to this repo's per-session
  * generations:
  *   - the loop PARKS on the mailbox notification ([SessionMailbox.onQueued]) and
  *     rebinds to whatever generation is in force on every pass, so a rebuilt
  *     instance (a config/grant epoch bump) is picked up without a stale
  *     subscription — `mailbox()` is a hook, never a captured object;
  *   - a BUSY host leaves the message QUEUED (it is not drained) and retries on
- *     the Rust cadence (250ms): nothing is lost and nothing is consumed twice;
+ *     the legacy cadence (250ms): nothing is lost and nothing is consumed twice;
  *   - on wake it drains the WHOLE queue FIFO into one input
  *     (`[from <label>] <content>`, blank-line separated) and asks the host to run
  *     ONE ordinary turn — the host's own turn path, so SSE/status/audit are the
- *     manual ones (Rust: "SSE 与手动 turn 完全一致");
+ *     manual ones (legacy note: "SSE 与手动 turn 完全一致");
  *   - hard errors are logged with a small backoff (500ms); the loop never
  *     throws, never panics and never spins hot;
  *   - `stop()` unparks immediately and is what a shutdown hook calls.
@@ -42,7 +42,7 @@ export const AUTOWAKE_ERROR_BACKOFF_MS = 500;
  * mailbox, and the loop only subscribes to it on its next pass), or a queue that
  * was refilled by something that is not this mailbox. The notification path is
  * the mechanism (it wakes in the same tick); this floor only bounds how long a
- * generation swap can delay a receipt — it is the TS stand-in for the Rust
+ * generation swap can delay a receipt — it is the TS stand-in for the legacy
  * loop's `gen_epoch` watch, at the same cadence as the busy-retry.
  */
 export const AUTOWAKE_POLL_MS = 250;
@@ -55,7 +55,7 @@ export function autowakeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /**
  * The turn input of one wake: every drained message in FIFO order, labelled with
- * its sender (Rust joins with a blank line).
+ * its sender (the legacy loop joins with a blank line).
  */
 export function autowakeInput(messages: readonly MailboxMessage[]): string {
   return messages.map((m) => (m.from_label === "" ? m.content : `[from ${m.from_label}] ${m.content}`)).join("\n\n");
@@ -185,7 +185,7 @@ export class AutowakeLoop {
       }
       this.notified = false;
       if (this.hooks.isBusy()) {
-        // Leave the message QUEUED (do not drain) and retry on the Rust cadence.
+        // Leave the message QUEUED (do not drain) and retry on the legacy cadence.
         await this.pause(this.busyRetryMs);
         continue;
       }
@@ -198,7 +198,7 @@ export class AutowakeLoop {
         this.stalled += 1;
         this.report(`turn error: ${error instanceof Error ? error.message : String(error)}`);
         await this.pause(this.errorBackoffMs);
-        continue; // hard error: the turn consumed the messages (Rust behaviour)
+        continue; // hard error: the turn consumed the messages (legacy behaviour)
       }
       if (started) {
         this.stalled = 0;
@@ -288,7 +288,7 @@ export class AutowakeLoop {
     });
   }
 
-  /** Log with the Rust loop's thrift: first attempt, then every 20th. */
+  /** Log with the legacy loop's thrift: first attempt, then every 20th. */
   private report(line: string): void {
     if (this.stalled > 1 && this.stalled % 20 !== 0) return;
     this.hooks.log?.(line);

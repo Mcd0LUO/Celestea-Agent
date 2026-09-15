@@ -15,7 +15,7 @@
  *   registry.ts          ToolRegistryImpl: the four-stage dispatch pipeline  (registry.rs)
  *   exposure.ts          exposedRegistry: the per-mode model-visible face  (W791 §5.2)
  *   schema.ts            JSON-Schema subset validator (pipeline stage 1)
- *   args.ts              argument readers with Rust-parity error text
+ *   args.ts              argument readers with parity error text
  *   desc.ts              the shared `desc` UI-label parameter of every tool   (W779)
  *   errors.ts            structured contract errors (`toolargs:` / `toolguard:`)
  *   tool-failure.ts      ToolFailure: the single rejection type of a Tool

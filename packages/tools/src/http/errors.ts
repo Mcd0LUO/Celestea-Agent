@@ -16,7 +16,7 @@ export const HTTP_ERROR_PREFIX = "http_request";
 const DNS_CODES = new Set(["ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NODATA"]);
 const CONNECT_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "EPIPE", "ETIMEDOUT"]);
 
-/** `http_request: code=<code> msg=<message>` (Rust `contract_err` shape). */
+/** `http_request: code=<code> msg=<message>` (legacy `contract_err` shape). */
 export function httpFailure(code: string, message: string): ToolFailure {
   return new ToolFailure(code, `${HTTP_ERROR_PREFIX}: code=${code} msg=${message}`);
 }

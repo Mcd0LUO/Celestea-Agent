@@ -34,7 +34,7 @@ describe.skipIf(!hasFixtures)("golden fixtures", () => {
     expect(roles.has("normal-multi-turn")).toBe(true);
   });
 
-  it("reproduces the Rust messages projection exactly for every session", () => {
+  it("reproduces the frozen messages projection exactly for every session", () => {
     for (const s of manifest!.sessions) {
       const dir = fixturePath("sessions", s.slug);
       const parsed = parseSessionJsonl(readFileSync(join(dir, "cli-main.jsonl"), "utf8"));

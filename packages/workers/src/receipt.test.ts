@@ -168,7 +168,7 @@ describe("driver receipt loop", () => {
 
   it("fails the row when the receipt report cannot be written", async () => {
     // The results dir sits under a regular FILE, so no deliverable can exist:
-    // W736 settles the row as FAILED (stricter than Rust, which only warns).
+    // W736 settles the row as FAILED (stricter than the legacy implementation, which only warns).
     const file = join(mkdtempSync(join(tmpdir(), "celestea-bad-results-")), "not-a-dir");
     writeFileSync(file, "x", "utf8");
     const registry = new WorkerRegistry({

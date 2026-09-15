@@ -2,7 +2,7 @@
  * `fnTool` — a `Tool` whose behaviour is a plain async closure.
  *
  * Keeps each builtin definition terse while satisfying the `Tool` seam exactly
- * (Rust `fn_tool` in `crates/tools/src/builtin.rs`). Tools that need the full
+ * (legacy `fn_tool` in `crates/tools/src/builtin.rs`). Tools that need the full
  * `ToolInput` (call id) or author their own `render` build the object directly.
  */
 

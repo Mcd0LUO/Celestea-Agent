@@ -2,7 +2,7 @@
  * Markdown / console rendering of the P5 double-run report.
  *
  * The markdown is the deliverable of the replay: it states, per finding, WHICH
- * evidence class backs the claim (byte-exact / Rust golden / spec-derived /
+ * evidence class backs the claim (byte-exact / frozen golden / spec-derived /
  * self-check) so a reader can tell a proven byte-level match from a
  * self-consistency check, and it lists the P6 gaps next to the verdict.
  */
@@ -12,7 +12,7 @@ import type { ReplayE2EReport } from "./e2e-replay.js";
 
 const KIND_LABEL: Record<Finding["kind"], string> = {
   "byte-exact": "逐字节",
-  golden: "Rust 黄金",
+  golden: "冻结黄金",
   "spec-derived": "独立重推导",
   "self-check": "自洽校验",
   info: "信息",
@@ -31,7 +31,7 @@ function verdictTable(report: ReplayE2EReport): string[] {
     "|---|---|",
     `| 回放会话数 | ${s.sessions} |`,
     `| 比对项（findings） | ${s.findings} |`,
-    `| 一致 | ${s.matched}（其中逐字节 ${s.byteExact} / Rust 黄金 ${s.golden}） |`,
+    `| 一致 | ${s.matched}（其中逐字节 ${s.byteExact} / 冻结黄金 ${s.golden}） |`,
     `| **差异** | **${s.diffed}** |`,
     `| 跳过（结构性说明） | ${s.skipped} |`,
     `| harness 错误 | ${s.errors} |`,
@@ -88,7 +88,7 @@ export function renderReplayMarkdown(report: ReplayE2EReport): string {
   lines.push("## 会话总览", "");
   lines.push(...sessionTable(report));
   lines.push(...findingsTable("已逐字节一致项", report.findings, (f) => f.verdict === "match" && f.kind === "byte-exact"));
-  lines.push(...findingsTable("Rust 黄金一致项", report.findings, (f) => f.verdict === "match" && f.kind === "golden"));
+  lines.push(...findingsTable("冻结黄金一致项", report.findings, (f) => f.verdict === "match" && f.kind === "golden"));
   lines.push(...findingsTable("独立重推导 / 自洽校验一致项", report.findings, (f) => f.verdict === "match" && (f.kind === "spec-derived" || f.kind === "self-check")));
   lines.push(...diffSection(report));
   lines.push("## P6 前还差什么", "");

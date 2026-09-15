@@ -6,7 +6,7 @@
  * writes a structured diff report to reports/.
  *
  * Compared:
- *   A. Studio messages projection  vs GET /api/sessions/{id}/messages (GOLDEN, from Rust)
+ *   A. Studio messages projection  vs GET /api/sessions/{id}/messages (GOLDEN, from the frozen legacy capture)
  *   B. engine derive_messages      vs the TS-derived expectation (self-consistency; P1 makes it golden)
  *   C. SSE transcript              vs the stored derivation (determinism)
  *   D. providers public_view       vs the api_key-free contract
@@ -258,7 +258,7 @@ function renderMarkdown(r: ReportShape): string {
   lines.push("");
   lines.push("## What is (and is not) golden at P0");
   lines.push("");
-  lines.push("- **Golden (from the running Rust implementation)**: the Studio `messages` projection via `GET /api/sessions/{id}/messages`.");
+  lines.push("- **Golden (from the frozen legacy capture)**: the Studio `messages` projection via `GET /api/sessions/{id}/messages`.");
   lines.push("- **Self-check only**: engine `derive_messages` and the SSE transcript — the engine exposes no HTTP surface for them, so the TS reference implementation is compared against its own stored derivation. P1 turns both into golden comparisons.");
   lines.push("- A non-empty diff at this stage is expected to be reported, not hidden: `pnpm replay:compare --strict` fails the run when the golden comparison diverges.");
   lines.push("");

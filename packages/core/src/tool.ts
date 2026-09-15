@@ -8,7 +8,7 @@
  * `ToolDecision` keeps the P0 TS shape (`{kind:"allow"}` / `{kind:"deny",reason}`
  * / `{kind:"ask",reason}`) declared in `./types.ts` — it is the contract the
  * tools package and the API surface already use, and it is the same three
- * variants as Rust's enum.
+ * variants as the engine's enum.
  */
 
 import type { ToolDecision, ToolSpec } from "./types.js";
@@ -49,7 +49,7 @@ export interface Tool {
 
 export interface ToolGuard {
   /**
-   * Rust `ToolGuard::check`. Note the Rust guard chain collects the FIRST
+   * `ToolGuard::check`. Note the guard chain collects the FIRST
    * non-Allow verdict, so a later Allow never un-denies an earlier Deny.
    */
   check(input: ToolInput): Promise<ToolDecision>;
@@ -60,7 +60,7 @@ export interface ToolRegistry {
   addGuard(guard: ToolGuard): void;
   get(name: string): Tool | undefined;
   /**
-   * The model-facing specs. Sorted by name, exactly like Rust
+   * The model-facing specs. Sorted by name, exactly like
    * `ToolRegistry::schemas` (crates/tools/src/registry.rs) — a deterministic
    * order keeps the prompt prefix stable across registrations.
    */

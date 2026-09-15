@@ -4,7 +4,7 @@
  * The tool always follows redirects itself instead of letting the transport do
  * it, for one security reason: every hop is re-authorized against the SSRF
  * policy, so a permitted host cannot bounce the request into a denied network.
- * 301/302/303 degrade to `GET` without a body (Rust parity); the chain is
+ * 301/302/303 degrade to `GET` without a body (parity); the chain is
  * capped at [MAX_REDIRECT_HOPS], and a non-http(s) hop target is rejected.
  *
  * **Authorize then PIN (W738 P1)**: the check and the connect are one step. The

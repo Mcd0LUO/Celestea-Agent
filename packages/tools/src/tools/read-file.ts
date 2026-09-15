@@ -1,6 +1,6 @@
 /**
  * `read_file` — read a UTF-8 text file and return its contents as a string
- * (Rust `builtin.rs::read_file_spec`). Truncated reads and binary rejects are
+ * (legacy `builtin.rs::read_file_spec`). Truncated reads and binary rejects are
  * reported without changing the canonical value shape: the value stays the
  * text, the truncation travels in the authored `render`.
  */

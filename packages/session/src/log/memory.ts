@@ -23,7 +23,7 @@ export class InMemorySessionLog implements SessionLog {
     this.recorded.push(event);
   }
 
-  /** A copy of the recorded events (Rust `events()` clones the Vec). */
+  /** A copy of the recorded events (`events()` clones the Vec). */
   events(): SessionEvent[] {
     return [...this.recorded];
   }
@@ -32,7 +32,7 @@ export class InMemorySessionLog implements SessionLog {
     return deriveMessagesFrom(this.recorded);
   }
 
-  /** Drop every event; the id counter deliberately survives (Rust `clear`). */
+  /** Drop every event; the id counter deliberately survives (`clear`). */
   clear(): void {
     this.recorded = [];
   }

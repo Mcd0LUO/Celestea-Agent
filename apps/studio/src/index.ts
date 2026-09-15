@@ -4,7 +4,7 @@
  * Module map:
  *   app.ts                  createStudioApp: compose + 39 routes + static/SPA
  *   routes.ts               the frozen contract route table (id -> method+path)
- *   config.ts               host paths + the constants Rust hardcodes
+ *   config.ts               host paths + the constants the legacy backend hardcoded
  *   runtime-adapter.ts      the ONE engine seam (RuntimeAdapter interface)
  *   fake-runtime-adapter.ts scripted P4 stand-in for the engine (tests)
  *   runtime/                the REAL engine (packages/runtime + offline LLM seam)

@@ -48,11 +48,11 @@ export interface ReplayE2EReport {
 
 /** What is NOT yet golden after P5 (each item names the missing capture). */
 export const P6_GAPS: readonly string[] = [
-  "compact 后日志：TS 侧与「独立重推导（spec-derived）」逐字节一致，但 Rust 实机 compact 产物尚未捕获 —— P6 需在 Rust 侧用打桩上游（非流式摘要）跑一次 compact，导出 compact-expected.jsonl 作为真黄金。",
-  "SSE 序列：逐帧对比的黄金是 TS 自推导 transcript（P0 导出器生成），fixtures/sse/live-capture.raw.txt 为 0 字节（P0 禁止 POST /api/turn）—— P6 需驱动一次 Rust 真实 turn 抓取 live SSE（8 事件 + lagged 降级），并把 JSONL transcript 换成 Rust 原生产物。",
+  "compact 后日志：TS 侧与「独立重推导（spec-derived）」逐字节一致，但实机 compact 产物尚未捕获 —— P6 需用打桩上游（非流式摘要）跑一次 compact，导出 compact-expected.jsonl 作为真黄金。",
+  "SSE 序列：逐帧对比的黄金是 TS 自推导 transcript（P0 导出器生成），fixtures/sse/live-capture.raw.txt 为 0 字节（P0 禁止 POST /api/turn）—— P6 需驱动一次真实 turn 抓取 live SSE（8 事件 + lagged 降级），并把 JSONL transcript 换成实机原生产物。",
   "LLM 是离线确定性 mock：usage / cache_hit_ratio / context_usage 的数值来自 mock 的 usage 帧，未经真实 provider 的 SSE/usage 解析链路 —— P6 需接 packages/llm 的 mock-upstream（本地假上游，仍禁真网）验证解析与状态线口径。",
-  "live/*.json（Rust 实机只读快照）尚未纳入 e2e 逐字段对拍（本阶段只验形状与口径）—— P6 把 status/config/tools/health 快照纳入逐字段对比。",
-  "worker 编排：spawn/send/status 走真实 registry 且 driven=true，但表是内存实现（tsvPath=null，不写共享 registry.tsv），receipt/report 文件协议未对拍 —— P6 与 Rust 的 registry.tsv / WORKER_<wid>_DONE 回执对拍。",
+  "live/*.json（实机只读快照）尚未纳入 e2e 逐字段对拍（本阶段只验形状与口径）—— P6 把 status/config/tools/health 快照纳入逐字段对比。",
+  "worker 编排：spawn/send/status 走真实 registry 且 driven=true，但表是内存实现（tsvPath=null，不写共享 registry.tsv），receipt/report 文件协议未对拍 —— P6 与实机的 registry.tsv / WORKER_<wid>_DONE 回执对拍。",
   "compact 摘要正文由 mock 生成，只做结构性校验（头部轮、保留轮、重编号、备份）—— P6 接入真实/打桩摘要后再逐字节对拍摘要正文。",
   "大 fixture 的 SSE 采用分批推送（每批 < 总线容量 512），未覆盖容量溢出后的 lagged 降级 —— 该路径由 apps/studio/src/sse.test.ts 覆盖，P6 需在 e2e 中补一条真机溢出用例。",
 ];

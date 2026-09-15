@@ -3,7 +3,7 @@
  *
  * Everything here is a *host* decision: where the data files live, which
  * directory the frontend build is served from, and the compile-time constants
- * the Rust reference hardcodes (`DEFAULT_BIND`, `STATIC_ROOT`, `FS_ROOTS`).
+ * the legacy backend hardcoded (`DEFAULT_BIND`, `STATIC_ROOT`, `FS_ROOTS`).
  * No engine semantics live here — those belong to the injected RuntimeAdapter.
  */
 

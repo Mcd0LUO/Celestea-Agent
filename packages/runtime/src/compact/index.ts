@@ -1,5 +1,5 @@
 /**
- * `compact` — context compaction (Rust `celestea_studio/src/compact.rs`).
+ * `compact` — context compaction (`celestea_studio/src/compact.rs`).
  *
  * W259 semantics: only COMPLETE turns count, the newest K survive renumbered,
  * and the pre-compaction log is always recoverable from the single-copy

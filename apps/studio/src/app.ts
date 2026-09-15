@@ -219,7 +219,7 @@ function assertCoverage(routes: readonly RegisteredRoute[], ids: readonly string
 
 /**
  * Hand the engine the BASE system prompt the HOST assembles (prompt registry +
- * settings override). Rust does this inside `build_gen`; here the engine is
+ * settings override). The retired backend did this inside `build_gen`; here the engine is
  * primed once at startup and the next composed generation picks it up.
  *
  * W729: this primes the DEFAULT (detached) generation only. A named session's

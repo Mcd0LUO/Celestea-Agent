@@ -1,5 +1,5 @@
 /**
- * The three worker-orchestration tools (Rust W185, `crates/workers/src/tools.rs`):
+ * The three worker-orchestration tools (W185, `crates/workers/src/tools.rs`):
  * `spawn_worker` / `session_send_message` / `worker_status`.
  *
  * Contract discipline:

@@ -25,7 +25,7 @@ describe("assembleProgram (python)", () => {
     expect(program).toContain("__final__");
   });
 
-  it("indents the whole body one level, keeping blank lines (Rust parity)", () => {
+  it("indents the whole body one level, keeping blank lines (parity)", () => {
     const program = assembleProgram("    a = 1\n\n    return a", "python");
     expect(program).toContain("async def main():\n        a = 1\n\n        return a\n");
   });

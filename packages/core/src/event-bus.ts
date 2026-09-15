@@ -10,15 +10,16 @@
  *                        handed to the next one.
  *
  * The three modes live in separate maps, so a listener registered in one mode
- * never interferes with another. In Rust the event type is a TypeId; here it is
- * an explicit token — a well-known string, a symbol, or a class constructor
- * used by identity (see `context.ts:ServiceToken`).
+ * never interferes with another. The event type is an explicit token — a
+ * well-known string, a symbol, or a class constructor used by identity (see
+ * `context.ts:ServiceToken`).
  *
  * `undefined` is `None`: a bail listener that returns `undefined` passes, and a
  * `null`/`false`/`0` answer short-circuits (unlike a truthiness check).
  * `runWaterfall` cannot verify at runtime that every listener shares one value
- * type (Rust panics on a failed downcast); the TS generic makes one value type
- * per event type a compile-time contract — pass a `transform` that keeps it.
+ * type (the legacy engine panics on a failed downcast); the TS generic makes
+ * one value type per event type a compile-time contract — pass a `transform`
+ * that keeps it.
  */
 
 import type { ServiceToken } from "./context.js";

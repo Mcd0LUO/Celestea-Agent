@@ -1,7 +1,7 @@
 /**
- * derive_messages parity suite — every case is a port of a Rust unit test in
+ * derive_messages parity suite — every case is a port of a legacy unit test in
  * `crates/session/src/log.rs` (test names kept recognisable), plus two cases
- * verified against the real engine through the read-only parity probe:
+ * verified against the real engine through a one-off read-only probe:
  *   - the W267 synthetic-result text;
  *   - the `balance_tool_calls` cursor quirk (`i = j + inserted + 1`).
  */
@@ -58,7 +58,7 @@ describe("deriveMessagesFrom", () => {
     expect(messageText(msgs[2]!)).toBe("after");
   });
 
-  it("projects a full turn exactly like the Rust roundtrip test", () => {
+  it("projects a full turn exactly like the legacy roundtrip test", () => {
     const msgs = deriveMessagesFrom([
       turnStart("t1"),
       user("hello"),
@@ -115,7 +115,7 @@ describe("deriveMessagesFrom", () => {
   });
 
   /**
-   * Rust-verified quirk (probe output, /tmp/quirk.jsonl): when a call message is
+   * Engine-verified quirk (probe output, /tmp/quirk.jsonl): when a call message is
    * fully answered, the cursor jumps to `j + inserted + 1`, so the message right
    * after the results is never balance-checked. A trailing unbalanced call in
    * exactly that position stays unbalanced — ported unchanged for parity.
@@ -130,7 +130,7 @@ describe("deriveMessagesFrom", () => {
 
   it("balances the same trailing call once a marker separates it", () => {
     // Same log, but a turn boundary sits between the answered call and the
-    // dangling one: the cursor no longer skips it (Rust probe /tmp/nonquirk.jsonl).
+    // dangling one: the cursor no longer skips it (probe output /tmp/nonquirk.jsonl).
     const msgs = deriveMessagesFrom([
       user("go"),
       call("c1", "run_shell", { command: "echo hi" }),
@@ -152,7 +152,7 @@ describe("projectEvent / toolResultText", () => {
     expect(toolResultText("boom", { ignored: true })).toBe("Error: boom");
   });
 
-  it("falls back to the JSON value when the error is empty or absent (Rust test)", () => {
+  it("falls back to the JSON value when the error is empty or absent (legacy test)", () => {
     expect(toolResultText("", "fallback")).toBe('"fallback"');
     expect(toolResultText(null, { a: 1 })).toBe('{"a":1}');
     expect(toolResultText(null, null)).toBe("null");
@@ -166,7 +166,7 @@ describe("projectEvent / toolResultText", () => {
     expect(projectEvent(result("rc1:c1", "x", null, "rc1"))).toBeNull();
   });
 
-  it("throws when a ToolCall reaches the projector (Rust: unreachable!)", () => {
+  it("throws when a ToolCall reaches the projector (legacy: unreachable!)", () => {
     expect(() => projectEvent(call("c1"))).toThrow(/must be accumulated/);
   });
 });

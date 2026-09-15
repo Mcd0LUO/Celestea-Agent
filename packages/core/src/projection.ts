@@ -9,7 +9,7 @@
  * an "alternative implementation". `@celestea/session` re-exports these
  * functions; backends built with [projectingSessionLog] get them for free.
  *
- * Rules (all of them are contract, each has a Rust unit test):
+ * Rules (all of them are contract, each pinned by a unit test):
  *   - `TurnStart` / `TurnEnd` are structural markers, never projected;
  *   - `ThinkingDelta` is replay-only decoration (W252), never projected;
  *   - `ToolCall` rows are ACCUMULATED, not projected: consecutive calls merge
@@ -36,7 +36,7 @@ import type { SessionEvent } from "./types.js";
 /** W267 synthetic result text — byte-for-byte the engine's string (b046564). */
 export const CANCELLED_TOOL_CALL_TEXT = "Error: tool call was cancelled before execution (no result recorded)";
 
-/** The model-visible history of a session log (Rust `derive_messages_from`). */
+/** The model-visible history of a session log (the engine's `derive_messages_from`). */
 export function deriveMessagesFrom(events: readonly SessionEvent[]): Message[] {
   const messages: Message[] = [];
   const pending: ToolCall[] = [];
@@ -62,7 +62,7 @@ export function deriveMessagesFrom(events: readonly SessionEvent[]): Message[] {
 
 /**
  * Flush accumulated tool calls as ONE assistant message (`flush_tool_calls`).
- * It drains the accumulator, mirroring Rust's `std::mem::take`.
+ * It drains the accumulator, mirroring the engine's `std::mem::take`.
  */
 export function flushToolCalls(messages: Message[], pending: ToolCall[]): void {
   if (pending.length === 0) return;
@@ -99,7 +99,7 @@ export function projectEvent(event: SessionEvent): Message | null {
     case "user_answer":
       return null;
     case "tool_call":
-      // Rust: unreachable!("ToolCall must be accumulated by derive_messages…")
+      // Legacy: unreachable!("ToolCall must be accumulated by derive_messages…")
       throw new Error("ToolCall must be accumulated by derive_messages, not projected");
   }
 }

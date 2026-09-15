@@ -28,7 +28,7 @@ export interface ResolveResult {
 export interface SessionRegistryOptions {
   /** Log implementation for new sessions (default: recording-only, see log.ts). */
   logFactory?: SessionLogFactory;
-  /** Id prefix (`session-` in Rust; tests use it to keep ids readable). */
+  /** Id prefix (`session-`; tests use it to keep ids readable). */
   prefix?: string;
 }
 

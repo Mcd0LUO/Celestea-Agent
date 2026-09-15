@@ -1,6 +1,6 @@
 /**
  * WorkerRegistry — the in-memory + `registry.tsv` state of every worker this
- * process owns, plus the seams that make a worker drivable (Rust W185/W232/W248).
+ * process owns, plus the seams that make a worker drivable (W185/W232/W248).
  *
  * Shape of the state:
  *   - `entries`  Memoized view of the tsv table. Rows written by THIS process
@@ -215,7 +215,7 @@ export class WorkerRegistry {
     return this.stops.has(sid);
   }
 
-  /** Rust `release_session` (W224 F2): drop the session, its queue and its driver. */
+  /** `release_session` (W224 F2): drop the session, its queue and its driver. */
   releaseSession(sid: string): void {
     this.sessionRegistry.remove(sid);
     this.mailboxRegistry.purge(sid);
@@ -399,7 +399,7 @@ export class WorkerRegistry {
   // --- background drivers ------------------------------------------------
 
   /**
-   * Start the mailbox event loop for one worker (prune first, Rust F1). Returns
+   * Start the mailbox event loop for one worker (prune first, F1). Returns
    * false when a seam is missing, the session is unknown, or after release —
    * a spawn then stays "registered but not driven".
    */
@@ -600,7 +600,7 @@ export class WorkerRegistry {
 /**
  * W736: the receipt verdict of one brief turn. A turn error fails the worker; so
  * does a receipt whose report could not be written, because then no deliverable
- * exists for the coordinator to read (stricter than Rust, which only warns).
+ * exists for the coordinator to read (stricter than the legacy implementation, which only warns).
  */
 function verdictOf(failure: string | null, result: ReceiptResult | null): WorkerVerdict {
   if (failure !== null) return { ok: false, reason: failure };

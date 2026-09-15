@@ -3,7 +3,7 @@
  *
  * The composition root mounts this plugin to provide a [DefaultAgentLoop] under
  * the well-known `AGENT_LOOP_SERVICE` token, exactly like `celestea-runtime`
- * provides `AgentLoopService(DefaultAgentLoop::…)` in Rust. The loop itself
+ * provided `AgentLoopService(DefaultAgentLoop::…)`. The loop itself
  * still resolves `Llm` / `SessionLog` / `ToolRegistry` from the Context at turn
  * start, so a plugin never `new`s another package's implementation.
  *
