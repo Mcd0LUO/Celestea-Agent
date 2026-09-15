@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-09-09T17:29:21.881Z",
+  "generatedAt": "2026-09-15T04:19:29.516Z",
   "studio": "http://127.0.0.1:3777",
   "policy": "read-only: GET probes + error branches proven mutation-free in the Rust source",
   "counts": {
-    "checks": 25,
-    "passed": 25,
+    "checks": 27,
+    "passed": 27,
     "failed": 0,
-    "endpointsSampled": 20,
+    "endpointsSampled": 22,
     "sseEvents": 8,
     "tools": 10
   },
@@ -16,32 +16,32 @@
       "endpoint": "contracts/endpoints.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "43 endpoints (expected 43)"
+      "detail": "47 endpoints (contract declares 47)"
     },
     {
       "endpoint": "contracts/sse-events.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "8 SSE events (expected 8)"
+      "detail": "8 SSE events (contract declares 8)"
     },
     {
       "endpoint": "contracts/tools.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "10 tool specs (expected 10)"
+      "detail": "10 tool specs (contract declares 10)"
     },
     {
       "endpoint": "GET /api/health",
       "kind": "response-shape",
       "status": "pass",
-      "detail": "HTTP 200; 5 key(s)",
+      "detail": "HTTP 200; 6 key(s)",
       "observedStatus": 200
     },
     {
       "endpoint": "GET /api/status",
       "kind": "response-shape",
       "status": "pass",
-      "detail": "HTTP 200; 7 key(s)",
+      "detail": "HTTP 200; 10 key(s); additive (not in contract doc): busy, grants_active",
       "observedStatus": 200
     },
     {
@@ -104,8 +104,22 @@
       "endpoint": "GET /api/worker/status",
       "kind": "response-shape",
       "status": "pass",
-      "detail": "HTTP 200; 5 key(s); optional absent: error, wid",
+      "detail": "HTTP 200; 6 key(s); optional absent: error, wid; additive (not in contract doc): watchdogs",
       "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /login",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 200; HTML login page (text/html) — no JSON keys to compare",
+      "observedStatus": 200
+    },
+    {
+      "endpoint": "GET /auth/check",
+      "kind": "response-shape",
+      "status": "pass",
+      "detail": "HTTP 401; cookie-gated, so the documented 401 \"unauthorized\" branch is the correct answer for an unauthenticated probe",
+      "observedStatus": 401
     },
     {
       "endpoint": "POST /api/turn",
