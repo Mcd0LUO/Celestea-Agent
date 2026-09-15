@@ -24,6 +24,27 @@ export interface NewsessionHost {
  *  创建成功 → 自动激活（POST /api/sessions/{id}/activate）→ 树刷新 + 活跃高亮
  *  + 聊天区切换到新会话（空历史 + 「以下为本次会话」分隔线）。
  *  任一步失败给出具体提示（W243 端点未就绪时优雅降级）。 */
+/** 单行文本输入框的 type 白名单（Enter 提交只在这些控件上生效）。 */
+const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
+  'text', 'search', 'url', 'tel', 'email', 'password', 'number',
+]);
+
+/**
+ * Enter 提交判据（W789）：「弹窗内的**单行文本输入框** + 纯 Enter」。
+ *   · Shift+Enter 不提交（保留「不误触」的语义）；
+ *   · <select> 展开发挥选条目作用的 Enter、按钮上的 Enter 都不提交 —— 不做元素判型
+ *     的话，键盘用户在「工作区 / 模型 / 工作方式」下拉里按 Enter 会被当成「创建」；
+ *   · <textarea> 不算（多行输入框里 Enter 的默认语义是换行）。
+ * 纯函数：只读事件字段，不碰 DOM，可在 node 里直接断言。
+ */
+export function isSubmitEnter(e: { key: string; shiftKey: boolean; target: unknown }): boolean {
+  if (e.key !== 'Enter' || e.shiftKey) return false;
+  const t = e.target as { tagName?: unknown; type?: unknown } | null;
+  if (!t || typeof t.tagName !== 'string' || t.tagName.toUpperCase() !== 'INPUT') return false;
+  const raw = typeof t.type === 'string' ? t.type.toLowerCase() : 'text';
+  return TEXT_INPUT_TYPES.has(raw === '' ? 'text' : raw);
+}
+
 export function newSessionDialog(host: NewsessionHost, presetWs?: string): void {
   const scrim = el('div', 'modal-scrim');
   const card = el('div', 'modal-card');
@@ -232,6 +253,13 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
         create.disabled = false;
         create.textContent = '创建';
       });
+  });
+  // W789：弹窗内单行文本输入框里按 Enter = 点「创建」。不复制第二份提交逻辑 ——
+  // 直接触发 create 的 click（标题校验 / 可选字段 4xx 降级重试 / 创建中禁用都复用它）。
+  card.addEventListener('keydown', (e) => {
+    if (!isSubmitEnter(e)) return;
+    e.preventDefault();
+    if (!create.disabled) create.click();
   });
   actions.appendChild(cancel);
   actions.appendChild(create);

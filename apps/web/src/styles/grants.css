@@ -93,6 +93,13 @@
  *      同时存在时高度被拉伸），必须显式 auto 掉；
  *   3) 高度只受 JS 写入的 max-height 约束（= 盾牌上方可用空间 - 8px 间距），
  *      内部滚动交给 .sl-popup-body（不再用旧的 62vh 硬上限）。
+ *
+ * W789 不变量（实测根因，改动 position.ts 前务必读）：
+ *   面板**打开期间**任何时刻都不得把内联 max-height 清空/写回空串 —— 这一层是
+ *   .sl-popup-body 唯一的可滚动高度来源；清空的瞬间 body 的溢出消失，浏览器会把
+ *   body.scrollTop 夹回 0，而 positionPanel 又挂在 scroll 捕获监听上，
+ *   于是「滚一格 → 弹回顶部」= 用户报的「面板不可翻页/滚动」。
+ *   自然高度改用 panelNaturalHeight() 从受限布局推算（见 ../ui/grants/geom.ts）。
  */
 .sl-popup.grant-popup {
   position: fixed;

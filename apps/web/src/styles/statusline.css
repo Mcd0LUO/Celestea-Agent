@@ -21,7 +21,10 @@
   display: flex; align-items: center; gap: 8px;
   min-height: 16px;
 }
-.sl-row-main { flex-wrap: wrap; }
+/* W789：运行态 #slStop / #slHint 出现时**绝不换行** —— 换行会让 statusline 多出一行、
+   把消息区（flex:1）顶掉一截，用户看到的就是「发送后下方窗口浮动」。
+   不靠 overflow 截断：需要压缩的项自己带 ellipsis（.sl-model / .sl-hint）。 */
+.sl-row-main { flex-wrap: nowrap; min-width: 0; }
 .sl-row-sub { color: var(--c-text-3); }
 
 .sl-sep { color: var(--c-text-3); opacity: .6; }
@@ -45,7 +48,11 @@
 .sl-tps { font-variant-numeric: tabular-nums; }
 .sl-steps { font-variant-numeric: tabular-nums; }
 .sl-cache { font-variant-numeric: tabular-nums; }
-.sl-hint { color: var(--c-warn); font-size: 10.5px; }
+/* W789：提示是运行态才出现的「新栏」，必须可压缩（否则 nowrap 下会把右端盾牌/停止挤出去） */
+.sl-hint {
+  color: var(--c-warn); font-size: 10.5px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .sl-ring {
   display: inline-flex; align-items: center; justify-content: center;

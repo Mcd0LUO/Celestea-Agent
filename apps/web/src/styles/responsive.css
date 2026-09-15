@@ -157,9 +157,9 @@ button,
   .sl-row-sub { min-height: 16px; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
   .sl-model { max-width: 40vw; flex: 0 1 auto; } /* 长模型名压缩，不挤走右端入口 */
   .sl-effort { font-size: 11px; flex: 0 0 auto; }
-  /* 提示自占一行；空提示必须 display:none —— 否则 flex-basis:100% 会在 nowrap 行里
-     抢走模型按钮的宽度（实测：模型名被压到 44px 只剩「gpt-」） */
-  .sl-hint { flex: 1 1 100%; }
+  /* W789：提示改为与其余项同行、可压缩省略（原先 flex-basis:100% 抢整行，实测把模型名
+     压到 44px；且运行态出现提示会让行变高）。空提示仍必须 display:none。 */
+  .sl-hint { flex: 0 1 auto; min-width: 0; }
   .sl-hint:empty { display: none; }
   .sl-tps, .sl-cache, .sl-steps { white-space: nowrap; }
 
@@ -167,7 +167,7 @@ button,
   #inputbar { padding: 8px 10px calc(8px + var(--safe-b)); gap: 8px; }
   #input { font-size: 16px; max-height: 32dvh; }
   #btnSend, #btnCancel { min-width: 72px; padding: 0 12px; }
-  #btnMode { min-height: 34px; }
+  #btnMode { min-height: 34px; padding: 0 8px; } /* W789：与发送/取消同行，别抢输入框宽度 */
   .input-side { gap: 6px; }
 
   /* ---- 2.5 消息 / 工具卡：占满宽度、长内容自己滚、长路径省略 ---- */
