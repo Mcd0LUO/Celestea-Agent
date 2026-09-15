@@ -1,16 +1,10 @@
 // ============================================================================
-// ui/viewctx.ts — W514 多会话视图容器（单一职责）：
-//   每个会话（含 engine worker 会话）一个独立的滚动容器 .sess-pane，
-//   切换 = hidden 属性切换（零重渲染）：各自的流/工具卡/思考段/滚动位/
-//   输入草稿都留在自己的容器里，后台会话照常接收 SSE 增量但不影响当前视图。
-//
-//   本模块只负责「容器 + 激活 + 运行态 + 草稿 + 事件」，不渲染消息内容
-//   （消息渲染在 ui/messages.ts，历史在 ui/restore.ts）。chrome（状态栏 /
-//   statusline / 输入框 / 侧栏高亮 / rail）通过订阅 onPaneChange / onBusyChange
-//   被动同步，避免任何「切换时重建 DOM」。
-//
-//   优雅降级：后端未返回 session/kind/busy 时，只有一个 LOCAL 容器
-//   （id=''），行为与单会话现状一致——不空白、不报错。
+// ui/viewctx.ts — W514 多会话视图容器（单一职责）：每个会话（含 engine worker）
+//   一个独立的滚动容器 .sess-pane，切换 = hidden 属性切换（零重渲染）——各自的流/
+//   工具卡/思考段/滚动位/输入草稿都留在自己的容器里，后台会话照常收 SSE 增量。
+//   本模块只负责「容器 + 激活 + 运行态 + 草稿 + 事件」，不渲染消息内容（在
+//   ui/messages.ts / ui/restore.ts）；chrome 通过 onPaneChange / onBusyChange 被动同步。
+//   优雅降级：后端未给 session/kind/busy 时只有一个 LOCAL 容器（id=''），行为同现状。
 // ============================================================================
 import { S } from '../state';
 import { el } from '../utils/dom';
@@ -30,17 +24,15 @@ export interface SessionPane {
   title: string;
   model?: string;
   workspace?: string;
-  /** 滚动容器（.sess-pane；hidden 切换，DOM 永不重建） */
+    /** 滚动容器（.sess-pane；hidden 切换，DOM 永不重建） + 容器内空态提示 */
   el: HTMLElement;
-  /** 空态提示（容器内首屏元素） */
   hint: HTMLElement;
   /** 当前流式文本段（null = 无进行中的段） */
   assistant: AssistantView | null;
   /** 当前思考段（每轮结束清除，DOM 保留） */
   thinkSeg: ThinkSeg | null;
-  /** 同轮最近文本段（thinking 重排锚点） */
+  /** 同轮最近文本段（thinking 重排锚点） + 文本段节拍渲染定时器（每容器独立） */
   lastTextCol: HTMLElement | null;
-  /** 文本段节拍渲染定时器（每容器独立） */
   renderTimer: number | null;
   renderDeadline: number;
   /** 工具卡索引（tool_call_id → 卡片） */
@@ -57,22 +49,18 @@ export interface SessionPane {
   draft: string;
   /** 滚动位（隐藏时保存，显示时恢复） */
   scrollTop: number;
-  /** 隐藏时是否贴底（贴底者切回后仍贴底） */
+  /** 隐藏时是否贴底 + 是否已从后端恢复过历史 + 历史恢复的竞态序号（晚到结果一律丢弃） */
   stickBottom: boolean;
-  /** 是否已从后端恢复过历史 */
   restored: boolean;
-  /** 历史恢复的竞态序号（晚到的旧请求结果一律丢弃） */
   restoreSeq: number;
   /** live 增量与历史尾部的衔接去重状态 */
   dedup: DedupState;
   /** 历史恢复的工具步数/索引 */
   histToolStep: number;
   restoreOps: Map<string, ToolCardRef>;
-  /** GET /api/status?session= 的最近快照（切回即时显示） */
+  /** GET /api/status?session= 的最近快照（切回即时显示） + 插话轻提示 + LRU 时间戳 */
   status: StatusSnapshot | null;
-  /** 运行中插话的轻提示元素 */
   interjectNote: HTMLElement | null;
-  /** LRU 时间戳 */
   usedAt: number;
 }
 
@@ -193,6 +181,25 @@ function evictIfNeeded(keep: SessionPane): void {
 
 // ---- 激活 / 切换 ----------------------------------------------------------------
 
+/**
+ * W792：**丢弃**一个会话的容器（该会话已被删除/归档 ⇒ DOM、草稿、滚动位、工具卡全部
+ * 作废，不能继续挂在界面上冒充「还在的会话」）。它就是当前聚焦容器时，焦点回到**无语义
+ * 的 LOCAL 空态** —— 绝不自动切到「最近会话」（那等于替用户做选择，也掩盖了「你刚删掉
+ * 的正是当前会话」）。返回 true = 确实丢弃了容器。
+ */
+export function dropPane(id: string): boolean {
+  const pane = panes.get(id);
+  if (!pane || id === LOCAL_ID) return false;
+  if (pane === active) activatePane(LOCAL_ID);
+  pane.el.remove();
+  panes.delete(id);
+  busyById.delete(id);
+  emitBusy(id, false); // 告知订阅者（状态点 / 会话条）：这条不再运行
+  return true;
+}
+
+// ---- 输入草稿 / 滚动位（宿主 DOM 上的一次读写，不持有状态） ----------------------
+
 function readInputValue(): string {
   const input = document.querySelector<HTMLTextAreaElement>('#input');
   return input ? input.value : '';
@@ -206,10 +213,7 @@ function writeInputValue(v: string): void {
   input.style.height = Math.min(input.scrollHeight, 240) + 'px';
 }
 
-/**
- * 是否「贴底」：仅当真的在底部（4px 容差）才标记为贴底 —— 切回时贴底者
- * 继续贴底（跟随最新），否则原样恢复用户自己的滚动位置（滚动位保留）。
- */
+/** 是否「贴底」（4px 容差）：贴底者切回后继续跟随最新，否则原样恢复滚动位。 */
 function atBottom(paneEl: HTMLElement): boolean {
   return paneEl.scrollTop + paneEl.clientHeight >= paneEl.scrollHeight - 4;
 }
@@ -229,11 +233,9 @@ export function isActivePane(pane: SessionPane): boolean {
 }
 
 /**
- * 激活（或新建）会话视图：
- *   1) 保存旧容器的滚动位与输入草稿（DOM 完全不动，仅写 hidden）；
- *   2) 显示目标容器（hidden 切换 = 零重渲染：流/工具卡/滚动位都在）；
- *   3) 恢复目标容器的滚动位与草稿；
- *   4) 广播 onPaneChange（rail / statusline / 状态栏 / 输入框 / 侧栏被动同步）。
+ * 激活（或新建）会话视图：① 存旧容器的滚动位与草稿（DOM 不动，只写 hidden）；
+ * ② 显示目标容器（零重渲染：流/工具卡/滚动位都在）；③ 恢复目标容器的滚动位与草稿；
+ * ④ 广播 onPaneChange（rail / statusline / 状态栏 / 输入框 / 侧栏被动同步）。
  */
 export function activatePane(id: string, kind?: string, title?: string): SessionPane {
   const pane = ensurePane(id, kind, title);
@@ -276,9 +278,9 @@ export function activatePane(id: string, kind?: string, title?: string): Session
 }
 
 /**
- * 把 LOCAL 容器「认领」为真实会话 id（启动恢复活跃会话时调用）：
- *   - 真实容器已存在 → 切到它并丢弃尚未使用的 LOCAL 容器；
- *   - 否则就地改名（容器对象不变 → rail 等 WeakMap 状态与已渲染 DOM 全部保留）。
+ * 把 LOCAL 容器「认领」为真实会话 id（启动恢复活跃会话时调用）：真实容器已存在 →
+ * 切到它并丢弃尚未使用的 LOCAL 容器；否则就地改名（容器对象不变 ⇒ rail 的 WeakMap
+ * 状态与已渲染 DOM 全部保留）。
  */
 export function adoptPane(id: string): SessionPane {
   if (id === LOCAL_ID) return activatePane(LOCAL_ID);
@@ -312,9 +314,8 @@ export function adoptPane(id: string): SessionPane {
 }
 
 /**
- * 旧后端兼容（W514）：SSE 首次带来 session id 时，把「已经有内容/正在跑」的
- * LOCAL 容器就地认领为该会话 —— 避免同一轮的增量被拆到两个容器里。
- * 无 LOCAL 活动 → 返回 null（调用方按 id 新建容器）。
+ * 旧后端兼容（W514）：SSE 首次带来 session id 时，把「已有内容/正在跑」的 LOCAL 容器
+ * 就地认领为该会话（避免同一轮的增量被拆到两个容器）；无 LOCAL 活动 → null。
  */
 export function adoptLocalIfUnbound(id: string): SessionPane | null {
   if (id === LOCAL_ID) return panes.get(LOCAL_ID) ?? null;
@@ -364,10 +365,7 @@ export function setPaneStreaming(pane: SessionPane, on: boolean): void {
   if (pane === active) S.streaming = on;
 }
 
-/**
- * 后端 /api/sessions 的 busy 字段（多会话状态显示）：
- * 只做「补充」——本地正在跑的会话不被远端旧值熄火。
- */
+/** 后端 /api/sessions 的 busy 字段：只做「补充」——本地在跑的会话不被远端旧值熄火。 */
 export function setRemoteBusy(id: string, busy: boolean): void {
   if (!busy) {
     const pane = panes.get(id);
