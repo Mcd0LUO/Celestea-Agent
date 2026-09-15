@@ -1,6 +1,6 @@
 # Contract probe evidence (live :3777, read-only)
 
-- generated: 2026-09-09T17:29:21.881Z
+- generated: 2026-09-15T04:19:29.516Z
 - target: http://127.0.0.1:3777
 - policy: read-only: GET probes + error branches proven mutation-free in the Rust source
 
@@ -8,10 +8,10 @@
 
 | metric | value |
 |---|---|
-| checks | 25 |
-| passed | 25 |
+| checks | 27 |
+| passed | 27 |
 | failed | 0 |
-| **endpoints sampled** | **20** |
+| **endpoints sampled** | **22** |
 | SSE event names frozen | 8 |
 | tool specs | 10 |
 | verdict | consistent |
@@ -20,11 +20,11 @@
 
 | endpoint | kind | status | observed | detail |
 |---|---|---|---|---|
-| contracts/endpoints.json | contract-count | pass | - | 39 endpoints (expected 39) |
-| contracts/sse-events.json | contract-count | pass | - | 8 SSE events (expected 8) |
-| contracts/tools.json | contract-count | pass | - | 10 tool specs (expected 10) |
-| GET /api/health | response-shape | pass | 200 | HTTP 200; 5 key(s) |
-| GET /api/status | response-shape | pass | 200 | HTTP 200; 7 key(s) |
+| contracts/endpoints.json | contract-count | pass | - | 47 endpoints (contract declares 47) |
+| contracts/sse-events.json | contract-count | pass | - | 8 SSE events (contract declares 8) |
+| contracts/tools.json | contract-count | pass | - | 10 tool specs (contract declares 10) |
+| GET /api/health | response-shape | pass | 200 | HTTP 200; 6 key(s) |
+| GET /api/status | response-shape | pass | 200 | HTTP 200; 10 key(s); additive (not in contract doc): busy, grants_active |
 | GET /api/tools | response-shape | pass | 200 | HTTP 200; 1 key(s) |
 | GET /api/config | response-shape | pass | 200 | HTTP 200; 10 key(s) |
 | GET /api/sessions | response-shape | pass | 200 | HTTP 200; 2 key(s) |
@@ -33,7 +33,9 @@
 | GET /api/fs/browse | response-shape | pass | 200 | HTTP 200; 4 key(s) |
 | GET /api/providers | response-shape | pass | 200 | HTTP 200; 2 key(s) |
 | GET /api/prompts | response-shape | pass | 200 | HTTP 200; 8 key(s) |
-| GET /api/worker/status | response-shape | pass | 200 | HTTP 200; 5 key(s); optional absent: error, wid |
+| GET /api/worker/status | response-shape | pass | 200 | HTTP 200; 6 key(s); optional absent: error, wid; additive (not in contract doc): watchdogs |
+| GET /login | response-shape | pass | 200 | HTTP 200; HTML login page (text/html) — no JSON keys to compare |
+| GET /auth/check | response-shape | pass | 401 | HTTP 401; cookie-gated, so the documented 401 "unauthorized" branch is the correct answer for an unauthenticated probe |
 | POST /api/turn | error-branch | pass | 400 | HTTP 400 + "input must not be empty" |
 | POST /api/cancel | error-branch | pass | 200 | HTTP 200 |
 | POST /api/workspaces | error-branch | pass | 400 | HTTP 400 + "path must not be empty" |

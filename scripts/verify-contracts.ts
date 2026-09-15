@@ -16,7 +16,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadEndpoints, loadSse, loadTools, type EndpointContract } from "@celestea/core";
 import { num, parseArgs, str } from "./lib/args.js";
-import { probe, probeHeaders } from "./lib/http.js";
+import { probe, probeHeaders, type ProbeResult } from "./lib/http.js";
 
 const args = parseArgs(process.argv.slice(2));
 const STUDIO = str(args, "studio", "http://127.0.0.1:3777");
@@ -39,6 +39,23 @@ function fail(endpoint: string, kind: Check["kind"], detail: string, observedSta
 function pass(endpoint: string, kind: Check["kind"], detail: string, observedStatus?: number, safeBecause?: string): void {
   checks.push({ endpoint, kind, status: "pass", detail, ...(observedStatus === undefined ? {} : { observedStatus }), ...(safeBecause === undefined ? {} : { safeBecause }) });
 }
+
+/**
+ * W767 added two TypeScript-only endpoints that are not plain JSON GETs, so a
+ * generic top-level-key comparison misreports both. Each gets its own honest
+ * assertion instead of a silent skip: /login is HTML, and /auth/check is
+ * cookie-gated — with no cookie the documented 401 branch IS the answer.
+ */
+const BESPOKE_GET: Record<string, (res: ProbeResult) => { ok: boolean; detail: string }> = {
+  get_login: (res) => ({
+    ok: res.status === 200 && (res.headers["content-type"] ?? "").includes("text/html"),
+    detail: `HTTP ${res.status}; HTML login page (${(res.headers["content-type"] ?? "no content-type").split(";")[0]}) — no JSON keys to compare`,
+  }),
+  get_auth_check: (res) => ({
+    ok: res.status === 401 && res.text.includes("unauthorized"),
+    detail: `HTTP ${res.status}; cookie-gated, so the documented 401 "unauthorized" branch is the correct answer for an unauthenticated probe`,
+  }),
+};
 
 /** Top-level keys of the live body, used for shape comparison. */
 function topKeys(body: unknown): string[] {
@@ -88,6 +105,13 @@ async function main(): Promise<void> {
   for (const e of probeable.filter((x) => x.method === "GET" && x.id !== "get_events")) {
     const probePath = concreteProbePath(e.path, sampleSessionId);
     const res = await probe(STUDIO, probePath, { timeoutMs: TIMEOUT });
+    const bespoke = BESPOKE_GET[e.id];
+    if (bespoke) {
+      const b = bespoke(res);
+      if (b.ok) pass(`${e.method} ${e.path}`, "response-shape", b.detail, res.status);
+      else fail(`${e.method} ${e.path}`, "response-shape", b.detail, res.status);
+      continue;
+    }
     if (res.status !== e.response.status) {
       fail(`${e.method} ${e.path}`, "response-shape", `expected HTTP ${e.response.status}, got ${res.status}`, res.status);
       continue;
