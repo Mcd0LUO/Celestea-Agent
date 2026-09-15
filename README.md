@@ -343,3 +343,7 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
 pnpm --filter @celestea/studio start      # 默认 127.0.0.1:3778（生产实例占 3777）
 pnpm check                                # typecheck + lint + lint:arch + test + check:web
 ```
+
+### 许可
+
+MIT，见 [`LICENSE`](LICENSE)。
