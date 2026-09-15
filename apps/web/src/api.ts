@@ -22,6 +22,9 @@ import type {
   MessagesResp,
   ProviderFetchResp,
   ProviderTestResp,
+  QuestionAnswerItem,
+  QuestionAnswerResp,
+  QuestionsResp,
   RevokeReq,
   ProvidersResp,
   PromptUpsertReq,
@@ -167,6 +170,25 @@ export const api = {
   },
   /** 取消当前聚焦会话的轮次（W514：带 session，旧后端忽略）。 */
   cancel: (session?: string) => postJson<CancelResp>('/api/cancel', session ? { session } : {}),
+  // ---- W784：模型向用户提问（未决列表 / 作答；契约见 feature-ask-user.md §3） ----
+  /**
+   * GET /api/questions?session= —— **仍未决**、仍可作答的提问（§7 恢复的唯一权威源）。
+   * `remaining_ms`/`expired` 由服务端读时判定，前端不拿自己的钟做判断。
+   * 未提供该端点（旧服务）→ 404，调用方保持现状、不显示任何卡片。
+   */
+  questions: (session?: string) =>
+    requestJson<QuestionsResp>(
+      '/api/questions' + (session ? '?session=' + encodeURIComponent(session) : ''),
+    ),
+  /**
+   * POST /api/questions/{id}/answer —— 直接唤醒挂起的工具调用（§4.2，不经 /api/turn）。
+   * `session` 是防串答守卫：与未决项不匹配时服务端明确拒绝（不猜、不静默）。
+   */
+  answerQuestion: (id: string, answers: QuestionAnswerItem[], session?: string) =>
+    postJson<QuestionAnswerResp>(
+      '/api/questions/' + encodeURIComponent(id) + '/answer',
+      session ? { answers, session } : { answers },
+    ),
   // ---- 工作区 / 会话管理（W236；缺失时 404 优雅降级） ----
   workspaces: () => requestJson<WorkspacesResp>('/api/workspaces'),
   /** W243 任务2：纯文件管理器建工作区——仅按目录注册（name 由后端取文件夹 basename）。 */

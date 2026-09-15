@@ -30,6 +30,9 @@ import {
 } from './messages';
 import { railReset, railSync } from './rail';
 import { buildToolCard, descFromArgs, setToolResult } from './toolcards';
+// W784：转录里的提问行（§7.2）+ 未决列表重建（刷新 / 重连 / 切会话后）。
+import { historyQuestionsOf, type HistoryQuestion } from './question/format';
+import { recoverQuestions, renderHistoryQuestionCard } from './question';
 
 const MAX_RESTORE = 200;
 
@@ -155,8 +158,23 @@ function userKindOf(m: HistoryMsg): MsgKind {
   return 'user';
 }
 
-function renderOne(ctx: SessionPane, m: HistoryMsg, container: HTMLElement): void {
+function renderOne(
+  ctx: SessionPane,
+  m: HistoryMsg,
+  container: HTMLElement,
+  questions: Map<string, HistoryQuestion>,
+): void {
   const content = String(m.content ?? '');
+  // W784：提问行 → 提问卡片（未结算的渲染成「已过期 · 未作答」终态，§7.2 规则 4）；
+  // 回答行不再单独渲染 —— 它已经回显在对应卡片上（同一张卡，不产生第二个条目）。
+  const qid = typeof m.question_id === 'string' ? m.question_id : '';
+  if (m.role === 'question') {
+    const row = qid === '' ? undefined : questions.get(qid);
+    if (row !== undefined && m.kind === 'question') {
+      renderHistoryQuestionCard(ctx, row, container);
+    }
+    return;
+  }
   if (m.role === 'inbox' || m.kind === 'inbox') {
     renderInboxMessage(ctx, content, { source: m.source, into: container });
     return;
@@ -229,7 +247,9 @@ export async function restoreSessionHistory(
     );
   }
   const recent = all.length > MAX_RESTORE ? all.slice(all.length - MAX_RESTORE) : all;
-  for (const m of recent) renderOne(ctx, m, off);
+  // W784 §7.2：提问/回答两行按 question_id 配对（有问无答 = 该提问不可再答）。
+  const questions = new Map(historyQuestionsOf(recent).map((row) => [row.id, row]));
+  for (const m of recent) renderOne(ctx, m, off, questions);
   if (ctx.restoreOps.size) {
     for (const ref of ctx.restoreOps.values()) {
       setToolResult(ref, '（无结果记录）', false);
@@ -259,6 +279,9 @@ export async function restoreSessionHistory(
   ctx.restored = true;
   railSync(ctx);
   autoscroll(ctx, true);
+  // 历史就位后再问服务端「还有哪些提问没结算」：进程没重启的刷新靠这一步把卡片
+  // 从「未作答」放回可作答；进程重启了服务端就没有它，卡片留在终态（§7.2）。
+  void recoverQuestions(ctx);
 }
 
 /**
@@ -302,6 +325,7 @@ export async function restoreActiveHistory(): Promise<void> {
   }
   const pane = adoptPane(id);
   if (!pane.restored && !pane.streaming) await restoreSessionHistory(pane);
+  else void recoverQuestions(pane); // 历史已在/正在跑：仍补一次未决列表
 }
 
 // ---- 会话切换（无空白帧 + 竞态防护 + 后台会话不阻塞） ----------------------------
@@ -334,9 +358,13 @@ export function openSession(id: string, meta?: { kind?: string; title?: string }
   if (!pane.streaming && !pane.restored) {
     const seq = ++pane.restoreSeq;
     showSwitchProgress();
+    // restoreSessionHistory 末尾自带一次未决列表重建，此处不重复请求
     void restoreSessionHistory(pane, () => seq === pane.restoreSeq).finally(() => {
       if (seq === pane.restoreSeq) hideSwitchProgress();
     });
+  } else {
+    // 切回已有内容的会话：可能错过了提问帧（切走期间模型问了）→ 补齐未决卡片
+    void recoverQuestions(pane);
   }
   return pane;
 }

@@ -1,0 +1,125 @@
+/* ============================================================================
+   question.css — W784 提问卡片（模型调用 ask_user_question 时挂起等待作答）
+   与工具卡/信息块同属「消息流级条目」：满宽气泡 + 卡片表面，不套聊天气泡。
+   单色主题：只用 tokens.css 的墨色 token，不加彩色。
+   终态由 .q-card[data-state] 驱动（done 已作答 / expired 已到时限 / closed 已结束），
+   终态下不显示操作区、选项与输入置灰（卡片本体已同时 disabled 控件）。
+   ============================================================================ */
+
+.msg.question .bubble {
+  width: 100%;
+  max-width: 100%;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.q-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--fs-secondary);
+  line-height: var(--lh-secondary);
+}
+
+/* ---- 头行：标题 + 倒计时 ---- */
+.q-head { display: flex; align-items: baseline; gap: 10px; }
+.q-title {
+  flex: 1 1 auto;
+  font-weight: 600;
+  color: var(--c-text-1);
+  overflow-wrap: anywhere;
+}
+.q-intent {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--c-layer-2);
+  color: var(--c-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.q-timer {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+}
+
+/* ---- 问题块 ---- */
+.q-items { display: flex; flex-direction: column; gap: 12px; }
+.q-item { display: flex; flex-direction: column; gap: 6px; }
+.q-question { font-weight: 500; color: var(--c-text-1); overflow-wrap: anywhere; }
+.q-detail { color: var(--c-text-2); font-size: 12.5px; overflow-wrap: anywhere; }
+
+.q-options { display: flex; flex-direction: column; gap: 4px; }
+.q-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.q-opt:hover { background: var(--c-layer-2); }
+.q-opt.is-approve { border-color: var(--c-border-strong); }
+.q-opt-input { flex: 0 0 auto; margin: 2px 0 0; accent-color: var(--c-accent); cursor: pointer; }
+.q-opt-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.q-opt-label { color: var(--c-text-1); overflow-wrap: anywhere; }
+.q-opt-desc { color: var(--c-text-3); font-size: 12px; overflow-wrap: anywhere; }
+
+.q-custom-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 8px;
+  background: var(--c-bg);
+  color: var(--c-text-1);
+  font-family: inherit;
+  font-size: 13px;
+}
+.q-custom-input:focus { outline: none; border-color: var(--c-border-strong); }
+
+/* ---- 操作区与终态文案 ---- */
+.q-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.q-hint { color: var(--c-text-2); font-size: 12px; overflow-wrap: anywhere; }
+.q-hint:empty, .q-result:empty { display: none; }
+.q-result {
+  padding-top: 8px;
+  border-top: 0.5px solid var(--c-hairline-l2);
+  color: var(--c-text-2);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+/* 终态：不再可作答 —— 收起操作区、置灰选项、去掉卡片阴影（它已不是待办） */
+.q-card[data-state="done"] .q-actions,
+.q-card[data-state="expired"] .q-actions,
+.q-card[data-state="closed"] .q-actions { display: none; }
+.q-card[data-state="done"],
+.q-card[data-state="expired"],
+.q-card[data-state="closed"] { box-shadow: none; background: var(--c-code-bg); }
+.q-card[data-state="done"] .q-opt,
+.q-card[data-state="expired"] .q-opt,
+.q-card[data-state="closed"] .q-opt { cursor: default; }
+.q-card[data-state="done"] .q-options,
+.q-card[data-state="expired"] .q-options,
+.q-card[data-state="closed"] .q-options { opacity: .72; }
+.q-card[data-state="sending"] .q-actions { opacity: .6; }
+
+@media (max-width: 640px) {
+  .q-head { flex-direction: column; gap: 2px; }
+  .q-card { padding: 10px 12px; }
+  .q-submit { min-height: var(--tap-min); width: 100%; }
+  .q-actions { flex-direction: column; }
+}
