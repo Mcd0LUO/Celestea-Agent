@@ -48,10 +48,31 @@ export interface CheckpointRepair {
   turn_id: string;
 }
 
-/** P1 territory: lane persistence. Declared (empty) so the shape is frozen. */
+/**
+ * One queued message exactly as the inbox holds it (E §1.2.1: the lanes are the
+ * ONE thing the log cannot express — a message that was ACCEPTED and not yet
+ * injected). Structurally typed so `packages/session` stays free of an L1
+ * sibling import (K1): the runtime's `InjectedMessage` satisfies this shape.
+ */
+export interface CheckpointLaneMessage {
+  text: string;
+  from: string;
+  at: number;
+  lane: string;
+  kind: string;
+  id: string;
+  source: unknown;
+  duplicate?: boolean;
+}
+
+/**
+ * E §1.3 P1 ①: the two injection lanes plus the bounded ledger of already
+ * accepted ids. `delivered_ids` is what makes a receipt's idempotency key
+ * survive a restart (the cross-process key of capability 2).
+ */
 export interface CheckpointLanes {
-  next_turn: unknown[];
-  next_step: unknown[];
+  next_turn: CheckpointLaneMessage[];
+  next_step: CheckpointLaneMessage[];
 }
 
 export interface Checkpoint {
@@ -69,6 +90,8 @@ export interface Checkpoint {
   last_outcome: string | null;
   degraded: { log_write_errors: number };
   lanes: CheckpointLanes;
+  /** Bounded (oldest-first) ledger of accepted injection ids (§1.2.1 / W515). */
+  delivered_ids: string[];
   repaired: CheckpointRepair[];
 }
 
@@ -113,6 +136,7 @@ export function freshCheckpoint(session: string, identity: CheckpointIdentity, n
     last_outcome: null,
     degraded: { log_write_errors: 0 },
     lanes: { next_turn: [], next_step: [] },
+    delivered_ids: [],
     repaired: [],
   };
 }
@@ -178,9 +202,16 @@ function normalize(value: Partial<Checkpoint>, session: string): Checkpoint {
     open_turn: value.open_turn ?? null,
     last_outcome: typeof value.last_outcome === "string" ? value.last_outcome : null,
     degraded: { log_write_errors: Math.max(0, Math.trunc(value.degraded?.log_write_errors ?? 0)) },
-    lanes: { next_turn: lanes.next_turn ?? [], next_step: lanes.next_step ?? [] },
+    lanes: { next_turn: laneOf(lanes.next_turn), next_step: laneOf(lanes.next_step) },
+    delivered_ids: Array.isArray(value.delivered_ids) ? value.delivered_ids.filter((id): id is string => typeof id === "string") : [],
     repaired: (value.repaired ?? []).filter(isRepair),
   };
+}
+
+/** A persisted lane is a list of messages; anything else is dropped, never fatal. */
+function laneOf(value: unknown): CheckpointLaneMessage[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((m): m is CheckpointLaneMessage => m !== null && typeof m === "object" && typeof (m as CheckpointLaneMessage).id === "string");
 }
 
 function isRepair(value: unknown): value is CheckpointRepair {
@@ -204,6 +235,12 @@ export interface CheckpointStoreOptions {
   warn?: (message: string) => void;
   /** Sample the log's own degradation counter at every write (§1.2.2). */
   logWriteErrors?: () => number;
+  /**
+   * E §1.3 P1 ③: the audit channel of a DEGRADED log (`log_write_errors` just
+   * became non-zero). Called AT MOST ONCE per store — the fact is sticky, so
+   * repeating it every turn would be log spam, not truth.
+   */
+  onDegraded?: (info: { session: string; count: number }) => void;
 }
 
 /**
@@ -223,6 +260,8 @@ export class CheckpointStore {
   private loaded: CheckpointRead | null = null;
   private state: Checkpoint | null = null;
   private readonly observations: string[] = [];
+  private degradedReported = false;
+  private readonly onDegraded: ((info: { session: string; count: number }) => void) | null;
 
   constructor(opts: CheckpointStoreOptions) {
     this.session = opts.session;
@@ -230,6 +269,7 @@ export class CheckpointStore {
     this.now = opts.now ?? Date.now;
     this.warn = opts.warn ?? ((message) => process.stderr.write(`[celestea-session] ${message}\n`));
     this.sample = opts.logWriteErrors ?? ((): number => 0);
+    this.onDegraded = opts.onDegraded ?? null;
     this.path = checkpointPathFor(opts.dir);
   }
 
@@ -296,6 +336,24 @@ export class CheckpointStore {
     if (this.sample() > 0) this.persist({});
   }
 
+  /**
+   * E §1.3 P1 ①: the two lanes + the delivered-id ledger, written by the SAME
+   * atomic path as every other field. This is the third (and last) write timing
+   * the sidecar has, so a crash can lose at most the newest queue change.
+   */
+  lanesChanged(nextTurn: readonly CheckpointLaneMessage[], nextStep: readonly CheckpointLaneMessage[], deliveredIds: readonly string[]): void {
+    this.persist({
+      lanes: { next_turn: [...nextTurn], next_step: [...nextStep] },
+      delivered_ids: [...deliveredIds],
+    });
+  }
+
+  /** The persisted lanes + delivered ledger of the file on disk (null = unusable). */
+  persistedQueues(): { lanes: CheckpointLanes; delivered_ids: string[] } | null {
+    const read = this.load();
+    return read.kind === "ok" ? { lanes: read.value.lanes, delivered_ids: read.value.delivered_ids } : null;
+  }
+
   private persist(patch: Partial<Checkpoint>): void {
     const base = this.current;
     const next: Checkpoint = {
@@ -313,12 +371,24 @@ export class CheckpointStore {
     };
     this.state = next;
     this.loaded = { kind: "ok", value: next };
+    this.reportDegraded(next.degraded.log_write_errors);
     try {
       writeCheckpointFile(this.path, next);
     } catch (e) {
       // Observation only: a sidecar that cannot be written must never fail a
       // turn — the next boot simply sees "no checkpoint" and stays fail-safe.
       this.observe(`checkpoint write failed (${this.path}): ${messageOf(e)}`);
+    }
+  }
+
+  /** §5.2③: a silent disk/memory fork is exactly what must never stay silent. */
+  private reportDegraded(count: number): void {
+    if (count <= 0 || this.degradedReported || this.onDegraded === null) return;
+    this.degradedReported = true;
+    try {
+      this.onDegraded({ session: this.session, count });
+    } catch (e) {
+      this.observe(`degraded audit hook failed: ${messageOf(e)}`);
     }
   }
 

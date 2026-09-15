@@ -4,13 +4,21 @@
  * When a spawn carried a non-empty `report_to`, the driver mechanically closes
  * the loop after the brief turn — Ok or Err alike, once, without any model
  * cooperation:
- *   1. write `results/<wid>-<short>.md` (the deliverable the coordinator reads);
+ *   1. write `results/<wid>-<short>-a<attempt>.md` (the deliverable the
+ *      coordinator reads) — E §2.2.3: the attempt is part of the NAME, so a
+ *      re-dispatched worker can no longer overwrite its predecessor's report
+ *      (that was G2-3: one lost report OR two identical ones, undetectable);
  *   2. enqueue ONE mailbox receipt into `report_to`, a single line starting
  *      `WORKER_<wid>_DONE` / `WORKER_<wid>_FAILED`, with the report path and a
  *      summary of the worker's last assistant message (`答复: …`, W241).
  *
  * File-stem sanitization is the anti-traversal guard: anything outside
  * `[A-Za-z0-9._-]` becomes `_`, so a hostile `wid` cannot escape the results dir.
+ *
+ * Backward compatibility is a READ-side rule, not a second write: the
+ * deliverable probe accepts ANY `results/<wid>*.md` (`hasDeliverable`, the Rust
+ * prefix rule), so a report written before this change still counts — and we
+ * never write the attempt-less name again (it is the collision we removed).
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -21,6 +29,13 @@ import { truncateChars } from "./types.js";
 /** Everything the protocol needs about one worker. */
 export interface ReceiptRequest {
   wid: string;
+  /**
+   * E §2.2.2: which try this receipt closes (first spawn = 1, re-dispatch +1).
+   * Required, not optional: a caller that does not know the attempt cannot name
+   * a collision-free report, and silently falling back to the old name is
+   * exactly the bug this field exists to remove.
+   */
+  attempt: number;
   /** Session title token (`<wid>·<short>` suffix); falls back to the wid. */
   short: string;
   startedAt: string;
@@ -72,9 +87,14 @@ export function reportRelPath(resultsDir: string, stem: string): string {
   return `${basename(resultsDir) || "results"}/${stem}.md`;
 }
 
+/** `W1-short-a2` — the report stem of one attempt (§2.2.3). */
+export function reportStem(wid: string, short: string, attempt: number): string {
+  return `${sanitizeFileStem(wid)}-${sanitizeFileStem(short)}-a${attempt}`;
+}
+
 /** Run the protocol: write the report, then return the receipt line. */
 export function executeReceipt(req: ReceiptRequest): ReceiptResult {
-  const stem = `${sanitizeFileStem(req.wid)}-${sanitizeFileStem(req.short)}`;
+  const stem = reportStem(req.wid, req.short, req.attempt);
   const absPath = join(req.resultsDir, `${stem}.md`);
   const relPath = reportRelPath(req.resultsDir, stem);
   const ok = req.failure === null;
@@ -88,9 +108,12 @@ export function executeReceipt(req: ReceiptRequest): ReceiptResult {
     warn = ` warn: ${error instanceof Error ? error.message : String(error)}`;
   }
   const answer = req.log === undefined ? "" : summarySuffix(req.log);
+  // E §2.2.3: the receipt TEXT carries the attempt too, so a coordinator reading
+  // two receipts can tell a re-dispatch from a duplicate without opening a file.
+  const tried = ` attempt=${req.attempt}`;
   const content = ok
-    ? `WORKER_${req.wid}_DONE OK 报告 ${relPath}（完成）${warn}${answer}`
-    : `WORKER_${req.wid}_FAILED ERR ${req.failure} 报告 ${relPath}（失败：${req.failure}）${warn}${answer}`;
+    ? `WORKER_${req.wid}_DONE OK 报告 ${relPath}（完成）${tried}${warn}${answer}`
+    : `WORKER_${req.wid}_FAILED ERR ${req.failure} 报告 ${relPath}（失败：${req.failure}）${tried}${warn}${answer}`;
   return { relPath, absPath, content, warn };
 }
 
@@ -106,7 +129,7 @@ function renderWorkerReport(req: ReceiptRequest, status: string, relPath: string
   const head =
     `# Worker ${req.wid} 完成报告\n\n` +
     `- wid: ${req.wid}\n- title: ${req.short}\n- status: ${status}\n` +
-    `- started_at: ${req.startedAt}\n${mode}- report: ${relPath}\n\n` +
+    `- started_at: ${req.startedAt}\n- attempt: ${req.attempt}\n${mode}- report: ${relPath}\n\n` +
     `## 简报摘要\n\n${truncateChars(req.brief.trim(), 200)}\n\n## 会话尾记录\n\n`;
   return head + renderTail(req.log);
 }

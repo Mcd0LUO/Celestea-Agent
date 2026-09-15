@@ -229,6 +229,11 @@ export interface WorkerSendRequest {
   content: string;
 }
 
+import type { RecoveryView } from "./runtime/recovery-view.js";
+
+/** E §1.3 P1 ②: the `/api/status.recovery` block (see `runtime/recovery-view.ts`). */
+export type { RecoveryView };
+
 export interface WorkerStatusReport {
   ok: boolean;
   total: number;
@@ -237,6 +242,13 @@ export interface WorkerStatusReport {
   workers: unknown[];
   wid?: string;
   error?: string;
+  /**
+   * E §2.3 P0 ③ (W787): RUNNING rows of the PERSISTED table whose owning process
+   * is gone, and RUNNING rows whose `host=` session no longer exists. Observation
+   * only — the studio never re-dispatches at boot (P2, `CELESTEA_WORKER_RECOVER`).
+   */
+  stale?: unknown[];
+  orphans?: unknown[];
   /**
    * W740: how many live instances are sweeping their worker rows (the count of
    * RUNNING watchdog timers). Absent from an engine that mounts no watchdog.
@@ -264,6 +276,10 @@ export interface WorkerSessionRow {
   state?: string;
   /** Host session that owns this worker's registry. */
   host_session?: string | null;
+  /** E §2.3 P1 ③ (W787): which try this row is (first spawn = 1, re-dispatch +1). */
+  attempt?: number;
+  /** E §2.3 P1 ③ (W787): idempotency key of the delivered receipt (`wid:attempt`). */
+  last_receipt?: string | null;
   /** Whether the OWNING host session has an in-flight turn. */
   busy?: boolean;
 }
@@ -336,6 +352,12 @@ export interface RuntimeAdapter {
    * omits the `cost` key entirely (the field is a pure addition, §3.2.4).
    */
   costBlock?(session: string | null): LedgerCostBlock | null;
+  /**
+   * E §1.3 P1 ② (W787): the session's `recovery` block for `GET /api/status`
+   * (checkpoint repairs, dangling turns, log degradation, last outcome).
+   * Optional: an adapter without checkpointing answers the empty block.
+   */
+  recoveryView?(session: string | null): RecoveryView;
   tools(): ToolInfo[];
   /**
    * W729 (S2): the tool face of ONE session, used to render the `{{tools}}`

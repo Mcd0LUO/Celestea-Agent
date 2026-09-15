@@ -186,8 +186,9 @@ describe("GET /api/status and /api/tools", () => {
     const h = make();
     const before = await getJson(h.app, "/api/status");
     // W785: E-P1 added three additive status fields — capability 3's `cost`
-    // block and capability 4's `effective_model`/`fallback` pair. The SET is
-    // asserted (not just the values), so an undeclared field still fails here.
+    // block and capability 4's `effective_model`/`fallback` pair. W787: E-P1
+    // capability 1 adds `recovery`. The SET is asserted (not just the values),
+    // so an undeclared field still fails here.
     expect(Object.keys(before.body).sort()).toEqual([
       "busy",
       "context_usage",
@@ -198,6 +199,7 @@ describe("GET /api/status and /api/tools", () => {
       "mode",
       "model",
       "reasoning_effort",
+      "recovery",
       "session",
       "steps",
       "tokens_per_sec",

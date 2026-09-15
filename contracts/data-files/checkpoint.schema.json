@@ -9,7 +9,7 @@
     "default": "<session dir>/checkpoint.json (<session dir> = <workspace>/<session>)",
     "mode": "0600",
     "write": "<path>.tmp-<pid> -> rename (atomic), pretty-printed JSON, trailing newline",
-    "writeTimings": "turn_start (one row appended), turn_end (one row appended), clean shutdown; P1 adds the two inbox lanes"
+    "writeTimings": "turn_start (one row appended), turn_end (one row appended), any lane change (P1: push / drain / restore), clean shutdown"
   },
   "purpose": {
     "kept": "the two facts the log cannot express: WHO was running (pid/boot_id/clean_shutdown) and WHICH turn was open (open_turn)",
@@ -34,7 +34,7 @@
   },
   "schema": {
     "type": "object",
-    "required": ["version", "session", "pid", "boot_id", "updated_at", "clean_shutdown", "open_turn", "last_outcome", "degraded", "lanes", "repaired"],
+    "required": ["version", "session", "pid", "boot_id", "updated_at", "clean_shutdown", "open_turn", "last_outcome", "degraded", "lanes", "delivered_ids", "repaired"],
     "properties": {
       "version": { "const": 1, "description": "sidecar schema version (NOT a data-file format version; any other value voids the file)" },
       "session": { "type": "string", "description": "\"<workspace>/<session>\" self-description; a mismatch voids the file" },
@@ -61,9 +61,17 @@
       "lanes": {
         "type": "object",
         "required": ["next_turn", "next_step"],
-        "description": "P1 (inbox persistence) — declared and always empty in P0",
-        "properties": { "next_turn": { "type": "array" }, "next_step": { "type": "array" } },
+        "description": "E §1.3 P1 ① (W787): the two injection lanes exactly as the inbox holds them — a message that was ACCEPTED and not yet injected. Written on every lane change (push / drain), so a crash loses at most the newest change (G1-4: a user's message used to vanish silently). Restoring is deliberately silent: a message queued by a dead process was already announced by it.",
+        "properties": {
+          "next_turn": { "type": "array", "items": { "$ref": "#/schema/$defs/lane_message" } },
+          "next_step": { "type": "array", "items": { "$ref": "#/schema/$defs/lane_message" } }
+        },
         "additionalProperties": false
+      },
+      "delivered_ids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "E §1.3 P1 ① (W787): the bounded (512, oldest-first) ledger of injection ids this session already ACCEPTED. It is the cross-process half of the idempotency key (capability 2's `receipt:<wid>:<attempt>`), so a receipt replayed after a restart is still dropped as a duplicate (B3)."
       },
       "repaired": {
         "type": "array",
@@ -81,6 +89,23 @@
       }
     },
     "additionalProperties": false
+  },
+  "$defs": {
+    "lane_message": {
+      "type": "object",
+      "required": ["text", "from", "at", "lane", "kind", "id", "source"],
+      "properties": {
+        "text": { "type": "string" },
+        "from": { "type": "string", "description": "attribution label (empty = the user)" },
+        "at": { "type": "integer" },
+        "lane": { "enum": ["next-turn", "next-step"] },
+        "kind": { "type": "string", "description": "InjectionKind (user / receipt / relay / stimulus)" },
+        "id": { "type": "string", "description": "idempotency key (empty = never deduplicated)" },
+        "source": { "type": "object", "description": "the delivery envelope (kind / form / sender), verbatim" },
+        "duplicate": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
   },
   "generatedAt": "2026-09-11T00:00:00Z"
 }

@@ -155,6 +155,12 @@
             "required": false,
             "optional": true,
             "note": "E-P1 (capability 3, W785): engine-side cost estimate from the append-only usage ledger; absent when the ledger is off or the adapter has none."
+          },
+          {
+            "name": "recovery",
+            "type": "object{session:string|null,recovered_turns:array<string>,dangling_turns:integer,degraded:boolean,last_outcome:string|null}",
+            "required": false,
+            "note": "E-P1 (capability 1, W787): the QUERIED session's checkpoint view — the turn ids this engine closed after a crash (checkpoint.json `repaired[]`), the `turn_start` rows still open, whether the session log refused a write (writeErrorCount>0) and the phase of the log's last `turn_end`. PURE ADDITION to an existing endpoint (P1 adds NO endpoint); an adapter without checkpointing answers the empty block, so the key is always present. The block describes the session's LIVE generation: a session with no composed instance answers the empty block (a status poll never builds an engine) — the durable record of a repair is the sidecar's `repaired[]` and the `session_repaired` audit line."
           }
         ]
       },
@@ -167,7 +173,9 @@
         "W755: `estimated` says whether `used` is the visible-surface estimate; `projected` says whether the real-prompt anchor was extended by measured growth. They are different questions and both may be false.",
         "W755: `window_source:profile` is the only case where `ratio` is a real measurement. A session whose profile declares no capacity reports `window:0, ratio:0, window_source:fallback` — the 1000000 CONTEXT_WINDOW_FALLBACK is a DISPLAY default only and never a denominator (the client must not draw a ring when window is 0); `unknown` means the configured value was not usable at all. DSH refuses to render occupancy without a resolved capacity.",
         "W755: `usage.total` is a cross-step, repeatedly-billed sum (every step re-sends the whole prompt), NOT an occupancy reading — never divide it by a context window. Occupancy is `context_usage` only.",
-        "W785: `cost` is a PURE ADDITION and is present ONLY when the queried session's rows exist in the process ledger (`session_total`/`turn_total` are `null` — never 0 — when nothing was priced)."
+        "W785: `cost` is a PURE ADDITION and is present ONLY when the queried session's rows exist in the process ledger (`session_total`/`turn_total` are `null` — never 0 — when nothing was priced).",
+    "W787: `recovery.degraded` is true when the session log's own `writeErrorCount()>0` (disk and memory diverged, G1-6) OR the sidecar's sticky `degraded.log_write_errors>0`; the sticky value keeps a past fork visible after a healthy restart.",
+    "W787: `recovery.dangling_turns` counts `turn_start` rows minus `turn_end` rows in the LIVE log (the same rule as `analyzeReplay().danglingTurns`), and `recovered_turns` lists the `checkpoint.json` `repaired[]` turn ids — a repaired crash therefore reports `dangling_turns:0` together with a non-empty `recovered_turns`."
       ],
       "probe": {
         "checked": true,
@@ -2524,7 +2532,20 @@
           {
             "name": "workers",
             "type": "array<object>",
-            "required": false
+            "required": false,
+            "note": "W787: each row carries `attempt` (which try, first = 1), `host_session` (the dispatching conversation, `host=`) and `last_receipt` (the delivered receipt's idempotency key `wid:attempt`) as PURE ADDITIONS."
+          },
+          {
+            "name": "stale",
+            "type": "array<object{wid,status,attempt,host_session,sess,reason,lease_pid,lease_at,retries,artifact,action}>",
+            "required": false,
+            "note": "E §2.3 P0 (W787): RUNNING rows of the PERSISTED table whose owning process is gone (`lease=<pid>@<unix>`, falling back to `proc=<pid>`). OBSERVATION ONLY — the studio never re-dispatches at boot; `action` records what P2 would do. PURE ADDITION."
+          },
+          {
+            "name": "orphans",
+            "type": "array<object{wid,status,attempt,host_session,sess,reason,lease_pid,lease_at,retries,artifact,action}>",
+            "required": false,
+            "note": "E §2.3 P0 (W787): RUNNING rows whose `host=` session no longer exists. Never auto re-dispatched (P2 territory). PURE ADDITION."
           },
           {
             "name": "wid",
@@ -2549,7 +2570,8 @@
       ],
       "notes": [
         "Always 200, including the not-found case.",
-        "Fields marked optional:true appear only in some response variants."
+        "Fields marked optional:true appear only in some response variants.",
+        "W787 (E §2.3 P0 ③): `stale` / `orphans` come from the boot observer's judgement of the studio's OWN table (`<data dir>/worker-registry.tsv`, env `CELESTEA_WORKER_REGISTRY`), never from the DSH-side plugin's table; the boot sweep writes one audit line per finding plus a summary into `<data dir>/recovery-audit.jsonl`."
       ],
       "probe": {
         "checked": true,

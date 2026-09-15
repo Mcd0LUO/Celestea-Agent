@@ -73,6 +73,7 @@ function plantCheckpoint(dir: string, patch: Partial<Checkpoint> = {}, session =
     last_outcome: null,
     degraded: { log_write_errors: 0 },
     lanes: { next_turn: [], next_step: [] },
+    delivered_ids: [],
     repaired: [],
     ...patch,
   };
@@ -263,6 +264,68 @@ describe("checkpoint fail-safe (bad / foreign / missing sidecars)", () => {
       expect(warns.join("\n")).toContain(expected);
     });
   }
+
+  it("P1①: persists the two lanes + the delivered-id ledger and reads them back", () => {
+    const dir = tmpDir();
+    const store = new CheckpointStore({ dir, session: SESSION, identity: IDENTITY, now: () => 2_000 });
+    const queued = { text: "排队等我下一轮", from: "", at: 1, lane: "next-turn", kind: "user", id: "mailbox:7", source: { kind: "user", form: "message" } };
+    const steering = { text: "[from session-0] WORKER_W1_DONE", from: "session-0", at: 2, lane: "next-step", kind: "receipt", id: "receipt:W1:1", source: { kind: "user", form: "message" } };
+    store.lanesChanged([queued], [steering], ["mailbox:7", "receipt:W1:1", "mailbox:9"]);
+    const read = readCheckpointFile(checkpointPathFor(dir), SESSION);
+    expect(read.kind).toBe("ok");
+    const value = read.kind === "ok" ? read.value : null;
+    expect(value?.lanes.next_turn.map((m) => m.id)).toEqual(["mailbox:7"]);
+    expect(value?.lanes.next_step.map((m) => m.text)).toEqual(["[from session-0] WORKER_W1_DONE"]);
+    // The ledger is what makes a receipt's key survive the restart (capability 2).
+    expect(value?.delivered_ids).toEqual(["mailbox:7", "receipt:W1:1", "mailbox:9"]);
+    // …and a fresh store reads the SAME state back (the inbox's `load()` path).
+    expect(new CheckpointStore({ dir, session: SESSION, identity: IDENTITY }).persistedQueues()?.delivered_ids).toEqual(["mailbox:7", "receipt:W1:1", "mailbox:9"]);
+  });
+
+  it("P1①: a corrupt / missing sidecar yields no queues instead of an exception", () => {
+    const dir = tmpDir();
+    expect(new CheckpointStore({ dir, session: SESSION, identity: IDENTITY }).persistedQueues()).toBeNull();
+    plantCheckpoint(dir, {}, "ws/OTHER");
+    expect(new CheckpointStore({ dir, session: SESSION, identity: IDENTITY }).persistedQueues()).toBeNull();
+  });
+
+  it("P1③: a failing log write lands in degraded.log_write_errors and fires the audit hook ONCE", () => {
+    const dir = tmpDir();
+    const audited: Array<{ session: string; count: number }> = [];
+    let errors = 0;
+    const store = new CheckpointStore({
+      dir,
+      session: SESSION,
+      identity: IDENTITY,
+      now: () => 3_000,
+      logWriteErrors: () => errors,
+      onDegraded: (info) => audited.push(info),
+    });
+    store.turnStarted("turn-1");
+    expect(store.current.degraded.log_write_errors).toBe(0);
+    // The disk refuses the row: memory and disk have forked (G1-6).
+    errors = 2;
+    store.turnEnded("completed");
+    expect(store.current.degraded.log_write_errors).toBe(2);
+    store.turnStarted("turn-2");
+    store.noteLogWriteErrors();
+    // Sticky AND single-shot: the fact is one event, not one event per turn.
+    expect(audited).toEqual([{ session: SESSION, count: 2 }]);
+    const onDisk = readCheckpointFile(checkpointPathFor(dir), SESSION);
+    expect(onDisk.kind === "ok" ? onDisk.value.degraded.log_write_errors : 0).toBe(2);
+  });
+
+  it("P1③: the degrade flag survives a healthy restart and clears on a fresh checkpoint only", () => {
+    const dir = tmpDir();
+    let errors = 1;
+    const first = new CheckpointStore({ dir, session: SESSION, identity: IDENTITY, logWriteErrors: () => errors });
+    first.turnStarted("turn-1");
+    expect(first.current.degraded.log_write_errors).toBe(1);
+    errors = 0;
+    // A new process reads the sticky value: a past fork stays visible (§1.2.2).
+    const second = new CheckpointStore({ dir, session: SESSION, identity: IDENTITY, logWriteErrors: () => 0 });
+    expect(second.current.degraded.log_write_errors).toBe(1);
+  });
 
   it("treats a foreign file as 'no checkpoint' rather than repairing with it", () => {
     const dir = tmpDir();

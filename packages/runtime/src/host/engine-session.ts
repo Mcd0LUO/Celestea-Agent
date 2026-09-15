@@ -76,6 +76,12 @@ export interface CheckpointWiring {
   identity?: CheckpointIdentity;
   now?: () => number;
   warn?: (message: string) => void;
+  /**
+   * E §1.3 P1 ③: the audit channel of a DEGRADED log — the sidecar's
+   * `degraded.log_write_errors` just became non-zero, so disk and memory have
+   * forked. Called at most once per session store.
+   */
+  onDegraded?: (info: { session: string; count: number }) => void;
 }
 
 /** `boot_id` is generated ONCE per process and never again while it lives. */
@@ -103,6 +109,7 @@ export function openSessionLog(dir: string, wiring: CheckpointWiring = {}): Sess
     ...(wiring.now === undefined ? {} : { now: wiring.now }),
     ...(wiring.warn === undefined ? {} : { warn: wiring.warn }),
     logWriteErrors: () => writeErrorCountOf(log),
+    ...(wiring.onDegraded === undefined ? {} : { onDegraded: wiring.onDegraded }),
   });
   return checkpointedLog(log, store);
 }

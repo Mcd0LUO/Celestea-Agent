@@ -38,8 +38,28 @@ import { executeReceipt, lastAssistantSummary, type ReceiptRequest, type Receipt
 import { SessionMailbox } from "./mailbox.js";
 import { SessionRegistry } from "./sessions.js";
 import type { SessionLogFactory } from "./log.js";
-import { REGISTRY_TSV_PATH, getExtra, parseRegistryTsv, serializeRegistryTsv, summarize, workerRetries } from "./registry-tsv.js";
+import {
+  REGISTRY_TSV_PATH,
+  getExtra,
+  leaseToken,
+  mergeTableRows,
+  parseRegistryTsv,
+  readTableRows,
+  receiptDelivered,
+  receiptKey,
+  receiptToken,
+  serializeRegistryTsv,
+  summarize,
+  workerAttempt,
+  workerRetries,
+} from "./registry-tsv.js";
+import { dropTokens, entryView, isOwn, setToken as setTokenOf, terminalEntry, withProc, withState, withTokens } from "./row.js";
+import { observeWorkerTable, type WorkerRecoveryOptions, type WorkerRecoveryReport } from "./recovery.js";
 import { sanitizeExtra, truncateChars, utcNow, type WorkerSession, type WorkerVerdict } from "./types.js";
+
+// W787: the pure ROW-FORMAT helpers moved to `row.ts` (§4.1 budget); their public
+// import path stays `registry.js`, so no caller changed.
+export { entryView, isOwn, withProc, withState } from "./row.js";
 
 export const RESULTS_DIR_DEFAULT = "results";
 export const WORKER_REGISTRY_SERVICE = "celestea.workers.WorkerRegistry";
@@ -67,6 +87,12 @@ export interface WorkerRegistryOptions {
    * explicit `mode` argument inherits it (§2.3: worker defaults to parent mode).
    */
   hostMode?: string | null;
+  /**
+   * E §2.2.2 (`host=`): the HOST conversation this registry dispatches for. The
+   * row records it, so a boot observer (and P2's re-dispatch) can tell WHERE a
+   * worker belonged even after the process that spawned it is gone (G2-6).
+   */
+  hostSessionId?: string | null;
   now?: () => number;
   pid?: number;
 }
@@ -86,6 +112,7 @@ export class WorkerRegistry {
   private resultsDirValue: string;
   private sourceLabelValue: string;
   private hostModeValue: string | null;
+  private readonly hostSessionValue: string | null;
   private released = false;
 
   constructor(opts: WorkerRegistryOptions = {}) {
@@ -93,6 +120,7 @@ export class WorkerRegistry {
     this.resultsDirValue = opts.resultsDir ?? RESULTS_DIR_DEFAULT;
     this.sourceLabelValue = opts.sourceLabel ?? "unknown";
     this.hostModeValue = opts.hostMode ?? null;
+    this.hostSessionValue = opts.hostSessionId ?? null;
     this.now = opts.now ?? Date.now;
     this.ownPid = opts.pid ?? process.pid;
     this.sessionRegistry = new SessionRegistry({
@@ -123,9 +151,18 @@ export class WorkerRegistry {
     return [...this.rows.values()].map((e) => ({ ...e }));
   }
 
-  /** Rows written by THIS process — the only ones the status view counts. */
+  /**
+   * Rows THIS registry owns — the only ones its status view counts.
+   *
+   * W787: ownership is `proc=<pid>` PLUS, when the registry declares a host
+   * conversation, `host=<sid>`. One process now shares ONE table across every
+   * session (`host=` tells them apart, §2.2.2), so the process-wide `proc` rule
+   * alone would make two sessions see — and adjudicate — each other's workers.
+   * A registry with no declared host (the embedded / legacy case) keeps the
+   * original `proc`-only rule, so nothing that worked before changed.
+   */
   ownEntries(): WorkerEntry[] {
-    return this.entries().filter((e) => isOwn(e, this.ownPid));
+    return this.entries().filter((e) => this.isMine(e));
   }
 
   getEntry(wid: string): WorkerEntry | undefined {
@@ -144,7 +181,10 @@ export class WorkerRegistry {
     const wid = this.widForSession(sid);
     const entry = wid === null ? undefined : this.rows.get(wid);
     if (wid === null || entry === undefined || entry.status !== "RUNNING") return;
-    this.rows.set(wid, withState(entry, state));
+    // E §2.2.2: driver activity RENEWS `lease=<pid>@<unix>` — that is what makes
+    // "the owner is still driving this row" observable without a timer (P2 adds
+    // the heartbeat cadence).
+    this.rows.set(wid, withTokens(withState(entry, state), { lease: this.lease() }));
     void this.persist();
   }
 
@@ -157,7 +197,7 @@ export class WorkerRegistry {
    */
   finalize(wid: string, verdict: WorkerVerdict): WorkerEntry | null {
     const entry = this.rows.get(wid);
-    if (entry === undefined || !isOwn(entry, this.ownPid) || entry.status !== "RUNNING") return null;
+    if (entry === undefined || !this.isMine(entry) || entry.status !== "RUNNING") return null;
     const settled = terminalEntry(entry, verdict, this.now());
     this.rows.set(wid, settled);
     void this.persist();
@@ -192,7 +232,7 @@ export class WorkerRegistry {
    */
   respawn(wid: string): string | null {
     const entry = this.rows.get(wid);
-    if (entry === undefined || !isOwn(entry, this.ownPid) || entry.status !== "RUNNING") return null;
+    if (entry === undefined || !this.isMine(entry) || entry.status !== "RUNNING") return null;
     const oldSid = getExtra(entry, "sess");
     const remembered = oldSid === null ? undefined : this.spawns.get(oldSid);
     if (remembered === undefined || remembered.brief === "") return null;
@@ -204,11 +244,17 @@ export class WorkerRegistry {
       model: getExtra(entry, "model"),
       mode,
     });
-    const extra = setTokens(dropTokens(entry.extra, ["fail", "ended_at"]), {
+    // E §2.2.2: a re-dispatch is the NEXT attempt of the same wid — the report
+    // name and the receipt key both derive from it (G2-2/G2-3).
+    const attempt = workerAttempt(entry) + 1;
+    const cleared = { ...entry, extra: dropTokens(entry.extra, ["fail", "ended_at", "receipt"]) };
+    const extra = withTokens(cleared, {
       sess: session.meta.id,
       retries: String(workerRetries(entry) + 1),
+      attempt: String(attempt),
+      lease: this.lease(),
       driven: this.canDrive() ? "yes" : "no",
-    });
+    }).extra;
     this.rows.set(wid, { ...entry, started_at: utcNow(this.now()), extra });
     this.rememberSpawn(session.meta.id, {
       wid,
@@ -231,6 +277,26 @@ export class WorkerRegistry {
       return { ok: true, wid, worker: entryView(entry) };
     }
     return summarize(own) as unknown as Record<string, unknown>;
+  }
+
+  /**
+   * E §2.2.4: judge every row of the table for a boot observer. OBSERVATION
+   * ONLY — nothing here settles, re-dispatches or rewrites a row (P0).
+   */
+  recoverCandidates(opts: WorkerRecoveryOptions = {}): WorkerRecoveryReport {
+    return observeWorkerTable(this.entries(), opts);
+  }
+
+  /**
+   * E §2.2.3: the cross-process idempotency key of a worker's receipt
+   * (`receipt:<wid>:<attempt>`), or null for a session this registry does not
+   * know. The host inbox deduplicates on exactly this string (B3), so a receipt
+   * replayed by a restarted driver is injected once.
+   */
+  receiptKeyFor(sid: string): string | null {
+    const wid = this.widForSession(sid);
+    const entry = wid === null ? undefined : this.rows.get(wid);
+    return entry === undefined ? null : receiptKey(entry.wid, workerAttempt(entry));
   }
 
   /** The session id registered for a wid (empty string when absent). */
@@ -272,6 +338,16 @@ export class WorkerRegistry {
 
   setHostMode(mode: string | null): void {
     this.hostModeValue = mode;
+  }
+
+  /** E §2.2.2: the host conversation stamped into every row this registry writes. */
+  get hostSessionId(): string | null {
+    return this.hostSessionValue;
+  }
+
+  /** `lease=<pid>@<unix>` of THIS process at the current instant. */
+  lease(): string {
+    return leaseToken(this.ownPid, this.now());
   }
 
   setSourceLabel(label: string): void {
@@ -397,18 +473,49 @@ export class WorkerRegistry {
 
   // --- internals ---------------------------------------------------------
 
-  /** Atomic write (tmp + rename); a failure is reported, never thrown (W180 B1(c)). */
+  /** Record the delivered receipt key on a settled row (one atomic write). */
+  private markReceipt(wid: string, attempt: number): void {
+    const row = this.rows.get(wid);
+    if (row === undefined) return;
+    this.rows.set(wid, { ...row, extra: setTokenOf(row.extra, "receipt", receiptToken(wid, attempt)) });
+    void this.persist();
+  }
+
+  /**
+   * Atomic write (tmp + rename); a failure is reported, never thrown (W180
+   * B1(c)). W787: the write MERGES with the rows other session registries of this
+   * process already put in the shared table, then refreshes the in-memory view
+   * from the merge — writing `entries()` alone would drop a sibling's worker.
+   */
   private persist(): string | null {
     if (this.path === null) return null;
     try {
       mkdirSync(dirname(this.path), { recursive: true });
+      const merged = mergeTableRows(readTableRows(this.path), this.entries());
+      this.rows.clear();
+      for (const row of merged) this.rows.set(row.wid, row);
       const tmp = `${this.path}.tmp-${this.ownPid}-${this.now()}`;
-      writeFileSync(tmp, serializeRegistryTsv(this.entries()), "utf8");
+      writeFileSync(tmp, serializeRegistryTsv(merged), "utf8");
       renameSync(tmp, this.path);
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
+  }
+
+  /**
+   * Ownership of one row (see [ownEntries]): `proc`, and — when the registry
+   * declares a host conversation — `host=`. A row with NO `host=` token is kept
+   * when `proc` matches: such a row was written by an older build or by an
+   * embedded caller that upserts directly, so `proc` is the only ownership
+   * evidence it carries, and hiding it would lose a row this process owns.
+   */
+  private isMine(entry: WorkerEntry): boolean {
+    if (!isOwn(entry, this.ownPid)) return false;
+    const host = this.hostSessionValue;
+    if (host === null) return true;
+    const rowHost = getExtra(entry, "host");
+    return rowHost === null || rowHost === host;
   }
 
   private widForSession(sid: string): string | null {
@@ -456,8 +563,13 @@ export class WorkerRegistry {
       this.finalize(wid, verdictOf(failure, null));
       return;
     }
+    const attempt = workerAttempt(entry);
+    // E §2.2.3: ONE receipt per `(wid, attempt)`, decided by the ROW (durable),
+    // never by a memory sequence — a replayed closeLoop finds the token and stops.
+    if (receiptDelivered(entry, attempt)) return;
     const req: ReceiptRequest = {
       wid,
+      attempt,
       short: remembered?.short ?? getExtra(entry, "title") ?? wid,
       startedAt: entry.started_at,
       brief: remembered?.brief ?? getExtra(entry, "brief") ?? "",
@@ -471,7 +583,10 @@ export class WorkerRegistry {
       failure,
     };
     const result = executeReceipt(req);
-    this.finalize(wid, verdictOf(failure, result));
+    const settled = this.finalize(wid, verdictOf(failure, result));
+    // The token rides the SAME atomic row write as the verdict, so "delivered"
+    // can never be recorded for a row the verdict did not reach.
+    if (settled !== null) this.markReceipt(wid, attempt);
     // W515 §4: the settlement notice carries its own envelope, so the host can
     // tell it apart from a relay message the worker sent on purpose.
     this.mailboxRegistry.send(reportTo, result.content, sid, {
@@ -492,24 +607,6 @@ function verdictOf(failure: string | null, result: ReceiptResult | null): Worker
   return { ok: true };
 }
 
-/**
- * W736: the terminal row of a verdict — status, `ended_at`, the `fail=<reason>`
- * token of a failure and `state=idle` (the driver's mailbox loop is at rest; a
- * stale `in-turn` on a frozen row would read as a turn still running). Pure, so
- * every terminal writer produces byte-identical rows.
- */
-export function terminalEntry(entry: WorkerEntry, verdict: WorkerVerdict, nowMs: number): WorkerEntry {
-  const status: WorkerStatus = verdict.ok ? "DONE" : "FAILED";
-  const tokens: Record<string, string> = { ended_at: utcNow(nowMs), state: "idle" };
-  if (!verdict.ok) tokens["fail"] = oneToken(truncateChars(sanitizeExtra(verdict.reason ?? "unspecified failure"), 200));
-  return { ...entry, status, extra: setTokens(entry.extra, tokens) };
-}
-
-/** Fold whitespace so a value stays ONE `extra` token (the row format needs it). */
-function oneToken(value: string): string {
-  return value.replace(/\s+/g, "-");
-}
-
 /** One-line summary of a settlement notice (the DSH `source.summary` field). */
 function receiptSummary(req: ReceiptRequest, content: string): string {
   const summary = lastAssistantSummaryOf(req.log);
@@ -518,61 +615,6 @@ function receiptSummary(req: ReceiptRequest, content: string): string {
 
 function lastAssistantSummaryOf(log: SessionLog | undefined): string | null {
   return log === undefined ? null : lastAssistantSummary(log.events());
-}
-
-/** Row ownership: only a matching `proc` token makes a row ours (W234). */
-export function isOwn(entry: WorkerEntry, pid: number): boolean {
-  return getExtra(entry, "proc") === String(pid);
-}
-
-/** Stamp/replace the `proc` token, leaving every other token untouched. */
-export function withProc(entry: WorkerEntry, pid: number): WorkerEntry {
-  return { ...entry, extra: setToken(entry.extra, "proc", String(pid)) };
-}
-
-/** Stamp/replace the `state` token. */
-export function withState(entry: WorkerEntry, state: string): WorkerEntry {
-  return { ...entry, extra: setToken(entry.extra, "state", sanitizeExtra(state)) };
-}
-
-/** Replace/insert several `k=v` tokens in one pass (every other token kept). */
-function setTokens(extra: string, values: Record<string, string>): string {
-  const keys = Object.keys(values);
-  const tokens = dropTokens(extra, keys).split(/\s+/).filter((tok) => tok !== "");
-  for (const key of keys) tokens.push(`${key}=${values[key]}`);
-  return tokens.join(" ");
-}
-
-/** Remove every `k=v` token of the given keys. */
-function dropTokens(extra: string, keys: readonly string[]): string {
-  return extra
-    .split(/\s+/)
-    .filter((tok) => tok !== "" && !keys.some((k) => tok.startsWith(`${k}=`)))
-    .join(" ");
-}
-
-function setToken(extra: string, key: string, value: string): string {
-  return setTokens(extra, { [key]: value });
-}
-
-/** The AI-facing view of one row (Rust `WorkerEntry::to_json`). */
-function entryView(entry: WorkerEntry): Record<string, unknown> {
-  const proc = getExtra(entry, "proc");
-  return {
-    wid: entry.wid,
-    started_at: entry.started_at,
-    status: entry.status,
-    sess: getExtra(entry, "sess") ?? "",
-    ws: getExtra(entry, "ws") ?? "",
-    title: getExtra(entry, "title") ?? "",
-    driven: getExtra(entry, "driven") ?? "",
-    state: getExtra(entry, "state") ?? "",
-    // W736: the terminal stamp of the state machine (null while RUNNING).
-    ended_at: getExtra(entry, "ended_at"),
-    fail: getExtra(entry, "fail"),
-    proc: proc === null ? null : Number.parseInt(proc, 10),
-    extra: entry.extra,
-  };
 }
 
 /** Timestamp helper re-exported for callers that build registry rows. */

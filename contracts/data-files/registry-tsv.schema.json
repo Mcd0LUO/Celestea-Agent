@@ -6,7 +6,9 @@
     "doc": "docs/DEVELOPMENT.md §2.6"
   },
   "path": {
-    "default": "/tmp/celestea-workers-registry.tsv"
+    "default": "/tmp/celestea-workers-registry.tsv",
+    "studio": "<data dir>/worker-registry.tsv (env `CELESTEA_WORKER_REGISTRY`; an EMPTY value = in-memory only, `tsvPath: null`)",
+    "ownershipRule": "E §2.2.1: the studio and the DSH-side plugin (`celestea-studio-ts`'s own table vs `celes-worker-spawn`'s `workerBase/registry.tsv`) are TWO tables and MUST NEVER write each other's (R2-1, asserted by B6). Inside the studio's table, `host=` tells the rows of its sessions apart."
   },
   "format": {
     "type": "tsv",
@@ -27,7 +29,40 @@
     ],
     "extra": "free text; k=v tokens separated by whitespace (extra itself may contain spaces). state=<in-turn|idle> marks a RUNNING row's phase. report_to=<target> drives receipt wakeup. proc=<pid> marks the writing process (W234 row ownership).",
     "atomicWrite": "tmp file in the same dir (<name>.tmp-<pid>-<seq>) then rename over the target",
-    "viewRule": "summarize() only counts rows written by THIS process (proc match); stale cross-process rows are invisible to by_status/by_state/workers and are not matched by a wid filter"
+    "viewRule": "summarize() only counts rows written by THIS registry: `proc=<pid>` (W234) and, when the registry declares a host conversation, `host=<sid>` (W787). A row with NO `host=` token is kept when `proc` matches (a legacy / directly-upserted row). Stale cross-process rows are invisible to by_status/by_state/workers and are not matched by a wid filter",
+    "writeRule": "W787: one table carries the rows of EVERY studio session, so a write MERGES with the rows other session registries already wrote (`mergeTableRows`) before the atomic tmp+rename — writing the in-memory view alone would delete a sibling session's worker"
+  },
+  "extraTokens": {
+    "note": "W787 (E §2.2.2): the token vocabulary, appended WITHOUT changing the column count — an older parser only sees a longer `extra`, which is what makes the change backward compatible (B7 round-trip).",
+    "known": [
+      "sess=<session id>",
+      "title=<short title, whitespace folded to `-`>",
+      "driven=<yes|no>",
+      "workspace=<name>",
+      "provider=<id>",
+      "model=<id>",
+      "effort=<level>",
+      "report_to=<session id>",
+      "mode=<standard|execution>",
+      "brief=<folded brief, <=300 chars>",
+      "retries=<n>",
+      "fail=<reason>",
+      "ended_at=<utc stamp>",
+      "proc=<pid>",
+      "state=<in-turn|idle>",
+      "host=<session id>",
+      "attempt=<n>",
+      "lease=<pid>@<unix>",
+      "receipt=<wid>:<attempt>"
+    ],
+    "whitelist": ["host", "attempt", "lease", "receipt"],
+    "added": {
+      "host": "the HOST conversation that dispatched the worker (E §2.2.2, closes G2-6); it is also the per-session ownership discriminator now that one process shares ONE table",
+      "attempt": "which try this row is: the FIRST spawn is 1 and a re-dispatch adds one (E §2.2.2). It names the report file (`results/<wid>-<short>-a<attempt>.md`) and keys the receipt (`receipt:<wid>:<attempt>`)",
+      "lease": "`<pid>@<unix>` of the owning process and when it last touched the row; renewed on every driver state change. Absent (a legacy row) falls back to `proc=`",
+      "receipt": "the idempotency key `<wid>:<attempt>` of the receipt this row already DELIVERED — a second closeLoop for the same attempt is a no-op (E §2.2.3)"
+    },
+    "roundTrip": "tests/contracts.test.ts round-trips a row carrying ALL four new tokens through serializeRegistryTsv -> parseRegistryTsv byte-for-byte (B7)"
   },
   "columns": {
     "wid": "worker id (e.g. W101)",

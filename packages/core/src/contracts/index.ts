@@ -161,6 +161,8 @@ export interface DataFileEntry {
   version: string;
   mode: string;
   secret?: boolean;
+  /** W787: free-form ownership / path note (optional, purely documentary). */
+  note?: string;
 }
 export interface DataFilesIndex {
   freezeRule: string;
@@ -173,6 +175,8 @@ export interface DataFilesIndex {
    * a capability that added no data file has nothing to report here.
    */
   recovery?: { implemented: string; notImplemented: string };
+  /** W787 (capability 2): the worker table's own implementation split. */
+  workerRegistry?: { implemented: string; notImplemented: string };
 }
 
 export function loadDataFilesIndex(): DataFilesIndex {

@@ -9,7 +9,7 @@
 
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { canonicalScopeHash } from "./store/grants.js";
 import type { Hono } from "hono";
 import { createStudioApp, type StudioApp, type StudioAppOptions } from "./app.js";
@@ -62,6 +62,11 @@ export interface HarnessOptions extends Omit<StudioAppOptions, "runtime"> {
   /** Files planted before the app composes (e.g. a providers.json secret). */
   files?: Record<string, unknown>;
   /**
+   * W787: files planted VERBATIM (a TSV worker table, a JSONL log) — unlike
+   * `files`, the value is written as-is instead of JSON-encoded.
+   */
+  rawFiles?: Record<string, string>;
+  /**
    * Path overrides merged over the throwaway root (W767: the auth password file
    * and secret file, which must point at a test-controlled location).
    */
@@ -75,6 +80,15 @@ function plantFiles(root: string, files: Record<string, unknown>): void {
     const path = join(root, rel);
     mkdirSync(join(path, ".."), { recursive: true });
     writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, typeof value === "string" ? {} : { mode: 0o644 });
+  }
+}
+
+/** Write raw content at `rel` under `root`, creating the parent directory. */
+function plantRawFiles(root: string, files: Record<string, string>): void {
+  for (const [rel, content] of Object.entries(files)) {
+    const path = join(root, rel);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
   }
 }
 
@@ -97,6 +111,7 @@ export function makeHarness(opts: HarnessOptions = {}): StudioHarness {
   writeFileSync(join(staticRoot, "secret.txt"), "TOP-SECRET-STATIC\n");
   writeFileSync(join(root, "workspaces.json"), JSON.stringify({ workspaces: [{ path: workspace }], active_session: null }, null, 2));
   plantFiles(root, opts.files ?? {});
+  plantRawFiles(root, opts.rawFiles ?? {});
   plantSession(workspace, opts.session);
   const config = loadStudioConfig({
     cwd: root,

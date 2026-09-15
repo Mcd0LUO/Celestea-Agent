@@ -234,6 +234,20 @@
 
 **未改变的正常路径**：无崩溃时只多一个 sidecar 文件；`cli-main.jsonl` 的字节、事件名、SSE 信封、端点集合（44）与 `pnpm check` 基线逐条不变。
 
+### 1.8 实现状态（W787 回填，P1）
+
+| 设计条目 | 状态 | 落点 / 说明 |
+|---|---|---|
+| ① lane 消息与 `delivered_ids` 持久化 | **已实现** | `packages/runtime/src/inbox.ts`（`InboxSink`/`snapshot()`/`bindPersistence()`）+ `inbox-checkpoint.ts`（sidecar sink）+ `packages/runtime/src/compose.ts`（**绑定日志后**注入 sink，所以宿主自带的 inbox 也被接上）+ `packages/session/src/checkpoint.ts`（`lanesChanged()`/`persistedQueues()`）。写盘时机 = push / drain（§1.2.2 的第三处），恢复**静默**（不重发 placement 帧） |
+| ② `GET /api/status.recovery` | **已实现** | `apps/studio/src/runtime/recovery-view.ts` + `handlers/health.ts`；`{session,recovered_turns,dangling_turns,degraded,last_outcome}`，**纯增字段、无新端点**（`API_ENDPOINT_COUNT` 仍 50） |
+| ③ 日志降级落 checkpoint + 审计 | **已实现** | `checkpoint.ts` 的 `onDegraded`（**每 store 至多一次**，不刷屏）+ `checkpoint-log.ts` 在每次 append 后采样 `writeErrorCount()` + `apps/studio/src/runtime/recovery-audit.ts`（`<data dir>/recovery-audit.jsonl`，0600/16 MiB 轮转/平台通道 best-effort） |
+
+**补齐的 P0 偏离**：§1.7 偏离 2 登记的「审计只有两条通道」在 P1 关闭 —— 崩溃修复（`session_repaired`）、日志降级（`log_degraded`）与 worker 观测现在都进 `recovery-audit.jsonl`（§5.2③ 的三处可见性齐了）。
+
+**口径（写进代码注释，避免第二真相）**：`dangling_turns` 由**日志**推出（`turn_start - turn_end`，与 `analyzeReplay().danglingTurns` 同规则）；`recovered_turns` 来自 sidecar 的 `repaired[]`（日志无法区分「引擎写的」与「恢复器写的」，§1.2.3 幂等边界 4）；`last_outcome` 取日志最后一条 `turn_end` 的 phase；`degraded` = 日志实时 `writeErrorCount()>0` **或** sidecar 的 sticky `degraded.log_write_errors>0`（旧分叉在健康重启后仍可见）。
+
+**偏离/边界**：`recovery` 只回答**当前有实例**的会话（`peek`，绝不为了轮询去 compose）；无实例的会话返回**空块**（零值）而非报错 —— 客户端因此可以依赖该键恒存在。
+
 ---
 
 ## 2. 可恢复多 agent（recoverable multi-agent）
@@ -344,6 +358,33 @@
 | `apps/studio` | `session-compose.workerWiring()` 的 `tsvPath`；boot 调一次恢复器；`worker-bridge.aggregateWorkerStatus()` 增字段 | 装配 |
 | `celes-worker-spawn`（仓外） | **不改**（P1 起可选只读读取其表做展示；禁止写） | 边界声明 |
 | `contracts/` | `data-files/registry-tsv.schema.json`（token 白名单，若需要）；`endpoints.json` 的 `worker_status` 响应字段 | 契约变更 |
+
+### 2.7 实现状态（W787 回填，P0 + P1）
+
+| 设计条目 | 状态 | 落点 / 说明 |
+|---|---|---|
+| P0① 表落盘（可配路径 + 保留 `null`） | **已实现** | `apps/studio/src/runtime/worker-table.ts`（`workerTablePath()`：显式选项 > `CELESTEA_WORKER_REGISTRY` > `<data dir>/worker-registry.tsv`；**空值 = 纯内存**）+ `session-compose.ts`（`workerRegistryPath` 传给 `WorkerWiring.tsvPath`，不再是硬编码 `null`） |
+| P0② 行内 `host=`/`attempt=`/`lease=` | **已实现** | `packages/workers/src/tools.ts`（spawn 落三 token）、`registry.ts`（`setWorkerState` 续期 `lease`、`respawn` 时 `attempt+1`）、`row.ts`（token 纯函数）、`registry-tsv.ts`（`workerHost/workerAttempt/workerLease/leaseToken`） |
+| P0③ boot 只观测 | **已实现** | `packages/workers/src/recovery.ts`（纯判定：`observeWorkerTable`，§2.2.4 决策表的**判定**已算、**动作**不执行）+ `apps/studio/src/runtime/worker-recovery.ts`（boot：读表 → 判定 → 审计 + stderr）+ `watchdog-view.ts`/`worker-table.ts`（`GET /api/worker/status` 增 `stale[]`/`orphans[]`，**纯增字段**）；**不重派、不改行** |
+| P1① 回执 attempt 化 + `receipt=` | **已实现** | `receipt.ts`（`reportStem()` → `results/<wid>-<short>-a<attempt>.md`，报告头与回执行都带 `attempt=`）、`registry.ts#closeLoop`（先查行内 `receipt=` token，已发即返回；发完把 key 写回**同一次原子行写**） |
+| P1② `drainHost()` 幂等键 | **已实现** | `worker-wiring.ts`：`kind:"receipt"` 的消息用 `receipt:<wid>:<attempt>`（`registry.receiptKeyFor()`），其余消息保留 `mailbox:<seq>` —— **刻意如此**：把 relay 也按 `(wid,attempt)` 去重会吞掉第二条**有意**的消息 |
+| P1③ `worker_status` 增 `attempt`/`host_session`/`last_receipt` | **已实现** | `row.ts#entryView()` + `contracts/endpoints.json` 的 `workers` 字段说明 |
+| P1④ 与 DSH 插件表只读协同 | **未实现（设计标注"可选"）** | 见下"偏离"第 3 条 |
+
+**与 §2.2.1「一张表」相关的两处必要更正（登记，不静默）**：
+
+1. **归属判定细化**：一个进程现在**共用一张表**（`host=` 用来区分会话），单靠 `proc`（同 pid）会让两个会话互相看见并互相裁决对方的行。因此 `ownEntries()` = `proc` **且**（若注册表声明了 host 会话）`host=`；**没有 `host=` 的旧行**仍按 `proc` 认领（否则会丢掉本进程自己的行）。同时 `persist()` 改为**合并写**（`mergeTableRows`）：写自己的行之前先读回文件里其它会话已写的行，否则后写的会话会静默删掉先写的行。
+2. **pin 语义跟着"活"走**：`pinned`（不回收、不占 maxLive）由「registry 里有行」改为「有**活的** worker 工作」（`hasLiveWorkersOf`）。表落盘后前者的含义变成"曾经 spawn 过就永久豁免会话上限"，跨重启会堆满 pin；settled 行留在盘上、随下一代实例回来（这正是 2-P0 要的）。
+
+**其它偏离 / 已知边界（逐条）**：
+
+1. **`attempt` 从 1 起，与 §5.2 的 `attempt=0` 首次不同** —— 本文自身冲突：§2.2.2（能力 2 专属）写"首次 = 1，重派 +1"，§5.2（贯通约定）写"`attempt=0` 表示首次"。worker 侧取 §2.2.2（报告名 `-a1.md`/`-a2.md`、`receipt:<wid>:1`），账本/回退侧仍取 §5.2。**登记为待裁决**，改动只影响一个函数（`workerAttempt`）。
+2. **`lease` 无心跳续期**（P2 项）：只在 spawn / 重派 / driver 状态变化时续期。判定因此是"最后一次活动"，不是"现在还在跑"——对崩溃判定足够，对长静默的 RUNNING 行偏保守（宁可判活，不误重派，符合 R2-2）。
+3. **未做 P1④（读 DSH 插件表做展示）**：插件表的路径（`workerBase`）不在 studio 的配置面内，硬编码外部服务的路径会引入 §2.2.1/R2-1 想要避免的耦合。留 P2 与"是否合并两表"（U4）一起裁决。
+4. **wid 在表内是主键**：settled 行会**冻结** wid（§2.2.4 第 5 行），因此表落盘后**跨重启**用同一个 wid 再 spawn 会被 `spawn_worker` 拒绝（"wid already registered"）。P0 不改这条既有语义（B5 的冻结语义），补法是 P2 的"终态行 + 同 wid = 下一 attempt"，届时报告名/回执键都已就绪。
+5. **审计落地为本地 append-only**：`<data dir>/recovery-audit.jsonl`（与 `grants-audit.jsonl`/`fallbacks-audit.jsonl` 同纪律；平台 `POST /api/audit` best-effort，失败只记本地）。
+
+**证据**：B1/B1b/B4/B6/B7/B8 落 `packages/workers/src/registry.test.ts`、`packages/workers/src/receipt.test.ts`、`packages/runtime/src/worker-wiring.test.ts`、`apps/studio/src/runtime/worker-recovery.test.ts`；真机口径见 §2.4 逐条。
 
 ---
 
@@ -698,14 +739,14 @@ interface FallbackPolicy {
 
 | 文件 | 变更 | 阶段 |
 |---|---|---|
-| `contracts/endpoints.json` | `+GET /api/usage/ledger`（W785 已落：49→50）；`get_status` 响应增 `cost`/`effective_model`/`fallback`（W785 已落）/ `recovery`（1-P1 未落） | 1-P1 / 3-P1 / 4-P1 |
+| `contracts/endpoints.json` | `+GET /api/usage/ledger`（W785 已落：49→50）；`get_status` 响应增 `cost`/`effective_model`/`fallback`（W785 已落）+ `recovery`（**W787 已落**，纯增字段）；`get_worker_status` 响应增 `stale[]`/`orphans[]`（**W787 已落**，纯增字段） | 1-P1 / 2-P0 / 3-P1 / 4-P1 |
 | `apps/studio/src/routes.ts:48` | `API_ENDPOINT_COUNT` 同步（漏改 → `app.ts:109` 启动抛错） | 同上 |
-| `contracts/data-files/` | 新增 `checkpoint` / `pricing` / `usage-ledger` / `fallbacks`（W785 已落，index 11 → 12）/ `llm-cooldown`（P2 未落）schema + `index.json` 计数 | 各 P0/P1 |
-| `contracts/sse-events.json` | 只增 payload **optional** 字段（`status.phase:"fallback"` + `effective_model`/`from`/`to`/`reason`/`attempt` —— W785 已落；`cost_delta`/`recovery` 未落），事件名集合不变 | 1-P1 / 3-P1 / 4-P1 |
-| `contracts/data-files/registry-tsv.schema.json` | 新 token（`host`/`attempt`/`lease`/`receipt`）白名单 + round-trip 用例 | 2-P0/P1 |
+| `contracts/data-files/` | 新增 `checkpoint` / `pricing` / `usage-ledger` / `fallbacks`（W785 已落，index 11 → 12）/ `llm-cooldown`（P2 未落）schema + `index.json` 计数；**W787**：`checkpoint.schema.json` 增 `lanes`（消息形状）+ `delivered_ids`（必填），`index.json` 12 → **13**（`<data dir>/worker-registry.tsv` 作为 studio 自己的数据文件登记） | 各 P0/P1 |
+| `contracts/sse-events.json` | 只增 payload **optional** 字段（`status.phase:"fallback"` + `effective_model`/`from`/`to`/`reason`/`attempt` —— W785 已落；`cost_delta`/`recovery` 未落），事件名集合不变（**W787 未动本文件**：能力 1-P1/2-P1 的可见性走 `/api/status` 与 `/api/worker/status` 的纯增字段，K5 的 9 个事件名与信封逐字不变） | 1-P1 / 3-P1 / 4-P1 |
+| `contracts/data-files/registry-tsv.schema.json` | 新 token（`host`/`attempt`/`lease`/`receipt`）白名单 + round-trip 用例（**W787 已落**：`extraTokens` 段 + `path.studio`/`ownershipRule`/`format.writeRule`；round-trip 在 `packages/workers/src/registry.test.ts` 的 B7、契约侧在 `tests/contracts.test.ts`） | 2-P0/P1 |
 | `contracts/tools.json` | P2：每工具增 `idempotent`（副作用分类，缺失 = 非幂等） | 1-P2 |
 | `docs/ARCHITECTURE.md` | 若 `CheckpointStore` 上提 core：§3.1 seam 表 + §7.4 流程 + §5 例外表（如超线） | 1-P0/P2 |
-| 本文 | 落地后逐条回填「已实现 / 偏离」 | 全程 |
+| 本文 | 落地后逐条回填「已实现 / 偏离」（W787：§1.8 / §2.7 + 本节打勾） | 全程 |
 
 ---
 

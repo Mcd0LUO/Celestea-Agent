@@ -87,8 +87,8 @@ describe("health / status / tools / config", () => {
     // W785: capability 4 always adds `effective_model` + `fallback`; capability
     // 3's `cost` key only exists when the adapter HAS a ledger (this harness runs
     // the fake adapter, which has none — the real adapter's key set is asserted in
-    // `runtime/real-runtime.test.ts`). The SET is asserted, so an undeclared field
-    // still fails here.
+    // `runtime/real-runtime.test.ts`). W787: capability 1-P1 always adds
+    // `recovery`. The SET is asserted, so an undeclared field still fails here.
     expect(Object.keys(body).sort()).toEqual([
       "busy",
       "context_usage",
@@ -98,6 +98,7 @@ describe("health / status / tools / config", () => {
       "mode",
       "model",
       "reasoning_effort",
+      "recovery",
       "session",
       "steps",
       "tokens_per_sec",

@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { recordingSessionLog } from "./log.js";
-import { getExtra } from "./registry-tsv.js";
+import { getExtra, receiptDelivered } from "./registry-tsv.js";
 import { WorkerRegistry } from "./registry.js";
-import { executeReceipt, lastAssistantSummary, reportRelPath, sanitizeFileStem } from "./receipt.js";
+import { executeReceipt, lastAssistantSummary, reportRelPath, reportStem, sanitizeFileStem } from "./receipt.js";
 import { workerTools } from "./tools.js";
 import { scriptedDrivers, scriptedLoop, waitUntil } from "./fakes.test-util.js";
 
@@ -56,6 +56,7 @@ describe("receipt protocol helpers", () => {
     log.append({ type: "assistant_message", text: "did the thing" });
     const result = executeReceipt({
       wid: "W1",
+      attempt: 1,
       short: "fix it",
       startedAt: "2026-09-10_12:00:00Z",
       brief: "brief body",
@@ -65,7 +66,7 @@ describe("receipt protocol helpers", () => {
       log,
       failure: null,
     });
-    expect(result.relPath).toBe("results/W1-fix_it.md");
+    expect(result.relPath).toBe("results/W1-fix_it-a1.md");
     expect(result.warn).toBe("");
     const body = readFileSync(result.absPath, "utf8");
     expect(body).toContain("# Worker W1 完成报告");
@@ -78,6 +79,7 @@ describe("receipt protocol helpers", () => {
     const results = resultsDir();
     const withMode = executeReceipt({
       wid: "W3",
+      attempt: 1,
       short: "t",
       startedAt: "t",
       brief: "b",
@@ -89,10 +91,11 @@ describe("receipt protocol helpers", () => {
       mode: "execution",
     });
     const body = readFileSync(withMode.absPath, "utf8");
-    expect(body).toContain("- started_at: t\n- mode: execution\n- report: results/W3-t.md");
+    expect(body).toContain("- started_at: t\n- attempt: 1\n- mode: execution\n- report: results/W3-t-a1.md");
     // Absent / empty mode keeps the pre-W729 header exactly (no empty line).
     const without = executeReceipt({
       wid: "W4",
+      attempt: 1,
       short: "t",
       startedAt: "t",
       brief: "b",
@@ -103,7 +106,7 @@ describe("receipt protocol helpers", () => {
       failure: null,
       mode: null,
     });
-    expect(readFileSync(without.absPath, "utf8")).toContain("- started_at: t\n- report: results/W4-t.md");
+    expect(readFileSync(without.absPath, "utf8")).toContain("- started_at: t\n- attempt: 1\n- report: results/W4-t-a1.md");
   });
 
   it("reports a failure receipt and warns instead of throwing on a bad path", () => {
@@ -112,6 +115,7 @@ describe("receipt protocol helpers", () => {
     writeFileSync(file, "x", "utf8");
     const result = executeReceipt({
       wid: "W2",
+      attempt: 2,
       short: "t",
       startedAt: "t",
       brief: "b",
@@ -136,10 +140,12 @@ describe("driver receipt loop", () => {
     await waitUntil(() => registry.mailbox.pending("cli-main") === 1);
     const receipt = registry.mailbox.poll("cli-main")[0]!;
     expect(receipt.content).toContain("WORKER_W101_DONE");
-    expect(receipt.content).toContain("results/W101-the-work.md");
+    expect(receipt.content).toContain("results/W101-the-work-a1.md");
+    expect(receipt.content).toContain("attempt=1");
     expect(receipt.content).toContain("答复:");
     expect(receipt.from_label).toBe("session-0");
-    expect(readFileSync(join(results, "W101-the-work.md"), "utf8")).toContain("## 简报摘要");
+    expect(readFileSync(join(results, "W101-the-work-a1.md"), "utf8")).toContain("## 简报摘要");
+    expect(getExtra(registry.getEntry("W101")!, "receipt")).toBe("W101:1");
     // W736: the receipt closes the state machine too — the row is no longer RUNNING.
     expect(registry.getEntry("W101")!.status).toBe("DONE");
     expect(getExtra(registry.getEntry("W101")!, "ended_at")).toBe("2023-11-14_22:13:20Z");
@@ -184,6 +190,18 @@ describe("driver receipt loop", () => {
     await registry.joinDrivers();
   });
 
+  it("B2: keeps one report per attempt (a1 and a2 coexist, no overwrite)", async () => {
+    const results = resultsDir();
+    const first = executeReceipt({ wid: "W7", attempt: 1, short: "t", startedAt: "t", brief: "b1", reportTo: "cli-main", sid: "session-0", resultsDir: results, log: undefined, failure: null });
+    const second = executeReceipt({ wid: "W7", attempt: 2, short: "t", startedAt: "t", brief: "b2", reportTo: "cli-main", sid: "session-0", resultsDir: results, log: undefined, failure: null });
+    expect(existsSync(join(results, "W7-t-a1.md"))).toBe(true);
+    expect(existsSync(join(results, "W7-t-a2.md"))).toBe(true);
+    // The FIRST attempt's body is still the first brief: nothing was overwritten.
+    expect(readFileSync(first.absPath, "utf8")).toContain("b1");
+    expect(readFileSync(second.absPath, "utf8")).toContain("b2");
+    expect(reportStem("W7", "t", 2)).toBe("W7-t-a2");
+  });
+
   it("writes nothing (and no receipt) without report_to", async () => {
     const { registry, results, tools } = harness();
     const scripted = scriptedLoop();
@@ -192,7 +210,7 @@ describe("driver receipt loop", () => {
     await waitUntil(() => scripted.inputs.length === 1);
     await waitUntil(() => registry.getEntry("W103")?.extra.includes("state=idle") === true);
     expect(registry.mailbox.pending("cli-main")).toBe(0);
-    expect(existsSync(join(results, "W103-b.md"))).toBe(false);
+    expect(existsSync(join(results, "W103-b-a1.md"))).toBe(false);
     expect(registry.getEntry("W103")!.status).toBe("DONE");
     registry.shutdown();
     await registry.joinDrivers();
@@ -225,5 +243,55 @@ describe("driver receipt loop", () => {
     registry.stopDriver("session-0");
     await registry.joinDrivers();
     expect(registry.backgroundLen()).toBe(0);
+  });
+});
+
+describe("E §2.2.3 P1 (W787): attempt-ized receipts and durable idempotency", () => {
+  it("B8: a second closeLoop for the same (wid, attempt) delivers NOTHING", async () => {
+    const { registry, tools } = harness();
+    registry.attachDrivers(scriptedDrivers(scriptedLoop()));
+    await tools.get("spawn_worker")!({ wid: "W8", brief: "b", report_to: "cli-main", title: "T" });
+    await waitUntil(() => registry.mailbox.pending("cli-main") === 1);
+    expect(getExtra(registry.getEntry("W8")!, "receipt")).toBe("W8:1");
+    const delivered = registry.mailbox.poll("cli-main");
+    expect(delivered[0]?.content).toContain("attempt=1");
+
+    // The same verdict arrives AGAIN (a replayed driver, a double settle): the
+    // row's `receipt=` token is the durable answer — no second message, no second
+    // report write. This is what replaces the memory-only mailbox sequence.
+    expect(receiptDelivered(registry.getEntry("W8")!, 1)).toBe(true);
+    expect(registry.receiptKeyFor("session-0")).toBe("receipt:W8:1");
+    expect(registry.mailbox.pending("cli-main")).toBe(0);
+    registry.shutdown();
+    await registry.joinDrivers();
+  });
+
+  it("a re-dispatch gets its own report file and its own receipt key", async () => {
+    const { registry, results } = harness();
+    registry.attachDrivers(scriptedDrivers(scriptedLoop()));
+    // W736's re-dispatch case: a still-RUNNING row whose FIRST attempt already
+    // delivered a receipt (the watchdog re-drives it after the session died).
+    const session = registry.sessions.create({ title: "W9·T", workspace: null, model: null, mode: null });
+    registry.upsert({
+      wid: "W9",
+      started_at: "t",
+      status: "RUNNING",
+      extra: `sess=${session.meta.id} host=cli-main title=T attempt=1 receipt=W9:1 report_to=cli-main`,
+    });
+    registry.rememberSpawn(session.meta.id, { wid: "W9", short: "T", brief: "second", reportTo: "cli-main", mode: null });
+    const sid = registry.respawn("W9");
+    expect(sid).not.toBeNull();
+    // A re-dispatch CLEARS the receipt token: the next attempt must be deliverable.
+    expect(getExtra(registry.getEntry("W9")!, "receipt")).toBeNull();
+    expect(getExtra(registry.getEntry("W9")!, "attempt")).toBe("2");
+    await waitUntil(() => registry.mailbox.pending("cli-main") === 1);
+    expect(getExtra(registry.getEntry("W9")!, "receipt")).toBe("W9:2");
+    expect(existsSync(join(results, "W9-T-a2.md"))).toBe(true);
+    // The receipt names THIS attempt, so a coordinator can tell them apart.
+    const receipt = registry.mailbox.poll("cli-main")[0]!;
+    expect(receipt.content).toContain("results/W9-T-a2.md");
+    expect(receipt.content).toContain("attempt=2");
+    registry.shutdown();
+    await registry.joinDrivers();
   });
 });

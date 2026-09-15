@@ -46,6 +46,8 @@ import { questionAnsweredRow, questionAskedRow } from "../question-rows.js";
 import { EMPTY_GRANTS } from "./engine-grants.js";
 import { createEngineLlm } from "./llm-assembly.js";
 import type { FallbackWiring } from "./fallback-host.js";
+import { workerTablePath } from "./worker-table.js";
+import type { RecoveryAuditWriter } from "./recovery-audit.js";
 import type { SessionGrantsReader } from "./session-grants.js";
 
 /** W510 resource caps (overridable through the adapter options or the env). */
@@ -114,6 +116,15 @@ export interface SessionComposerOptions {
   watchdog?: Partial<WatchdogMountSettings> | false;
   /** Worker receipt/report directory (default `<cwd>/worker-results`). */
   resultsDir?: string;
+  /**
+   * E §2.3 P0 ①: the worker table this process writes. `undefined` = derive it
+   * (`CELESTEA_WORKER_REGISTRY`, else `<data dir>/worker-registry.tsv`);
+   * `null` = IN-MEMORY only, which stays a first-class option for tests and
+   * embedded hosts (B6 is about the DEFAULT, not about removing the choice).
+   */
+  workerRegistryPath?: string | null;
+  /** `<data dir>` — the default home of that table (see `worker-table.ts`). */
+  dataDir?: string | null;
   /** Compact summarizer override (default: the `Llm` seam). */
   summarize?: (profile: Profile) => Summarizer;
   /**
@@ -137,6 +148,11 @@ export interface SessionComposerOptions {
    * the clock, which tests pin to keep the written file deterministic.
    */
   checkpoint?: CheckpointWiring;
+  /**
+   * W787 (§5.2③): the audit channel of the recovery facts this process observes
+   * (a degraded session log). Absent = no audit line is written.
+   */
+  recoveryAudit?: RecoveryAuditWriter | null;
   now?: () => number;
   /**
    * W783: the process-wide pending-question table. Present = every composed
@@ -356,7 +372,7 @@ export class SessionComposer {
   private workerWiring(sessionId: string | null, profile: Profile): WorkerWiring | false {
     if (this.opts.workers === false) return false;
     return {
-      tsvPath: null,
+      tsvPath: this.workerRegistryPath(),
       resultsDir: this.opts.resultsDir ?? join(process.cwd(), "worker-results"),
       sourceLabel: "celestea.studio-ts",
       logFactory: (): SessionLog => new InMemorySessionLog(),
@@ -368,12 +384,39 @@ export class SessionComposer {
     };
   }
 
+  /** E §2.3 P0 ①: the configured table path (see `worker-table.ts` for the rules). */
+  private workerRegistryPath(): string | null {
+    return workerTablePath({
+      env: this.opts.env,
+      ...(this.opts.dataDir === undefined ? {} : { dataDir: this.opts.dataDir }),
+      resultsDir: this.opts.resultsDir ?? join(process.cwd(), "worker-results"),
+      ...(this.opts.workerRegistryPath === undefined ? {} : { override: this.opts.workerRegistryPath }),
+    });
+  }
+
   private llmFactory(): (profile: Profile) => Llm {
     return this.opts.llm ?? ((profile: Profile): Llm => createEngineLlm(profile, this.opts.env));
   }
 
   private bindingTo(sessionId: string | null, dir: string | null): SessionBinding {
     const target = dir === null || sessionId === null ? null : { sessionId, dir };
-    return bindingFor(sessionId, target, this.memoryLogs, this.opts.checkpoint ?? {});
+    return bindingFor(sessionId, target, this.memoryLogs, {
+      ...(this.opts.checkpoint ?? {}),
+      onDegraded: (info) => this.noteDegraded(info),
+    });
+  }
+
+  /**
+   * E §1.3 P1 ③: a session log that refused a write is reported to the audit
+   * channel (the sidecar already carries the sticky counter, §1.2.2). One line
+   * per session instance — the store fires this at most once.
+   */
+  private noteDegraded(info: { session: string; count: number }): void {
+    this.opts.recoveryAudit?.write({
+      event: "log_degraded",
+      session: info.session,
+      count: info.count,
+      detail: `session log writeErrorCount=${info.count} (disk and memory diverged)`,
+    });
   }
 }

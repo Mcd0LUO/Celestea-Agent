@@ -39,8 +39,8 @@
  * (`llm-assembly.ts`), i.e. production is a real model.
  */
 
-import type { AskUserQuestionAnswerItem, InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome, WorkerEntry } from "@celestea/core";
-import { getExtra, hasInProgressTurn, type Watchdog, type WorkerRegistry } from "@celestea/workers";
+import type { AskUserQuestionAnswerItem, InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome } from "@celestea/core";
+import type { Watchdog, WorkerRecoveryReport, WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
   autowakeEnabled,
@@ -48,7 +48,6 @@ import {
   keyOfSession,
   outcomePhaseOf,
   HOST_SESSION_ID,
-  runCompaction,
   SessionRuntimeRegistry,
   statuslineOf,
   TurnBusyError,
@@ -108,6 +107,10 @@ import {
 } from "./worker-bridge.js";
 import { inboxMessageOf } from "./inbox-message.js";
 import { watchdogCount, watchdogOf, watchdogRunningOf, workerStatusOf } from "./watchdog-view.js";
+import { hasLiveWorkersOf } from "./worker-live.js";
+import { recoveryViewOf, type RecoveryView } from "./recovery-view.js";
+import { workerRecoveryBlock, workerTablePath } from "./worker-table.js";
+import { clearSession, compactSession, type SessionLifecycleDeps } from "./session-lifecycle.js";
 
 export { SESSION_LOG_ID, SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
 export { MAX_CONCURRENT_TURNS, MAX_LIVE_SESSIONS, SESSION_IDLE_TTL_MS } from "./session-compose.js";
@@ -125,8 +128,9 @@ export interface RealRuntimeAdapterOptions extends Omit<SessionComposerOptions, 
   /** Idle TTL for the reclaimer (default [SESSION_IDLE_TTL_MS]). */
   idleTtlMs?: number;
   /**
-   * `<data dir>` — where `fallbacks.json` / `fallbacks-audit.jsonl` live.
-   * Defaults to the ledger's directory (both are process-level data files).
+   * `<data dir>` — where `fallbacks.json` / `fallbacks-audit.jsonl` live, and the
+   * default home of the worker table (`<data dir>/worker-registry.tsv`, §2.2.1).
+   * Defaults to the ledger's directory (all three are process-level data files).
    */
   dataDir?: string;
 }
@@ -179,6 +183,8 @@ class RealEngine implements RealRuntimeAdapter {
   private readonly autowake: HostAutowake;
   /** E §4 P1 (W785): the process-wide fallback glue (see `fallback-host.ts`). */
   private readonly fallback: AdapterFallback;
+  /** E §2.3 P0 ①: the resolved worker table path (null = in-memory only). */
+  private readonly workerTable: string | null;
   /** W783: process-wide user-question capability (table + host view). */
   private readonly questions = new QuestionHost({
     emit: (sessionId, turn, f) => void this.bus?.emit(f.event, turn, f.payload, sessionId),
@@ -198,6 +204,12 @@ class RealEngine implements RealRuntimeAdapter {
       wake: (session, input) => this.startAutowakeTurn(session, input),
     });
     this.profileValue = profileFromEngine(opts.profile ?? defaultEngineProfile(this.env, "CELESTEA_API_KEY"));
+    this.workerTable = workerTablePath({
+      env: this.env,
+      dataDir: opts.dataDir ?? null,
+      resultsDir: opts.resultsDir ?? null,
+      ...(opts.workerRegistryPath === undefined ? {} : { override: opts.workerRegistryPath }),
+    });
     // E §4 P1 (W785): OFF unless `CELESTEA_LLM_FALLBACK` says on — `wrap()`
     // then returns null and the composer keeps the pre-P1 path (D9).
     this.fallback = new AdapterFallback({ dataDir: opts.dataDir ?? null, ledgerFile: opts.ledgerFile ?? null, env: this.env, bus: () => this.bus, peek: (s) => this.registry.peek(s), ...(opts.now === undefined ? {} : { now: opts.now }) });
@@ -225,12 +237,16 @@ class RealEngine implements RealRuntimeAdapter {
       maxConcurrentTurns: opts.maxConcurrentTurns ?? limitFromEnv(this.env, "CELESTEA_MAX_CONCURRENT_TURNS", MAX_CONCURRENT_TURNS),
       idleTtlMs: opts.idleTtlMs ?? limitFromEnv(this.env, "CELESTEA_SESSION_IDLE_TTL_MS", SESSION_IDLE_TTL_MS),
       // The detached instance is never reclaimed (it backs `/api/tools`), nor is a
-      // session that still OWNS worker rows (W513 pin) — a settled row keeps its
-      // session's instance and its parked driver, exactly as before.
-      pinned: (entry) => entry.key === keyOfSession(null) || (entry.runtime.workers?.ownEntries().length ?? 0) > 0,
+      // session with LIVE worker work (W513 pin) — the worker, its driver and its
+      // row must outlive an idle sweep. W787: the pin follows LIVE work, not "the
+      // registry holds rows": since the table persists (§2.2.3), a session that
+      // ever spawned a worker would otherwise be pinned for the rest of the
+      // process (and, across restarts, exempt from the session cap forever). A
+      // settled row survives on disk and comes back with the next generation.
+      pinned: (entry) => entry.key === keyOfSession(null) || hasLiveWorkersOf(entry),
       // W742 §1: only LIVE worker work defers a rebuild; a settled, parked worker
       // must not block the generation swap of its session forever.
-      rebuildDeferred: (entry) => this.hasLiveWorkers(entry),
+      rebuildDeferred: (entry) => hasLiveWorkersOf(entry),
       ...(opts.now === undefined ? {} : { now: opts.now }),
     });
     // W742 §2: arm the low-frequency reclaimer (unref'ed; `shutdown` disarms it).
@@ -537,39 +553,20 @@ class RealEngine implements RealRuntimeAdapter {
   }
 
   async clear(session: string | null): Promise<ClearOutcome> {
-    const entry = this.registry.peek(session);
-    if (entry !== null) {
-      if (entry.inFlight) throw new TurnBusyError("clear");
-      entry.runtime.session.clear();
-      entry.turnNo = 0;
-    }
-    return { cleared: true };
+    return clearSession(this.registry, session);
   }
 
   async compact(session: string): Promise<CompactOutcome> {
-    const target = this.opts.resolveSession?.(session) ?? null;
-    if (target === null || target.dir === null) {
-      return { compacted: false, note: SKIPPED_NOTE, session, rebound: false };
-    }
-    const live = this.registry.peek(session) !== null;
-    if (live) await this.registry.evict(keyOfSession(session));
-    const result = await this.runCompact(join(target.dir, SESSION_LOG_NAME));
-    if (live) this.registry.ensure(session, target.dir);
-    return {
-      compacted: result.compacted,
-      ...(result.compacted && result.kept_turns !== null ? { kept_turns: result.kept_turns } : {}),
-      note: result.note,
-      session,
-      rebound: live && result.compacted,
-    };
+    return compactSession(this.lifecycleDeps(), session);
   }
 
-  private async runCompact(logPath: string): Promise<{ compacted: boolean; kept_turns: number | null; note: string }> {
-    try {
-      return await runCompaction({ logPath, summarize: this.composer.summarizer() });
-    } catch (e) {
-      throw new EngineError(e instanceof Error ? e.message : String(e));
-    }
+  /** Everything `clear`/`compact` need (see `session-lifecycle.ts`). */
+  private lifecycleDeps(): SessionLifecycleDeps {
+    return {
+      registry: this.registry,
+      resolve: (id) => this.opts.resolveSession?.(id) ?? null,
+      summarizer: () => this.composer.summarizer(),
+    };
   }
 
   // --- workers -----------------------------------------------------------
@@ -597,37 +594,34 @@ class RealEngine implements RealRuntimeAdapter {
    * live sweepers rides along.
    */
   workerStatus(wid?: string): WorkerStatusReport {
-    return workerStatusOf(this.workerSessions(), watchdogCount(this.registry.list()), wid);
+    return workerStatusOf(this.workerSessions(), watchdogCount(this.registry.list()), wid, this.workerRecovery());
+  }
+
+  /** E §1.3 P1 ②: `/api/status.recovery` of one session (never composes one). */
+  recoveryView(session: string | null): RecoveryView {
+    return recoveryViewOf(this.registry.peek(session)?.runtime.session ?? null, session);
+  }
+
+  /**
+   * E §2.3 P0 ③: judge the PERSISTED table on every status poll (the boot
+   * observer writes the same judgement to the audit channel once). Observation
+   * only — nothing here settles a row or re-dispatches a worker (P2 territory).
+   */
+  private workerRecovery(): WorkerRecoveryReport {
+    return workerRecoveryBlock({
+      path: this.workerTable,
+      knownHost: (sid) => this.opts.resolveSession?.(sid) != null,
+      resultsDir: this.opts.resultsDir ?? join(process.cwd(), "worker-results"),
+      now: this.now,
+    });
   }
 
   // --- internals ---------------------------------------------------------
-
-  /**
-   * W742 §1: does this instance still hold LIVE background work? Two things count:
-   * a RUNNING row (the brief has no terminal verdict — W736 freezes it exactly
-   * once) and a worker session with an OPEN turn (a follow-up message being
-   * answered; the row is already settled by then, so the log is the only witness).
-   * A parked, settled worker is addressable but idle: it must NOT keep its
-   * session's generation frozen, or a config change would never land there.
-   */
-  private hasLiveWorkers(entry: SessionRuntime): boolean {
-    const workers = entry.runtime.workers;
-    return workers !== null && workers.ownEntries().some((row) => row.status === "RUNNING" || openTurnOf(workers, row));
-  }
 
   private get now(): () => number {
     return this.opts.now ?? Date.now;
   }
 }
-
-/** W742 §1: is a turn OPEN on this worker's own session log? (W736's rule.) */
-function openTurnOf(workers: WorkerRegistry, row: WorkerEntry): boolean {
-  const log = workers.sessions.logOf(getExtra(row, "sess") ?? "");
-  return log !== undefined && hasInProgressTurn(log.events());
-}
-
-/** The frozen "nothing to compact" note (kept in sync with compact/plan.ts). */
-const SKIPPED_NOTE = "历史不足，无需压缩";
 
 /** Build the real adapter (the host's default engine). */
 export function createRealRuntimeAdapter(opts: RealRuntimeAdapterOptions = {}): RealRuntimeAdapter {

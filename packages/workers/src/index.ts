@@ -25,6 +25,8 @@
  *   registry.ts      WorkerRegistry: table state + driver seams (workers/registry.rs)
  *   driver.ts        mailbox event loop (brief -> park -> deliver)  (registry.rs:299-450)
  *   receipt.ts       report file + WORKER_<wid>_DONE/FAILED receipt (registry.rs:551-620)
+ *   row.ts           W787: the ROW FORMAT (token list, terminal stamp, view)
+ *   recovery.ts      W787: boot observation of a persisted table (§2.2.4, P0)
  *   watchdog.ts      liveness judgement as an independent plugin   (workers/watchdog.rs)
  *   tools.ts         the three worker tools + contract specs   (workers/tools.rs)
  *   plugin.ts        Context registration (WORKER_REGISTRY_SERVICE)  (workers/plugin.rs)
@@ -38,6 +40,8 @@ export * from "./log.js";
 export * from "./sessions.js";
 export * from "./mailbox.js";
 export * from "./registry.js";
+export * from "./row.js";
+export * from "./recovery.js";
 export * from "./driver.js";
 export * from "./receipt.js";
 export * from "./watchdog.js";

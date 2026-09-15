@@ -36,6 +36,10 @@ export interface EngineHarnessOptions {
    * resource caps) both read it (W740).
    */
   env?: NodeJS.ProcessEnv;
+  /** Files planted before the app composes (JSON-encoded; see `makeHarness`). */
+  files?: Record<string, unknown>;
+  /** Files planted VERBATIM (the worker table, a planted sidecar). */
+  rawFiles?: Record<string, string>;
 }
 
 /** One complete turn in the engine's native JSONL shape. */
@@ -191,7 +195,11 @@ export function makeEngineHarness(opts: EngineHarnessOptions = {}): StudioHarnes
   // W729: the per-session prompt hook needs the host services, which exist only
   // AFTER composition — the same late-bound ref `app.ts` uses (see HostRef).
   const host: HostRef = { services: null };
-  const h = makeHarness({ engineFactory: createStudioEngine(offlineEngineDeps(opts, host)) });
+  const h = makeHarness({
+    engineFactory: createStudioEngine(offlineEngineDeps(opts, host)),
+    ...(opts.files === undefined ? {} : { files: opts.files }),
+    ...(opts.rawFiles === undefined ? {} : { rawFiles: opts.rawFiles }),
+  });
   host.services = h.studio.services;
   for (const [name, events] of Object.entries(opts.sessions ?? {})) plantSession(h.workspace, name, events, opts.meta?.[name]);
   return h;

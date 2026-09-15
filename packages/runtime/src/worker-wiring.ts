@@ -19,6 +19,7 @@ import {
   WorkerRegistry,
   WORKER_REGISTRY_SERVICE,
   workersPlugin,
+  type MailboxMessage,
   type SessionLogFactory,
   type Watchdog,
   type WorkerDrivers,
@@ -35,7 +36,12 @@ export interface WorkerWiring {
   enabled?: boolean;
   /** Pre-built registry (the host owns it); otherwise one is created + mounted. */
   registry?: WorkerRegistry;
-  /** `null` = in-memory table only; default = the shared `/tmp` registry.tsv. */
+  /**
+   * `null` = in-memory table only. Omitted = `REGISTRY_TSV_PATH` (the legacy
+   * shared `/tmp` table). E §2.3 P0 ①: the studio passes an EXPLICIT path
+   * (`<data dir>/worker-registry.tsv`, env `CELESTEA_WORKER_REGISTRY`) so it can
+   * never write the table of the DSH-side fleet (B6/R2-1).
+   */
   tsvPath?: string | null;
   resultsDir?: string;
   sourceLabel?: string;
@@ -86,8 +92,8 @@ export interface WorkerHost {
 export function ensureWorkerWiring(ctx: Context, wiring: WorkerWiring | false | undefined): WorkerHost | null {
   if (wiring === false || wiring?.enabled === false) return null;
   const provided = ctx.get<WorkerRegistry>(WORKER_REGISTRY_SERVICE);
-  const registry = provided ?? mountDefault(ctx, wiring ?? {});
   const hostSessionId = wiring?.hostSessionId ?? HOST_SESSION_ID;
+  const registry = provided ?? mountDefault(ctx, wiring ?? {}, hostSessionId);
   registerHost(registry, hostSessionId, wiring?.hostModel ?? null, wiring?.hostMode ?? null);
   return {
     registry,
@@ -99,9 +105,11 @@ export function ensureWorkerWiring(ctx: Context, wiring: WorkerWiring | false | 
   };
 }
 
-function mountDefault(ctx: Context, wiring: WorkerWiring): WorkerRegistry {
+function mountDefault(ctx: Context, wiring: WorkerWiring, hostSessionId: string): WorkerRegistry {
   const registry = new WorkerRegistry({
     tsvPath: wiring.tsvPath === undefined ? undefined : wiring.tsvPath,
+    // E §2.2.2 (`host=`): the row records which conversation dispatched it.
+    hostSessionId,
     resultsDir: wiring.resultsDir ?? RESULTS_DIR,
     sourceLabel: wiring.sourceLabel ?? "celestea.runtime",
     logFactory: wiring.logFactory ?? ((): SessionLog => new InMemorySessionLog()),
@@ -132,10 +140,24 @@ function drainHost(registry: WorkerRegistry, hostSessionId: string): PendingRece
   return registry.mailbox.poll(hostSessionId).map((m) => ({
     text: m.content,
     from: m.from_label,
-    id: `mailbox:${m.id}`,
+    id: idempotencyKeyOf(registry, m),
     kind: m.kind,
     source: m.source ?? { kind: "worker-relay", form: "message", senderSessionId: m.from_label },
   }));
+}
+
+/**
+ * E §2.2.3 (2-P1 ②): the idempotency key of a drained message.
+ *
+ * A RECEIPT is keyed by `receipt:<wid>:<attempt>` — stable across processes, so
+ * a receipt replayed after a restart (or delivered twice by two generations) is
+ * dropped by the inbox's existing duplicate rule (B3). Every other message (a
+ * deliberate relay, a stimulus) keeps the in-process mailbox sequence: keying a
+ * relay by `(wid, attempt)` would silently drop a SECOND intentional message.
+ */
+function idempotencyKeyOf(registry: WorkerRegistry, message: MailboxMessage): string {
+  const receipt = message.kind === "receipt" ? registry.receiptKeyFor(message.from_label) : null;
+  return receipt ?? `mailbox:${message.id}`;
 }
 
 function attachDrivers(registry: WorkerRegistry, drivers: WorkerDrivers | null): boolean {

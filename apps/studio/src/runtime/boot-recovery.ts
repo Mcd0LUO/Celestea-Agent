@@ -11,18 +11,25 @@
  * the P0 observation channel (stderr; the durable record is the sidecar's
  * `repaired[]`). Recovery never throws and never fails the boot: a damaged
  * sidecar or an unknown session id must not stop the studio from starting.
+ *
+ * W787 (§5.2③): the repair is an AUTOMATIC behaviour, so it now also reaches the
+ * audit channel (`recovery-audit.jsonl`) when one is wired — the P0 note that
+ * only two channels existed was a deliberate deferral, and P1 is when it closes.
  */
 
 import { recoverSessionOnBoot, type BootRecoveryReport } from "@celestea/runtime";
 import type { SessionsStore } from "../store/sessions.js";
 import type { WorkspacesStore } from "../store/workspaces.js";
 import { sessionIdOfDir } from "./engine-grants.js";
+import type { RecoveryAuditWriter } from "./recovery-audit.js";
 
 export interface BootRecoveryInput {
   workspaces: Pick<WorkspacesStore, "activeSession">;
   sessions: Pick<SessionsStore, "resolve">;
   now?: () => number;
   warn?: (message: string) => void;
+  /** W787: the durable audit channel (§5.2③); absent = stderr only. */
+  audit?: RecoveryAuditWriter | null;
 }
 
 /** Recover the previously active session; null when there is nothing to look at. */
@@ -47,7 +54,20 @@ export function recoverActiveSessionOnBoot(input: BootRecoveryInput): BootRecove
     warn,
   });
   announce(report, warn);
+  auditRepair(input.audit, report);
   return report;
+}
+
+/** One audit line for the ONE automatic action of this capability (§5.2③). */
+function auditRepair(audit: RecoveryAuditWriter | null | undefined, report: BootRecoveryReport): void {
+  if (audit == null || !report.appended) return;
+  audit.write({
+    event: "session_repaired",
+    session: report.session,
+    turn_id: report.turn_id,
+    count: report.dangling_before.length,
+    detail: `appended turn_end{outcome:interrupted} after a crash (dangling before=${report.dangling_before.length})`,
+  });
 }
 
 /** The P0 visibility rule: a repair, a skip that hides a dangling turn, a warning. */

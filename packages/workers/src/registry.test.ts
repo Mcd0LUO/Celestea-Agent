@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { recordingSessionLog } from "./log.js";
 import { WorkerRegistry, isOwn, withProc, withState } from "./registry.js";
-import { getExtra, parseRegistryTsv, serializeRegistryTsv } from "./registry-tsv.js";
+import { getExtra, parseRegistryTsv, receiptDelivered, receiptKey, serializeRegistryTsv, workerAttempt, workerHost, workerLease } from "./registry-tsv.js";
+import { workerTools } from "./tools.js";
 import { scriptedDrivers, scriptedLoop, waitUntil } from "./fakes.test-util.js";
 
 const FIXED_NOW = Date.parse("2026-09-10T12:00:00Z");
@@ -263,5 +264,102 @@ describe("WorkerRegistry state machine (W736)", () => {
     const rows = parseRegistryTsv(readFileSync(path, "utf8")).entries;
     expect(rows.map((r) => `${r.wid}:${r.status}`)).toEqual(["W1:FAILED", "W2:DONE"]);
     expect(getExtra(rows[0]!, "fail")).toBe("registry-shutdown");
+  });
+});
+
+describe("E §2.3 P0/P1 (W787): persisted table, attempt tokens, boot observation", () => {
+  it("B1: a NEW registry instance reads the same table; the row is foreign but visible", () => {
+    const path = tmpTsv();
+    const a = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 1111, resultsDir: "results", hostSessionId: "ws/s1" });
+    // Process A dispatches (the tokens the worker tools stamp, §2.2.2).
+    a.upsert({ wid: "W1", started_at: "2026-09-10_12:00:00Z", status: "RUNNING", extra: "sess=session-0 host=ws/s1 attempt=1 lease=1111@1789000000 proc=1111" });
+
+    // Process B: another pid — and another host session, so the row is foreign twice over.
+    const b = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 2222, resultsDir: "results", hostSessionId: "ws/s2" });
+    expect(b.ownEntries()).toEqual([]);
+    expect(b.entries().map((e) => e.wid)).toEqual(["W1"]);
+    // The judgement is observation-only: the dead owner makes it STALE, and the
+    // deliverable decides what P2 would do (close it as DONE).
+    const report = b.recoverCandidates({ pidAlive: () => false, artifactExists: () => true, now: 42 });
+    expect(report.observed_at).toBe(42);
+    expect(report.stale.map((c) => [c.wid, c.reason, c.attempt, c.host_session, c.action, c.artifact])).toEqual([["W1", "stale_lease", 1, "ws/s1", "close_done", true]]);
+    expect(report.live).toEqual([]);
+    expect(report.frozen).toEqual([]);
+    // NOTHING was rewritten: P0 never settles or re-dispatches at boot.
+    expect(parseRegistryTsv(readFileSync(path, "utf8")).entries[0]?.status).toBe("RUNNING");
+  });
+
+  it("B1b: a live owner and a missing host session are told apart", () => {
+    const reg = registry(null);
+    reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=s1 host=ws/gone attempt=1 lease=4242@1789000000" });
+    reg.upsert({ wid: "W2", started_at: "t", status: "RUNNING", extra: "sess=s2 host=ws/s1 attempt=1 lease=4242@1789000000" });
+    reg.upsert({ wid: "W3", started_at: "t", status: "DONE", extra: "sess=s3 host=ws/s1" });
+    const report = reg.recoverCandidates({ pidAlive: () => true, knownHost: (sid) => sid === "ws/s1" });
+    expect(report.orphans.map((c) => c.wid)).toEqual(["W1"]);
+    expect(report.live).toEqual(["W2"]);
+    expect(report.frozen).toEqual(["W3"]);
+    expect(report.stale).toEqual([]);
+  });
+
+  it("B4 (P0 half): RUNNING + dead owner + NO deliverable is judged, never re-dispatched", () => {
+    const path = tmpTsv();
+    const reg = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 3333, resultsDir: "results", hostSessionId: "ws/s1" });
+    reg.upsert({ wid: "W7", started_at: "t", status: "RUNNING", extra: "sess=s7 host=ws/s1 attempt=1 lease=9999@1789000000 retries=0" });
+    const before = readFileSync(path, "utf8");
+    const report = reg.recoverCandidates({ pidAlive: () => false, artifactExists: () => false });
+    expect(report.stale.map((c) => [c.wid, c.action, c.retries])).toEqual([["W7", "respawn", 0]]);
+    // B8 (P0 half): a SECOND observation is a no-op — same judgement, same bytes.
+    expect(reg.recoverCandidates({ pidAlive: () => false, artifactExists: () => false }).stale).toHaveLength(1);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    // Exhausted retries would be a FAILED close in P2 (the decision is recorded, not taken).
+    reg.upsert({ wid: "W8", started_at: "t", status: "RUNNING", extra: "sess=s8 host=ws/s1 attempt=2 lease=9999@1789000000 retries=2" });
+    expect(reg.recoverCandidates({ pidAlive: () => false }).stale.map((c) => [c.wid, c.action])).toEqual([["W7", "respawn"], ["W8", "fail"]]);
+  });
+
+  it("a row without a lease is judged by its `proc` (the legacy fallback)", () => {
+    const reg = registry(null, 4242);
+    reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=s1 host=ws/s1" });
+    expect(reg.recoverCandidates({ pidAlive: (pid) => pid === 4242 }).live).toEqual(["W1"]);
+    expect(reg.recoverCandidates({ pidAlive: () => false }).stale.map((c) => c.lease_pid)).toEqual([4242]);
+  });
+
+  it("stamps host/attempt/lease through the worker tools and bumps the attempt on respawn", async () => {
+    const path = tmpTsv();
+    const reg = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 4444, resultsDir: "results", hostSessionId: "ws/s1" });
+    const tools = new Map(workerTools(reg).map((t) => [t.spec().name, (args: unknown) => t.execute(args) as Promise<unknown>]));
+    await tools.get("spawn_worker")!({ wid: "W5", brief: "b", report_to: "host" });
+    const row = reg.getEntry("W5")!;
+    expect(getExtra(row, "host")).toBe("ws/s1");
+    expect(getExtra(row, "attempt")).toBe("1");
+    expect(getExtra(row, "lease")).toBe(`4444@${Math.floor(FIXED_NOW / 1000)}`);
+    // A re-dispatch is the NEXT attempt of the same wid (§2.2.2).
+    reg.rememberSpawn(getExtra(row, "sess")!, { wid: "W5", short: "b", brief: "b", reportTo: "host", mode: null });
+    const sid = reg.respawn("W5");
+    expect(sid).not.toBeNull();
+    expect(getExtra(reg.getEntry("W5")!, "attempt")).toBe("2");
+    expect(getExtra(reg.getEntry("W5")!, "retries")).toBe("1");
+  });
+
+  it("B7: round-trips a row carrying all four new tokens byte-for-byte", () => {
+    const line = "W9\t2026-09-10_12:00:00Z\tRUNNING\tsess=s9 title=t host=ws/s1 attempt=3 lease=4242@1789000000 receipt=W9:2 proc=4242";
+    const parsed = parseRegistryTsv(`${line}\n`);
+    expect(parsed.entries).toHaveLength(1);
+    expect(serializeRegistryTsv(parsed.entries)).toBe(`${line}\n`);
+    const entry = parsed.entries[0]!;
+    expect([workerHost(entry), workerAttempt(entry), workerLease(entry), receiptDelivered(entry, 2), receiptDelivered(entry, 3)]).toEqual(["ws/s1", 3, { pid: 4242, at: 1789000000 }, true, false]);
+    expect(receiptKey(entry.wid, workerAttempt(entry))).toBe("receipt:W9:3");
+  });
+
+  it("B6: writing one session's row KEEPS the rows another session already wrote", () => {
+    const path = tmpTsv();
+    const s1 = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 4242, resultsDir: "results", hostSessionId: "ws/s1" });
+    const s2 = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 4242, resultsDir: "results", hostSessionId: "ws/s2" });
+    s1.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=a host=ws/s1 attempt=1" });
+    s2.upsert({ wid: "W2", started_at: "t", status: "RUNNING", extra: "sess=b host=ws/s2 attempt=1" });
+    // One process, ONE table, TWO host sessions — and each sees only its own row.
+    expect(parseRegistryTsv(readFileSync(path, "utf8")).entries.map((e) => e.wid).sort()).toEqual(["W1", "W2"]);
+    expect(s1.ownEntries().map((e) => e.wid)).toEqual(["W1"]);
+    expect(s2.ownEntries().map((e) => e.wid)).toEqual(["W2"]);
+    expect(s2.getEntry("W1")?.status).toBe("RUNNING");
   });
 });

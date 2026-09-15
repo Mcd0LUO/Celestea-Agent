@@ -21,6 +21,16 @@
  *
  * The two hooks (`onQueued`, `onDelivered`) let the host publish the placement
  * over SSE without the inbox knowing anything about a transport.
+ *
+ * E §1.3 P1 ①: the lanes and the dedup ledger are PERSISTABLE. `bindPersistence`
+ * attaches a sink (the session's `checkpoint.json`, see `inbox-checkpoint.ts`);
+ * binding RESTORES whatever the previous process left queued and then writes on
+ * every change, so "accepted but not yet injected" survives a crash — the
+ * G1-4 failure mode, where a user's message vanished silently.
+ *
+ * Restoration is DELIBERATELY silent (no `onQueued` hook): a message queued by a
+ * process that died was already announced by that process, and re-announcing it
+ * would show the client a placement that did not change.
  */
 
 import type { DeliverySource, InjectionKind, InjectionLane, InjectionPlacement } from "@celestea/core";
@@ -57,6 +67,24 @@ export interface SessionInbox {
   drain(lane: InjectionLane): InjectedMessage[];
   /** Messages waiting (one lane, or both). */
   pending(lane?: InjectionLane): number;
+  /** E §1.3 P1 ①: restore from, and persist every change to, `sink`. */
+  bindPersistence(sink: InboxSink): void;
+  /** The persistable state: both lanes plus the bounded delivered-id ledger. */
+  snapshot(): InboxSnapshot;
+}
+
+/** Both lanes plus the accepted-id memory, exactly as they persist. */
+export interface InboxSnapshot {
+  next_turn: InjectedMessage[];
+  next_step: InjectedMessage[];
+  delivered_ids: string[];
+}
+
+/** Where a snapshot goes (the session's checkpoint sidecar in production). */
+export interface InboxSink {
+  /** The snapshot of the PREVIOUS process, or null when there is none usable. */
+  load(): InboxSnapshot | null;
+  save(snapshot: InboxSnapshot): void;
 }
 
 export interface InboxPushOptions {
@@ -79,7 +107,9 @@ export function createSessionInbox(now: () => number = Date.now, hooks: InboxHoo
   const lanes: Record<InjectionLane, InjectedMessage[]> = { "next-turn": [], "next-step": [] };
   const seen: string[] = [];
   const seenSet = new Set<string>();
+  let sink: InboxSink | null = null;
 
+  /** Bounded FIFO memory of accepted ids (oldest evicted first). */
   const remember = (id: string): boolean => {
     if (id === "" || !seenSet.has(id)) {
       if (id !== "") {
@@ -95,7 +125,45 @@ export function createSessionInbox(now: () => number = Date.now, hooks: InboxHoo
     return true;
   };
 
+  const snapshot = (): InboxSnapshot => ({
+    next_turn: lanes["next-turn"].map((m) => ({ ...m })),
+    next_step: lanes["next-step"].map((m) => ({ ...m })),
+    delivered_ids: [...seen],
+  });
+
+  const save = (): void => {
+    try {
+      sink?.save(snapshot());
+    } catch (e) {
+      // Persistence is observation: a sidecar that cannot be written must never
+      // lose the message that is still safely in memory (the checkpoint's rule).
+      process.stderr.write(`[celestea-runtime] inbox not persisted: ${String(e)}\n`);
+    }
+  };
+
+  const restore = (state: InboxSnapshot): void => {
+    for (const message of state.next_turn) lanes["next-turn"].push(message);
+    for (const message of state.next_step) lanes["next-step"].push(message);
+    // A restored message was ALREADY accepted once: re-remembering its id keeps
+    // the duplicate rule valid across the restart (and across processes).
+    for (const message of [...lanes["next-turn"], ...lanes["next-step"]]) remember(message.id);
+    for (const id of state.delivered_ids) remember(id);
+  };
+
   return {
+    bindPersistence(next: InboxSink): void {
+      sink = next;
+      // Fail-safe on BOTH sides: an unreadable queue is an EMPTY queue (the same
+      // discipline the recovery decision table uses) — a broken sidecar must
+      // never stop a session from composing.
+      try {
+        const state = next.load();
+        if (state !== null) restore(state);
+      } catch (e) {
+        process.stderr.write(`[celestea-runtime] inbox not restored: ${String(e)}\n`);
+      }
+    },
+    snapshot,
     push(text: string, lane: InjectionLane, opts: InboxPushOptions = {}): InjectedMessage {
       const id = opts.id ?? "";
       const message: InjectedMessage = {
@@ -110,12 +178,14 @@ export function createSessionInbox(now: () => number = Date.now, hooks: InboxHoo
       };
       if (!message.duplicate) {
         lanes[lane].push(message);
+        save();
         hooks.onQueued?.(message, placementOfLane(lane));
       }
       return message;
     },
     drain(lane: InjectionLane): InjectedMessage[] {
       const taken = lanes[lane].splice(0, lanes[lane].length);
+      if (taken.length > 0) save();
       for (const message of taken) hooks.onDelivered?.(message);
       return taken;
     },
