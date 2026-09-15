@@ -244,8 +244,9 @@ export class WorkerRegistry {
       model: getExtra(entry, "model"),
       mode,
     });
-    // E §2.2.2: a re-dispatch is the NEXT attempt of the same wid — the report
-    // name and the receipt key both derive from it (G2-2/G2-3).
+    // E §2.2.2 + §5.2: a re-dispatch is the NEXT attempt of the same wid
+    // (0 -> 1, the 0-based cross-capability convention) — the report name and the
+    // receipt key both derive from it (G2-2/G2-3).
     const attempt = workerAttempt(entry) + 1;
     const cleared = { ...entry, extra: dropTokens(entry.extra, ["fail", "ended_at", "receipt"]) };
     const extra = withTokens(cleared, {

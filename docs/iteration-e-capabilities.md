@@ -294,7 +294,7 @@
 | token | 语义 | 用于 |
 |---|---|---|
 | `host=<sid>` | **派发它的宿主会话**（W513 的 `hostSessionId`） | 重启后把 worker 归还给正确的宿主会话（补 G2-6） |
-| `attempt=<n>` | 第几次尝试（首次 = 1，重派 +1） | 回执幂等键、报告文件名（补 G2-3） |
+| `attempt=<n>` | 第几次尝试（**首次 = 0**，重派 +1；§5.2 贯通约定，与账本/回退同一编号语义） | 回执幂等键、报告文件名（补 G2-3） |
 | `lease=<pid>@<unix>` | 拥有者进程与续期时刻 | 崩溃判定与僵尸行识别（补 G2-5） |
 | `receipt=<key>` | 已发回执的幂等键 `wid:attempt` | 防重复回执（补 G2-2） |
 
@@ -331,7 +331,7 @@
 | # | 场景 | 断言 | 落点 |
 |---|---|---|---|
 | B1 | 进程 A spawn 后，进程 B（新 `WorkerRegistry` 实例）读同一 TSV | B 的 `ownEntries()` 为空（`proc` 不同）但 `entries()` 含该行；`recoverCandidates()` 返回 1 条 `orphan`（pid 不存在） | `packages/workers/src/registry.test.ts` 延伸 |
-| B2 | 同一 wid 两次 attempt | `results/<wid>-<short>-a1.md` 与 `-a2.md` **同时存在**（`existsSync` 双断言） | `packages/workers/src/receipt.test.ts` 延伸 |
+| B2 | 同一 wid 两次 attempt | `results/<wid>-<short>-a0.md` 与 `-a1.md` **同时存在**（`existsSync` 双断言） | `packages/workers/src/receipt.test.ts` 延伸 |
 | B3 | 同一 `(wid,attempt)` 回执投递两次 | 宿主 `inbox.pending()` 只 +1；第二次 `injected.duplicate === true` | `packages/runtime/src/inbox.test.ts` 延伸 + `worker-wiring` 契约 |
 | B4 | boot 恢复（RUNNING + pid 不存在 + 交付物存在） | 行状态 `DONE`；`mailbox.pending(host)` delta 恰为 1；审计恰 1 行 | `packages/workers/src/registry.test.ts` |
 | B5 | `DONE` 行 + `setWorkerState("in-turn")` | 行状态仍 `DONE`（既有冻结语义不回退） | 现有用例延伸 |
@@ -378,7 +378,7 @@
 
 **其它偏离 / 已知边界（逐条）**：
 
-1. **`attempt` 从 1 起，与 §5.2 的 `attempt=0` 首次不同** —— 本文自身冲突：§2.2.2（能力 2 专属）写"首次 = 1，重派 +1"，§5.2（贯通约定）写"`attempt=0` 表示首次"。worker 侧取 §2.2.2（报告名 `-a1.md`/`-a2.md`、`receipt:<wid>:1`），账本/回退侧仍取 §5.2。**登记为待裁决**，改动只影响一个函数（`workerAttempt`）。
+1. **`attempt` 编号：已裁决，§5.2 胜，统一 0 基**（W787 归一，见下）。本文原 §2.2.2 的"首次 = 1"与 §5.2 的"`attempt=0` 表示首次"冲突；裁决依据是 §5.2 明写"账本与回执与 registry 行使用**同一编号语义**"，而账本侧（`packages/llm/src/fallback.ts` 的 `for (let attempt = 0; …)`、D6 断言 `attempt = 0/1/2`）已是**已交付且测试冻结**的 0 基。因此**改 worker 侧，不改账本侧**：`workerAttempt`（缺 token ⇒ 首试 ⇒ 0）、spawn 落 `attempt=0`、报告名首个 `-a0.md`、幂等键首个 `receipt:<wid>:0`；§2.2.2 表格已同步改写为"首次 = 0"。
 2. **`lease` 无心跳续期**（P2 项）：只在 spawn / 重派 / driver 状态变化时续期。判定因此是"最后一次活动"，不是"现在还在跑"——对崩溃判定足够，对长静默的 RUNNING 行偏保守（宁可判活，不误重派，符合 R2-2）。
 3. **未做 P1④（读 DSH 插件表做展示）**：插件表的路径（`workerBase`）不在 studio 的配置面内，硬编码外部服务的路径会引入 §2.2.1/R2-1 想要避免的耦合。留 P2 与"是否合并两表"（U4）一起裁决。
 4. **wid 在表内是主键**：settled 行会**冻结** wid（§2.2.4 第 5 行），因此表落盘后**跨重启**用同一个 wid 再 spawn 会被 `spawn_worker` 拒绝（"wid already registered"）。P0 不改这条既有语义（B5 的冻结语义），补法是 P2 的"终态行 + 同 wid = 下一 attempt"，届时报告名/回执键都已就绪。

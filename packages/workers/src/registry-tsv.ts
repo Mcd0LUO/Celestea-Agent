@@ -5,7 +5,7 @@
  * Bad rows are skipped, never fatal. `extra` is free text of k=v tokens.
  *
  * W787 (E §2.2.2): four tokens joined the vocabulary — `host=` (the dispatching
- * host conversation), `attempt=` (which try this row is, first = 1), `lease=`
+ * host conversation), `attempt=` (which try this row is, first = 0, §5.2), `lease=`
  * (`<pid>@<unix>` of the owning process) and `receipt=` (the delivered receipt's
  * idempotency key). The COLUMN COUNT does not change, so an older parser keeps
  * reading the table (it only sees a longer `extra`), which is what makes this a
@@ -124,14 +124,17 @@ export function workerHost(entry: WorkerEntry): string | null {
 }
 
 /**
- * Which try this row is (`attempt=`). E §2.2.2: the FIRST spawn is `1` and a
- * re-dispatch adds one — the worker protocol's own numbering, which is why a
- * row with no token at all reads as 1 (every pre-P1 row was a first try).
+ * Which try this row is (`attempt=`). §5.2 (the CROSS-CAPABILITY convention —
+ * ruled authoritative over §2.2.2's local wording): the FIRST spawn is `0` and a
+ * re-dispatch adds one, so the worker table uses the SAME numbering as the usage
+ * ledger and the model fallback (`fallback.ts` counts from 0, D6 asserts
+ * `attempt = 0/1/2`). A row with no token at all is a first try ⇒ `0`: every
+ * pre-P1 row was one, and the token is only absent on rows written before W787.
  */
 export function workerAttempt(entry: WorkerEntry): number {
   const raw = getExtra(entry, "attempt");
-  const n = raw === null ? 1 : Number.parseInt(raw, 10);
-  return Number.isSafeInteger(n) && n > 0 ? n : 1;
+  const n = raw === null ? 0 : Number.parseInt(raw, 10);
+  return Number.isSafeInteger(n) && n >= 0 ? n : 0;
 }
 
 /** `lease=<pid>@<unix>` — who owns the row and when it was last renewed. */

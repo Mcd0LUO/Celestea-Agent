@@ -11,9 +11,10 @@
  * Token rules (`extra` is a space-separated `k=v` list, §2.2.2):
  *   - `proc=<pid>`     row ownership (W234): only our own rows are adjudicated;
  *   - `host=<sid>`     the HOST SESSION that dispatched the worker (G2-6);
- *   - `attempt=<n>`    which try this row is (first = 1, re-dispatch +1, G2-3);
+ *   - `attempt=<n>`    which try this row is (first = 0, re-dispatch +1, §5.2);
  *   - `lease=<pid>@<unix>` the owning process and when it last touched the row;
- *   - `receipt=<wid>:<attempt>` the idempotency key of the DELIVERED receipt.
+ *   - `receipt=<wid>:<attempt>` the idempotency key of the DELIVERED receipt
+ *     (`wid:0` for the first try — the same 0-based numbering as the ledger).
  * A value is folded to ONE token (`oneToken`), because the list is whitespace
  * separated.
  */

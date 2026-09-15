@@ -2533,7 +2533,7 @@
             "name": "workers",
             "type": "array<object>",
             "required": false,
-            "note": "W787: each row carries `attempt` (which try, first = 1), `host_session` (the dispatching conversation, `host=`) and `last_receipt` (the delivered receipt's idempotency key `wid:attempt`) as PURE ADDITIONS."
+            "note": "W787: each row carries `attempt` (which try, first = 0 — the §5.2 cross-capability convention the usage ledger also uses), `host_session` (the dispatching conversation, `host=`) and `last_receipt` (the delivered receipt's idempotency key `wid:attempt`) as PURE ADDITIONS."
           },
           {
             "name": "stale",

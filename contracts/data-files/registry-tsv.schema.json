@@ -58,7 +58,7 @@
     "whitelist": ["host", "attempt", "lease", "receipt"],
     "added": {
       "host": "the HOST conversation that dispatched the worker (E §2.2.2, closes G2-6); it is also the per-session ownership discriminator now that one process shares ONE table",
-      "attempt": "which try this row is: the FIRST spawn is 1 and a re-dispatch adds one (E §2.2.2). It names the report file (`results/<wid>-<short>-a<attempt>.md`) and keys the receipt (`receipt:<wid>:<attempt>`)",
+      "attempt": "which try this row is: the FIRST spawn is 0 and a re-dispatch adds one (§5.2, the cross-capability convention that the usage ledger and the model fallback already use; §2.2.2's local `first = 1` wording is superseded by the ruling). It names the report file (`results/<wid>-<short>-a<attempt>.md`) and keys the receipt (`receipt:<wid>:<attempt>`); a row with no token at all is a pre-W787 first try, i.e. 0",
       "lease": "`<pid>@<unix>` of the owning process and when it last touched the row; renewed on every driver state change. Absent (a legacy row) falls back to `proc=`",
       "receipt": "the idempotency key `<wid>:<attempt>` of the receipt this row already DELIVERED — a second closeLoop for the same attempt is a no-op (E §2.2.3)"
     },
