@@ -207,18 +207,9 @@
 .prov-editor-status { font-size: 12px; font-family: var(--mono); min-height: 16px; margin-bottom: 8px; }
 .prov-editor-status.ok { color: var(--c-ok); }
 .prov-editor-status.err { color: var(--c-err); }
-.prov-field {
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  align-items: center;
-  gap: 6px 10px;
-  margin-bottom: 8px;
-}
-.prov-field-label {
-  font-size: 12px; color: var(--c-text-2); font-family: var(--mono);
-  text-align: right;
-  white-space: nowrap;
-}
+/* W786：两列网格的几何只在 components.css 定义一处（--field-label-w），
+   这里只补本处的行距，避免与通用配置 pane 的列宽分叉。 */
+.prov-field { margin-bottom: 8px; }
 .prov-urlrow { display: flex; gap: 6px; align-items: center; }
 .prov-urlrow input { flex: 1; min-width: 0; }
 
@@ -290,8 +281,7 @@
 }
 .prov-picker-count { font-size: 11.5px; color: var(--c-text-3); font-family: var(--mono); }
 
-/* ---- 通用配置表单：对齐微调（label 等宽右对齐、提示统一缩进） ---- */
-.cfg-field { grid-template-columns: 148px minmax(0, 1fr); }
+/* ---- 通用配置表单：对齐微调（几何见 components.css：与其它 pane 同列同宽） ---- */
 .cfg-hint { padding-left: 2px; }
 
 /* ============================================================================
@@ -371,3 +361,61 @@
 .prompt-inherit { accent-color: var(--c-accent); }
 .prompt-sec-row.inherited .prompt-sec-ta { opacity: .5; }
 .prompt-sec-ta { resize: vertical; min-height: 56px; font-size: 12px; font-family: var(--mono); }
+
+/* ============================================================================
+ * 归档会话管理 pane（W786）：按工作区分组的归档行 + 恢复 / 删除
+ * ============================================================================ */
+.arc-wrap { display: flex; flex-direction: column; gap: 10px; }
+
+.arc-ws {
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+  overflow: hidden;
+}
+.arc-ws-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12.5px; font-weight: 600; color: var(--c-text-2);
+  background: var(--c-accent-soft);
+}
+.arc-ws-head::-webkit-details-marker { display: none; }
+.arc-ws-head::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  border-right: 1.5px solid var(--c-text-2);
+  border-bottom: 1.5px solid var(--c-text-2);
+  transform: rotate(-45deg);
+  transition: transform .12s ease;
+}
+.arc-ws[open] > .arc-ws-head::before { transform: rotate(45deg); }
+.arc-ws-name {
+  font-family: var(--mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.arc-ws-count {
+  margin-left: auto; flex: 0 0 auto;
+  font-family: var(--mono); font-size: 11px; color: var(--c-text-3);
+  border: 1px solid var(--c-border-subtle); border-radius: 999px; padding: 1px 7px;
+}
+
+.arc-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--c-border-subtle);
+}
+.arc-row:hover { background: var(--c-accent-soft); }
+.arc-main { flex: 1 1 auto; min-width: 0; }
+.arc-title {
+  font-size: 13px; color: var(--c-text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.arc-id {
+  font-family: var(--mono); font-size: 11px; color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.arc-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+.arc-actions .btn-mini { flex: 0 0 auto; }

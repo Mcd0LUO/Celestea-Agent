@@ -1,6 +1,6 @@
 // ============================================================================
 // ui/config.ts — 「通用设置」页（左导航 + 右内容，取代原 #modal 弹层）：
-//   导航页：「通用配置」（热调表单）/「工具」（清单表格）/「会话」（管理）。
+//   导航页：「通用配置」（热调表单）/「工具」（清单表格）/「归档会话」（管理，W786）。
 //   模型下拉用 available.models（value=id / label=name，缺失降级手输）；
 //   effort 档位 + 「标准（清除）」；保存 POST /api/config（409/404/405/400 有提示）。
 // ============================================================================
@@ -10,7 +10,7 @@ import { el, need } from '../utils/dom';
 import { closeOverlaysAbove, popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
 import type { ConfigInfo, ConfigPatch } from '../types';
 import { loadToolsSection } from './tools';
-import { loadTreeInto as loadSessionTree } from './sessions';
+import { loadArchiveSection } from './archive/panel';
 import { initProvidersSection, loadProviders } from './providers';
 import { initPromptsSection, loadPrompts } from './prompts';
 
@@ -232,7 +232,7 @@ export async function loadConfig(opts: { refresh?: boolean } = {}): Promise<void
 
 // ---- 左导航 + 右内容 -----------------------------------------------------------
 
-const PANES = ['config', 'tools', 'sessions', 'providers', 'prompts'] as const;
+const PANES = ['config', 'tools', 'archive', 'providers', 'prompts'] as const;
 type PaneName = (typeof PANES)[number];
 
 let currentPane: PaneName = 'config';
@@ -253,10 +253,11 @@ function loadPane(name: PaneName): void {
     void loadConfig();
   } else if (name === 'tools') {
     void loadToolsSection();
-  } else if (name === 'sessions') {
-    void loadSessionTree(
-      need<HTMLElement>('#settingsSessions'),
-      need<HTMLElement>('#settingsSessionCount'),
+  } else if (name === 'archive') {
+    // W786：这一格不再复用侧边栏会话管理，改为「归档会话管理」（只列已归档会话）
+    void loadArchiveSection(
+      need<HTMLElement>('#settingsArchive'),
+      need<HTMLElement>('#settingsArchiveCount'),
     );
   } else if (name === 'providers') {
     void loadProviders();

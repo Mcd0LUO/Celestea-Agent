@@ -134,7 +134,7 @@
         <nav class="settings-nav" aria-label="设置导航">
           <button class="settings-nav-item active" type="button" data-page="config">通用配置</button>
           <button class="settings-nav-item" type="button" data-page="tools">工具</button>
-          <button class="settings-nav-item" type="button" data-page="sessions">会话</button>
+          <button class="settings-nav-item" type="button" data-page="archive">归档会话</button>
           <button class="settings-nav-item" type="button" data-page="providers">模型提供商</button>
           <button class="settings-nav-item" type="button" data-page="prompts">提示词</button>
         </nav>
@@ -154,12 +154,13 @@
             </header>
             <div class="settings-pane-body" id="settingsTools"><div class="side-note">加载中…</div></div>
           </section>
-          <section class="settings-pane" data-pane="sessions">
+          <section class="settings-pane" data-pane="archive">
             <header class="settings-pane-head">
-              <h4>会话管理</h4>
-              <span class="sec-note" id="settingsSessionCount">…</span>
+              <h4>归档会话管理</h4>
+              <span class="sec-note" id="settingsArchiveCount">…</span>
             </header>
-            <div class="settings-pane-body" id="settingsSessions"><div class="side-note">加载中…</div></div>
+            <div class="settings-pane-body" id="settingsArchive"><div class="side-note">加载中…</div></div>
+            <div class="cfg-hintline" id="settingsArchiveHint"></div>
           </section>
           <section class="settings-pane" data-pane="providers">
             <header class="settings-pane-head">
