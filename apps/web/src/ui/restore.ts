@@ -336,7 +336,8 @@ function showSwitchProgress(): void {
   if (progressEl) return;
   progressEl = document.createElement('div');
   progressEl.className = 'switch-progress';
-  progressEl.title = '正在加载会话历史…';
+  // W795：这条顶部细进度条是**唯一**保留的非阻塞提示（历史数据本身就是终态内容，
+  // 没有可先画的终态）；但它不再携带任何「正在加载…」文案（title 已删）。
   document.body.appendChild(progressEl);
 }
 

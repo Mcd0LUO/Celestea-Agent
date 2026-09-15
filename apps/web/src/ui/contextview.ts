@@ -7,8 +7,9 @@
 //
 //   基建沿用既有约定：
 //     - 挂到 body 的浮层压入 utils/overlays 层级栈（一次 Esc 只关栈顶一层）；
-//     - 铁律 1/8：正文先离屏构建，就绪后单次 replaceChildren——「正在读取…」只
-//       出现在首次空容器里，绝不逐条清空重建；
+//     - 铁律 1/8：正文先离屏构建，就绪后单次 replaceChildren，绝不逐条清空重建；
+//       W795：**不写任何「读取中」占位** —— 顶栏/页脚骨架当帧就位（打开即响应），
+//       正文在数据到达前保持为空（它没有可推断的终态：内容本身就是服务端数据）；
 //     - 铁律 3：请求带序号守卫，晚到的旧结果一律丢弃；
 //     - 铁律 4：折叠/展开走 <details>（与本仓工具卡/会话树同一套做法），不重建 DOM；
 //     - 铁律 5：打开/关闭不触碰背景视图（不改消息区、不触发重渲染）。
@@ -80,8 +81,8 @@ export function openContextView(sessionId: string): void {
   meta.appendChild(countsEl);
   card.appendChild(meta);
 
+  // W795：正文容器当帧就位、内容为空 —— 不写占位文案；数据到达后单次换入。
   const body = el('div', 'ctx-body');
-  body.appendChild(el('div', 'ctx-note', '正在读取…')); // 首次空容器占位（铁律 1 例外）
   card.appendChild(body);
 
   const foot = el('div', 'ctx-foot', '只读快照 · 不发送、不修改任何内容');

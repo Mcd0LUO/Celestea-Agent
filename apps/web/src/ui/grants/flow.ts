@@ -11,7 +11,17 @@
 //       （作用范围 / 到期时间 / 后果文案 + 服务端快照），确认弹窗内不再有文本输入框。
 //       后端的令牌流程与人证检查（同源 Sec-Fetch-Site + 一次性令牌）一律未动。
 //     · 任务 1c —— 新增 startPreset：一条预设 = 若干 cap 的组合，**按顺序逐项**授予
-//       （不把多个 cap 塞进一次请求），逐项进度 + 失败中断 + 已成功项点名。
+//       （不把多个 cap 塞进一次请求），失败中断 + 已成功项点名。
+//
+//   W795（乐观更新，去进度占位）：
+//     授予 / 撤销都改成**先画终态、后台发请求**：
+//       · 确认之后**同一帧内**把这一项（预设 = 全部步骤）画成已授予并重绘面板，
+//         界面上不再有任何「正在提交…」之类的占位；
+//       · 请求失败 ⇒ 只回滚**这一项**（optimisticUngrant / optimisticUnrevoke）+ 重绘，
+//         并用面板状态行与状态栏提示写明失败原因（绝不静默、绝不假装成功）；
+//       · 成功 ⇒ 拿服务端回执写状态行/侧栏标记，再强制刷新一次快照；
+//         新鲜快照一落定，乐观层整体作废（见 state.clearOptimistic / ui/grants.ts）。
+//     门禁口径未动：默认永久（ttl_sec=0）、确认弹窗、令牌流程、scope-hash 全部原样。
 // ============================================================================
 import { api, ApiError, userErrorText } from '../../api';
 import { scopeHashOf } from '../../security/scope-hash';
@@ -28,7 +38,7 @@ import {
   type PlannedGrant,
 } from './copy';
 import { setMark } from './marks';
-import { phraseFor } from './panel';
+import { phraseFor, renderShield } from './panel';
 import { presetTtlSec, type GrantPreset, type PresetStep } from './presets';
 import { maxTtlOf, reqFor, ttlOf } from './request';
 import { validateHosts, validateTools } from './scope';
@@ -37,11 +47,25 @@ import {
   getData,
   getPresetRun,
   inlineError,
+  optimisticGrant,
+  optimisticRevoke,
+  optimisticSettle,
+  optimisticUngrant,
+  optimisticUnrevoke,
   setPanelNote,
   setPresetRun,
   setPresetRunner,
   type GrantsHost,
 } from './state';
+
+/**
+ * 乐观层改动后的统一重画（W795）：盾牌与面板读的是**同一份** activeGrants
+ * （含乐观项），两处必须同帧一致 —— 否则会出现「面板说已授予、盾牌数字没动」。
+ */
+function paintOptimistic(host: GrantsHost): void {
+  renderShield();
+  host.renderPanel();
+}
 
 // ---- 授予流程（令牌 + 二次确认 + 结果预览；§3.3/§3.4/§5.5） ----------------------
 
@@ -89,21 +113,35 @@ export async function startGrant(host: GrantsHost, def: CapDef): Promise<void> {
   });
   if (!ok) return;
 
-  setPanelNote({ text: '正在提交…', cls: 'busy' });
-  host.renderPanel();
+  // W795 乐观：确认即终态 —— 这一项**立刻**画成已授予（面板徽标/明细/结果预览/盾牌
+  // 同一帧内全部跟上），请求在后台发。注意这里写的是「界面状态」，不是成功宣告：
+  // 回执文案（successText）仍然只由服务端确认后的那一次写。
+  optimisticGrant(def.cap, { cap: def.cap, scope, expires_at: expiresAt });
+  paintOptimistic(host);
   try {
     const r = await submitGrant(session, def, reqFor(def, scope, ttl), scope);
-    if (r === null) return;
+    if (r === null) {
+      // 理论上不可达（submitGrant 要么返回要么抛）；真到了这里也不许停在半成品。
+      optimisticUngrant(def.cap);
+      const text = '放宽失败：' + userErrorText(undefined, '请稍后重试');
+      setPanelNote({ text, cls: 'err' });
+      paintOptimistic(host);
+      return;
+    }
     drafts.delete(def.cap);
+    // 这一项的请求已结束：之后的快照才有资格以服务端事实否掉乐观项（见 settleOptimistic）
+    optimisticSettle(def.cap);
     setPanelNote({ text: successText(def, r), cls: 'busy' });
     flashStatus(successText(def, r), 'ok', 6000);
     if (r.effective) setMark(session, markFromEffective(r.effective));
     await host.refresh(true);
   } catch (err) {
+    // 失败回滚：把这一项退回动作前的样子，并说明原因（先回滚再报错，界面不留半成品）
+    optimisticUngrant(def.cap);
     const text = '放宽失败：' + userErrorText(err, '请稍后重试');
     setPanelNote({ text, cls: 'err' });
     flashStatus(text, 'err', 8000);
-    host.renderPanel();
+    paintOptimistic(host);
   }
 }
 
@@ -163,20 +201,31 @@ export async function startPreset(host: GrantsHost, preset: GrantPreset): Promis
   });
   if (!ok) return;
 
+  // W795 乐观：一次点击 = **全部步骤**在同一帧内画成已授予（零进度占位），
+  // 之后按顺序逐项发请求；任一步失败只回滚该项，已成功项保持已授予。
+  for (const p of planned) {
+    optimisticGrant(p.def.cap, {
+      cap: p.def.cap,
+      scope: p.scope,
+      expires_at: p.ttl === 0 ? null : nowSec() + p.ttl,
+    });
+  }
+  setPresetRun({ id: preset.id, index: 0, total: planned.length });
+  paintOptimistic(host);
+
   const done: string[] = [];
   for (let i = 0; i < planned.length; i++) {
     const p = planned[i]!;
+    // 仅用于「一次只跑一条预设」的并发门（面板不再显示 i/n 占位）
     setPresetRun({ id: preset.id, index: i, total: planned.length });
-    setPanelNote({
-      text: '快捷授权 ' + (i + 1) + '/' + planned.length + '：正在授予「' + p.def.label + '」…',
-      cls: 'busy',
-    });
-    host.renderPanel();
     try {
       const r = await submitGrant(session, p.def, reqFor(p.def, p.scope, p.ttl), p.scope);
       if (r?.effective) setMark(session, markFromEffective(r.effective));
+      optimisticSettle(p.def.cap); // 这一步的请求已结束（快照随后可确认它）
       done.push(p.def.label);
     } catch (err) {
+      // 只回滚失败的那一项：其余步骤（含尚未发出的）保持乐观已授予
+      optimisticUngrant(p.def.cap);
       setPresetRun(null);
       const reason = userErrorText(err, '请稍后重试');
       const text =
@@ -190,6 +239,7 @@ export async function startPreset(host: GrantsHost, preset: GrantPreset): Promis
           : '本次没有产生任何授权。');
       setPanelNote({ text, cls: 'err' });
       flashStatus(text, 'err', 10000);
+      paintOptimistic(host);
       await host.refresh(true);
       return;
     }
@@ -268,10 +318,13 @@ export async function revoke(host: GrantsHost, cap: GrantCap | null): Promise<vo
   const session = host.focusedSession();
   if (session === '') return;
   const def = cap ? CAP_BY_NAME.get(cap) : undefined;
-  setPanelNote({ text: '正在撤销…', cls: 'busy' });
-  host.renderPanel();
+  // W795 乐观：撤销不需要二次确认 ⇒ 点下去这一帧就把该项（或全部）画成已撤销，
+  // 请求在后台发；失败则把乐观层摘掉（界面回到撤销前的样子）并说明原因。
+  optimisticRevoke(cap);
+  paintOptimistic(host);
   try {
     const r = await api.revokeCap(session, cap ? { cap } : {});
+    optimisticSettle(cap); // 撤销请求已结束：快照随后可确认「它确实没了」
     const n = (r.revoked ?? []).length;
     const text = cap && def ? '已撤销：' + def.label : n > 1 ? '已撤销 ' + n + ' 项放宽权限' : '已撤销放宽权限';
     setPanelNote({ text, cls: 'busy' });
@@ -279,9 +332,10 @@ export async function revoke(host: GrantsHost, cap: GrantCap | null): Promise<vo
     if (r.effective) setMark(session, markFromEffective(r.effective));
     await host.refresh(true);
   } catch (err) {
+    optimisticUnrevoke(cap);
     const text = '撤销失败：' + userErrorText(err, '请稍后重试');
     setPanelNote({ text, cls: 'err' });
     flashStatus(text, 'err', 8000);
-    host.renderPanel();
+    paintOptimistic(host);
   }
 }

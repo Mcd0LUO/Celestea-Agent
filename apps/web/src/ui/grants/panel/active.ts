@@ -8,11 +8,26 @@
 // ============================================================================
 import type { GrantCap, GrantEntry } from '../../../types';
 import { isExpired } from '../caps';
-import { getData } from '../state';
+import { getData, optimisticView } from '../state';
 
-/** 生效中的放宽项（已过期的不计；§3.2）。 */
+/**
+ * 生效中的放宽项（已过期的不计；§3.2）。
+ *
+ * W795：把**乐观层**并进来 —— 用户刚点的授予/撤销在请求落定前就画成终态，
+ * 因此面板（徽标/明细/结果预览）与盾牌在同一帧内就是用户期望的样子。
+ * 服务端快照本身不动（state.data）；新鲜快照一到，ui/grants.ts 就清掉乐观层。
+ */
 export function activeGrants(): GrantEntry[] {
-  return (getData()?.grants ?? []).filter((g) => typeof g.cap === 'string' && !isExpired(g));
+  const optimistic = optimisticView();
+  if (optimistic.revokeAll) return []; // 全部撤销在飞：先按「一项都不剩」画
+  const base = (getData()?.grants ?? []).filter(
+    (g) => typeof g.cap === 'string' && !isExpired(g) && !optimistic.revoked.has(g.cap as GrantCap),
+  );
+  // 乐观项排在最后：activeFor 取「最后一条」，于是刚点的那一项就是生效的那一项。
+  for (const g of optimistic.granted) {
+    if (typeof g.cap === 'string' && !optimistic.revoked.has(g.cap as GrantCap)) base.push(g);
+  }
+  return base;
 }
 
 export function activeFor(cap: GrantCap): GrantEntry | null {

@@ -58,17 +58,15 @@ export function renderPresets(host: GrantsHost): HTMLElement {
     const btn = el('button', 'grant-preset') as HTMLButtonElement;
     btn.type = 'button';
     const satisfied = presetSatisfied(preset, active);
-    const running = run !== null && run.id === preset.id;
     btn.classList.toggle('on', satisfied);
-    btn.classList.toggle('busy', running);
+    // W795：请求在飞期间禁用其它预设（一次只跑一条，顺序语义不变），但**不再**显示
+    // 「进行中 i/n」占位 —— 被点的那条在这一帧里已经是「已生效」终态。
     btn.disabled = run !== null;
     btn.title = preset.hint;
 
     const top = el('span', 'grant-preset-top');
     top.appendChild(el('span', 'grant-preset-label', preset.label));
-    if (running && run) {
-      top.appendChild(el('span', 'grant-preset-tag busy', '进行中 ' + (run.index + 1) + '/' + run.total));
-    } else if (satisfied) {
+    if (satisfied) {
       top.appendChild(el('span', 'grant-preset-tag', '已生效'));
     }
     top.appendChild(el('span', 'grant-preset-ttl', presetTtlLabel(preset)));

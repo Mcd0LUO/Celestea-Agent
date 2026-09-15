@@ -3,7 +3,7 @@
 //   只做搬家：变量所有权、初值、写入时机与拆分前逐字一致。
 //   提供读写访问器，避免子模块之间互相 import 造成的循环引用。
 // ============================================================================
-import type { GrantsResp } from '../../types';
+import type { GrantEntry, GrantsResp } from '../../types';
 import type { OverlayHandle } from '../../utils/overlays';
 import type { CapDef } from './caps';
 import type { GrantPreset } from './presets';
@@ -155,6 +155,133 @@ export function getPresetRun(): PresetRun | null {
 
 export function setPresetRun(v: PresetRun | null): void {
   presetRun = v;
+}
+
+// ---- 乐观生效态（W795） --------------------------------------------------------
+//
+//   为什么单独存在这里而不是改写 data：`data` 是**服务端快照**（盾牌/面板/预览的
+//   唯一真源），乐观项只是「用户刚点、请求还在飞」的临时视图。因此：
+//     · 渲染层（panel/active.ts）把两者合并成生效集，`data` 本身一个字节都不动；
+//     · 请求失败 ⇒ 调用方把这一项摘掉并给出原因（flow.ts），界面回到动作前的样子；
+//     · **新鲜快照落定 ⇒ 只作废已被服务端确认的乐观项**（settleOptimistic）：
+//         已含该项（授予）⇒ 乐观项冗余，删；
+//         已不含该项（撤销）⇒ 乐观项冗余，删；
+//         该项请求**早已结束**而快照仍与它矛盾 ⇒ 以服务端为准，删（避免乐观层长期盖住真源）。
+//       还有一项在飞的乐观项**不**被竞态快照带走 —— 否则「点完授予马上重开面板 / 20s
+//       轮询恰好插进来」会看到已授予→未授予→已授予的闪回（真机 Blink 实测到的竞态）。
+//   本模块零 DOM、零网络：check-grants-permanent 会在 node 里直接加载它。
+
+/** 乐观项：`settledAt` = 该项请求结束（成功/失败已定）的时刻；null = 还在飞。 */
+interface OptimisticPending {
+  settledAt: number | null;
+}
+
+/** 乐观授予：cap → 视为已生效的条目（服务端尚未确认）。 */
+const optimisticAdds = new Map<GrantCap, { entry: GrantEntry; settledAt: number | null }>();
+/** 乐观撤销：这些 cap 先在界面上按「已撤销」画（请求在飞 / 已成功但快照未落定）。 */
+const optimisticRemoved = new Map<GrantCap, OptimisticPending>();
+/** 乐观「全部撤销」：整块先按「没有任何放宽项」画。 */
+let optimisticRevokeAll: OptimisticPending | null = null;
+
+/** 乐观层只读视图（渲染层用；revoked 里的 cap 一律先按已撤销处理）。 */
+export interface OptimisticGrantsView {
+  granted: GrantEntry[];
+  revoked: ReadonlySet<GrantCap>;
+  revokeAll: boolean;
+}
+
+export function optimisticView(): OptimisticGrantsView {
+  return {
+    granted: Array.from(optimisticAdds.values(), (a) => a.entry),
+    revoked: new Set(optimisticRemoved.keys()),
+    revokeAll: optimisticRevokeAll !== null,
+  };
+}
+
+/** 记一项乐观授予（同一 cap 重复点 = 覆盖；它同时解除该 cap 的乐观撤销）。 */
+export function optimisticGrant(cap: GrantCap, entry: GrantEntry): void {
+  optimisticAdds.set(cap, { entry, settledAt: null });
+  optimisticRemoved.delete(cap);
+}
+
+/**
+ * 标记「这一项/这次全部撤销的请求已经结束」。
+ * 只有它**早于**某次快照的发起时刻，那次快照才有资格否掉这个乐观项（见 settleOptimistic）。
+ */
+export function optimisticSettle(cap: GrantCap | null): void {
+  const at = Date.now();
+  if (cap === null) {
+    if (optimisticRevokeAll !== null) optimisticRevokeAll.settledAt = at;
+    return;
+  }
+  const add = optimisticAdds.get(cap);
+  if (add) add.settledAt = at;
+  const removed = optimisticRemoved.get(cap);
+  if (removed) removed.settledAt = at;
+}
+
+/** 把一项乐观授予摘掉（= 请求失败回滚到动作前：这一项回到服务端快照说的样子）。 */
+export function optimisticUngrant(cap: GrantCap): void {
+  optimisticAdds.delete(cap);
+}
+
+/** 乐观撤销：`cap === null` = 全部撤销。 */
+export function optimisticRevoke(cap: GrantCap | null): void {
+  if (cap === null) {
+    optimisticAdds.clear();
+    optimisticRemoved.clear();
+    optimisticRevokeAll = { settledAt: null };
+    return;
+  }
+  optimisticAdds.delete(cap);
+  optimisticRemoved.set(cap, { settledAt: null });
+}
+
+/**
+ * 回滚一次乐观撤销。
+ *
+ * 注意（边界）：单项撤销不恢复「同一 cap 的乐观授予」—— 面板上「撤销」按钮只在
+ * 该项已生效时出现，所以「乐观授予 → 同 cap 乐观撤销」这条路径在界面上不可达。
+ */
+export function optimisticUnrevoke(cap: GrantCap | null): void {
+  if (cap === null) {
+    optimisticRevokeAll = null;
+    optimisticRemoved.clear();
+    return;
+  }
+  optimisticRemoved.delete(cap);
+}
+
+/**
+ * 新鲜快照落定 ⇒ 作废**已被它确认**的乐观项。
+ * `askedAt` = 这次快照请求的**发起**时刻（请求结果只可能反映发起之后的服务端状态）。
+ */
+export function settleOptimistic(grants: readonly GrantEntry[], askedAt: number): void {
+  const have = new Set<string>();
+  for (const g of grants) if (typeof g.cap === 'string') have.add(g.cap);
+  for (const [cap, add] of Array.from(optimisticAdds)) {
+    const confirmed = have.has(cap);
+    if (confirmed || (add.settledAt !== null && add.settledAt < askedAt)) optimisticAdds.delete(cap);
+  }
+  for (const [cap, removed] of Array.from(optimisticRemoved)) {
+    const confirmed = !have.has(cap);
+    if (confirmed || (removed.settledAt !== null && removed.settledAt < askedAt)) {
+      optimisticRemoved.delete(cap);
+    }
+  }
+  if (optimisticRevokeAll !== null) {
+    const confirmed = have.size === 0;
+    if (confirmed || (optimisticRevokeAll.settledAt !== null && optimisticRevokeAll.settledAt < askedAt)) {
+      optimisticRevokeAll = null;
+    }
+  }
+}
+
+/** 乐观层整体作废（换聚焦会话：乐观项只属于当时那个会话）。 */
+export function clearOptimistic(): void {
+  optimisticAdds.clear();
+  optimisticRemoved.clear();
+  optimisticRevokeAll = null;
 }
 
 export function getPanelNote(): { text: string; cls: string } | null {

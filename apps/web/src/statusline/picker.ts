@@ -10,9 +10,15 @@
 //     （与旧行为逐字一致）。409 挂起经 pendingPick 走同一条路径重试。
 //
 //   W778：清单改走配置缓存（statusline/cfg-cache.ts）——缓存命中时**同步**渲染
-//     清单（不再先显示「加载清单中…」），随后后台 revalidateConfig() 校验一次，
-//     仅当弹层仍是同一个 popup 且清单内容真的变了，才原地替换（铁律 1/3）；
-//     冷启动（无缓存）与今天逐字一致：先占位、等首次拉取、再单次替换。
+//     清单，随后后台 revalidateConfig() 校验一次，仅当弹层仍是同一个 popup 且
+//     清单内容真的变了，才原地替换（铁律 1/3）。
+//
+//   W795（乐观更新，去进度占位）：
+//     · 清单：推理档位的候选是**静态清单 + 当前值**，冷启动也同一帧画出来；
+//       模型清单冷启动时本地确无真源（无缓存、无快照）⇒ 正文留空、首次拉取后
+//       一次换入，**不再写「加载清单中…」**（那是纯占位，不是终态）。
+//     · 切换（模型/档位）：点下去**同一帧**把状态栏画成已切到目标值（终态），
+//       请求后台跑；失败回滚到原值 + 「已恢复原设置」说明，409 挂起则不留在错的显示上。
 //
 //   宿主契约 PickerHost（= Statusline）：根元素 + 弹层状态 + merge/setNote 回调，
 //   模块自身零状态。拆分只搬位置：DOM 结构、类名、文案、事件、请求顺序均未改。
@@ -23,6 +29,7 @@ import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
 import type { ConfigInfo, ConfigPatch, ModelInfo, StatusSnapshot } from '../types';
 import { modelIconEl } from './icons';
 import { loadConfigCached, peekConfig, revalidateConfig } from './cfg-cache';
+import { optimisticPatchView, revertPointOf } from './optimistic';
 
 /** W262：没有 provider 字段的模型（静态兜底目录 / 旧数据）归入的树状分组。 */
 export const OTHER_GROUP = '其他';
@@ -52,6 +59,11 @@ export interface PickerHost {
   readonly root: HTMLElement;
   /** 当前快照里的模型（cfg.model 缺失时的兜底；全局配置，跨会话保留）。 */
   readonly snapshotModel: string;
+  /**
+   * W795：当前快照里的推理档位（null = 标准档/未设置）。
+   * 两处用途：冷启动时乐观渲染档位清单的「当前」项；切换失败时的回滚基准。
+   */
+  readonly snapshotEffort: string | null;
   popup: HTMLElement | null;
   popupKind: SwitchKind | null;
   /** 弹层在全局层级栈中的句柄（Esc 只关栈顶一层）。 */
@@ -96,10 +108,16 @@ export async function openPopup(host: PickerHost, kind: SwitchKind): Promise<voi
   const body = el('div', 'sl-popup-body');
   popup.appendChild(body);
 
-  // W778：缓存命中 → 同步渲染清单（零等待、无「加载清单中…」）；冷启动 → 与今天一致。
+  // W795：可乐观的**先画终态**。
+  //   · 推理档位：候选是静态常量 + 当前值 ⇒ 缓存有没有都同一帧画出来；
+  //   · 模型清单：缓存命中 → 同步渲染；冷启动 → 正文先留空（本地确无真源，
+  //     不写任何占位文案），首次拉取回来再一次换入（铁律 1：单次替换）。
   const seeded = peekConfig();
-  if (seeded === null) body.appendChild(el('div', 'sl-popup-loading', '加载清单中…'));
-  else renderList(body, kind, seeded, host);
+  if (kind === 'effort') {
+    renderEffortList(body, seeded?.reasoning_effort ?? host.snapshotEffort ?? '', host);
+  } else if (seeded !== null) {
+    renderModelList(body, seeded, host);
+  }
 
   let cfg: ConfigInfo;
   try {
@@ -108,6 +126,7 @@ export async function openPopup(host: PickerHost, kind: SwitchKind): Promise<voi
   } catch (err) {
     if (host.popup !== popup) return; // 期间被关闭/切换
     if (seeded !== null) return; // 后台校验失败：缓存清单继续可用，不打扰用户
+    if (kind === 'effort') return; // 档位清单是静态候选，已经画好了
     body.replaceChildren(
       el('div', 'sl-popup-error', userErrorText(err, '无法读取当前配置，请稍后重试')),
     );
@@ -123,20 +142,32 @@ export async function openPopup(host: PickerHost, kind: SwitchKind): Promise<voi
  * `cfg` 可以来自配置缓存（同步首屏）或一次真实拉取，渲染结果与来源无关。
  */
 function renderList(body: HTMLElement, kind: SwitchKind, cfg: ConfigInfo, host: PickerHost): void {
-  const off = document.createElement('div');
-
   if (kind === 'effort') {
-    const options = [...EFFORT_OPTIONS];
-    const cur = cfg.reasoning_effort ?? '';
-    if (cur && !options.some((o) => o.value === cur)) {
-      options.push({ value: cur, label: cur + '（当前）' });
-    }
-    for (const o of options) {
-      off.appendChild(optButton(o.label, o.value ?? '', cur, () => apply(host, { reasoning_effort: o.value })));
-    }
-    body.replaceChildren(...off.childNodes);
+    renderEffortList(body, cfg.reasoning_effort ?? '', host);
     return;
   }
+  renderModelList(body, cfg, host);
+}
+
+/**
+ * 推理档位清单（W795 抽出）：候选全是静态常量 + 一个「当前」值 ⇒ 不依赖任何请求，
+ * 冷启动也能同一帧画出来（乐观渲染），所以它与模型清单分成两个渲染器。
+ */
+function renderEffortList(body: HTMLElement, current: string, host: PickerHost): void {
+  const off = document.createElement('div');
+  const options = [...EFFORT_OPTIONS];
+  const cur = current;
+  if (cur && !options.some((o) => o.value === cur)) {
+    options.push({ value: cur, label: cur + '（当前）' });
+  }
+  for (const o of options) {
+    off.appendChild(optButton(o.label, o.value ?? '', cur, () => void apply(host, { reasoning_effort: o.value })));
+  }
+  body.replaceChildren(...off.childNodes);
+}
+
+function renderModelList(body: HTMLElement, cfg: ConfigInfo, host: PickerHost): void {
+  const off = document.createElement('div');
 
   // ---- model：按提供商分组的树状清单（W262） ----
   const models = Array.isArray(cfg.available?.models) ? cfg.available.models : [];
@@ -268,27 +299,36 @@ function optButton(
 export async function pickModel(host: PickerHost, pick: ModelPick): Promise<void> {
   if (!host.popup) return;
   const popup = host.popup;
-  const status = el('div', 'sl-popup-status busy', '切换中…');
-  popup.appendChild(status);
+  const prev = revertPoint(host);
+  // W795 乐观：点下去**同一帧**就把状态栏画成已切到该模型（终态），请求在后台跑。
+  host.merge({ model: pick.model });
   try {
     await runPick(host, pick);
     host.setNote('已切换', 5000);
     closePopup(host);
   } catch (err) {
     if (err instanceof ApiError && err.status === 409) {
+      // 轮次进行中 ⇒ 这一轮**没有**切过去：先把乐观显示退回原值，本轮结束后再重试同一路径
+      host.merge(prev);
       host.pendingPick = pick;
       host.setNote('轮次进行中，将在本轮结束后生效', 0);
       closePopup(host);
     } else {
-      const msg = '切换失败：' + (err instanceof Error ? err.message : String(err));
+      // 失败回滚：把模型显示退回原值 + 就地说明原因（绝不假装切成功）
+      host.merge(prev);
+      const msg = '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）';
       if (host.popup === popup) {
-        status.className = 'sl-popup-status err';
-        status.textContent = msg;
+        popup.appendChild(el('div', 'sl-popup-status err', msg));
       } else {
         host.setNote(msg, 6000);
       }
     }
   }
+}
+
+/** W795：乐观切换的回滚基准（宿主字段 → 纯函数 ./optimistic.revertPointOf）。 */
+function revertPoint(host: PickerHost): StatusSnapshot {
+  return revertPointOf({ model: host.snapshotModel, effort: host.snapshotEffort });
 }
 
 /** 切换的实际动作（先 provider 后模型）；任一步失败即抛出，不吞错。 */
@@ -303,8 +343,9 @@ export async function runPick(host: PickerHost, pick: ModelPick): Promise<void> 
 export async function apply(host: PickerHost, patch: ConfigPatch): Promise<void> {
   if (!host.popup) return;
   const popup = host.popup;
-  const status = el('div', 'sl-popup-status busy', '切换中…');
-  popup.appendChild(status);
+  const prev = revertPoint(host);
+  // W795 乐观：同一帧内先按补丁画出终态（档位胶囊/模型格立即变），请求在后台跑。
+  host.merge(optimisticPatchView(patch));
   try {
     const d = await api.saveConfig(patch);
     host.merge({ model: d.model, reasoning_effort: d.reasoning_effort });
@@ -312,16 +353,19 @@ export async function apply(host: PickerHost, patch: ConfigPatch): Promise<void>
     window.dispatchEvent(new Event('studio:config-saved'));
     closePopup(host);
   } catch (err) {
+    const msg = '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）';
     if (err instanceof ApiError && err.status === 409) {
+      // 本轮不生效：退回原值 + 挂起，等本轮结束后重试（那时再乐观应用一次）
+      host.merge(prev);
       host.pendingPatch = patch;
       host.setNote('轮次进行中，将在本轮结束后生效', 0);
       closePopup(host);
     } else {
+      host.merge(prev);
       if (host.popup === popup) {
-        status.className = 'sl-popup-status err';
-        status.textContent = '切换失败：' + (err instanceof Error ? err.message : String(err));
+        popup.appendChild(el('div', 'sl-popup-status err', msg));
       } else {
-        host.setNote('切换失败：' + (err instanceof Error ? err.message : String(err)), 6000);
+        host.setNote(msg, 6000);
       }
     }
   }
@@ -336,9 +380,20 @@ export function retryPendingPick(host: PickerHost): boolean {
   const pick = host.pendingPick;
   if (pick === null) return false;
   host.pendingPick = null;
-  host.setNote('本轮已结束，正在应用切换…', 0);
-  void runPick(host, pick).catch((err: unknown) => {
-    host.setNote('切换失败：' + (err instanceof Error ? err.message : String(err)), 6000);
-  });
+  const prev = revertPoint(host);
+  // W795：本轮已结束 ⇒ 同一帧内先把状态栏画成已切到目标（不再有「正在应用切换…」占位），
+  // 请求在后台跑；失败则退回原值并说明原因。
+  host.merge({ model: pick.model });
+  void runPick(host, pick)
+    .then(() => {
+      host.setNote('已切换', 5000);
+    })
+    .catch((err: unknown) => {
+      host.merge(prev);
+      host.setNote(
+        '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）',
+        6000,
+      );
+    });
   return true;
 }

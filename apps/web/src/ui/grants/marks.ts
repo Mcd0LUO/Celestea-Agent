@@ -25,9 +25,19 @@ export function setMarksEnabled(on: boolean): void {
   marksEnabled = on;
 }
 
-/** 记录一次探测时刻（能力位就绪时的聚焦会话刷新也会计时）。 */
+/**
+ * 记录一次探测时刻（能力位就绪时的聚焦会话刷新也会计时）。
+ *
+ * W795 修复：这里原本是 `noteProbed(sessionId)` 调用**自己** —— 无限递归 → RangeError。
+ * 后果不只是「侧栏标记不刷新」：ui/grants.ts 的 refresh() 在 setData() 之后调它，
+ * 异常被同一个 try 的 catch 捕获后走 `setData(null, asked)`，于是**权限快照被清空**，
+ * 盾牌与面板永远显示「当前无法读取本会话权限」。本函数与 probedAt 的 TTL 短路
+ * （ensureGrantMarks 读同一张表）本来就是一对，写成写入才是原意。
+ * 证据：jsdom 用例（tests/w795-optimistic-no-placeholder.test.ts）在修前拿到
+ * `RangeError: Maximum call stack size exceeded` 且面板 0 行、修后正常渲染 6 行。
+ */
 export function noteProbed(sessionId: string): void {
-  noteProbed(sessionId);
+  probedAt.set(sessionId, Date.now());
 }
 
 /** 某会话的放宽标记（未探测到 = null，不显示标记）。 */
