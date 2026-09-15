@@ -16,6 +16,7 @@ import './styles/views.css'; // W514 多会话视图容器 / 聚焦会话条 / �
 import './styles/sessions.css';
 import './styles/grants.css'; // W701 提权通道（本会话权限盾牌 / 面板 / 二次确认）
 import './styles/rail.css'; // 灵动选择条 v3（W238 重做）
+import './styles/hint.css'; // W790 悬浮提示宿主（内置提示插件）
 import './styles/question.css'; // W784 模型提问卡片（选项 / 自由输入 / 倒计时）
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
 
@@ -29,6 +30,7 @@ import { initSessionsPanel } from './ui/sessions';
 import { initGrants } from './ui/grants'; // W701 提权通道（能力位未就绪时入口隐藏）
 import { restoreActiveHistory } from './ui/restore';
 import { initRail } from './ui/rail';
+import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
 import { APP_VERSION, BUILD_TIME } from './version'; // 灵动选择条 v3（W238 重做）
 import { initSidebar } from './ui/sidebar';
 import { statusline } from './statusline';
@@ -62,6 +64,9 @@ function init(): void {
   // 3) W514：多会话视图容器（LOCAL 容器先立起来 → 永不空白）+ 聚焦会话条
   initViewCtx();
   initSessionBar();
+
+  // 3.1) W790：悬浮提示注册缝（内置 150ms 卡片；调用点只写 setHint）
+  initHints();
 
   // 4) statusline（/api/status?session= 轮询 + SSE 增量，发送栏正上方）
   statusline.start();

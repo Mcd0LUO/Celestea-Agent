@@ -85,7 +85,7 @@ const KB = (globalThis as unknown as { KeyboardEvent: new (t: string, i?: Record
 /** 与 index.html 同构的最小骨架（statusline 第 1 行 + 输入栏 + 会话条 + 状态栏）。 */
 const HTML =
   '<div id="app"><div id="layout"><aside id="sidebar"><div id="sessionTree"></div></aside>' +
-  '<main id="main"><div id="sessionBar" class="session-bar"></div><div id="messages"></div>' +
+  '<main id="main"><div id="messages"></div>' +
   '<div id="statusline" class="statusline"><div class="sl-row sl-row-main">' +
   '<span class="sl-ring" id="slRing"><svg viewBox="0 0 14 14"><circle class="sl-ring-track"></circle><circle class="sl-ring-prog"></circle></svg></span>' +
   '<span class="sl-ctx" id="slCtx">—/—</span><span class="sl-sep">·</span>' +
@@ -95,7 +95,8 @@ const HTML =
   '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-badge" id="slGrantBadge"></span><span class="sl-grant-dot" id="slGrantDot"></span></button>' +
   '<button id="slStop" class="sl-stop hidden"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9"></rect></svg></button>' +
   '<span class="sl-hint" id="slHint"></span></div>' +
-  '<div class="sl-row sl-row-sub"><span class="sl-tps" id="slTps">— tok/s</span><span class="sl-sep">·</span>' +
+  '<div class="sl-row sl-row-sub"><div id="sessionBar" class="session-bar"></div>' +
+  '<span class="sl-tps" id="slTps">— tok/s</span><span class="sl-sep">·</span>' +
   '<span class="sl-cache" id="slCache">缓存 —</span><span class="sl-sep">·</span><span class="sl-steps" id="slSteps">— 步</span></div></div>' +
   '<footer id="statusbar"><span class="dot" id="statusDot"></span><span id="statusText"></span>' +
   '<span id="statusTurn"></span><span id="statusStep"></span><span id="statusTime"></span></footer>' +
@@ -416,7 +417,13 @@ describe("W789 · 权限面板：唯一滚动层 + 内联上限 + 自身滚动�
 describe("W789 · 会话条运行态（8③：chip 不撑高上方行）", () => {
   it("会话条的「其它运行中会话」入口在既有行内，且行内不换行（结构口径）", () => {
     const views = css("views.css");
-    expect(rule(views, ".session-bar")).toContain("flex: 0 0 auto");
+    // W790（item 3）：会话条已并入 statusline 的既有行 .sl-row-sub —— 它不再是
+    // 独占一行的条，而是那一行里的一个**可收缩**项（空间不足先压它，右端 tok/s /
+    // 缓存 / 步数不被挤走）。因此这里由 flex: 0 0 auto 改为 flex: 0 1 auto，
+    // 并补 min-width: 0 / overflow: hidden；W789 原本要守的「行内不换行」不变。
+    expect(rule(views, ".session-bar")).toContain("flex: 0 1 auto");
+    expect(rule(views, ".session-bar")).toContain("min-width: 0");
+    expect(rule(views, ".session-bar")).toContain("overflow: hidden");
     expect(rule(views, ".sess-bar-others")).toContain("overflow: hidden");
     expect(rule(views, ".sess-bar-others")).toContain("white-space: nowrap");
   });

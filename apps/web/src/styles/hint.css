@@ -1,0 +1,35 @@
+/* ============================================================================
+ * W790 · item 4：悬浮提示（内置提示插件）的共享宿主
+ *   —— 全站唯一的卡片宿主与基础几何；具体内容由注册的提供者构建
+ *      （内置纯文本卡 .hint-card-text / rail 富卡片 .railv3-card 复用本宿主）。
+ *   为什么单独一个文件：注册缝（src/ui/hint/）自带样式，业务模块不再各写一套。
+ * ============================================================================ */
+.hint-card {
+  position: absolute;
+  z-index: 60;
+  max-width: min(320px, calc(100vw - 24px));
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel);
+  padding: 6px 9px;
+  color: var(--c-text-1);
+  font-size: 11.5px;
+  line-height: 1.45;
+  pointer-events: none;
+  animation: hint-pop .14s ease-out;
+}
+@keyframes hint-pop {
+  from { opacity: 0; transform: translateY(3px); }
+}
+.hint-card-text {
+  display: flex; align-items: baseline; gap: 6px;
+}
+.hint-card-tag {
+  flex: 0 0 auto;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  color: var(--c-text-2);
+  border: 1px solid var(--c-border-subtle); border-radius: 4px;
+  padding: 0 4px;
+}
+.hint-card-body { min-width: 0; word-break: break-word; }

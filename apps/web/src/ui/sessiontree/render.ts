@@ -5,6 +5,7 @@
 // ============================================================================
 import type { SessionInfo } from '../../types';
 import { el } from '../../utils/dom';
+import { setHint } from '../hint'; // W790：提示统一走注册缝（不再写原生 title）
 import { S } from '../../state';
 import { grantMarkOf } from '../grants';
 import { paneBusy } from '../viewctx';
@@ -95,7 +96,7 @@ export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInf
   if (!isBatchMode()) {
     const dot = el('span', 'sess-dot' + (paneBusy(id) ? ' busy' : ''));
     dot.dataset.dot = id;
-    dot.title = paneBusy(id) ? '运行中' : '空闲';
+    setHint(dot, paneBusy(id) ? '运行中' : '空闲');
     leaf.appendChild(dot);
   }
   if (isBatchMode()) {
@@ -131,7 +132,7 @@ export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInf
   leaf.appendChild(grant);
   paintGrantMark(grant, grantMarkOf(id));
 
-  leaf.title = displayName + '（点击打开）';
+  setHint(leaf, displayName + '（点击打开）');
 
   if (!isBatchMode()) {
     const kebab = el('button', 'sess-kebab', '⋯') as HTMLButtonElement;

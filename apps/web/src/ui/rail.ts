@@ -6,12 +6,17 @@
 //   left 固定在 #main 左缘内侧 8px。
 // ★ 交互：鼠标进入条带 → 最近长条吸附（fisheye 变长 + 微亮）；hover 停留
 //   弹预览卡（取自已渲染消息 DOM，零网络请求）；点击 → 平滑定位到对应轮。
+// ★ W790（item 4）：预览卡不再由本模块自建 —— 它是注册进 ui/hint 注册缝的
+//   一个提供者（id 'rail-preview'，priority 10），延迟/宿主/撤卡统一归引擎；
+//   轨道条带是 pointer-events:none（交互走 #main 级命中判定），所以用 hoverHint()
+//   直驱悬停意图。本模块只负责「取内容 + 落位」，与原生 title 那套并存的历史取消。
 // ★ W514 多会话：长条按「会话视图容器」分别保存（WeakMap<SessionPane, RailState>）。
 //   切换会话只做一次指针交换 + 元素搬家（appendChild 移动节点，不重建）：
 //   各会话的长条集合/折叠条随容器一起保存，切回立即可见，零重排重建。
 //   后台会话新增消息只写进它自己的 holder（离线容器），不触碰当前轨道。
 // ============================================================================
 import { el } from '../utils/dom';
+import { hideHint, hoverHint, registerHintPlugin, setHint, type HintHandle, type HintPlugin } from './hint';
 import { activePane, type SessionPane } from './viewctx';
 
 // ---- 紧凑几何（细条 —— 自然高 5px、间隙 4px） ----
@@ -26,8 +31,9 @@ const GUTTER_HIDE = 24;
 const RANGE = 80;
 const HIT_BOOST = 6;
 const BASE_OPACITY = 0.3;
-const PREVIEW_MS = 150;
 const PREVIEW_CHARS = 40;
+/** W790：rail 预览卡在提示注册缝里的提供者身份（priority 10 = 压过内置纯文本卡）。 */
+export const RAIL_HINT_ID = 'rail-preview';
 const MAX_ROWS = 20;
 
 /** 一根长条 = 一轮（一问一答合并）。 */
@@ -50,15 +56,15 @@ interface RailState {
 }
 
 const rails = new WeakMap<SessionPane, RailState>();
+/** W790：长条元素 → 条目（提示提供者拿元素反查内容；WeakMap 随节点回收）。 */
+const itemByEl = new WeakMap<HTMLElement, RailItem>();
 
 let mainEl: HTMLElement | null = null;
 /** 轨道当前绑定的会话容器（= 视觉上正在显示的那个）。 */
 let cur: SessionPane | null = null;
 let msgsEl: HTMLElement | null = null;
 let track: HTMLElement | null = null;
-let card: HTMLElement | null = null;
 let hoverItem: RailItem | null = null;
-let hoverTimer: number | null = null;
 let syncQueued = false;
 let moveQueued = false;
 let moveX = -1;
@@ -125,7 +131,6 @@ function layout(): void {
   if (gw < GUTTER_HIDE) {
     track.style.display = 'none';
     railW = 0;
-    syncCard();
     return;
   }
   track.style.display = '';
@@ -143,7 +148,6 @@ function layout(): void {
       st.foldItem.el.remove();
       st.foldItem = null;
     }
-    syncCard();
     return;
   }
   const foldN = st.items.length > MAX_ROWS ? st.items.length - MAX_ROWS : 0;
@@ -163,8 +167,9 @@ function layout(): void {
       };
       fresh.el.className = 'railv3-item railv3-fold';
       fresh.el.textContent = '⋯';
-      fresh.el.title = '更早的 ' + foldN + ' 轮已折叠';
       track.appendChild(fresh.el);
+      itemByEl.set(fresh.el, fresh);
+      setHint(fresh.el, '更早的 ' + foldN + ' 轮已折叠');
       st.foldItem = fresh;
       if (stale && stale.parentNode) stale.remove();
     } else {
@@ -172,7 +177,7 @@ function layout(): void {
     }
     if (st.foldItem) {
       st.foldItem.fold = foldN;
-      st.foldItem.el.title = '更早的 ' + foldN + ' 轮已折叠';
+      setHint(st.foldItem.el, '更早的 ' + st.foldItem.fold + ' 轮已折叠');
     }
   } else if (st.foldItem) {
     st.foldItem.el.remove();
@@ -205,7 +210,6 @@ function layout(): void {
     it.el.style.top = it.y - barH / 2 + 'px';
     it.el.style.setProperty('--barh', barH + 'px');
   }
-  syncCard();
 }
 
 /** 消息列中心在滚动内容里的 Y（rect 法，不依赖 offsetParent）。 */
@@ -226,14 +230,7 @@ function viewWindow(st: RailState): RailItem[] {
   });
 }
 
-// ---- 预览卡片（数据取自 DOM，零请求） -------------------------------------------
-
-function removeCard(): void {
-  if (card) {
-    card.remove();
-    card = null;
-  }
-}
+// ---- 预览卡片 = 提示注册缝的一个提供者（W790；数据取自 DOM，零请求） -------------
 
 function firstLine(col: HTMLElement): string {
   const c = col.querySelector('.content');
@@ -254,10 +251,8 @@ function replyLine(it: RailItem): string {
   return '';
 }
 
-function showCard(it: RailItem): void {
-  if (!mainEl || !it.visible) return;
-  removeCard();
-  card = el('div', 'railv3-card');
+function buildCard(it: RailItem): HTMLElement {
+  const card = el('div', 'railv3-card');
   if (it.fold > 0) {
     const ql = el('div', 'railv3-card-q');
     ql.appendChild(el('span', 'railv3-card-tag', '⋯'));
@@ -288,29 +283,33 @@ function showCard(it: RailItem): void {
       card.appendChild(al);
     }
   }
-  mainEl.appendChild(card);
-  positionCard(it);
+  return card;
 }
 
-function positionCard(it: RailItem): void {
-  if (!card || !mainEl) return;
+/** 落位：贴在长条右侧，纵向夹在轨道范围内（与 W238 的几何逐字一致）。 */
+function positionCard(box: HTMLElement, anchor: HTMLElement): void {
+  if (!mainEl) return;
   const m = mainEl.getBoundingClientRect();
-  const r = it.el.getBoundingClientRect();
-  const ch = card.offsetHeight;
+  const r = anchor.getBoundingClientRect();
+  const ch = box.offsetHeight;
   let top = r.top - m.top;
   top = Math.max(railTop + 4, Math.min(top, railTop + railH - ch - 4));
   const left = Math.min(r.right - m.left + 8, m.width - 288);
-  card.style.top = top + 'px';
-  card.style.left = Math.max(railX + 4, left) + 'px';
+  box.style.top = top + 'px';
+  box.style.left = Math.max(railX + 4, left) + 'px';
 }
 
-function syncCard(): void {
-  if (!card) return;
-  if (!hoverItem || !hoverItem.visible) {
-    removeCard();
-    return;
-  }
-  positionCard(hoverItem);
+/** W790：预览卡提供者（普通插件，无特权；注销即退回内置纯文本卡）。 */
+export function railHintPlugin(): HintPlugin {
+  return {
+    id: RAIL_HINT_ID,
+    priority: 10,
+    claim(target: HTMLElement): HintHandle | null {
+      const it = itemByEl.get(target);
+      if (!it) return null;
+      return { build: () => buildCard(it), position: (box) => positionCard(box, target) };
+    },
+  };
 }
 
 // ---- 交互（fisheye + hover 停留预览 + 点击定位） --------------------------------
@@ -323,12 +322,8 @@ function setGrow(it: RailItem, g: number): void {
 }
 
 function clearHover(): void {
-  if (hoverTimer !== null) {
-    window.clearTimeout(hoverTimer);
-    hoverTimer = null;
-  }
   hoverItem = null;
-  removeCard();
+  hideHint(); // W790：撤卡交给提示引擎（延迟/宿主/落位都不在本模块）
   const st = curState();
   if (st) for (const it of st.items) it.el.classList.remove('is-hover');
 }
@@ -381,16 +376,8 @@ function applyMove(): void {
   if (hit) {
     setGrow(hit, 1);
     if (hoverItem !== hit) {
-      if (hoverTimer !== null) {
-        window.clearTimeout(hoverTimer);
-        hoverTimer = null;
-      }
-      removeCard();
       hoverItem = hit;
-      hoverTimer = window.setTimeout(() => {
-        hoverTimer = null;
-        if (hoverItem) showCard(hoverItem);
-      }, PREVIEW_MS);
+      hoverHint(hit.el); // W790：停留 150ms → 提示引擎按提供者弹卡
     }
   } else {
     clearHover();
@@ -444,6 +431,7 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
     const bar = document.createElement('div');
     bar.className = 'railv3-item' + (role === 'assistant' ? ' is-reply' : '');
     target.appendChild(bar);
+    setHint(bar, '第 ' + (st.items.length + 1) + ' 轮 · 悬停看预览，点击定位');
     st.items.push({
       startCol: col,
       cols: [col],
@@ -453,6 +441,7 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
       visible: false,
       fold: 0,
     });
+    itemByEl.set(bar, st.items[st.items.length - 1]!);
   } else {
     last.cols.push(col);
     if (role === 'assistant' && !last.hasReply) {
@@ -509,6 +498,7 @@ export function initRail(): void {
   if (mainEl) return;
   mainEl = document.getElementById('main');
   if (!mainEl) return;
+  registerHintPlugin(railHintPlugin()); // W790：预览卡 = 注册缝里的一个提供者
   cur = activePane();
   msgsEl = cur ? cur.el : null;
   ensureTrack();
