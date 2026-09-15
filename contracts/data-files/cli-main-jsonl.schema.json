@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "<session-dir>/cli-main.jsonl (engine v1 session log)",
   "source": {
-    "rust": "/src/celestea_harness/crates/core/src/session_log.rs:44-85",
+    "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): /src/celestea_harness/crates/core/src/session_log.rs:44-85",
     "doc": "docs/data-files.md §4"
   },
   "path": {

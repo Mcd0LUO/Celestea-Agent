@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "<session-dir>/cli-main.jsonl.precompact (single-copy backup)",
   "source": {
-    "rust": "src/compact.rs (rewrite_atomic)",
+    "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): src/compact.rs (rewrite_atomic)",
     "doc": "docs/data-files.md §4.4"
   },
   "notes": [

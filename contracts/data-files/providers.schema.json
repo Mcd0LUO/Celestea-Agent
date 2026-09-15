@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "providers.json (+ public_view)",
   "source": {
-    "rust": "src/providers.rs:52-86 (Provider/ProviderModel), 219-241 (public_view)",
+    "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): src/providers.rs:52-86 (Provider/ProviderModel), 219-241 (public_view)",
     "doc": "docs/data-files.md §2"
   },
   "path": {

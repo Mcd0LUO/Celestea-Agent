@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "/tmp/celestea-workers-registry.tsv (worker registry)",
   "source": {
-    "rust": "/src/celestea_harness/crates/workers/src/types.rs:50-97, registry.rs:158-230",
+    "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): /src/celestea_harness/crates/workers/src/types.rs:50-97, registry.rs:158-230",
     "doc": "docs/DEVELOPMENT.md §2.6"
   },
   "path": {

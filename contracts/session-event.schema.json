@@ -4,7 +4,7 @@
   "title": "Celestea engine SessionEvent (cli-main.jsonl v1, one JSON object per line)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
-    "rust": "/src/celestea_harness/crates/core/src/session_log.rs:44-85 (serde tag=\"type\", rename_all=snake_case)",
+    "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): /src/celestea_harness/crates/core/src/session_log.rs:44-85 (serde tag=\"type\", rename_all=snake_case)",
     "doc": "docs/data-files.md §4"
   },
   "encoding": {

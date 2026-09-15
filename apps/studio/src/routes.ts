@@ -13,7 +13,7 @@
  * `GET /api/usage/ledger` (49 -> 50). W791 added
  * `POST /api/sessions/{id}/mode` (50 -> 51; the P1 session working mode). All of
  * them have NO Rust counterpart:
- * `contracts/rust-route-table.snapshot.json` keeps the Rust extraction intact and
+ * `contracts/route-table.snapshot.json` keeps the frozen extraction intact and
  * lists the TypeScript-only additions separately.
  */
 

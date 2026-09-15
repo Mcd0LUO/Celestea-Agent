@@ -141,7 +141,7 @@ export function loadSse(): SseContract {
 }
 
 export function loadRouteSnapshot(): RouteSnapshot {
-  return readJson<RouteSnapshot>("rust-route-table.snapshot.json");
+  return readJson<RouteSnapshot>("route-table.snapshot.json");
 }
 
 export function loadTools(): ToolsContract {

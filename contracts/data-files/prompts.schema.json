@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "prompts.json + <ws>/.celestea-prompts.json (section registry)",
   "source": {
-    "rust": "src/prompts.rs:126-165",
+    "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): src/prompts.rs:126-165",
     "doc": "docs/data-files.md §3"
   },
   "path": {

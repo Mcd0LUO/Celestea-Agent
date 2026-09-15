@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "workspaces.json (v2)",
   "source": {
-    "rust": "src/workspaces.rs:122-140 (RegistryData)",
+    "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): src/workspaces.rs:122-140 (RegistryData)",
     "doc": "docs/data-files.md §1"
   },
   "path": {

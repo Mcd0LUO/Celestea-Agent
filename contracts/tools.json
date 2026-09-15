@@ -20,14 +20,14 @@
         "worker_status",
         "write_file"
       ],
-      "note": "W783: this is the FROZEN 2026-09-10 capture of the retired Rust engine (10 tools) and is deliberately NOT rewritten. The TypeScript host now serves 11 tools; the delta is declared in `w783Delta` below."
+      "note": "W783: this is the FROZEN 2026-09-10 capture of the retired engine (10 tools) and is deliberately NOT rewritten. The TypeScript host now serves 11 tools; the delta is declared in `w783Delta` below."
     },
     "w783Delta": {
       "addedTool": "ask_user_question",
       "count": "10 -> 11",
       "sourceRef": "packages/tools/src/tools/ask-user.ts (schema copied field-for-field from @deepseek-ai/dsh-tool-ask-user)",
       "why": "The model needs to ask the user a question mid-turn. The answer arrives through POST /api/questions/{id}/answer (NOT /api/turn, which would be steering that a parked tool call never drains) and reaches the model as an ordinary tool_result.",
-      "notInRust": "The retired Rust engine has no counterpart: /api/tools there answers 10 tools and this tool does not exist."
+      "notInRust": "The retired engine has no counterpart: /api/tools there answered 10 tools and this tool did not exist."
     }
   },
   "count": 11,

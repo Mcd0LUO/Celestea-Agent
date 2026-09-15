@@ -5,10 +5,10 @@
   "phase": "P0 contract freeze",
   "source": {
     "doc": "/src/celestea_studio-ts/docs/feature-session-grants.md",
-    "routes": "docs/archive/rust-studio-backend/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
+    "routes": "frozen from the retired backend implementation (original source file deleted 2026-09-15); kept as contracts/route-table.snapshot.json (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
-    "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only)."
+    "routeSnapshot": "contracts/route-table.snapshot.json",
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -21,10 +21,10 @@
   "errorCodes": {
     "400": "invalid parameters (empty, format, non-absolute/nonexistent path, id shape, active-session protection)",
     "404": "unknown workspace/session/provider/prompt",
-    "405": "path exists but method mismatch (axum default)",
+    "405": "path exists but method mismatch (framework default)",
     "409": "conflict: turn running (busy slot), duplicate registration, target exists, already archived",
-    "415": "request body missing / not JSON (axum Json rejection)",
-    "422": "field type mismatch (axum Json rejection)",
+    "415": "request body missing / not JSON (framework body-parser rejection)",
+    "422": "field type mismatch (framework body-parser rejection)",
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
@@ -1170,7 +1170,7 @@
       ],
       "notes": [
         "P1 (docs/modes-standard-vs-execution.md §3.1/§5.2 #6): rewrites `session.json.mode` through the W729 writer (title/model/prompt are kept), then drops the session's instance so the NEXT turn recomposes it (W516's `invalidateSession` path). The 409 guard is `/compact`'s, in semantics and wording.",
-        "TS-only (U8): the retired Rust backend has no counterpart — see contracts/rust-route-table.snapshot.json `tsOnlyRoutes`. Frontends gate the switch on `GET /api/health.capabilities.session_mode_tools === true`."
+        "TS-only (U8): the retired backend has no counterpart — see contracts/route-table.snapshot.json `tsOnlyRoutes`. Frontends gate the switch on `GET /api/health.capabilities.session_mode_tools === true`."
       ],
       "probe": {
         "checked": false,
@@ -2741,7 +2741,7 @@
       ],
       "probe": {
         "checked": false,
-        "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/sessions/{id}/grants route"
+        "reason": "TypeScript-only endpoint: the retired backend (127.0.0.1:3777) has no /api/sessions/{id}/grants route"
       }
     },
     {
@@ -2859,7 +2859,7 @@
       ],
       "probe": {
         "checked": false,
-        "reason": "TypeScript-only endpoint: the retired Rust reference has no /api/sessions/{id}/grants route"
+        "reason": "TypeScript-only endpoint: the retired backend has no /api/sessions/{id}/grants route"
       }
     },
     {
@@ -3090,7 +3090,7 @@
       ],
       "probe": {
         "checked": false,
-        "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/sessions/{id}/context route"
+        "reason": "TypeScript-only endpoint: the retired backend (127.0.0.1:3777) has no /api/sessions/{id}/context route"
       }
     },
     {
@@ -3358,7 +3358,7 @@
       ],
       "probe": {
         "checked": false,
-        "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/questions route"
+        "reason": "TypeScript-only endpoint: the retired backend (127.0.0.1:3777) has no /api/questions route"
       }
     },
     {

@@ -1,5 +1,5 @@
 {
-  "source": "docs/archive/rust-studio-backend/main.rs:1333-1376",
+  "source": "frozen from the retired backend implementation (original source file deleted 2026-09-15); this snapshot is now the authoritative route table",
   "extractedAt": "2026-09-10T01:20:00Z",
   "extraction": "read-only regex over the Router::new() chain",
   "routeDeclarations": 38,
@@ -308,5 +308,5 @@
   ],
   "tsApiEndpoints": 51,
   "tsMethodPathCombos": 55,
-  "tsOnlyNote": "W516/W725/W767: the sessions grants endpoints, GET /api/sessions/{id}/context and the three W767 login-cookie endpoints (/login, /auth/login, /auth/check) exist ONLY in the TypeScript backend. The Rust extraction above is kept verbatim; a contract endpoint must appear in `route W783 adds GET /api/questions (pending list) and POST /api/questions/{id}/answer. W785 adds GET /api/usage/ledger (the cost/usage ledger aggregate view). W791 adds POST /api/sessions/{id}/mode (the P1 session working mode; TS-only, U8)."
+  "tsOnlyNote": "W516/W725/W767: the sessions grants endpoints, GET /api/sessions/{id}/context and the three W767 login-cookie endpoints (/login, /auth/login, /auth/check) exist ONLY in the TypeScript backend. The frozen extraction above is kept verbatim; a contract endpoint must appear in `route W783 adds GET /api/questions (pending list) and POST /api/questions/{id}/answer. W785 adds GET /api/usage/ledger (the cost/usage ledger aggregate view). W791 adds POST /api/sessions/{id}/mode (the P1 session working mode; TS-only, U8)."
 }
