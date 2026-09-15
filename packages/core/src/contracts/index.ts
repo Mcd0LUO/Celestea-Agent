@@ -123,8 +123,10 @@ export function loadEndpoints(): EndpointsContract {
   // login-cookie gate; the two non-/api paths are declared in the contract too).
   // W783 (2): 47 -> 49 — GET|POST /api/questions (+ the pending list on GET).
   // W785 (1): 49 -> 50 — GET /api/usage/ledger (E-P1, capability 3).
-  if (c.count !== 50 || c.endpoints.length !== 50) {
-    throw new Error(`endpoints contract must hold 50 endpoints, got ${c.endpoints.length}`);
+  // W791 (2): 50 -> 51 — POST /api/sessions/{id}/mode (P1 session working mode,
+  // TS-only; docs/modes-standard-vs-execution.md §3.1).
+  if (c.count !== 51 || c.endpoints.length !== 51) {
+    throw new Error(`endpoints contract must hold 51 endpoints, got ${c.endpoints.length}`);
   }
   return c;
 }

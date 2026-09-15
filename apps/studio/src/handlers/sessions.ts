@@ -13,6 +13,10 @@
  * session as a view preference, and NEVER returns 409 — a session that is
  * already running is perfectly fine (that is the point of session independence).
  *
+ * W791 (P1): `POST /api/sessions/{id}/mode` switches the session's working mode
+ * (the W729 `session.json.mode`, rewritten through the same writer) at a turn
+ * boundary — see `registerMode`.
+ *
  * W725: `GET /api/sessions/{id}/context` is the read-only "what does the model
  * actually see" snapshot. The body is assembled by the ENGINE (the agent loop's
  * own `buildRequest`, reached through `runtime.sessionContext`) and the usage
@@ -23,7 +27,8 @@
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
 import { CapacityError, EngineError, type SessionRuntimeInfo } from "../runtime-adapter.js";
-import { readSessionMeta } from "../store/session-meta.js";
+import { readSessionMeta, writeSessionMeta } from "../store/session-meta.js";
+import { DEFAULT_SESSION_MODE, parseMode, validateMode } from "../store/mode.js";
 import { validateModelName } from "../store/validate.js";
 import type { SessionRow } from "../store/sessions.js";
 import { capacityJson, failJson, readJsonBody, strField, storeFail, type Deps } from "./common.js";
@@ -142,6 +147,51 @@ function registerContext(app: Hono, deps: Deps, table: RouteTable): string {
   return route.id;
 }
 
+/**
+ * POST /api/sessions/{id}/mode (W791, P1 — `docs/modes-standard-vs-execution.md`
+ * §3.1/§5.2 #6, U8): switch the session's WORKING MODE at a turn boundary.
+ *
+ * Three disciplines, all inherited from existing endpoints on purpose:
+ *   - the busy guard is `/compact`'s, in semantics AND in shape (409, and the
+ *     wording is the same sentence with this action's verb) — a mode is a
+ *     property of the generation, so it may not change inside a running turn;
+ *   - the write path is W729's `session.json` writer (the other keys are kept),
+ *     so a switch is the SAME operation `POST /api/sessions {mode}` performs;
+ *   - the effect is W516's: the session's instance is dropped and the next turn
+ *     recomposes it, which is what makes the response's `effective:"next_turn"`
+ *     a fact rather than a promise. Sessions other than this one are untouched.
+ *
+ * TS-only (U8): the Rust backend has no such endpoint, so the contract registers
+ * it under `tsOnlyRoutes` and the frontend gates on
+ * `capabilities.session_mode_tools`.
+ */
+function registerMode(app: Hono, deps: Deps, table: RouteTable): string {
+  const route = table.get("post_session_mode");
+  app.on(route.method, route.honoPath, async (c) => {
+    const id = c.req.param("id") ?? "";
+    if (deps.runtime.isBusy(id)) return failJson(c, 409, "turn 进行中，无法切换模式");
+    const read = await readJsonBody(c);
+    if (!read.ok) return read.response;
+    const mode = strField(c, read.body, "mode");
+    if (!mode.ok) return mode.response;
+    if (mode.value === undefined) return failJson(c, 422, "field 'mode' must be a string");
+    const bad = validateMode(mode.value);
+    if (bad !== null) return failJson(c, 400, bad);
+    const resolved = deps.sessions.require(id);
+    if (!resolved.ok) return storeFail(c, resolved);
+    const session = resolved.value.id;
+    try {
+      // W729 write path, key-preserving: title / model / prompt survive the switch.
+      writeSessionMeta(resolved.value.dir, { ...(readSessionMeta(resolved.value.dir) ?? {}), mode: parseMode(mode.value) ?? DEFAULT_SESSION_MODE });
+    } catch (e) {
+      return failJson(c, 500, `meta write failed: ${String(e)}`);
+    }
+    deps.runtime.invalidateSession?.(session);
+    return c.json({ ok: true, session, mode: mode.value, effective: "next_turn" });
+  });
+  return route.id;
+}
+
 /** The statusline's context口径 (W263) with the `method` discriminator dropped. */
 function contextUsageOf(deps: Deps, session: string): ContextUsage {
   const usage = deps.runtime.statusline(session).context_usage;
@@ -155,5 +205,6 @@ export function registerSessions(app: Hono, deps: Deps, table: RouteTable): stri
     registerMessages(app, deps, table),
     registerActivate(app, deps, table),
     registerContext(app, deps, table),
+    registerMode(app, deps, table),
   ];
 }

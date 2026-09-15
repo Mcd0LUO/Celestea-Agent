@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (50 endpoints)",
+  "title": "Celestea Studio HTTP API contract (51 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -8,7 +8,7 @@
     "routes": "docs/archive/rust-studio-backend/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50)."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 50,
+  "count": 51,
   "endpoints": [
     {
       "id": "get_health",
@@ -191,8 +191,16 @@
       "rustHandler": "api::get_tools",
       "docRef": "docs/archive/frontend/api-contract.md#get-apitools",
       "request": {
-        "kind": "none",
-        "fields": []
+        "kind": "query",
+        "fields": [
+          {
+            "name": "session",
+            "type": "string",
+            "required": false,
+            "note": "W791: answer for THIS session's own generation; absent/blank = the focused (active) session, and the detached default generation when nothing is active"
+          }
+        ],
+        "note": "W791 (P1): the optional `session` query selects whose tool face is described. An `execution` session reports its folded face."
       },
       "response": {
         "status": 200,
@@ -202,13 +210,14 @@
             "name": "tools",
             "type": "array<{name:string,description:string}>",
             "required": false,
-            "note": "schemas() of the CURRENT generation; sorted by name; 10 tools"
+            "note": "schemas() of the queried session's generation; sorted by name; 11 tools in standard mode, the 6 execution-mode names in execution mode"
           }
         ]
       },
       "errors": [],
       "notes": [
-        "Always 200."
+        "Always 200 (an unresolvable `session` falls back to the default generation, never an error branch).",
+        "W791 (P1): the names answer the SAME face `{{tools}}` renders for that session in `GET /api/config` (M9); the execution fold hides the four SDK tools and `ask_user_question` (direct `dispatch` answers `tool_unavailable_in_mode`)."
       ],
       "probe": {
         "checked": true,
@@ -1085,6 +1094,77 @@
       "probe": {
         "checked": false,
         "reason": "write endpoint: P0 forbids mutating probes (providers.json/workspaces.json/prompts.json/cli-main.jsonl are read-only)"
+      }
+    },
+    {
+      "id": "post_session_mode",
+      "method": "POST",
+      "path": "/api/sessions/{id}/mode",
+      "group": "sessions",
+      "rustHandler": "(none - TypeScript-only, W791)",
+      "docRef": "docs/modes-standard-vs-execution.md#31-api（端点与字段）",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "mode",
+            "type": "'standard' | 'execution'",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "mode",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "effective",
+            "type": "string",
+            "required": false,
+            "note": "constant \"next_turn\": the instance recomposes at the session's next turn boundary"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "invalid mode: {v}"
+        },
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        },
+        {
+          "status": 409,
+          "error": "turn 进行中，无法切换模式"
+        },
+        {
+          "status": 422,
+          "error": "field 'mode' must be a string"
+        }
+      ],
+      "notes": [
+        "P1 (docs/modes-standard-vs-execution.md §3.1/§5.2 #6): rewrites `session.json.mode` through the W729 writer (title/model/prompt are kept), then drops the session's instance so the NEXT turn recomposes it (W516's `invalidateSession` path). The 409 guard is `/compact`'s, in semantics and wording.",
+        "TS-only (U8): the retired Rust backend has no counterpart — see contracts/rust-route-table.snapshot.json `tsOnlyRoutes`. Frontends gate the switch on `GET /api/health.capabilities.session_mode_tools === true`."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
       }
     },
     {

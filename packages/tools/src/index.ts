@@ -13,6 +13,7 @@
  * Module map:
  *   index.ts             public surface (this file)
  *   registry.ts          ToolRegistryImpl: the four-stage dispatch pipeline  (registry.rs)
+ *   exposure.ts          exposedRegistry: the per-mode model-visible face  (W791 §5.2)
  *   schema.ts            JSON-Schema subset validator (pipeline stage 1)
  *   args.ts              argument readers with Rust-parity error text
  *   desc.ts              the shared `desc` UI-label parameter of every tool   (W779)
@@ -52,6 +53,17 @@
 
 // --- registry: the dispatch pipeline ------------------------------------------
 export { createToolRegistry, humanRender, ToolRegistryImpl } from "./registry.js";
+export {
+  EXECUTION_GUIDANCE,
+  EXECUTION_TOOL_NAMES,
+  executionExposure,
+  exposedRegistry,
+  exposedSpecs,
+  faceForMode,
+  TOOL_UNAVAILABLE_CODE,
+  unavailableError,
+  type ExposureOptions,
+} from "./exposure.js";
 export type { ArgsValidationFailure } from "./schema.js";
 export { validateArgs } from "./schema.js";
 

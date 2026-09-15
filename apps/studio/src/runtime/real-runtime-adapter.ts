@@ -111,6 +111,8 @@ import { hasLiveWorkersOf } from "./worker-live.js";
 import { recoveryViewOf, type RecoveryView } from "./recovery-view.js";
 import { workerRecoveryBlock, workerTablePath } from "./worker-table.js";
 import { clearSession, compactSession, type SessionLifecycleDeps } from "./session-lifecycle.js";
+import { faceForMode } from "@celestea/tools";
+import { DEFAULT_SESSION_MODE, effectiveMode } from "../store/mode.js";
 
 export { SESSION_LOG_ID, SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
 export { MAX_CONCURRENT_TURNS, MAX_LIVE_SESSIONS, SESSION_IDLE_TTL_MS } from "./session-compose.js";
@@ -325,14 +327,22 @@ class RealEngine implements RealRuntimeAdapter {
   }
 
   /**
-   * W729 (S2): the tool face of ONE session — PEEKED, never composed, because
-   * the composer calls this while building that session's own prompt. A session
-   * with no live instance reads the default generation, which in P0 exposes
-   * exactly the same 10 tools (§1.2).
+   * W729 (S2): the tool face of ONE session — never a second assembly, always
+   * the default generation's registered set passed through that SESSION's mode.
+   *
+   * W791 (P1, §5.2 #5 / §10.5 #2): the face is a function of the MODE, not of
+   * "whichever instance happens to be live". This is called while the session's
+   * own prompt is assembled — i.e. DURING its compose / rebuild — and at that
+   * moment `peek(session)` still answers the previous generation, so a
+   * peek-derived face would render the old tool list into the new prompt (and,
+   * on a first compose, the detached default's 11 names into an execution
+   * session's prompt). `faceForMode` applies exactly the rule the composed
+   * instance's `exposedRegistry` will apply, so prompt and tool array agree.
    */
   sessionTools(session: string | null): ToolInfo[] {
-    const own = session === null ? null : this.registry.peek(session);
-    return ((own ?? this.registry.peek(null))?.runtime.tools?.schemas() ?? []).map(toolSpecView);
+    const specs = this.registry.peek(null)?.runtime.tools?.schemas() ?? [];
+    const mode = session === null ? DEFAULT_SESSION_MODE : effectiveMode(this.opts.sessionMode?.(session) ?? null);
+    return faceForMode(specs, mode).map(toolSpecView);
   }
 
   /**

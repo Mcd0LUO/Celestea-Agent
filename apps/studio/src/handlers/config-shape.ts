@@ -200,7 +200,11 @@ export function assembleSystemPromptFor(
     workspace: workspace?.name ?? "",
     workspace_dir: workspace?.path ?? "",
     session: resolved?.id ?? "",
-    tools: toolsOf(deps, sessionId).map((t) => t.name).join(", "),
+    // W791 (P1, S2/M9): the tool face follows the RESOLVED session — for the
+    // legacy (null) reading that is the FOCUSED session, for a scoped one the
+    // session itself. A no-mode session's face is the full registry, so the
+    // rendered value of every pre-P1 session is unchanged.
+    tools: toolsOf(deps, resolved?.id ?? null).map((t) => t.name).join(", "),
     context_window: profile.context_window,
     max_output_tokens: profile.max_output_tokens,
     date: new Date().toISOString().slice(0, 10),
@@ -219,8 +223,9 @@ export function assembleSystemPromptFor(
 
 /**
  * The tool face the `{{tools}}` variable renders: the session's own generation
- * when it has one, else the default generation (identical in P0 — §1.2 — and
- * the seam `GET /api/tools?session=` will read in P1).
+ * when it has one, else the default generation. W791 (P1): in `execution` mode
+ * the session's generation PROVIDES the folded face, so the rendered list is the
+ * same set `GET /api/tools?session=X` answers (M9) — one source, two readers.
  */
 function toolsOf(deps: Deps, sessionId: string | null): ToolInfo[] {
   const sessionTools = deps.runtime.sessionTools;

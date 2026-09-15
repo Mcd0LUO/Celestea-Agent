@@ -42,8 +42,8 @@ afterEach(() => {
 
 describe("route table coverage", () => {
   // W783: 47 -> 49 (the two user-question endpoints); W785: 49 -> 50
-  // (GET /api/usage/ledger).
-  it("binds exactly the 50 contract endpoints with the contract method+path", () => {
+  // (GET /api/usage/ledger); W791: 50 -> 51 (POST /api/sessions/{id}/mode).
+  it("binds exactly the 51 contract endpoints with the contract method+path", () => {
     const h = make();
     expect(h.studio.endpointIds).toHaveLength(API_ENDPOINT_COUNT);
     expect(new Set(h.studio.endpointIds).size).toBe(API_ENDPOINT_COUNT);
@@ -53,14 +53,15 @@ describe("route table coverage", () => {
   });
 });
 
-describe("W729 P0 invariants", () => {
-  it("③ adds NO endpoint of its own: API_ENDPOINT_COUNT === endpoints.json#count", () => {
+describe("W729/W791 endpoint invariants", () => {
+  it("③ W729 added no endpoint; W791 adds exactly one (the mode switch)", () => {
     // The design's "43" was the baseline of the day it was written; the context
     // snapshot (W725) moved it to 44, W767's login-cookie gate to 47, W783's user
-    // questions to 49 and W785's usage-ledger view to 50 — W729 itself adds none.
-    expect(API_ENDPOINT_COUNT).toBe(50);
-    expect(loadEndpoints().count).toBe(50);
-    expect(loadEndpoints().endpoints.map((e) => e.id)).not.toContain("post_session_mode");
+    // questions to 49, W785's usage-ledger view to 50 — W729 itself adds none, and
+    // W791 (P1) adds `POST /api/sessions/{id}/mode` (50 -> 51).
+    expect(API_ENDPOINT_COUNT).toBe(51);
+    expect(loadEndpoints().count).toBe(51);
+    expect(loadEndpoints().endpoints.map((e) => e.id)).toContain("post_session_mode");
   });
 });
 
@@ -75,9 +76,10 @@ describe("health / status / tools / config", () => {
       model: "test-model",
       base_url: "http://127.0.0.1:3001/v1",
       bind: "127.0.0.1:3777",
-      // W516/W725/W729: the capability bits the frontend gates the permission
-      // panel, the context viewer and the (P1) mode selector on.
-      capabilities: { grants: true, context: true, session_mode: true },
+      // W516/W725/W729/W791: the capability bits the frontend gates the
+      // permission panel, the context viewer and the mode selector on
+      // (`session_mode_tools` = the P1 mode face + switch endpoint exist).
+      capabilities: { grants: true, context: true, session_mode: true, session_mode_tools: true },
     });
   });
 

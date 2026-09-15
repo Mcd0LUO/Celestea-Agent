@@ -19,9 +19,10 @@ import {
 describe("contracts/endpoints.json", () => {
   const c = loadEndpoints();
 
-  it("holds exactly 50 endpoints (W725 context, W767 cookie gate, W783 two questions, W785 usage ledger)", () => {
-    expect(c.count).toBe(50);
-    expect(c.endpoints).toHaveLength(50);
+  // W791: 50 -> 51 (`POST /api/sessions/{id}/mode`, the P1 session working mode).
+  it("holds exactly 51 endpoints (W725 context, W767 cookie gate, W783 questions, W785 ledger, W791 mode)", () => {
+    expect(c.count).toBe(51);
+    expect(c.endpoints).toHaveLength(51);
   });
 
   // W767: Studio's own login-cookie gate is served on `/login` + `/auth/*` — the
@@ -56,11 +57,12 @@ describe("contracts/endpoints.json", () => {
     // declared as a TypeScript-only delta instead of being written into it.
     // W783: 8 -> 10 (GET /api/questions + POST /api/questions/{id}/answer).
     // W785: 10 -> 11 (GET /api/usage/ledger).
-    expect(snap.tsOnlyRoutes).toHaveLength(11);
-    expect(snap.tsApiEndpoints).toBe(50);
-    expect(snap.tsMethodPathCombos).toBe(54);
+    // W791: 11 -> 12 (POST /api/sessions/{id}/mode).
+    expect(snap.tsOnlyRoutes).toHaveLength(12);
+    expect(snap.tsApiEndpoints).toBe(51);
+    expect(snap.tsMethodPathCombos).toBe(55);
     const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
-    expect(fromSnapshot.size).toBe(50);
+    expect(fromSnapshot.size).toBe(51);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });
@@ -202,7 +204,7 @@ describe("contracts/data-files", () => {
     expect(kind?.enum).toEqual(["ok", "error"]);
     expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
 
-    expect(loadEndpoints().count).toBe(50);
+    expect(loadEndpoints().count).toBe(51);
   });
 });
 
@@ -216,9 +218,10 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     expect(idx.durability["checkpoint.json"]).toContain("tmp-<pid> + rename");
     expect(idx.recovery?.implemented).toContain("turn_end: interrupted");
     // P0 adds NO endpoint: /api/status.recovery is P1 and stays out. The count is
-    // W785's 50 for the unrelated reason that the question and ledger endpoints exist.
-    expect(loadEndpoints().count).toBe(50);
-    expect(loadEndpoints().endpoints).toHaveLength(50);
+    // W785's 50 — and now W791's 51 — for the unrelated reason that the question,
+    // ledger and mode endpoints exist.
+    expect(loadEndpoints().count).toBe(51);
+    expect(loadEndpoints().endpoints).toHaveLength(51);
   });
 
   it("freezes the sidecar shape (version, open_turn, repaired[])", () => {
@@ -249,8 +252,8 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     const worker = byId.get("get_worker_status")?.response.fields.map((f) => f.name) ?? [];
     expect(worker).toContain("stale");
     expect(worker).toContain("orphans");
-    expect(loadEndpoints().count).toBe(50);
-    expect(API_ENDPOINT_COUNT).toBe(50);
+    expect(loadEndpoints().count).toBe(51);
+    expect(API_ENDPOINT_COUNT).toBe(51);
   });
 
   it("B7: the studio's own worker table is a declared data file with the new tokens", () => {
@@ -296,9 +299,9 @@ describe("W729 session modes (P0 contract delta)", () => {
     expect(String(byId.get("get_sessions")?.response.fields[0]?.type)).toContain("mode:");
     expect(byId.get("get_status")?.response.fields.map((f) => f.name)).toContain("mode");
     expect(String(byId.get("get_health")?.response.fields.find((f) => f.name === "capabilities")?.type)).toContain("session_mode");
-    // W729 added no endpoint; the frozen count is W785's 50.
-    expect(c.count).toBe(50);
-    expect(c.endpoints).toHaveLength(50);
+    // W729 added no endpoint; W791's mode switch is the P1 addition (50 -> 51).
+    expect(c.count).toBe(51);
+    expect(c.endpoints).toHaveLength(51);
   });
 
   it("declares spawn_worker.mode without changing the tool count", () => {
@@ -338,6 +341,34 @@ describe("W729 session modes (P0 contract delta)", () => {
       }
     }
     expect(hits).toEqual([]);
+  });
+});
+
+describe("W791 P1 session mode + archived list (contract delta)", () => {
+  const c = loadEndpoints();
+  const byId = new Map(c.endpoints.map((e) => [e.id, e]));
+
+  it("adds exactly ONE endpoint — the mode switch — with the frozen error texts", () => {
+    const mode = byId.get("post_session_mode");
+    expect(mode?.path).toBe("/api/sessions/{id}/mode");
+    expect(mode?.method).toBe("POST");
+    expect(mode?.request.fields.map((f) => f.name)).toEqual(["mode"]);
+    expect(mode?.response.fields.map((f) => f.name)).toEqual(["ok", "session", "mode", "effective"]);
+    // The 409 guard is /compact's sentence with this action's verb (U8).
+    expect(mode?.errors).toContainEqual({ status: 409, error: "turn 进行中，无法切换模式" });
+    expect(mode?.errors).toContainEqual({ status: 400, error: "invalid mode: {v}" });
+    // Declared as TypeScript-only (the Rust backend has no counterpart).
+    const tsOnly = loadRouteSnapshot().tsOnlyRoutes ?? [];
+    expect(tsOnly.map((r) => `${r.method} ${r.path}`)).toContain("POST /api/sessions/{id}/mode");
+    expect(c.count).toBe(51);
+    expect(API_ENDPOINT_COUNT).toBe(51);
+  });
+
+  it("documents the ?session= query of GET /api/tools (absent = the focused session)", () => {
+    const tools = byId.get("get_tools");
+    expect(tools?.request.kind).toBe("query");
+    expect(tools?.request.fields.map((f) => f.name)).toEqual(["session"]);
+    expect(String(tools?.response.fields[0]?.note)).toContain("11 tools");
   });
 });
 
