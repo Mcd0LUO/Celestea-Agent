@@ -316,6 +316,20 @@ export interface RuntimeAdapter {
    * has no live instance (nothing to invalidate).
    */
   invalidateSession?(session: string | null): boolean;
+  /**
+   * W794: the session's DIRECTORY is going away (delete / archive) — cut the
+   * model response it may be streaming right now and hand back the engine
+   * instance it owned.
+   *
+   * Order is the contract: the in-flight turn is aborted through the SAME
+   * cooperative path `POST /api/cancel` uses, the host then waits (bounded) for
+   * it to settle, and only then is THAT instance disposed and forgotten (never
+   * the process-wide generation, never a neighbour's instance). `true` = an
+   * instance was released; `false` = this session had none (nothing to do).
+   *
+   * Optional: an adapter with no per-session registry has nothing to release.
+   */
+  releaseSession?(session: string | null): Promise<boolean>;
   /** Session ids with a live runtime instance. */
   liveSessions(): string[];
   /** Session ids with an in-flight turn. */

@@ -403,3 +403,66 @@ describe("turnNo restoration (E-P0③ A5)", () => {
     expect(registry.peek("ws/a")?.turnNo).toBe(2);
   });
 });
+
+/**
+ * W794 — `release()`: the FORCED drop the host performs when the SESSION is
+ * deleted. It is deliberately not `evict()`: the protection rules of a live
+ * session (`inFlight`, `pinned`) must not be able to keep an instance of a
+ * session that no longer exists alive, and the entry has to be recognisable as
+ * detached afterwards (a turn that was in flight still holds the object).
+ */
+describe("W794 release (the session was deleted)", () => {
+  it("drops a BUSY instance that evict refuses, and marks it detached", async () => {
+    const { registry, disposed } = makeRegistry();
+    const a = registry.ensure("ws/a", "/tmp/a");
+    registry.beginTurn(a, controller());
+
+    // The conservative path still refuses a running instance…
+    expect(await registry.evict(keyOfSession("ws/a"))).toBe(false);
+    expect(disposed).toEqual([]);
+
+    // …while the deletion-shaped drop removes it and disposes the generation.
+    expect(await registry.release("ws/a")).toBe(true);
+    expect(disposed).toEqual(["ws/a"]);
+    expect(registry.peek("ws/a")).toBeNull();
+    expect(a.detached).toBe(true);
+    // The orphaned turn may still close its own slot: that touches this object,
+    // never a registry entry (a re-created session gets a fresh one).
+    registry.endTurn(a, "cancelled");
+    expect(registry.liveSessionIds()).toEqual([]);
+  });
+
+  it("drops a PINNED instance (a deleted session's workers die with it)", async () => {
+    const { registry, disposed } = makeRegistry({ pinned: (entry) => entry.sessionId === "ws/a" });
+    registry.ensure("ws/a", null);
+    expect(await registry.evict(keyOfSession("ws/a"))).toBe(false);
+    expect(await registry.release("ws/a")).toBe(true);
+    expect(disposed).toEqual(["ws/a"]);
+  });
+
+  it("leaves every other instance alone, and never releases the detached default", async () => {
+    const { registry, disposed } = makeRegistry();
+    registry.ensure(null, null);
+    registry.ensure("ws/a", null);
+    registry.ensure("ws/b", null);
+    expect(await registry.release(null)).toBe(false);
+    expect(registry.peek(null)).not.toBeNull();
+    expect(await registry.release("ws/a")).toBe(true);
+    expect(disposed).toEqual(["ws/a"]);
+    expect(registry.liveSessionIds()).toEqual(["ws/b"]);
+    // An id with no instance is not an error, it is a no-op.
+    expect(await registry.release("ws/ghost")).toBe(false);
+  });
+
+  it("a teardown failure still removes the entry (the session is gone)", async () => {
+    const registry = new SessionRuntimeRegistry({
+      build: () => stubRuntime("ws/a"),
+      dispose: () => {
+        throw new Error("teardown exploded");
+      },
+    });
+    registry.ensure("ws/a", null);
+    expect(await registry.release("ws/a")).toBe(true);
+    expect(registry.peek("ws/a")).toBeNull();
+  });
+});

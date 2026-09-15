@@ -7,6 +7,14 @@
  * `active_session`; archiving moves the directory into `.celestea-archived/`
  * (id-preserving, reversible) while deleting moves it into `.celestea-trash/`
  * with a timestamp suffix (recoverable, no longer addressable by id).
+ *
+ * W794 (裁决: the active marker is a state label, not a protection): archiving or
+ * deleting the ACTIVE session SUCCEEDS, and the two operations that take a
+ * session's directory away first call `releaseSession` — the engine's own
+ * cut-then-detach — so the model response in flight for that session is aborted
+ * (the same cooperative cancel `POST /api/cancel` sends) and its instance is
+ * released before the directory moves. Every id of a batch is cut the same way,
+ * and the response contract is untouched: still one 200 with per-id `failed[]`.
  */
 
 import type { Hono } from "hono";
@@ -16,6 +24,29 @@ import { strArrayField, strField, readJsonBody, failJson, storeFail, type Deps }
 
 function isActive(deps: Deps, id: string): boolean {
   return deps.workspaces.activeSession() === id.trim();
+}
+
+/**
+ * W794: the engine-side half of taking a session's directory away.
+ *
+ * `releaseSession` (when the injected adapter has one) aborts the session's
+ * in-flight model response and disposes THAT session's instance; it is a no-op
+ * for an id with no live instance, which is why it is safe to call for every id
+ * of a batch — including the unknown ones, whose per-id `failed[]` row below is
+ * exactly what the contract promises.
+ *
+ * A failure inside the engine must not turn a deletion into a 5xx/failed row:
+ * the removal (the directory move) is what the caller asked for and what the
+ * per-id result reports. The instance is released — or, when the teardown threw
+ * halfway, recomposed on demand by the next activate/turn — either way the
+ * session is gone from the listing, which is the observable contract.
+ */
+async function cutEngineSession(deps: Deps, id: string): Promise<void> {
+  try {
+    await deps.runtime.releaseSession?.(id);
+  } catch {
+    // Swallowed on purpose — see above.
+  }
 }
 
 function registerRename(app: Hono, deps: Deps, table: RouteTable): string {
@@ -74,8 +105,13 @@ function registerCompact(app: Hono, deps: Deps, table: RouteTable): string {
 
 function registerMove(app: Hono, deps: Deps, table: RouteTable, id: "post_session_archive" | "post_session_unarchive"): string {
   const route = table.get(id);
-  app.on(route.method, route.honoPath, (c) => {
-    const res = id === "post_session_archive" ? deps.sessionOps.archive(c.req.param("id") ?? "") : deps.sessionOps.unarchive(c.req.param("id") ?? "");
+  app.on(route.method, route.honoPath, async (c) => {
+    const target = c.req.param("id") ?? "";
+    // W794: archiving a LIVE session moves its directory away too, so it cuts the
+    // same way a delete does. `unarchive` restores a directory that has no live
+    // instance by construction (archiving released it) — nothing to cut.
+    if (id === "post_session_archive") await cutEngineSession(deps, target);
+    const res = id === "post_session_archive" ? deps.sessionOps.archive(target) : deps.sessionOps.unarchive(target);
     if (!res.ok) return storeFail(c, res);
     return c.json({ ok: true });
   });
@@ -90,6 +126,10 @@ function registerBatch(app: Hono, deps: Deps, table: RouteTable, id: "post_sessi
     const ids = strArrayField(c, read.body, "ids");
     if (!ids.ok) return ids.response;
     if (ids.value === undefined) return failJson(c, 422, "field 'ids' must be an array of strings");
+    // W794: cut every id before any directory moves. The response shape is
+    // unchanged — one 200, `deleted`/`archived` count plus the per-id `failed[]`
+    // (unknown ids included), so the client's optimistic update can rely on it.
+    for (const one of ids.value) await cutEngineSession(deps, one);
     if (id === "post_sessions_batch_archive") {
       const out = deps.sessionOps.batchArchive(ids.value);
       return c.json({ ok: true, archived: out.archived, failed: out.failed });

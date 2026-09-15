@@ -13,6 +13,15 @@
  * BY ID must agree on where it can be: `unarchive` always did, `trash` now looks
  * in the archive too (B3), and the scanner answers the `?archived=1` listing
  * (`SessionsStore.listArchived`, B1).
+ *
+ * W794 (裁决: "active 只是状态标记，不是保护理由"): the ACTIVE session is no
+ * longer refused by `archive` / `trash` — both move it like any other session.
+ * The active MARKER is a view preference, not a lock, so the operation owns the
+ * consequence: once the active session has moved away, `active_session` is set
+ * to `null` and persisted (it must never keep pointing at an id this call just
+ * removed). Cutting the session's in-flight model response and releasing its
+ * engine instance is the engine's half of the same removal and happens BEFORE
+ * these functions run (see `handlers/session-move.ts`).
  */
 
 import { copyFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
@@ -128,15 +137,23 @@ export class SessionOps {
     }
   }
 
+  /**
+   * POST /api/sessions/{id}/archive — id-preserving move into the archive.
+   *
+   * W794: the active session is archived like any other; the active MARKER is
+   * cleared afterwards (the archived row is not part of the default listing, so a
+   * marker still pointing at it would contradict `GET /api/sessions`).
+   */
   archive(id: string): StoreResult<void> {
     const resolved = this.sessions.resolve(id);
     if (!resolved.ok) return resolved;
     const res = resolved.value;
-    if (this.ws.activeSession() === id.trim()) return badRequest(`active session '${id}' cannot be archived`);
     if (!isDirectory(res.dir) || !isFile(`${res.dir}/${SESSION_FILE}`)) return notFound(`unknown session '${id}'`);
     const dst = `${res.wsPath}/${ARCHIVED_DIR}/${res.session}`;
     if (existsSync(dst)) return conflict(`session '${id}' is already archived`);
-    return this.move(res, res.dir, dst);
+    const moved = this.move(res, res.dir, dst);
+    if (!moved.ok) return moved;
+    return this.clearActiveIf(id);
   }
 
   unarchive(id: string): StoreResult<void> {
@@ -189,14 +206,37 @@ export class SessionOps {
     return null;
   }
 
+  /**
+   * One session into `<ws>/.celestea-trash/<session>-<ts>`.
+   *
+   * W794: no active-session guard. Deleting the focused session is a normal
+   * operation — the marker is cleared instead, in the same atomic write the
+   * registry uses for every other `active_session` change.
+   */
   private trash(id: string): StoreResult<void> {
     const resolved = this.sessions.resolve(id);
     if (!resolved.ok) return resolved;
     const res = resolved.value;
-    if (this.ws.activeSession() === id.trim()) return badRequest(`active session '${id}' cannot be deleted`);
     const from = this.locate(res);
     if (from === null) return notFound(`unknown session '${id}'`);
     const dst = `${res.wsPath}/${TRASH_DIR}/${res.session}-${timestampSuffix(this.now())}`;
-    return this.move(res, from, dst);
+    const moved = this.move(res, from, dst);
+    if (!moved.ok) return moved;
+    return this.clearActiveIf(id);
+  }
+
+  /**
+   * W794: `active_session` must not survive the session it names.
+   *
+   * Called only AFTER the directory has actually moved (a failure to move leaves
+   * the registry untouched — the session is still there and still active). The
+   * value becomes `null`: no other session is silently promoted, so the UI shows
+   * what is true (nothing is focused) instead of a session the user never chose.
+   * A failed persist is a 500 — the caller's `failed[]` / error then says the
+   * registry could not be updated, rather than pretending the id is gone.
+   */
+  private clearActiveIf(id: string): StoreResult<void> {
+    if (this.ws.activeSession() !== id.trim()) return ok(undefined);
+    return this.ws.setActiveSession(null);
   }
 }

@@ -244,14 +244,28 @@ describe("session moves", () => {
     expect(ops.unarchive("sample-ws/missing")).toEqual({ ok: false, status: 404, error: "session 'sample-ws/missing' is not archived" });
   });
 
-  it("refuses to archive or delete the ACTIVE session (400)", () => {
+  it("W794: archives or deletes the ACTIVE session and clears the marker (no 400)", () => {
     plant("alpha");
+    plant("beta");
     registry.setActiveSession("sample-ws/alpha");
-    expect(ops.archive("sample-ws/alpha")).toEqual({ ok: false, status: 400, error: "active session 'sample-ws/alpha' cannot be archived" });
-    expect(ops.batchDelete(["sample-ws/alpha"])).toEqual({
-      deleted: 0,
-      failed: [{ id: "sample-ws/alpha", error: "active session 'sample-ws/alpha' cannot be deleted" }],
-    });
+    // 裁决：active 只是状态标记，不是保护理由 —— 归档活动会话成功，且标记被清空
+    // （archived 行不在默认列表里，标记若留着就与 GET /api/sessions 自相矛盾）。
+    expect(ops.archive("sample-ws/alpha")).toEqual({ ok: true, value: undefined });
+    expect(existsSync(join(ws, ".celestea-archived", "alpha", "cli-main.jsonl"))).toBe(true);
+    expect(registry.activeSession()).toBeNull();
+
+    // 删除活动会话同样成功：目录进 trash，active_session 落盘为 null。
+    registry.setActiveSession("sample-ws/beta");
+    expect(ops.batchDelete(["sample-ws/beta"])).toEqual({ deleted: 1, failed: [] });
+    expect(existsSync(join(ws, ".celestea-trash", "beta-1700000000.0", "cli-main.jsonl"))).toBe(true);
+    expect(registry.activeSession()).toBeNull();
+    expect(registry.registry().active_session).toBeNull();
+
+    // 非活动会话的删除不动标记（删除的后果只落在被删的那个 id 上）。
+    plant("gamma");
+    registry.setActiveSession("sample-ws/gamma");
+    expect(ops.batchDelete(["sample-ws/ghost"])).toEqual({ deleted: 0, failed: [{ id: "sample-ws/ghost", error: "unknown session 'sample-ws/ghost'" }] });
+    expect(registry.activeSession()).toBe("sample-ws/gamma");
   });
 
   it("trashes into .celestea-trash with a timestamp and reports per-id failures", () => {

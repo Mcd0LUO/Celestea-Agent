@@ -99,12 +99,12 @@ describe("sessions endpoints", () => {
     expect(trash.body["deleted"]).toBe(1);
   });
 
-  it("refuses to archive the active session with the 400 contract error", async () => {
+  it("W794: archives the ACTIVE session instead of refusing it", async () => {
     const h = make();
     await getJson(h.app, `/api/sessions/${S1}/activate`, jsonRequest("POST"));
     const res = await getJson(h.app, `/api/sessions/${S1}/archive`, jsonRequest("POST"));
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ ok: false, error: "active session 'sample-ws/s1' cannot be archived" });
+    // 清空 active_session 的完整自洽断言在 runtime/delete-active-session.test.ts。
+    expect([res.status, res.body]).toEqual([200, { ok: true }]);
   });
 
   it("compacts through the runtime adapter and broadcasts the compact frame", async () => {
