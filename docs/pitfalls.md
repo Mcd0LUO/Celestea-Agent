@@ -21,7 +21,7 @@
 | P6 | `/compact` | 409 守卫 + K=4 重编号 + 原子写 + 重绑 |
 | P7 | SSE 信封 `turn` | 只发 payload 会丢 `turn` |
 | P8 | 主题与版本号 | 只有 `mono`；`version.ts` 手动 bump |
-| P9 | 前端渲染铁律 | 见 `frontend/FRONTEND-RULES.md` |
+| P9 | 前端渲染铁律 | 见 `apps/web/FRONTEND-RULES.md` |
 | P10 | session id 编码 | 路径参数必须 `%2F` |
 | P11 | `/api/clear` | 无备份、无 409 守卫 |
 | P12 | 重绑失败的回滚边界 | compact 不回滚日志；activate 不回滚 env |
@@ -174,7 +174,7 @@ originalId: p?.id                         // 打开编辑器时记录
 
 ## P9 · 前端渲染铁律（验收硬性标准）
 
-权威正文：[`frontend/FRONTEND-RULES.md`](../frontend/FRONTEND-RULES.md)。核心 8 条：
+权威正文：[`apps/web/FRONTEND-RULES.md`](../apps/web/FRONTEND-RULES.md)。核心 8 条：
 
 1. **禁止"先清空后加载"**：离屏构建 + 单次 `replaceChildren`，旧内容可见到新内容就绪；
 2. 树/列表刷新**禁止整树 `innerHTML` 重建**，要增量或双缓冲 + 恢复展开态与焦点；

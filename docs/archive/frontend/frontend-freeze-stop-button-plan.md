@@ -1,6 +1,6 @@
 # 前端卡死修复 + statusline 停止按钮 · 架构方案（2026-09-09）
 
-> 📦 历史文档（2026-09-11 归档）：描述的是前端卡死修复 + statusline 停止按钮的架构方案（W301/W302），方案已上线，文首「待执行」状态已过时。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md) 与 [../pitfalls.md](../pitfalls.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是前端卡死修复 + statusline 停止按钮的架构方案（W301/W302），方案已上线，文首「待执行」状态已过时。当前权威入口见 [../../DEVELOPMENT.md](../../DEVELOPMENT.md) 与 [../../pitfalls.md](../../pitfalls.md)。
 
 - 作者：主架构师会话（harness 架构哥）
 - 范围：`frontend/`（TypeScript + Vite）；**后端零改动**

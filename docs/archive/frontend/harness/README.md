@@ -25,20 +25,19 @@
 
 | 文件 | 状态 | 一句话 | 权威入口 |
 | --- | --- | --- | --- |
-| [`../ARCHITECTURE.md`](../ARCHITECTURE.md) | 历史（早期设计） | 仓库早期设计文档，部分章节已过时（CLI crate 已不存在等，见 `DEVELOPMENT.md` §10） | [`DEVELOPMENT.md`](./DEVELOPMENT.md) |
-| [`../README.md`](../README.md) | 当前 | 安装/发布/快速上手 + 文档索引 + 仓库角色互链 | 本页 |
+| `../ARCHITECTURE.md` | 历史（早期设计） | 仓库早期设计文档，部分章节已过时（CLI crate 已不存在等，见 `DEVELOPMENT.md` §10）；**原 harness 仓已于 2026-09-11 删除，此文件随之消失，不再有链接** | [`DEVELOPMENT.md`](./DEVELOPMENT.md) |
+| `../README.md` | 历史 | 原 harness 仓的安装/发布/快速上手 + 仓库角色互链；**随该仓删除而不可达** | 本页 |
 
 ## 仓库角色与互链
 
 | 仓库 | 角色 | 文档入口 |
 | --- | --- | --- |
-| `/src/celestea_harness`（本仓） | Rust **引擎**参考实现（不是 Studio 后端） | 本页 / [`../README.md`](../README.md) |
-| `/src/celestea_studio-ts` | Studio 后端（TypeScript，**生产**） | [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md) |
-| `/src/celestea_studio` | 线上前端 + 共享数据文件（Rust Studio 后端已退役） | [`/src/celestea_studio/docs/README.md`](/src/celestea_studio/docs/README.md) |
+| `/src/celestea_harness`（本页原址） | Rust 引擎参考实现（不是 Studio 后端）；**2026-09-11 已删除**，本页是该仓 `docs/` 索引的归档 | 本页 |
+| `/src/celestea_studio-ts` | Studio 后端（TypeScript，**生产**）+ 线上前端 | [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md) |
+| ~~`/src/celestea_studio`~~ | 旧前端仓，W781 已全量并入本仓（不再存在） | [`../../../README-frontend.md`](../../../README-frontend.md) |
 
 ## 维护约定
 
-- 新增文档 → 在本页表格登记（文件 / 状态 / 一句话 / 权威入口），并在 [`../README.md`](../README.md) 与
-  [`DEVELOPMENT.md`](./DEVELOPMENT.md) §0 文档地图同步一行。
+- 本页是**已删除仓**的历史索引，不再新增文档；现行文档索引见 [`../../../README.md`](../../../README.md)。
 - 文档过时 → 移入 `archive/`（用 `git mv` 保历史）+ 顶部加 `📦 历史文档` 横幅 + 更新本页状态与全仓引用路径；
   **不删除正文**。

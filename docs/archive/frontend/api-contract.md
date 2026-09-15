@@ -1,6 +1,6 @@
 # Celestea Studio · HTTP API 契约
 
-> 📦 历史文档（2026-09-11 归档）：描述的是已退役 Rust 后端（axum，39 端点）的 HTTP 契约。当前权威入口见 [/src/celestea_studio-ts/contracts/endpoints.json](/src/celestea_studio-ts/contracts/endpoints.json)（43 端点）与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是已退役 Rust 后端（axum，39 端点）的 HTTP 契约。当前权威入口见 [/src/celestea_studio-ts/contracts/endpoints.json](/src/celestea_studio-ts/contracts/endpoints.json)（当前 47 端点）与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
 
 > 权威来源：`src/main.rs` 路由表（`src/main.rs:1333-1376`）+ 各 handler 实现。
 > 所有 `error` 字符串都是**代码原文**（可直接 grep）。契约字段名保留英文。

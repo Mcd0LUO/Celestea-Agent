@@ -2,7 +2,7 @@
 
 > 📦 **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓
 > （前端 = `apps/web/`；本页原为**该前端仓**的 `docs/` 索引，随并入原样保留）。
-> 页面内出现的 `frontend/` 一律指现在的 `apps/web/`；下文出现的旧仓路径一律指本仓。
+> 页面内出现的 `frontend/` 一律指现在的 `apps/web/`；旧仓（Celestea-Studio）路径均已并入本仓。
 > 本仓**唯一**的 `docs/` 索引是 [`README.md`](./README.md)；本页只作前端仓历史索引留痕。
 
 > 本页是原前端仓 `docs/` 的**全量索引**：每份文档的状态、一句话定位与权威入口。
@@ -11,9 +11,9 @@
 ## 先说仓库角色（2026-09-11 口径，W781 后已并入本仓）
 
 - 原前端仓**现役** = **线上前端（`frontend/` → 现 `apps/web/`）+ 共享数据文件**（W781 起数据在 `/var/lib/celestea-agent/`）。
-- Rust Studio 后端已退役（`celestea-studio.service` 已 masked）：见 [`archive/frontend/rust-studio-backend/LEGACY-RUST-BACKEND.md`](./archive/frontend/rust-studio-backend/LEGACY-RUST-BACKEND.md)。
+- Rust Studio 后端已退役（`celestea-studio.service` 已 masked）：见 [`archive/rust-studio-backend/LEGACY-RUST-BACKEND.md`](./archive/rust-studio-backend/LEGACY-RUST-BACKEND.md)。
 - **后端（TypeScript，生产）在 [`/src/celestea_studio-ts`](/src/celestea_studio-ts/docs/README.md)**（W781 起与前端同仓）；
-  Rust **引擎**参考实现已随 W781 归档在本仓 [`archive/frontend/harness/`](./archive/frontend/harness/README.md)。
+  Rust **引擎**原址（`/src/celestea_harness`）已于 2026-09-11 删除，其历史文档在 [`archive/frontend/harness/`](./archive/frontend/harness/README.md)。
 - 因此本页列表里凡是描述 Rust 后端的文档一律归 **历史**（2026-09-11 归档进 [`archive/frontend/`](./archive/frontend/)，正文保留 + 顶部 📦 横幅），
   只有前端规则与数据文件格式仍属当前。
 
@@ -35,7 +35,7 @@
 本页在并入本仓后位于 `docs/` 根（`README-frontend.md` 前缀 `-frontend` 以与后端索引 [`README.md`](./README.md) 区分）：
 `DEVELOPMENT.md` / `data-files.md` / `pitfalls.md` 三篇 + `archive/frontend/` 15 篇历史文档。
 原前端仓根另有 [`../README.md`](../README.md)（已并入本仓 README 的「仓库角色」段）与
-[`archive/frontend/rust-studio-backend/LEGACY-RUST-BACKEND.md`](./archive/frontend/rust-studio-backend/LEGACY-RUST-BACKEND.md)（Rust 后端退役与回滚）。
+[`archive/rust-studio-backend/LEGACY-RUST-BACKEND.md`](./archive/rust-studio-backend/LEGACY-RUST-BACKEND.md)（Rust 后端退役与回滚）。
 
 ## 仓库角色与互链
 
@@ -43,7 +43,7 @@
 | --- | --- | --- |
 | `/src/celestea_studio-ts`（本仓，W781 前为两个仓） | 后端（TypeScript，生产）+ 线上前端 `apps/web/` | [`docs/README.md`](./README.md) / [`../README.md`](../README.md) |
 | `/var/lib/celestea-agent` | 运行数据（providers / workspaces / sessions / 账本；W781 前在原前端仓根） | [`../scripts/run-studio-ts.sh`](../scripts/run-studio-ts.sh) |
-| `/src/celestea_harness` | Rust **引擎**参考实现 | 已随 W781 归档：[`docs/archive/frontend/harness/README.md`](./archive/frontend/harness/README.md) |
+| `/src/celestea_harness` | Rust 引擎**原址**（2026-09-11 已删除） | 历史文档已归档：[`archive/frontend/harness/README.md`](./archive/frontend/harness/README.md) |
 
 ## 维护约定
 

@@ -69,9 +69,13 @@ async function main(): Promise<void> {
   const tools = loadTools();
 
   // ---- 0. contract self-consistency ---------------------------------------
-  pass("contracts/endpoints.json", "contract-count", `${contract.endpoints.length} endpoints (expected 44)`, undefined);
-  pass("contracts/sse-events.json", "contract-count", `${sse.events.length} SSE events (expected 8)`, undefined);
-  pass("contracts/tools.json", "contract-count", `${tools.tools.length} tool specs (expected 10)`, undefined);
+  // NOTE: loadEndpoints()/loadSse()/loadTools() already THROW on a count
+  // mismatch, so these lines record the frozen count as evidence; the numbers
+  // come from the contracts themselves (never a hard-coded literal that can
+  // silently rot).
+  pass("contracts/endpoints.json", "contract-count", `${contract.endpoints.length} endpoints (contract declares ${contract.count})`, undefined);
+  pass("contracts/sse-events.json", "contract-count", `${sse.events.length} SSE events (contract declares ${sse.count})`, undefined);
+  pass("contracts/tools.json", "contract-count", `${tools.tools.length} tool specs (contract declares ${tools.count})`, undefined);
 
   // ---- 1. GET endpoints: status + top-level response shape ----------------
   const sessionList = await probe(STUDIO, "/api/sessions", { timeoutMs: TIMEOUT });

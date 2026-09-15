@@ -1,8 +1,8 @@
 # Celestea 后端 TypeScript 全量重构评估（W268 · 增量复评 + 可执行迁移计划）
 
-> 📦 历史文档（2026-09-11 归档）：描述的是 Rust → TypeScript 全量重构的评估与迁移计划（W268），迁移已完成（TS 后端为生产），本报告作为立项依据留痕。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md) 与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是 Rust → TypeScript 全量重构的评估与迁移计划（W268），迁移已完成（TS 后端为生产），本报告作为立项依据留痕。当前权威入口见 [../../DEVELOPMENT.md](../../DEVELOPMENT.md) 与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
 
-> **前序与契约**：[W229《Celestea-Studio 后端语言切换评估报告》](./backend-language-eval.md)（2026-09-07，commit `e4b73ce`，结论：维持 Rust axum，加权 4.81 : TS 3.63）｜[`celestea_studio/docs/DEVELOPMENT.md`](../DEVELOPMENT.md)（W264，代码基线 `937fe63`，39 端点契约 + 数据文件）｜[`celestea_harness/docs/DEVELOPMENT.md`](/src/celestea_studio/docs/archive/harness/DEVELOPMENT.md)（W265，7 crate / 10 工具 / 沙箱 / 事件模型）。
+> **前序与契约**：[W229《Celestea-Studio 后端语言切换评估报告》](./backend-language-eval.md)（2026-09-07，commit `e4b73ce`，结论：维持 Rust axum，加权 4.81 : TS 3.63）｜[`docs/DEVELOPMENT.md`](../../DEVELOPMENT.md)（W264，代码基线 `937fe63`，39 端点契约 + 数据文件）｜[`harness/DEVELOPMENT.md`](./harness/DEVELOPMENT.md)（W265，7 crate / 10 工具 / 沙箱 / 事件模型）。
 >
 > **本轮口径**：① 用户已决定「引擎 + Studio 后端全量重构为 TypeScript」→ **场景 B 为主结论**，场景 A（core 留 Rust）降为对照；② 用户明确「性能不是关键」→ 性能维度权重压到 4%；③ 评估重心 = 维护成本与语义耦合、双进程/运行时运维、回归风险、语言统一/心智负担、打包发布形态。④ 本报告只写文档，**不改任何代码/配置、不 push、不重启服务**；文中不含任何 key/token 明文。
 >

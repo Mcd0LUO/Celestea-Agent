@@ -22,7 +22,7 @@
 | [`archive/dsh-ptc-mode-eval.md`](./archive/dsh-ptc-mode-eval.md) | 历史：DSH PTC（code agent preset）模式评估 | §3 run_code 的动机背景 |
 | [`archive/run-code-mode-eval.md`](./archive/run-code-mode-eval.md) | 历史：run_code 折叠机制评估（方案 A/B、语言选择、安全分析、事件映射设计） | §3 的**设计依据**（当时）；本文只写**已落地实现** |
 | [`archive/backend-optimization-eval.md`](./archive/backend-optimization-eval.md) | 历史：后端优化评估（长文件拆分、解耦、性能、泄漏复查、压测设计） | §1/§8 的演进参考 |
-| [`../ARCHITECTURE.md`](../ARCHITECTURE.md) | 早期设计文档（部分内容已过时，见 §10） | 本文以代码为准覆盖它 |
+| `../ARCHITECTURE.md` | 早期设计文档（部分内容已过时，见 §10） | 本文以代码为准覆盖它；**原 harness 仓已于 2026-09-11 删除，此文件不可达** |
 
 **按角色阅读路径**
 
@@ -32,8 +32,7 @@
 - 要把引擎接进前端：§1.5 → §9
 
 **仓库角色与互链**：本仓是 Rust **引擎**参考实现（不是 Studio 后端）。Studio 生产后端是 TypeScript 仓
-[`/src/celestea_studio-ts`](/src/celestea_studio-ts/docs/README.md)；线上前端 + 共享数据文件（含已退役 Rust 后端历史）在
-[`/src/celestea_studio`](/src/celestea_studio/docs/README.md)。本仓 `docs/` 索引见 [`docs/README.md`](./README.md)。
+[`/src/celestea_studio-ts`](/src/celestea_studio-ts/docs/README.md)（W781 起前端也已并入该仓）。本页所属的 `/src/celestea_harness` 已于 2026-09-11 删除。
 
 ---
 
