@@ -254,3 +254,53 @@ describe("W795 ②③ 提问卡片：提交当帧终态，失败回滚", () => {
     expect(p.el.textContent ?? "").not.toMatch(/提交中|正在提交/);
   });
 });
+
+describe("W795 ②③ SSE done 后的挂起重试：当帧画终态，失败回滚", () => {
+  interface SlHost extends SlMod {
+    statusline: SlMod["statusline"] & {
+      onSseDone(): void;
+      pendingPatch: Record<string, unknown> | null;
+      pendingPick: { model: string; providerId: string } | null;
+    };
+  }
+  let sl: SlHost;
+
+  beforeEach(async () => {
+    resetHarness();
+    Object.assign(statusBySession, {
+      "ws/s1": { ok: true, mode: "standard", model: "m-old", reasoning_effort: "low" },
+    });
+    sl = (await import(/* @vite-ignore */ at("statusline.ts"))) as SlHost;
+    sl.statusline.setSession("ws/s1");
+    await flush();
+  });
+  afterEach(() => {
+    sl?.statusline.stop();
+  });
+
+  it("② pendingPatch（409 挂起的档位切换）：本轮结束时当帧就画上新档位；失败回滚", async () => {
+    expect(el("slEffort").textContent).toBe("low");
+    configStub.saveStatus = 500; // 写入失败
+    sl.statusline.pendingPatch = { reasoning_effort: "max" };
+    sl.statusline.onSseDone();
+    // —— 同一帧（同步、未 await 网络）：档位已经画上，且没有任何「正在应用切换…」占位 ——
+    expect(el("slEffort").textContent).toBe("max");
+    expect(el("slHint").textContent).not.toMatch(/正在|加载中/);
+    await flush(4);
+    expect(el("slEffort").textContent, "写入失败 ⇒ 回滚到原档位").toBe("low");
+    expect(el("slHint").textContent).toContain("切换失败");
+    expect(el("slHint").textContent).toContain("已恢复原设置");
+  });
+
+  it("② pendingPick（409 挂起的模型切换）：本轮结束时当帧就画上新模型；失败回滚", async () => {
+    expect(el("slModel").textContent).toBe("m-old");
+    configStub.saveStatus = 500;
+    sl.statusline.pendingPick = { model: "m-new", providerId: "" };
+    sl.statusline.onSseDone();
+    expect(el("slModel").textContent).toBe("m-new");
+    expect(el("slHint").textContent).not.toMatch(/正在|加载中/);
+    await flush(4);
+    expect(el("slModel").textContent).toBe("m-old");
+    expect(el("slHint").textContent).toContain("已恢复原设置");
+  });
+});
