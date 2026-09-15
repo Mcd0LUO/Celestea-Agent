@@ -59,6 +59,9 @@ export {
 export type { LlmErrorKind, LlmErrorOptions, TimeoutStage } from "./errors.js";
 export {
   cancelledError,
+  parseRetryAfterHeader,
+  retryAfterMsOf,
+  setRetryAfterMs,
   connectTimeoutError,
   errorKind,
   isRetryableStatus,
@@ -115,6 +118,39 @@ export {
   resolveLlmMode,
   withBaseUrlFallback,
 } from "./factory.js";
+
+// Fallback chain (iteration E §4 P1): the decorator, its trigger-table defaults
+// and the sidecar config loader (`fallbacks.json` / `CELESTEA_LLM_FALLBACKS`).
+export type {
+  FallbackAttemptInfo,
+  FallbackLlm,
+  FallbackLlmOptions,
+  FallbackPolicy,
+  FallbackStepHandle,
+  FallbackStepSink,
+  FailureInfo,
+  LlmTarget,
+} from "./fallback.js";
+export {
+  createFallbackLlm,
+  DEFAULT_FALLBACK_POLICY,
+  describeEvent,
+  describeFailure,
+  FallbackState,
+  isProducedEvent,
+  orderTargets,
+} from "./fallback.js";
+export type { FallbackConfig } from "./fallback-config.js";
+export {
+  configProblems,
+  ENV_FALLBACK_SWITCH,
+  ENV_FALLBACKS,
+  FALLBACKS_FILE,
+  fallbackEnabled,
+  loadFallbackConfig,
+  parseConfig,
+  targetAvailability,
+} from "./fallback-config.js";
 
 // The adapter + provider registration.
 export type { OpenAiCompatOptions } from "./client.js";

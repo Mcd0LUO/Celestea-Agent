@@ -509,6 +509,22 @@
 
 ---
 
+### 3.8 实现状态（W785 回填，P1）
+
+| 设计条目 | 状态 | 落点 / 说明 |
+|---|---|---|
+| ① `GET /api/usage/ledger` 聚合端点 | **已实现** | `apps/studio/src/handlers/usage.ts` + `packages/runtime/src/ledger-query.ts`（`queryLedger`）；`session`/`since`/`until`/`group_by=session\|turn\|model\|day`；非法 query → 422。端点数 49 → **50**（`contracts/endpoints.json` + `API_ENDPOINT_COUNT` + `rust-route-table.snapshot.json` 的 `tsOnlyRoutes`/`tsApiEndpoints`/`tsMethodPathCombos` + `packages/core/src/contracts/index.ts` 的加载期断言） |
+| ② `/api/status.cost` | **已实现** | `ledgerCostBlock()`（runtime）+ 适配器可选方法 `costBlock?()`；**纯增**可选字段，账本关闭/无适配器时不出现该键 |
+| ③ `scripts/sync-pricing.ts`（只读同步 + version） | **未实现（有意）** | 依 R3-1/U1：newapi 侧 `PRICING-ARCHITECTURE.md` 读取被拒，同步脚本落地前须先确权；`pricing.json` 仍由运维提供，缺表即全 `unpriced`（不低报为 0） |
+| ④ 轮转（> 16 MiB） | **已实现** | `UsageLedgerFile`：超 `USAGE_LEDGER_MAX_BYTES` 时 `close` → `rename` 为 `usage-ledger.jsonl.1` → 下次 append 重建；轮转失败只 stderr 告警、不抛（观测纪律） |
+| ⑤ SSE `status.cost_delta` | **未实现（设计标注"可选"）** | 若要落地，按 K5 只增 optional payload 字段 |
+
+**修正（P1 必需，P0 无感）**：`turn_total.attempts` 的口径由 `Σ(attempt+1)` 改为**计数**。P0 所有行 `attempt=0`，两式等价；P1 有了真实 attempt 维度后，`Σ(attempt+1)` 会把三次尝试报成 6（§3.4 D6 要求 3）。
+
+**偏离**：`GET /api/usage/ledger` 的 `group_by=turn` 以 `"<session>|<turn_id>"` 为键（`turn_total` 行不参与聚合，避免与明细双计）。
+
+---
+
 ## 4. 模型降级回退（model fallback）
 
 ### 4.1 现状与缺口
@@ -630,6 +646,31 @@ interface FallbackPolicy {
 
 ---
 
+### 4.7 实现状态（W785 回填，P1）
+
+| 设计条目 | 状态 | 落点 / 说明 |
+|---|---|---|
+| ① `fallback.ts` 装饰器 + 规则表 + `produced` 计数 + 冷却（内存） | **已实现** | `packages/llm/src/fallback.ts`：`createFallbackLlm({targets, clientFor, policy, state, onAttempt, steps})`；规则表数据外提为 `DEFAULT_FALLBACK_POLICY`；`FallbackState`（进程级，连续失败 ≥ `failureThreshold` → `cooldownMs` 内靠后） |
+| ② 账本 hook（每 attempt 一行） | **已实现** | 装饰器接受**结构型** `FallbackStepSink`（= runtime 的 `LedgerStepSink`，两层不互相依赖）：`beginStep(attempt, fallback_from)` → 每个 usage 帧 `record` → 流终态 `close` |
+| ③ 审计双通道 | **已实现** | `apps/studio/src/runtime/fallback-host.ts`：本地 `<data dir>/fallbacks-audit.jsonl`（0600，超 16 MiB 轮转，权威）+ best-effort 平台 `POST /api/audit`（`CELESTEA_AUDIT_URL` 未设 = 只跑本地；投递失败如实记 `platform_audit_failed`）。只记 target 名/原因，零凭据 |
+| ④ statusline + SSE 可见 | **已实现** | `/api/status` 纯增 `effective_model` 与 `fallback{active,chain,effective_model,last_reason,targets,problems}`（`model` 语义不变）；SSE `status` 帧 `phase:"fallback"` + `from`/`to`/`reason`/`attempt`/`effective_model`，**事件名集合不变**（K5/D8） |
+| ⑤ `notRetryableStatuses` 硬断言（401/403/400 只试 1 次） | **已实现** | `statusRetryable()`；D3 三例 |
+| ⑥ `Retry-After` 遵守（上限 `cooldownMs`） | **已实现** | 捕获点在 `client.assertSuccess`（响应还在手上时读 header），经 **WeakMap 侧信道**挂在错误对象上（`setRetryAfterMs`/`retryAfterMsOf`）——`core` 的 `LlmError` 字段与文案逐字未变（K7/§4.6）；超上限则不等、直接下一个 target |
+| ⑦ 装配（开关默认关） | **已实现** | `session-compose.engineLlm()` 是唯一分叉点：`CELESTEA_LLM_FALLBACK` 关（默认）→ 返回**今日路径**（`createLedgerLlm` 包一层），D9 逐字一致；开 → 装饰器（每 attempt 一行账） |
+| ⑧ 配置来源（不扩冻结 profile） | **已实现** | `<data dir>/fallbacks.json` 或 `CELESTEA_LLM_FALLBACKS`（同 JSON）；`profile` 12 键未动；`contracts/data-files/fallbacks.schema.json` + `index.json`（11 → 12） |
+
+**偏离与取舍（逐条）**：
+
+1. **`onAttempt` 的语义 = "发生了切换"**，不是"某次尝试失败"：只有真的换 target 时才回调（终态失败与 `produced>0` 锁都不回调）。因此 SSE 帧的 `attempt` 是**即将运行**的那次尝试序号，`reason` 是刚被放弃的 target 的失败原因 —— 这正是 §4.2.3 #2 "切换时发一帧" 的字面语义，也让 D2 的"`onAttempt` 恰好 1 次"成立。
+2. **D4 的落点在 `packages/llm/src/fallback.test.ts`（流级），不在 `agent-loop/loop.test.ts`**：`loop.ts` 一行未改是选择装饰器的**理由**（§4.6），"已产出即不重做"是装饰器的机械判据；"无 `assistant_message`" 由既有 loop 语义（只在 `sawDone` 时落行）保证，本次未改该文件。
+3. **D5 的两个半边分别落在 `apps/studio/src/runtime/fallback-host.test.ts`（SSE 帧，捕获 bus 回调）与 `fallback-status.test.ts`（HTTP 层：`model` 与 `effective_model` 两条独立断言）**；未做"真实上游 + 浏览器"的端到端（红线：不打真实上游）。
+4. **链为空时的行为**：`enabled:true` 但 `config.targets` 为空 → 用 composed profile 自身作为唯一 target，并把 "no targets configured" 记进 `fallback.problems` + 审计 `target_unavailable`（U7：**不得静默跳过**）。
+5. **未实现（属 P2，§4.3）**：冷却持久化（`llm-cooldown.json`，重启不丢）、`context_length_exceeded` 特例降级、与能力 3 预算联动、targets 由 `providers.json` 自动派生。
+
+**U7 盘点结论（本次已核实的行为，而非猜测）**：凭据只按 **env 名**读取与记录；`targetAvailability()` 对每个 target 给出 `available`（`apiKeyEnv` 未设视为继承主 profile → available），不可用的 target 出现在 `/api/status.fallback.targets[].available=false` 与 `problems[]`，并各写一条 `fallbacks-audit.jsonl`。生产 `providers.json` 是否提供第二个可用凭据属运维事实，本能力**不依赖它**：缺凭据时行为是"显式报不可用"，不是"静默失效"。
+
+---
+
 ## 5. 交叉影响、实施顺序与契约清单
 
 ### 5.1 依赖关系与推荐顺序
@@ -657,10 +698,10 @@ interface FallbackPolicy {
 
 | 文件 | 变更 | 阶段 |
 |---|---|---|
-| `contracts/endpoints.json` | `+GET /api/usage/ledger`（43→44）；`get_status` 响应增 `recovery`/`cost`/`effective_model`/`fallback` | 1-P1 / 3-P1 / 4-P1 |
+| `contracts/endpoints.json` | `+GET /api/usage/ledger`（W785 已落：49→50）；`get_status` 响应增 `cost`/`effective_model`/`fallback`（W785 已落）/ `recovery`（1-P1 未落） | 1-P1 / 3-P1 / 4-P1 |
 | `apps/studio/src/routes.ts:48` | `API_ENDPOINT_COUNT` 同步（漏改 → `app.ts:109` 启动抛错） | 同上 |
-| `contracts/data-files/` | 新增 `checkpoint` / `pricing` / `usage-ledger` / `fallbacks` / `llm-cooldown` schema + `index.json` 计数 | 各 P0/P1 |
-| `contracts/sse-events.json` | 只增 payload **optional** 字段（`status.phase:"fallback"`、`cost_delta`、`recovery`），事件名集合不变 | 1-P1 / 3-P1 / 4-P1 |
+| `contracts/data-files/` | 新增 `checkpoint` / `pricing` / `usage-ledger` / `fallbacks`（W785 已落，index 11 → 12）/ `llm-cooldown`（P2 未落）schema + `index.json` 计数 | 各 P0/P1 |
+| `contracts/sse-events.json` | 只增 payload **optional** 字段（`status.phase:"fallback"` + `effective_model`/`from`/`to`/`reason`/`attempt` —— W785 已落；`cost_delta`/`recovery` 未落），事件名集合不变 | 1-P1 / 3-P1 / 4-P1 |
 | `contracts/data-files/registry-tsv.schema.json` | 新 token（`host`/`attempt`/`lease`/`receipt`）白名单 + round-trip 用例 | 2-P0/P1 |
 | `contracts/tools.json` | P2：每工具增 `idempotent`（副作用分类，缺失 = 非幂等） | 1-P2 |
 | `docs/ARCHITECTURE.md` | 若 `CheckpointStore` 上提 core：§3.1 seam 表 + §7.4 流程 + §5 例外表（如超线） | 1-P0/P2 |

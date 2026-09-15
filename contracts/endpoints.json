@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (49 endpoints)",
+  "title": "Celestea Studio HTTP API contract (50 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -8,7 +8,7 @@
     "routes": "docs/archive/rust-studio-backend/main.rs:1333-1376 (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "rustRouteSnapshot": "contracts/rust-route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49)."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired Rust reference has no counterpart (see contracts/rust-route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 49,
+  "count": 50,
   "endpoints": [
     {
       "id": "get_health",
@@ -148,6 +148,13 @@
             "type": "\"standard\"|\"execution\"",
             "required": false,
             "note": "W729: mode of the QUERIED session (absent key on disk = \"standard\")"
+          },
+          {
+            "name": "cost",
+            "type": "object{session_total:number|null,turn_total:number|null,attempts:integer,currency:string,priced_by:'table'|'unpriced',unpriced_models:array<string>,records:integer,cost_complete:boolean}",
+            "required": false,
+            "optional": true,
+            "note": "E-P1 (capability 3, W785): engine-side cost estimate from the append-only usage ledger; absent when the ledger is off or the adapter has none."
           }
         ]
       },
@@ -159,7 +166,8 @@
         "W755: `method:session_event_chars` is RETIRED — it divided the session log's CHARACTER count by a TOKEN window (~4x over-report; fixtures/live/status.json held used:565437 / ratio:0.5654 where the real assembly is 155,698 / 0.1557). The literal stays in the union only so a consumer can recognise an older build's payload; this backend never emits it.",
         "W755: `estimated` says whether `used` is the visible-surface estimate; `projected` says whether the real-prompt anchor was extended by measured growth. They are different questions and both may be false.",
         "W755: `window_source:profile` is the only case where `ratio` is a real measurement. A session whose profile declares no capacity reports `window:0, ratio:0, window_source:fallback` — the 1000000 CONTEXT_WINDOW_FALLBACK is a DISPLAY default only and never a denominator (the client must not draw a ring when window is 0); `unknown` means the configured value was not usable at all. DSH refuses to render occupancy without a resolved capacity.",
-        "W755: `usage.total` is a cross-step, repeatedly-billed sum (every step re-sends the whole prompt), NOT an occupancy reading — never divide it by a context window. Occupancy is `context_usage` only."
+        "W755: `usage.total` is a cross-step, repeatedly-billed sum (every step re-sends the whole prompt), NOT an occupancy reading — never divide it by a context window. Occupancy is `context_usage` only.",
+        "W785: `cost` is a PURE ADDITION and is present ONLY when the queried session's rows exist in the process ledger (`session_total`/`turn_total` are `null` — never 0 — when nothing was priced)."
       ],
       "probe": {
         "checked": true,
@@ -3241,6 +3249,120 @@
       "probe": {
         "checked": false,
         "reason": "TypeScript-only endpoint: the retired Rust reference (127.0.0.1:3777) has no /api/questions route"
+      }
+    },
+    {
+      "id": "get_usage_ledger",
+      "method": "GET",
+      "path": "/api/usage/ledger",
+      "group": "usage",
+      "rustHandler": "(none - TypeScript-only, W785)",
+      "docRef": "docs/iteration-e-capabilities.md#324-聚合视图",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "session",
+            "type": "string",
+            "required": false,
+            "note": "Only this session's rows. The value is the ledger's own session label (`<workspace>/<session>`), i.e. exactly the `session` field of a row; absent/empty = every session."
+          },
+          {
+            "name": "since",
+            "type": "integer",
+            "required": false,
+            "note": "Epoch SECONDS, inclusive lower bound on the row's `ts` (the ledger stores second resolution, never ISO strings)."
+          },
+          {
+            "name": "until",
+            "type": "integer",
+            "required": false,
+            "note": "Epoch SECONDS, inclusive upper bound on the row's `ts`."
+          },
+          {
+            "name": "group_by",
+            "type": "\"session\"|\"turn\"|\"model\"|\"day\"",
+            "required": false,
+            "note": "Fold dimension; absent/empty = `session`. `turn` keys are `<session>|<turn_id>` (a row whose turn_id is null uses `-`), `model` keys use `(unknown model)` when the provider reported none, `day` keys are the UTC date `YYYY-MM-DD` of `ts`."
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true,
+            "note": "`true` = the aggregate below. `false` (with `error`) = there is no ledger here: `usage ledger unavailable` (adapter without the capability) or `usage ledger disabled` (`CELESTEA_USAGE_LEDGER=off`)."
+          },
+          {
+            "name": "currency",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "group_by",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "rows",
+            "type": "array<object>",
+            "required": false,
+            "note": "One row per group key, key-ascending: `{key:string, tokens:{prompt_tokens,completion_tokens,total_tokens,cache_read,reasoning_tokens}, cost:{in,out,cache,total}|null, records:integer, unpriced_records:integer}`. `turn_total` rows are NEVER counted (they restate their steps, §3.2.1)."
+          },
+          {
+            "name": "totals",
+            "type": "object",
+            "required": false,
+            "note": "The P0 `LedgerTotals` over the SAME filtered rows: `{currency, price_version, records, tokens, cost|null, cost_complete, unpriced_records, billed_unknown_records, unpriced_models}`."
+          },
+          {
+            "name": "unpriced_models",
+            "type": "array<string>",
+            "required": false,
+            "note": "Models the price table could not cover; their rows carry `cost: null` — UNKNOWN, never 0 (§3.2.2 rule 3)."
+          },
+          {
+            "name": "price_version",
+            "type": "string|null",
+            "required": false,
+            "note": "`version` of the last contributing row's price snapshot; null = nothing was priced."
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "required": false,
+            "note": "Present only with `ok:false` (HTTP 200: the request was understood, there is just no ledger to read)."
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 422,
+          "error": "field 'since' must be an integer",
+          "note": "also `until`; both are epoch seconds"
+        },
+        {
+          "status": 422,
+          "error": "field 'group_by' must be one of session, turn, model, day"
+        },
+        {
+          "status": 500,
+          "error": "<engine message>",
+          "note": "an unreadable ledger file: reported, never silently served as an empty ledger"
+        }
+      ],
+      "notes": [
+        "The engine-side ESTIMATE of iteration E §3.2.4, never the platform's bill: the price snapshot comes from `<data dir>/pricing.json` and an unknown model is reported as `unpriced` instead of being charged 0 (LTS `biz/newapi.md` I1-I3).",
+        "One process shares ONE append-only ledger file (`<data dir>/usage-ledger.jsonl`), so this endpoint reads every session's rows and the `session` filter is a query, not a boundary.",
+        "`session` matches the row's own label (`<workspace>/<session>` for a named session, `sessionId ?? \"cli-main\"` for the detached generation); a trailing whitespace-only value is treated as absent."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
       }
     }
   ]

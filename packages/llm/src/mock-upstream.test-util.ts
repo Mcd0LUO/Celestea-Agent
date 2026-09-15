@@ -30,6 +30,8 @@ export interface MockUpstreamOptions {
   status?: number;
   /** Body for behaviour "http-error". */
   body?: string;
+  /** Extra response headers for behaviour "http-error" (e.g. `retry-after`). */
+  headers?: Record<string, string>;
 }
 
 export interface RecordedRequest {
@@ -142,7 +144,7 @@ async function serve(
     }
     case "http-error": {
       const status = options.status ?? 500;
-      res.writeHead(status, { "content-type": "application/json" });
+      res.writeHead(status, { "content-type": "application/json", ...(options.headers ?? {}) });
       res.end(options.body ?? "{}");
       return;
     }

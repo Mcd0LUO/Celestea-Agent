@@ -21,7 +21,7 @@
 
 import type http from "node:http";
 
-import { statusError } from "./errors.js";
+import { parseRetryAfterHeader, setRetryAfterMs, statusError } from "./errors.js";
 import {
   resolveClientConfig,
   validateModel,
@@ -172,5 +172,9 @@ async function assertSuccess(response: http.IncomingMessage): Promise<void> {
   const text = await readBodySnippet(response);
   response.destroy();
   const label = httpStatusLabel(status, response.statusMessage);
-  throw statusError(status, label, redact(text));
+  const error = statusError(status, label, redact(text));
+  // E §4.2.2 P1: the header is captured here, where the response is still in
+  // hand; the P0 error object and its message stay byte-for-byte unchanged.
+  setRetryAfterMs(error, parseRetryAfterHeader(response.headers["retry-after"]));
+  throw error;
 }

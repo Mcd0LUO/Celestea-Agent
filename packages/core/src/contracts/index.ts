@@ -122,8 +122,9 @@ export function loadEndpoints(): EndpointsContract {
   // W767: 44 -> 47 (GET /login, POST /auth/login, GET /auth/check — Studio's own
   // login-cookie gate; the two non-/api paths are declared in the contract too).
   // W783 (2): 47 -> 49 — GET|POST /api/questions (+ the pending list on GET).
-  if (c.count !== 49 || c.endpoints.length !== 49) {
-    throw new Error(`endpoints contract must hold 49 endpoints, got ${c.endpoints.length}`);
+  // W785 (1): 49 -> 50 — GET /api/usage/ledger (E-P1, capability 3).
+  if (c.count !== 50 || c.endpoints.length !== 50) {
+    throw new Error(`endpoints contract must hold 50 endpoints, got ${c.endpoints.length}`);
   }
   return c;
 }

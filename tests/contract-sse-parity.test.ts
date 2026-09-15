@@ -98,6 +98,29 @@ describe("W744 · SSE payloads: the production runtime/frames.ts vs contracts/ss
     }
   });
 
+  /**
+   * W785 (E §4.4 D8): the fallback frame is a `status` frame — the event NAME set
+   * is unchanged (still 9) and every field it adds is declared. This validates the
+   * PRODUCTION payload shape (`real-runtime-adapter.emitFallback`) against the
+   * frozen table, so widening `phase` or adding a key without touching the
+   * contract fails here instead of drifting silently.
+   */
+  it("accepts the W785 fallback status frame without touching the event-name set", () => {
+    const payload = {
+      phase: "fallback",
+      statusline: {},
+      effective_model: "model-b",
+      from: "primary",
+      to: "backup",
+      reason: "http_503",
+      attempt: 1,
+    };
+    expect(describeFrameViolations(checkPayload(SSE, "status", payload))).toBe("");
+    // The value that was added is a payload VALUE; the names are frozen at 9.
+    expect(SSE.events.map((e) => e.name)).toHaveLength(9);
+    expect(SSE.count).toBe(9);
+  });
+
   it("binds all 9 contract events to a named producer (none unbound, none invented)", () => {
     const loopNames = LOOP_EVENTS.map((r) => r.contractName);
     // W783: `question` is host-emitted by the user-questions service while the

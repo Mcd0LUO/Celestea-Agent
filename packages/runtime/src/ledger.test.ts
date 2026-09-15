@@ -16,6 +16,7 @@ import type { Llm, LlmStream, ModelRequest, SessionLog, StreamEvent, Usage } fro
 import { createLedgerLlm } from "./ledger-llm.js";
 import {
   USAGE_LEDGER_FILE,
+  USAGE_LEDGER_MAX_BYTES,
   UsageLedgerFile,
   type UsageLedger,
   aggregateUsage,
@@ -106,13 +107,18 @@ interface Rig {
   rows(): UsageStepRecord[];
 }
 
-/** A ledgered session with an open turn 0, driven by `answers`. */
-function rig(answers: ReadonlyArray<readonly StreamEvent[] | Error>, dir = tmpDir()): Rig {
+/**
+ * A ledgered session with an open turn 0, driven by `answers`. `maxBytes` is the
+ * rotation threshold (W785 §3.3 P1 ④): a test injects a tiny one to roll the file
+ * without writing megabytes.
+ */
+function rig(answers: ReadonlyArray<readonly StreamEvent[] | Error>, dir = tmpDir(), maxBytes?: number): Rig {
   const path = join(dir, USAGE_LEDGER_FILE);
   const file = new UsageLedgerFile({
     path,
     pricing: loadPricingFile(join(dir, "pricing.json")),
     now: (): number => 1_760_000_000_000,
+    ...(maxBytes === undefined ? {} : { maxBytes }),
   });
   const ledger = createUsageLedger({ session: "ws/s1", file });
   const log = memoryLog();
@@ -397,5 +403,38 @@ describe("observation only: the Llm seam is passed through unchanged", () => {
     const boom = new Error("upstream exploded");
     const failing = createLedgerLlm({ inner: scriptedLlm([boom]), sink: createUsageLedger({ session: "ws/s1", file: r.file }) });
     await expect(failing.generate(request())).rejects.toBe(boom);
+  });
+});
+
+describe("rotation past the size threshold (§3.3 P1 ④, W785)", () => {
+  it("rolls the file to <path>.1 and keeps writing into a fresh current file", async () => {
+    const dir = tmpDir();
+    writePricing(dir, "2026-09-11");
+    // A 1-byte threshold: the first row lands (the file is empty), the second
+    // rolls it away. A row is always wider than 1 byte, so this is deterministic.
+    const r = rig([okStep(100, 10), okStep(200, 20), okStep(300, 30)], dir, 1);
+
+    await drain(await r.llm.generate(request()));
+    expect(existsSync(`${r.path}.1`)).toBe(false);
+
+    await drain(await r.llm.generate(request()));
+    const rolled = readFileSync(`${r.path}.1`, "utf8").trim().split("\n");
+    expect(rolled).toHaveLength(1);
+    expect(JSON.parse(rolled[0] as string) as UsageStepRecord).toMatchObject({ step: 1, turn_id: "turn-0" });
+    // `read()` reads the CURRENT file only: the rolled segment is history, never a
+    // second copy of the same row (which would double every aggregate).
+    expect(r.rows()).toHaveLength(1);
+    expect(r.rows()[0]?.step).toBe(2);
+
+    await drain(await r.llm.generate(request()));
+    // `.1` is REPLACED, not appended to: it always holds the complete PREVIOUS
+    // segment, and the current file always holds the rows written after it.
+    expect(r.rows().map((row) => row.step)).toEqual([3]);
+    const second = readFileSync(`${r.path}.1`, "utf8").trim().split("\n");
+    expect(second).toHaveLength(1);
+    expect((JSON.parse(second[0] as string) as UsageStepRecord).step).toBe(2);
+
+    // The threshold is the audit-trail 16 MiB unless a caller injects its own.
+    expect(USAGE_LEDGER_MAX_BYTES).toBe(16 * 1024 * 1024);
   });
 });

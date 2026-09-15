@@ -41,6 +41,12 @@ import type { AskUserQuestionAnswerItem, AskUserQuestionItem, InjectionPlacement
  * `TurnBusyError` resolves to the very class object the real engine throws.
  */
 import { TurnBusyError } from "@celestea/runtime";
+/**
+ * W785 (E-P1, capability 3): the aggregate views of the usage ledger. Types only
+ * — the value (`queryLedger`/`ledgerCostBlock`) is called by the REAL adapter.
+ */
+import type { LedgerCostBlock, LedgerQuery, LedgerQueryResult } from "@celestea/runtime";
+import type { FallbackStatusView } from "./runtime/fallback-contract.js";
 import type { StudioBus } from "./sse.js";
 
 /** Verbatim engine error text (Rust `{e}` placeholders). */
@@ -307,6 +313,29 @@ export interface RuntimeAdapter {
   /** Apply an accepted patch (hot compose); throws EngineError on failure. */
   configure(patch: ProfilePatch): Promise<EngineProfile>;
   statusline(session?: string | null): Statusline;
+  /**
+   * E §4.2.3 #4 (W785): the model-fallback view of one session — which target
+   * chain is armed, which model is ACTUALLY serving and what went wrong.
+   * `null`/absent = the capability is off for this process, and the handler then
+   * reports `effective_model = model` with `fallback.active = false`.
+   */
+  fallbackView?(session: string | null): FallbackStatusView | null;
+  /**
+   * E-P1 (capability 3, W785): the aggregate view behind `GET /api/usage/ledger`
+   * — the ONE append-only ledger of the process, filtered and folded by
+   * `session`/`turn`/`model`/`day`. Optional: an adapter without a ledger answers
+   * `{ok:false, error:"usage ledger unavailable"}` through the handler, and a
+   * ledger that is switched OFF reports `{ok:false, error:"usage ledger disabled"}`
+   * (both HTTP 200 — the key is "no ledger here", not a client error).
+   */
+  usageLedger?(q: LedgerQuery): LedgerQueryResult | { ok: false; error: string };
+  /**
+   * E-P1 (capability 3, W785): this session's cost block for `/api/status`
+   * (`{session_total, turn_total, attempts, currency, priced_by, …}`). `null` =
+   * no ledger configured; an absent method means the same, and the handler then
+   * omits the `cost` key entirely (the field is a pure addition, §3.2.4).
+   */
+  costBlock?(session: string | null): LedgerCostBlock | null;
   tools(): ToolInfo[];
   /**
    * W729 (S2): the tool face of ONE session, used to render the `{{tools}}`

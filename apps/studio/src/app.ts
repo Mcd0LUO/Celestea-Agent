@@ -123,6 +123,9 @@ export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
       // W728 §3 P0: ONE append-only usage ledger per process (`<data dir>`),
       // shared by every session instance; `CELESTEA_USAGE_LEDGER=off` disables.
       ledgerFile: createUsageLedgerFile({ dataDir, env: input.env }),
+      // E §4 P1 (W785): `fallbacks.json` + `fallbacks-audit.jsonl` live next to
+      // the ledger, so the fallback wiring needs the same data dir.
+      dataDir,
       providerLabel: input.providerLabel,
       ...(input.llm === undefined ? {} : { llm: input.llm }),
       resolveSession: (id) => {

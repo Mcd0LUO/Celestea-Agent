@@ -8,15 +8,17 @@
  *
  * Discipline (all mechanical, see the §3.4 assertions):
  *   - append-only: a line is written once and never edited (no rewrite, no
- *     compaction, no rotation in P0 — rotation is §3.3 P1);
+ *     compaction). Rotation (§3.3 P1 ④, W785) rolls the WHOLE file to
+ *     `<path>.1` once it passes [USAGE_LEDGER_MAX_BYTES]: the current file is
+ *     still only ever appended to, and `read()` reads the current file only;
  *   - one `writeSync` on an `O_APPEND` fd per record, mode 0600, so concurrent
  *     writers cannot interleave a line;
  *   - idempotent: the key is `(session, turn_id, step, attempt)`; a key already
  *     booked by THIS writer is skipped, never rewritten. The key set is
  *     per-process ON PURPOSE: seeding it from the file would silently drop
  *     legitimate out-of-turn rows, whose turn_id is null and whose step index
- *     restarts at 1 after a restart (cross-process dedupe belongs to the P1
- *     work on rotation, §3.3);
+ *     restarts at 1 after a restart (cross-process dedupe is still open work;
+ *     rotation does not change it, §3.3);
  *   - no prompt/message text and no credential can reach a line: a record is
  *     built from counters, names and prices only (§3.5 R3-4);
  *   - observation only: a write failure is reported on stderr and swallowed —
@@ -32,7 +34,7 @@
  * `latest`/`total` views are derived from the FILE, so they survive a restart.
  */
 
-import { closeSync, openSync, readFileSync, writeSync } from "node:fs";
+import { closeSync, openSync, readFileSync, renameSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { usageAdd, zeroUsage, type SessionEvent, type SessionLog, type TurnOutcome, type Usage } from "@celestea/core";
 import {
@@ -57,6 +59,14 @@ export const ENV_USAGE_LEDGER = "CELESTEA_USAGE_LEDGER";
 export const ENV_USAGE_LEDGER_FILE = "CELESTEA_USAGE_LEDGER_FILE";
 /** Record version, written as `v` on every line. */
 export const LEDGER_VERSION = 1;
+/**
+ * Rotation threshold (§3.3 P1 ④): before a write, a ledger file at or above this
+ * size is rolled to `<path>.1` (replacing the previous `.1`) and the next write
+ * recreates the current file. 16 MiB is the audit-trail discipline borrowed from
+ * `grants-audit.jsonl`, never a durability boundary: the rolled file keeps every
+ * row it had.
+ */
+export const USAGE_LEDGER_MAX_BYTES = 16 * 1024 * 1024;
 
 export type LedgerStepKind = "ok" | "error";
 export type PricedBy = "table" | "record" | "unpriced";
@@ -174,11 +184,13 @@ export class UsageLedgerFile {
   private readonly keys = new Set<string>();
   private readonly target: string;
   private readonly clock: () => number;
+  private readonly maxBytes: number;
   readonly pricing: PricingTable;
 
-  constructor(opts: { path: string; pricing?: PricingTable; now?: () => number }) {
+  constructor(opts: { path: string; pricing?: PricingTable; now?: () => number; maxBytes?: number }) {
     this.target = opts.path;
     this.clock = opts.now ?? Date.now;
+    this.maxBytes = opts.maxBytes ?? USAGE_LEDGER_MAX_BYTES;
     this.pricing = opts.pricing ?? emptyPricing(null);
   }
 
@@ -200,6 +212,7 @@ export class UsageLedgerFile {
     if (key !== null && this.keys.has(key)) return false;
     if (key !== null) this.keys.add(key);
     try {
+      this.rotateIfLarge();
       writeSync(this.ensureFd(), `${JSON.stringify(record)}\n`);
       return true;
     } catch (e) {
@@ -238,6 +251,30 @@ export class UsageLedgerFile {
       // A descriptor we cannot close must not fail a shutdown.
     }
     this.fd = null;
+  }
+
+  /**
+   * Roll the file to `<path>.1` once it reaches [maxBytes] (§3.3 P1 ④).
+   *
+   * The fd is closed FIRST and the rename replaces any previous `.1`, so the
+   * rolled file is the complete prefix and the next `ensureFd()` starts a fresh
+   * current file. A failure is reported on stderr and swallowed (observation
+   * discipline, §3.5 R3-3): the worst case is a file that keeps growing.
+   */
+  private rotateIfLarge(): void {
+    let size = 0;
+    try {
+      size = statSync(this.target).size;
+    } catch {
+      // No file yet: nothing to roll.
+    }
+    if (size < this.maxBytes) return;
+    try {
+      this.close();
+      renameSync(this.target, `${this.target}.1`);
+    } catch (e) {
+      warn(`ledger rotation failed (${errorText(e)})`);
+    }
   }
 
   /** One `O_APPEND` descriptor; one `writeSync` per record keeps lines whole. */
@@ -404,7 +441,11 @@ export class UsageLedger implements UsageAccounting, LedgerStepSink, TurnLedgerH
     };
     if (!this.file.append(record, ledgerKey(record))) return;
     acc.steps += 1;
-    acc.attempts += ref.info.attempt + 1;
+    // E §4/§3 P1 (W785): `attempts` counts ATTEMPTS, not `attempt+1` sums. The
+    // P0 form was equivalent while every row was attempt 0; with a real attempt
+    // dimension (fallback chain) summing the indices would report 1+2+3 = 6 for
+    // three attempts (§3.4 D6). Row counts are unchanged for a P0-shaped turn.
+    acc.attempts += 1;
     if (usage !== null) acc.usage = usageAdd(acc.usage, usage);
     if (cost !== null) acc.cost = acc.cost === null ? cost : costAdd(acc.cost, cost);
     if (usage !== null && cost === null) acc.unpriced.add(ref.info.model ?? "(unknown model)");
