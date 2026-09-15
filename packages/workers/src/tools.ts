@@ -90,8 +90,10 @@ async function spawnWorker(registry: WorkerRegistry, args: Record<string, unknow
     wid,
     started_at: utcNow(),
     status: "RUNNING",
-    // E §2.2.2: every row carries who dispatched it (`host=`), which try it is
-    // (`attempt=`, first = 1) and who owns it right now (`lease=<pid>@<unix>`).
+    // E §2.2.2 + §5.2: every row carries who dispatched it (`host=`), which try
+    // it is (`attempt=0` on the FIRST spawn — the cross-capability 0-based
+    // convention the ledger and the fallback decorator already use) and who owns
+    // it right now (`lease=<pid>@<unix>`).
     extra: extraTokens(args, {
       sid: session.meta.id,
       short,
@@ -100,7 +102,7 @@ async function spawnWorker(registry: WorkerRegistry, args: Record<string, unknow
       injected,
       mode,
       host: registry.hostSessionId,
-      attempt: 1,
+      attempt: 0,
       lease: registry.lease(),
     }),
   });
@@ -131,7 +133,7 @@ interface SpawnTokens {
   mode: string | null;
   /** E §2.2.2: the dispatching host conversation (null = an embedded registry). */
   host: string | null;
-  /** E §2.2.2: the try number this row is (first spawn = 1). */
+  /** E §2.2.2 + §5.2: the try number this row is (first spawn = 0). */
   attempt: number;
   /** E §2.2.2: `lease=<pid>@<unix>` of the spawning process. */
   lease: string;

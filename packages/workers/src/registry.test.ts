@@ -318,9 +318,14 @@ describe("E §2.3 P0/P1 (W787): persisted table, attempt tokens, boot observatio
 
   it("a row without a lease is judged by its `proc` (the legacy fallback)", () => {
     const reg = registry(null, 4242);
+    // A pre-W787 row has neither `lease=` nor `attempt=`: `proc` is the only
+    // liveness evidence, and NO attempt token means "a first try" ⇒ 0 (§5.2).
     reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=s1 host=ws/s1" });
     expect(reg.recoverCandidates({ pidAlive: (pid) => pid === 4242 }).live).toEqual(["W1"]);
-    expect(reg.recoverCandidates({ pidAlive: () => false }).stale.map((c) => c.lease_pid)).toEqual([4242]);
+    const stale = reg.recoverCandidates({ pidAlive: () => false }).stale;
+    expect(stale.map((c) => c.lease_pid)).toEqual([4242]);
+    expect(stale.map((c) => c.attempt)).toEqual([0]);
+    expect(workerAttempt(reg.getEntry("W1")!)).toBe(0);
   });
 
   it("stamps host/attempt/lease through the worker tools and bumps the attempt on respawn", async () => {
@@ -330,13 +335,14 @@ describe("E §2.3 P0/P1 (W787): persisted table, attempt tokens, boot observatio
     await tools.get("spawn_worker")!({ wid: "W5", brief: "b", report_to: "host" });
     const row = reg.getEntry("W5")!;
     expect(getExtra(row, "host")).toBe("ws/s1");
-    expect(getExtra(row, "attempt")).toBe("1");
+    // §5.2 (the cross-capability convention): the FIRST try is attempt 0.
+    expect(getExtra(row, "attempt")).toBe("0");
     expect(getExtra(row, "lease")).toBe(`4444@${Math.floor(FIXED_NOW / 1000)}`);
-    // A re-dispatch is the NEXT attempt of the same wid (§2.2.2).
+    // A re-dispatch is the NEXT attempt of the same wid: 0 -> 1.
     reg.rememberSpawn(getExtra(row, "sess")!, { wid: "W5", short: "b", brief: "b", reportTo: "host", mode: null });
     const sid = reg.respawn("W5");
     expect(sid).not.toBeNull();
-    expect(getExtra(reg.getEntry("W5")!, "attempt")).toBe("2");
+    expect(getExtra(reg.getEntry("W5")!, "attempt")).toBe("1");
     expect(getExtra(reg.getEntry("W5")!, "retries")).toBe("1");
   });
 
