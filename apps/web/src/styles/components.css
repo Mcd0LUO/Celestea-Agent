@@ -289,15 +289,26 @@
 .modal-body { padding: 12px 14px; overflow-y: auto; }
 .modal-actions .btn-mini { flex: 0 0 auto; }
 
-/* ---- 配置表单（可热调） ---- */
+/* ---- 表单两列网格（W786：通用配置 / 模型提供商 / 归档会话 / 各弹窗共用一套几何）
+   左列 = 标签（定宽、右对齐、等宽字体），右列 = 控件。此前 cfg-field 140~148px、
+   prov-field 104px 各写一份，设置页切 pane 时右列控件起点会左右跳；现在只由
+   `--field-label-w` 定义一处。行内 hint 用 grid-column: 2 落在控件下方，因此标签
+   取**顶对齐**（padding-top 与控件首行齐平）—— 多行控件（textarea）下标签也不会
+   在行高中间漂移。 */
 .cfg-form { display: flex; flex-direction: column; gap: 10px; }
-.cfg-field {
-  display: grid; grid-template-columns: 140px 1fr;
-  align-items: center; gap: 10px;
+.cfg-field,
+.prov-field {
+  display: grid;
+  grid-template-columns: var(--field-label-w, 148px) minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 10px;
 }
-.cfg-field .cfg-label {
+.cfg-field .cfg-label,
+.prov-field-label {
   color: var(--c-text-2); font-size: 12.5px;
   font-family: var(--mono); text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding-top: 7px; /* (控件高 ≈30px − 标签行高 ≈16px) / 2 → 与控件首行对齐 */
 }
 .cfg-input { width: 100%; min-width: 0; }
 .cfg-sys { resize: vertical; min-height: 96px; font-size: 12.5px; }

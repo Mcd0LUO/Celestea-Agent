@@ -10,6 +10,9 @@
   --mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   --sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   --radius: 8px;
+  /* W786：表单两列网格的左列（标签）宽度 —— 设置页各 pane 与弹窗共用同一值，
+     避免切页时右列控件起点左右跳动。 */
+  --field-label-w: 148px;
 }
 
 /* ------------------------------------------------ mono：黑白 ins 风（唯一主题） */

@@ -26,9 +26,13 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   const scrim = el('div', 'modal-scrim');
   const card = el('div', 'modal-card');
   card.appendChild(el('div', 'modal-card-title', '新建会话'));
+  // W786：标题也走「左列标签 + 右列控件」的两列网格，与下面的工作区/模型/提示词行对齐
   const titleInput = el('input', 'cfg-input') as HTMLInputElement;
-  titleInput.placeholder = '会话标题（必填）';
-  card.appendChild(titleInput);
+  titleInput.placeholder = '必填';
+  const titleRow = el('label', 'prov-field');
+  titleRow.appendChild(el('span', 'prov-field-label', '标题'));
+  titleRow.appendChild(titleInput);
+  card.appendChild(titleRow);
 
   const wsSel = document.createElement('select');
   wsSel.className = 'cfg-input';
