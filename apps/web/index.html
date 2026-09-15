@@ -50,9 +50,6 @@
 
       <!-- ---------- 主区 ---------- -->
       <main id="main">
-        <!-- W514：聚焦会话条（会话名 / worker 标记 / 运行态 / 其它运行中会话入口） -->
-        <div id="sessionBar" class="session-bar" title="当前聚焦会话 · 可切换其它运行中的会话"></div>
-
         <!-- W514：多会话视图宿主——每个会话一个 .sess-pane 容器（hidden 切换，零重渲染） -->
         <div id="messages" tabindex="-1"></div>
 
@@ -89,6 +86,11 @@
             <span class="sl-hint" id="slHint"></span>
           </div>
           <div class="sl-row sl-row-sub">
+            <!-- W514 聚焦会话条（会话名 / worker 标记 / 运行态 / 其它运行中会话入口）。
+                 W790：并入本行 —— 不再独占 #messages 上方的一行；行高由 .sl-row 的
+                 min-height 决定，条内每个元素 ≤15px，因此并入不新增 statusline 行高。 -->
+            <div id="sessionBar" class="session-bar" title="当前聚焦会话 · 可切换其它运行中的会话"></div>
+            <span class="sl-sep">·</span>
             <span class="sl-tps" id="slTps">— tok/s</span>
             <span class="sl-sep">·</span>
             <span class="sl-cache" id="slCache" title="缓存命中：最近一次请求">缓存 —</span>

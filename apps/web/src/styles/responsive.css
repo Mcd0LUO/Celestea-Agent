@@ -38,8 +38,11 @@ button,
   #app { height: 100dvh; }
 }
 
-/* 长内容一律可以在自己的盒子里滚，不把整页撑宽（会话条也是） */
-#sessionBar { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+/* 长内容一律可以在自己的盒子里滚，不把整页撑宽。
+   W790：会话条已并入 statusline 的既有行（.sl-row-sub）——那里**不能**出现横向
+   滚动条（滚动条会把这个 16px 的行撑高，违反「并入不新增行高」）；放不下的
+   「其它运行中会话」入口由侧栏会话树兜底，条内只截断不滚动。 */
+#sessionBar { max-width: 100%; overflow: hidden; overscroll-behavior-x: contain; }
 .sess-pane,
 .msg,
 .bubble,

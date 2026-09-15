@@ -3,6 +3,7 @@
 //   W748 从 ui/sessions.ts 拆出）。只切 class/文本/显隐，绝不重建树。
 // ============================================================================
 import { grantMarkOf, type GrantMark } from '../grants';
+import { setHint } from '../hint'; // W790：运行态点提示走注册缝
 import { activeSessionId, paneBusy } from '../viewctx';
 import { grantShieldIcon } from './icons';
 import { getActiveSession } from './store';
@@ -27,7 +28,7 @@ export function updateBusyDots(container: HTMLElement): void {
     const id = d.dataset.dot ?? '';
     const busy = paneBusy(id);
     d.classList.toggle('busy', busy);
-    d.title = busy ? '运行中' : '空闲';
+    setHint(d, busy ? '运行中' : '空闲');
   }
   for (const row of container.querySelectorAll<HTMLElement>('.ws-worker-row')) {
     const id = row.dataset.id ?? '';
