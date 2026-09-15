@@ -594,8 +594,16 @@
       "rustHandler": "workspaces::get_sessions",
       "docRef": "docs/archive/frontend/api-contract.md#get-apisessions",
       "request": {
-        "kind": "none",
-        "fields": []
+        "kind": "query",
+        "fields": [
+          {
+            "name": "archived",
+            "type": "string",
+            "required": false,
+            "note": "W791: `1` or `true` lists ONLY the archived sessions (each row carries `archived:true`); absent/`0`/`false`/anything else = the default listing, unchanged"
+          }
+        ],
+        "note": "W791 (B): the archived listing is the `<ws>/.celestea-archived/` source; the default body keeps its frozen shape (no `archived` key)."
       },
       "response": {
         "status": 200,
@@ -603,8 +611,9 @@
         "fields": [
           {
             "name": "sessions",
-            "type": "array<{id,workspace,title,model:string|null,mode:'standard'|'execution',size:int,modified:int,active:bool,kind?:'worker'}>",
-            "required": false
+            "type": "array<{id,workspace,title,model:string|null,mode:'standard'|'execution',size:int,modified:int,active:bool,kind?:'worker',archived?:true}>",
+            "required": false,
+            "note": "`archived:true` appears ONLY on the `?archived=1` listing (W791); the default listing never carries the key"
           },
           {
             "name": "active_session",
@@ -617,7 +626,8 @@
       "notes": [
         "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending.",
         "W729: every row carries `mode` (worker rows included); a session without session.json.mode reads as \"standard\".",
-        "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name."
+        "W791: `?archived=1` reverses the scanner's dot-dir blind spot: the row set becomes the `<ws>/.celestea-archived/` directories holding `cli-main.jsonl`, in the SAME shape and sort order as the default rows plus `archived:true` (id/workspace/title/model/mode/size/modified derive identically, `active` is always false, and worker rows are not part of that listing). Deleting an archived session (`POST /api/sessions/batch-delete`) and restoring it (`POST /api/sessions/{id}/unarchive`) both address it by its unchanged id.",
+    "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name."
       ],
       "probe": {
         "checked": true,

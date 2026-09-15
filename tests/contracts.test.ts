@@ -370,6 +370,22 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     expect(tools?.request.fields.map((f) => f.name)).toEqual(["session"]);
     expect(String(tools?.response.fields[0]?.note)).toContain("11 tools");
   });
+
+  it("documents the ?archived= query of GET /api/sessions without adding an endpoint", () => {
+    const sessions = byId.get("get_sessions");
+    expect(sessions?.request.kind).toBe("query");
+    expect(sessions?.request.fields.map((f) => f.name)).toEqual(["archived"]);
+    // The parameter's OWN note is pinned, so "documented but wrong" fails here.
+    expect(String(sessions?.request.fields[0]?.note)).toContain("`1` or `true` lists ONLY the archived sessions");
+    expect(String(sessions?.request.kind === "query" ? sessions?.request.note : "")).toContain(".celestea-archived");
+    // The row type carries the OPTIONAL flag; the default body stays as it was.
+    expect(String(sessions?.response.fields[0]?.type)).toContain("archived?:true");
+    expect(String(sessions?.response.fields[0]?.note)).toContain("ONLY on the `?archived=1` listing");
+    expect(sessions?.notes?.some((n) => n.includes("?archived=1"))).toBe(true);
+    // B adds NO endpoint: W791's 51 is the mode switch alone.
+    expect(c.count).toBe(51);
+    expect(c.endpoints).toHaveLength(51);
+  });
 });
 
 /** Every file under `dir` (the repo is small; the gate reads only ts/json). */

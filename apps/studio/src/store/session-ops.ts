@@ -7,18 +7,21 @@
  * deleting moves to `<ws>/.celestea-trash/<name>-<ts>` (NOT addressable by id
  * afterwards). Dot-dirs are invisible to the session scanner, which is the
  * whole reason the archive state needs no field in `workspaces.json`.
+ *
+ * W791: "invisible to the scanner" is about the DEFAULT listing only. An
+ * archived session keeps its id, so the three operations that address a session
+ * BY ID must agree on where it can be: `unarchive` always did, `trash` now looks
+ * in the archive too (B3), and the scanner answers the `?archived=1` listing
+ * (`SessionsStore.listArchived`, B1).
  */
 
 import { copyFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
 import { isDirectory, isFile, removeDir } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, type StoreResult } from "./result.js";
-import { sanitizeComponent, timestampSuffix } from "./session-id.js";
+import { ARCHIVED_DIR, sanitizeComponent, timestampSuffix, TRASH_DIR } from "./session-id.js";
 import { readSessionMeta, writeSessionMeta } from "./session-meta.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
 import { displayTitle, type ResolvedSession, type SessionsStore } from "./sessions.js";
-
-export const ARCHIVED_DIR = ".celestea-archived";
-export const TRASH_DIR = ".celestea-trash";
 
 export interface BatchOutcome {
   count: number;
@@ -169,13 +172,31 @@ export class SessionOps {
     return { count, failed };
   }
 
+  /**
+   * The session's directory wherever it currently IS: the live location first,
+   * else the archive (W791 B3).
+   *
+   * Deleting an ARCHIVED session used to answer `unknown session '<id>'`: the
+   * operation only ever looked at `<ws>/<session>`, which is exactly where an
+   * archived session is NOT. The id is unchanged by archiving, so the archive is
+   * the only other place it can be — and both a live and an archived copy is
+   * impossible (`unarchive` refuses to overwrite a live session).
+   */
+  private locate(res: ResolvedSession): string | null {
+    if (isDirectory(res.dir) && isFile(`${res.dir}/${SESSION_FILE}`)) return res.dir;
+    const archived = `${res.wsPath}/${ARCHIVED_DIR}/${res.session}`;
+    if (isDirectory(archived) && isFile(`${archived}/${SESSION_FILE}`)) return archived;
+    return null;
+  }
+
   private trash(id: string): StoreResult<void> {
     const resolved = this.sessions.resolve(id);
     if (!resolved.ok) return resolved;
     const res = resolved.value;
     if (this.ws.activeSession() === id.trim()) return badRequest(`active session '${id}' cannot be deleted`);
-    if (!isDirectory(res.dir) || !isFile(`${res.dir}/${SESSION_FILE}`)) return notFound(`unknown session '${id}'`);
+    const from = this.locate(res);
+    if (from === null) return notFound(`unknown session '${id}'`);
     const dst = `${res.wsPath}/${TRASH_DIR}/${res.session}-${timestampSuffix(this.now())}`;
-    return this.move(res, res.dir, dst);
+    return this.move(res, from, dst);
   }
 }
