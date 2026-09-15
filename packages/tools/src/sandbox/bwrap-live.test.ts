@@ -18,7 +18,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { isSandboxError } from "@celestea/core";
 
 import { buildBwrapArgv, DEFAULT_BWRAP_OPTIONS } from "./bwrap-argv.js";
@@ -271,9 +271,9 @@ describe.skipIf(probe.bwrapUsable)("bwrap provider (unavailable host)", () => {
   });
 });
 
-describe("live-test hygiene", () => {
-  it("cleans its temp dirs", () => {
-    cleanupTempDirs();
-    expect(true).toBe(true);
-  });
+// Temp dirs made by `makeTempDir` live under /tmp; clean them once this file is done.
+// (This used to be an `it` whose only assertion was `expect(true).toBe(true)` — a test
+// with no subject.)
+afterAll(() => {
+  cleanupTempDirs();
 });

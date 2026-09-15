@@ -26,6 +26,7 @@
     "@types/node": "^24.3.0",
     "dependency-cruiser": "^17.4.3",
     "eslint": "^9.39.5",
+    "jsdom": "^30.0.1",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
