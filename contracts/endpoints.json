@@ -1201,10 +1201,6 @@
       },
       "errors": [
         {
-          "status": 400,
-          "error": "active session '{id}' cannot be archived"
-        },
-        {
           "status": 404,
           "error": "unknown session '{id}'"
         },
@@ -1222,7 +1218,8 @@
         }
       ],
       "notes": [
-        "Moves to <ws>/.celestea-archived/<name> keeping the original name (id stable, unarchivable)."
+        "Moves to <ws>/.celestea-archived/<name> keeping the original name (id stable, unarchivable).",
+        "W794: the ACTIVE session is archived like any other (no 400) — the engine half runs first (the session's in-flight model response is aborted and its instance released, see POST /api/sessions/batch-delete), and `active_session` is set to null so the marker can never name a session that left the default listing."
       ],
       "probe": {
         "checked": false,
@@ -1360,7 +1357,8 @@
       },
       "errors": [],
       "notes": [
-        "Moves to <ws>/.celestea-trash/<name>-<ts> (recoverable but no longer addressable by id). Active session refused (400).",
+        "Moves to <ws>/.celestea-trash/<name>-<ts> (recoverable but no longer addressable by id).",
+        "W794: the ACTIVE session IS deletable (the active marker is a state label, not a protection). Before the directory moves, the session's in-flight model response is aborted through the cooperative cancel path and THAT session's engine instance is released; `active_session` then becomes null (persisted), so it can never keep pointing at the deleted id. Response shape unchanged: one 200 with per-id `failed[]`.",
         "Fields marked optional:true appear only in some response variants."
       ],
       "probe": {

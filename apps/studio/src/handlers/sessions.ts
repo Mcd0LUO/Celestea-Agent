@@ -66,7 +66,9 @@ function registerList(app: Hono, deps: Deps, table: RouteTable): string {
   app.on(route.method, route.honoPath, (c) => {
     // W791: the ARCHIVED source answers with `listArchived()` only — archived
     // sessions are filesystem rows, never worker rows, and none of them can be
-    // active or busy (archiving refuses the active session).
+    // active or busy. W794: not because archiving REFUSES the active session (it
+    // no longer does) but because archiving CLEARS the marker: a moved session
+    // cannot be the active one, so `active_session` and the rows stay consistent.
     const rows = wantsArchived(c.req.query("archived"))
       ? deps.sessions.listArchived()
       : deps.sessions.list(workerRows(deps)).map((row) => withBusy(deps, row));

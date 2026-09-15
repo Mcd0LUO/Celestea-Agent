@@ -68,6 +68,21 @@ export class HostAutowake {
     loop.start();
   }
 
+  /**
+   * W794: a DELETED session never comes back under that id, so its loop is
+   * unparked for good — otherwise it keeps re-binding to a generation that can
+   * never exist again and re-logs `no live generation to bind` forever (the
+   * timer is real). A rebuild / idle eviction must NOT call this: the same id
+   * recomposes, and its loop has to be waiting for it. Idempotent.
+   */
+  async forget(session: string | null): Promise<void> {
+    const key = keyOfSession(session);
+    const loop = this.loops.get(key);
+    if (loop === undefined) return;
+    this.loops.delete(key);
+    await loop.stop();
+  }
+
   /** Unpark every loop (process shutdown; idempotent). */
   async stop(): Promise<void> {
     const loops = [...this.loops.values()];

@@ -23,6 +23,8 @@
  *   GET  /api/events                -> `attach(bus)`, frames carry the session;
  *   POST /api/sessions/{id}/activate-> `ensureSession` (never 409);
  *   POST /api/cancel                -> the target session's AbortController;
+ *   POST /api/sessions/batch-delete -> `releaseSession` (W794: abort + drop the
+ *                                      instance before the directory moves);
  *   POST /api/clear                 -> the target session log's `clear()`;
  *   POST /api/sessions/{id}/compact -> `runCompaction` + that instance rebuilt;
  *   GET  /api/status                -> the requested session's statusline;
@@ -39,7 +41,7 @@
  * (`llm-assembly.ts`), i.e. production is a real model.
  */
 
-import type { AskUserQuestionAnswerItem, InjectionPlacement, InjectionLane, PendingInjection, Statusline, TurnOutcome } from "@celestea/core";
+import type { AskUserQuestionAnswerItem, InjectionPlacement, InjectionLane, PendingInjection, SseEventName, Statusline, TurnOutcome } from "@celestea/core";
 import type { Watchdog, WorkerRecoveryReport, WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
@@ -111,11 +113,13 @@ import { hasLiveWorkersOf } from "./worker-live.js";
 import { recoveryViewOf, type RecoveryView } from "./recovery-view.js";
 import { workerRecoveryBlock, workerTablePath } from "./worker-table.js";
 import { clearSession, compactSession, type SessionLifecycleDeps } from "./session-lifecycle.js";
+import { releaseSessionOf, releaseSettleMs } from "./session-release.js";
 import { faceForMode } from "@celestea/tools";
 import { DEFAULT_SESSION_MODE, effectiveMode } from "../store/mode.js";
 
 export { SESSION_LOG_ID, SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
 export { MAX_CONCURRENT_TURNS, MAX_LIVE_SESSIONS, SESSION_IDLE_TTL_MS } from "./session-compose.js";
+export { RELEASE_SETTLE_MS } from "./session-release.js";
 
 /** Everything the composer needs, plus the resource caps. */
 export interface RealRuntimeAdapterOptions extends Omit<SessionComposerOptions, "env" | "baseProfile"> {
@@ -153,6 +157,8 @@ export interface RealRuntimeAdapter extends RuntimeAdapter {
    * handle is how the host inspects or hand-ticks it.
    */
   watchdog(session?: string | null): Watchdog | null;
+  /** W794: how many auto-wake loops are mounted (diagnostics / tests). */
+  autowakeLoops(): number;
   /** Is this session's sweep timer running? (no instance = false.) */
   watchdogRunning(session?: string | null): boolean;
   /** The session's live worker registry, or null when it has no instance. */
@@ -270,9 +276,7 @@ class RealEngine implements RealRuntimeAdapter {
     return this.questions.list(sessionId);
   }
 
-  generationEpoch(): number {
-    return this.baseEpoch;
-  }
+  generationEpoch(): number { return this.baseEpoch; }
 
   sessionLogPath(): string | null {
     const path = (this.registry.peek(null)?.runtime.session as { path?: unknown } | undefined)?.path;
@@ -295,9 +299,9 @@ class RealEngine implements RealRuntimeAdapter {
   }
 
   /** Is auto-wake on? (`CELESTEA_AUTOWAKE`, read once at construction.) */
-  get autowakeRunning(): boolean {
-    return this.autowake.running;
-  }
+  get autowakeRunning(): boolean { return this.autowake.running; }
+  /** W794: mounted auto-wake loops (one per live host conversation). */
+  autowakeLoops(): number { return this.autowake.count; }
   /**
    * Run ONE ordinary turn with the drained receipts as its input — the same
    * `beginTurn` + status + `drive` path a `POST /api/turn` takes, with
@@ -388,6 +392,12 @@ class RealEngine implements RealRuntimeAdapter {
    */
   invalidateSession(session: string | null): boolean { return this.registry.invalidateSession(session); }
 
+  /** W794: the session is being removed — see `session-release.ts`. */
+  releaseSession(session: string | null): Promise<boolean> {
+    const release = { registry: this.registry, cancel: (id: string) => this.cancel(id), forget: (id: string) => this.autowake.forget(id), settleMs: releaseSettleMs(this.env) };
+    return releaseSessionOf(release, session);
+  }
+
   liveSessions(): string[] { return this.registry.liveSessionIds(); }
 
   busySessions(): string[] { return this.registry.busySessionIds(); }
@@ -450,12 +460,21 @@ class RealEngine implements RealRuntimeAdapter {
     }
   }
 
-  /** Drive one turn to its terminal state, then publish the closing status. */
+  /**
+   * Drive one turn to its terminal state, then publish the closing status.
+   *
+   * W794: a turn whose session was DELETED while it ran publishes nothing more.
+   * `releaseSession` aborts it first, but the unwind is asynchronous, so the tail
+   * of this method can run after the directory has moved — the detached flag is
+   * what keeps a dangling frame for a session that no longer exists off every SSE
+   * subscriber's stream (and off the released runtime's statusline, which would
+   * throw). The turn's own log write is unaffected: it already happened.
+   */
   private async drive(entry: SessionRuntime, input: string, turn: number, controller: AbortController): Promise<void> {
     try {
       const outcome = await entry.runtime.runTurn(input, {
         signal: controller.signal,
-        sink: (frame) => this.bus?.emit(frame.event, turn, frame.payload, entry.sessionId),
+        sink: (frame) => this.emitFrame(entry, frame.event, turn, frame.payload),
       });
       this.registry.endTurn(entry, outcome);
       this.emitStatus(entry, turn, outcomePhaseOf(outcome));
@@ -463,6 +482,19 @@ class RealEngine implements RealRuntimeAdapter {
       this.registry.endTurn(entry, null);
       this.emitStatus(entry, turn, "error", { error: e instanceof Error ? e.message : String(e) });
     }
+  }
+
+  /**
+   * W794: the ONE gate every frame of a session's turn goes through. A turn whose
+   * session was DELETED while it ran publishes nothing more — `releaseSession`
+   * aborts it first, but the unwind is asynchronous, so the tail of `drive` can run
+   * after the directory moved. Without this a subscriber would receive a dangling
+   * frame for a session that no longer exists (and reading the released runtime's
+   * statusline would throw). The turn's own log write is unaffected: it happened.
+   */
+  private emitFrame(entry: SessionRuntime, event: SseEventName, turn: number, payload: Record<string, unknown>): void {
+    if (entry.detached === true) return;
+    this.bus?.emit(event, turn, payload, entry.sessionId);
   }
 
   cancel(session?: string | null): boolean {
@@ -489,29 +521,22 @@ class RealEngine implements RealRuntimeAdapter {
   // --- workers: liveness (W740) ------------------------------------------
 
   /** The session's watchdog (see `watchdog-view.ts`); unknown = null, never composed. */
-  watchdog(session?: string | null): Watchdog | null {
-    return watchdogOf(this.registry, session);
-  }
+  watchdog(session?: string | null): Watchdog | null { return watchdogOf(this.registry, session); }
 
   /** Is this session's sweep timer running? (no instance / watchdog off = false.) */
-  watchdogRunning(session?: string | null): boolean {
-    return watchdogRunningOf(this.registry, session);
-  }
+  watchdogRunning(session?: string | null): boolean { return watchdogRunningOf(this.registry, session); }
 
   /** The session's live worker registry, or null when it has no instance. */
-  workersOf(session?: string | null): WorkerRegistry | null {
-    return this.registry.peek(session ?? null)?.runtime.workers ?? null;
-  }
+  workersOf(session?: string | null): WorkerRegistry | null { return this.registry.peek(session ?? null)?.runtime.workers ?? null; }
 
   private emitStatus(entry: SessionRuntime, turn: number, phase: string, extra: StatusExtra = {}): void {
+    if (entry.detached === true) return;
     this.bus?.emit("status", turn, { phase, statusline: entry.runtime.statusline(), ...extra }, entry.sessionId);
   }
 
   // --- host views --------------------------------------------------------
 
-  profile(): EngineProfile {
-    return engineProfileOf(this.profileValue);
-  }
+  profile(): EngineProfile { return engineProfileOf(this.profileValue); }
 
   /**
    * W725: the session's model-visible context (`GET /api/sessions/{id}/context`).
@@ -582,13 +607,9 @@ class RealEngine implements RealRuntimeAdapter {
   // --- workers -----------------------------------------------------------
 
   /** Merged worker rows over every live instance (W513 aggregate view). */
-  workerSessions(): WorkerSessionRow[] {
-    return mergedWorkerRows(this.registry.list());
-  }
+  workerSessions(): WorkerSessionRow[] { return mergedWorkerRows(this.registry.list()); }
 
-  workerMessages(sessionId: string): unknown[] | null {
-    return workerMessagesAcross(this.registry.list(), sessionId);
-  }
+  workerMessages(sessionId: string): unknown[] | null { return workerMessagesAcross(this.registry.list(), sessionId); }
 
   async workerSpawn(req: WorkerSpawnRequest): Promise<WorkerSpawnOutcome> {
     return spawnWorkerThrough(this.entryFor(req.session ?? null), req, `host-spawn-${(this.toolCalls += 1)}`);

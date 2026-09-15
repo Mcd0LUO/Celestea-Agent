@@ -144,17 +144,20 @@ describe("W791 deleting an archived session (B3)", () => {
     expect((await sessions(h)).rows.map((r) => r["id"])).not.toContain(sid);
   });
 
-  it("still answers 'unknown session' for an id that exists nowhere, and refuses a live one", async () => {
+  it("still answers 'unknown session' for an id that exists nowhere, and deletes the ACTIVE one", async () => {
     const h = make();
     const ghost = await getJson(h.app, "/api/sessions/batch-delete", jsonRequest("POST", { ids: ["sample-ws/ghost"] }));
     expect(ghost.body).toEqual({ ok: true, deleted: 0, failed: [{ id: "sample-ws/ghost", error: "unknown session 'sample-ws/ghost'" }] });
     const sid = await created(h, "live");
-    // A LIVE session is deletable — only the ACTIVE one is refused (archiving and
-    // deleting both leave the focused session alone).
+    // W794（裁决：active 只是状态标记）：活动会话照删，per-id 契约不变，
+    // 且 active_session 不再指向那个已经进 trash 的 id。
     const activated = await getJson(h.app, `/api/sessions/${encodeURIComponent(sid)}/activate`, jsonRequest("POST"));
     expect(activated.status).toBe(200);
-    const refused = await getJson(h.app, "/api/sessions/batch-delete", jsonRequest("POST", { ids: [sid] }));
-    expect(refused.body).toEqual({ ok: true, deleted: 0, failed: [{ id: sid, error: `active session '${sid}' cannot be deleted` }] });
+    const deleted = await getJson(h.app, "/api/sessions/batch-delete", jsonRequest("POST", { ids: [sid] }));
+    expect(deleted.status).toBe(200);
+    expect(deleted.body).toEqual({ ok: true, deleted: 1, failed: [] });
+    expect(existsSync(join(h.workspace, TRASH, `live-${STAMP}-${STAMP}`, "cli-main.jsonl"))).toBe(true);
+    expect((await sessions(h)).body["active_session"]).toBeNull();
   });
 });
 

@@ -67,6 +67,14 @@ export interface SessionRuntime {
   lastActiveAt: number;
   /** Set when a config epoch bumped while the instance was busy. */
   needsRebuild: boolean;
+  /**
+   * W794: the host DETACHED this instance because the session it belonged to was
+   * deleted ([SessionRuntimeRegistry.release]). The entry is out of the registry
+   * by then, but a turn that was in flight still holds this object — the flag is
+   * how its owner knows to stop publishing frames for a session that no longer
+   * exists (and to skip reading a released runtime's statusline).
+   */
+  detached: boolean;
 }
 
 export interface SessionRegistryDeps {
@@ -215,6 +223,7 @@ export class SessionRuntimeRegistry {
       lastOutcome: null,
       lastActiveAt: this.now(),
       needsRebuild: false,
+      detached: false,
     };
     this.entries.set(key, entry);
     return entry;
@@ -286,6 +295,39 @@ export class SessionRuntimeRegistry {
     if (entry === undefined || entry.inFlight || this.isPinned(entry)) return false;
     this.entries.delete(key);
     await this.deps.dispose(entry.runtime);
+    return true;
+  }
+
+  /**
+   * W794: DROP one instance the host has just deleted the session of.
+   *
+   * This is the FORCED counterpart of [evict]: the session id is gone, so no
+   * rule that exists to protect a LIVE session may keep its instance alive — not
+   * `inFlight` (the host aborted the turn first, and a cooperative abort is not
+   * instantaneous) and not `pinned` (the pin exists so an idle sweep cannot kill
+   * live background work of a session that is still there; a deleted session's
+   * workers must die with it).
+   *
+   * The instance is marked [SessionRuntime.detached] BEFORE the teardown, so any
+   * frame the in-flight turn produces while it unwinds can be recognized as
+   * belonging to a session that no longer exists. A teardown failure is swallowed:
+   * the session is being removed either way, and resurrecting it as a live entry
+   * would be worse than leaking a half-disposed generation.
+   *
+   * `null` (the detached default generation) can never be released here.
+   */
+  async release(sessionId: string | null): Promise<boolean> {
+    if (sessionId === null) return false;
+    const key = keyOfSession(sessionId);
+    const entry = this.entries.get(key);
+    if (entry === undefined) return false;
+    this.entries.delete(key);
+    entry.detached = true;
+    try {
+      await this.deps.dispose(entry.runtime);
+    } catch {
+      // See above: the removal wins over a failing teardown.
+    }
     return true;
   }
 
