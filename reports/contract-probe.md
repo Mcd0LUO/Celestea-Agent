@@ -1,6 +1,6 @@
 # Contract probe evidence (live :3777, read-only)
 
-- generated: 2026-09-15T04:19:29.516Z
+- generated: 2026-09-15T06:18:12.836Z
 - target: http://127.0.0.1:3777
 - policy: read-only: GET probes + error branches proven mutation-free in the Rust source
 
@@ -12,17 +12,17 @@
 | passed | 27 |
 | failed | 0 |
 | **endpoints sampled** | **22** |
-| SSE event names frozen | 8 |
-| tool specs | 10 |
+| SSE event names frozen | 9 |
+| tool specs | 11 |
 | verdict | consistent |
 
 ## Checks
 
 | endpoint | kind | status | observed | detail |
 |---|---|---|---|---|
-| contracts/endpoints.json | contract-count | pass | - | 47 endpoints (contract declares 47) |
-| contracts/sse-events.json | contract-count | pass | - | 8 SSE events (contract declares 8) |
-| contracts/tools.json | contract-count | pass | - | 10 tool specs (contract declares 10) |
+| contracts/endpoints.json | contract-count | pass | - | 49 endpoints (contract declares 49) |
+| contracts/sse-events.json | contract-count | pass | - | 9 SSE events (contract declares 9) |
+| contracts/tools.json | contract-count | pass | - | 11 tool specs (contract declares 11) |
 | GET /api/health | response-shape | pass | 200 | HTTP 200; 6 key(s) |
 | GET /api/status | response-shape | pass | 200 | HTTP 200; 10 key(s); additive (not in contract doc): busy, grants_active |
 | GET /api/tools | response-shape | pass | 200 | HTTP 200; 1 key(s) |
@@ -45,8 +45,8 @@
 | GET /api/sessions/no-slash/messages | error-branch | pass | 400 | HTTP 400 + "invalid session id" |
 | GET /api/fs/browse?path=relative-not-absolute | error-branch | pass | 400 | HTTP 400 + "must be absolute" |
 | GET /api/worker/status?wid=__p0_probe_missing__ | error-branch | pass | 200 | HTTP 200 + "no worker" |
-| GET /api/events | sse-transport | pass | 200 | content-type=text/event-stream; envelope + 8 event names frozen from source (passive connect, no turn running) |
-| GET /api/tools | tool-set | pass | 200 | 10 names match contracts/tools.json exactly |
+| GET /api/events | sse-transport | pass | 200 | content-type=text/event-stream; envelope + 9 event names frozen from source (passive connect, no turn running) |
+| GET /api/tools | tool-set | pass | 200 | 11 names match contracts/tools.json exactly |
 
 ## Mutation safety of the error-branch probes
 

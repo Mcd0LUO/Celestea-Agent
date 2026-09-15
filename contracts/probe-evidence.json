@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-15T04:19:29.516Z",
+  "generatedAt": "2026-09-15T06:18:12.836Z",
   "studio": "http://127.0.0.1:3777",
   "policy": "read-only: GET probes + error branches proven mutation-free in the Rust source",
   "counts": {
@@ -7,8 +7,8 @@
     "passed": 27,
     "failed": 0,
     "endpointsSampled": 22,
-    "sseEvents": 8,
-    "tools": 10
+    "sseEvents": 9,
+    "tools": 11
   },
   "verdict": "consistent",
   "checks": [
@@ -16,19 +16,19 @@
       "endpoint": "contracts/endpoints.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "47 endpoints (contract declares 47)"
+      "detail": "49 endpoints (contract declares 49)"
     },
     {
       "endpoint": "contracts/sse-events.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "8 SSE events (contract declares 8)"
+      "detail": "9 SSE events (contract declares 9)"
     },
     {
       "endpoint": "contracts/tools.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "10 tool specs (contract declares 10)"
+      "detail": "11 tool specs (contract declares 11)"
     },
     {
       "endpoint": "GET /api/health",
@@ -197,14 +197,14 @@
       "endpoint": "GET /api/events",
       "kind": "sse-transport",
       "status": "pass",
-      "detail": "content-type=text/event-stream; envelope + 8 event names frozen from source (passive connect, no turn running)",
+      "detail": "content-type=text/event-stream; envelope + 9 event names frozen from source (passive connect, no turn running)",
       "observedStatus": 200
     },
     {
       "endpoint": "GET /api/tools",
       "kind": "tool-set",
       "status": "pass",
-      "detail": "10 names match contracts/tools.json exactly",
+      "detail": "11 names match contracts/tools.json exactly",
       "observedStatus": 200
     }
   ]
