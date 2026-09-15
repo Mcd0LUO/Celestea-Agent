@@ -41,7 +41,7 @@ function renderTextView(view: AssistantView): void {
 
 ### 1.2 实测数据（Node 24，本仓库实际依赖 marked@4 / highlight.js@11）
 
-复刻 `renderTextView` 的完整管线（`marked.parse` + 逐块 `hljs.highlight`），文本按"每 ~1500 字符一个 rust 代码块"构造：
+复刻 `renderTextView` 的完整管线（`marked.parse` + 逐块 `hljs.highlight`），文本按"每 ~1500 字符一个代码块"构造：
 
 | 累积文本 | 代码块数 | marked.parse | hljs 高亮 | 合计 | 产出 HTML |
 |---|---|---|---|---|---|

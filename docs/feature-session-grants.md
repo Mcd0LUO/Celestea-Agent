@@ -350,8 +350,8 @@ export function effectiveGrantsOf(sessionDir: string | null, env: NodeJS.Process
 
 ### 6.5 兼容与计数
 
-- **Rust 后端无这些端点** → `404`。前端**必须**在 `GET /api/health` 的 `capabilities.grants !== true` 时**隐藏**权限入口（不是置灰报错）；这也是设计 1 §4.10 能力位里 `grants` 位的用途。
-- `contracts/endpoints.json` 新增 4 个 method+path 组合 → `API_ENDPOINT_COUNT` 由 **39 → 43**；`apps/studio/src/routes.ts:43` 的常量、`app.ts:71-73` 的 `assertCoverage`、`contracts/rust-route-table.snapshot.json` 的同步差异需一并处理（**这是硬断言，漏改会在启动时抛错**，属于"友好失败"）。
+- **不支持这些端点的后端** → `404`。前端**必须**在 `GET /api/health` 的 `capabilities.grants !== true` 时**隐藏**权限入口（不是置灰报错）；这也是设计 1 §4.10 能力位里 `grants` 位的用途。
+- `contracts/endpoints.json` 新增 4 个 method+path 组合 → `API_ENDPOINT_COUNT` 由 **39 → 43**；`apps/studio/src/routes.ts:43` 的常量、`app.ts:71-73` 的 `assertCoverage`、`contracts/` 路由表快照的同步差异需一并处理（**这是硬断言，漏改会在启动时抛错**，属于"友好失败"）。
 - 前端 `api.ts` 新增 3 个方法（`grants`/`grantCap`/`revokeCap`/`grantToken`），全部走既有 `requestJson`/`postJson`（不新增 fetch 出处，遵守 `api.ts:1-4` 的单出口纪律）。
 
 ---

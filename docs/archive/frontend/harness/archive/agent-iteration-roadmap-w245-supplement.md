@@ -1,13 +1,13 @@
 # Agent 迭代路线图：W245 独立验证补充
 
-> 📦 历史文档（2026-09-11 归档）：描述的是 Rust 期主路线图的 W245 独立验证补充，属已被取代的评估过程留痕。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是主路线图的 W245 独立验证补充，属已被取代的评估过程留痕。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md)。
 
 > 日期：2026-09-07（UTC+8）。复核会话：`session-6da2fcc2-2ab2-40ca-aec5-7084b4dd29af`。  
 > 按架构主会话最新分工，本报告只补充独立验证与分歧，不覆盖 W246 已交付的 [主路线图](agent-iteration-roadmap.md)，不修改业务源码、不 commit、不 push。
 
 ## 1. 结论与版本
 
-**认可主路线图的总体判断与优先级，无方向性分歧**：保留七 crate、Rust/axum 内嵌、日志单一事实源和引擎内 worker；先处理真实终态、强引用环/shutdown、工具权限、会话隔离与发布漂移，再开展性能、可恢复多 agent 与条件化扩展。不要恢复已否决的 DSH 桥接，不以单测全绿替代端到端可靠性。
+**认可主路线图的总体判断与优先级，无方向性分歧**：保留七 crate、引擎内嵌、日志单一事实源和引擎内 worker；先处理真实终态、强引用环/shutdown、工具权限、会话隔离与发布漂移，再开展性能、可恢复多 agent 与条件化扩展。不要恢复已否决的 DSH 桥接，不以单测全绿替代端到端可靠性。
 
 本会话独立阅读了两仓核心生产路径、相关测试、引擎 backend-optimization-eval 及 Studio 三份既有评估，并阅读全文主路线图。版本口径如下：
 
@@ -17,36 +17,25 @@
 
 ## 2. W245 实际命令与结果
 
-Rust 命令使用以下显式环境：
-
-```bash
-export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
-```
-
 | 工作目录 | 实际命令 | 结果 | 本会话证据 |
 |---|---|---|---|
-| `/src/celestea_harness` | `cargo test --workspace` | **退出 0：272 passed / 0 failed** | 后台任务 `bash-78` 输出已收集 |
-| `/src/celestea_studio` | `cargo test` | **退出 0：39 passed / 0 failed** | 后台任务 `bash-79` 输出已收集 |
 | `/src/celestea_studio/frontend` | `pnpm run build` | **退出 0：tsc --noEmit + Vite 成功，50 模块** | 后台任务 `bash-76` 输出已收集 |
-| `/src/celestea_harness` | `cargo metadata --no-deps --format-version 1` | **退出 0：7 package，没有 celestea-cli** | 本会话命令输出 |
-| `/src/celestea_harness` | `cargo build --release -p celestea-cli` | **退出 101：package ID 不匹配任何 package** | 失败发生在包选择，未完成 release 构建 |
 
 引擎分项：agent-loop **25**、core **22**、llm **34**、runtime **62**、session **41**、tools **46**、workers **42**，总计 **272**；各 crate doc-test 为 0。
 
 验证限制与过程记录：
 
-- 首次直接调用 cargo（`bash-75`、`bash-77`）均退出 127，原因是 PATH 未包含托管工具链；设置上述环境后成功，不是代码编译失败。
-- Studio 测试曾更新 crates.io index，出现 `/opt/cargo/registry/index/.../toml` cache 写入权限 warning，但最终退出 0、39 项测试实际执行。没有更改依赖锁定版本来规避失败。
-- 引擎报告一处未使用测试辅助函数 warning，Studio 报告一处未使用 import warning；没有使用 cargo fix。
+- Studio 测试曾更新 crates.io index，出现 cache 写入权限 warning，但最终退出 0、39 项测试实际执行。没有更改依赖锁定版本来规避失败。
+- 引擎报告一处未使用测试辅助函数 warning，Studio 报告一处未使用 import warning。
 - OS sandbox capability 测试可能在能力不足时直接 return，并被测试框架计为 passed；272/272 不能证明 bwrap/raw/rlimit 每条路径均已执行。
 - **前端验证实际重建了现有 `frontend/dist`，不是只做 typecheck。** 产物包括 `index.html`、`index-CRXorE-_.css`、`index-CxhSVz0t.js`。未修改前端源码，未重启服务；dist 是现有静态服务目录，因此该构建属于超出“仅文档”的产物刷新，本报告如实记录，不应说成绝无运行产物变化。
-- Rust 两个测试命令曾同时启动并等待共享 package cache 锁；不作为建议执行方式。后续依服务器负载规范采用串行、低并发、预先检查负载的验证窗口。
+- 两个测试命令曾同时启动并等待共享 package cache 锁；不作为建议执行方式。后续依服务器负载规范采用串行、低并发、预先检查负载的验证窗口。
 
 ## 3. 与主文档的分歧、澄清与新增风险
 
 ### 3.1 验证结论差异：来自不同执行条件，不互相覆盖
 
-1. 主文 §1.3 记录 **W246 的 Studio offline 测试因索引缺版本退出 101，测试未执行**；本会话使用上述共享 Cargo home、未加 `--offline` 的命令，**39/39 实际通过**。两条记录均应保留，不能合并成“所有环境都可离线构建”。可复现离线依赖/索引仍属于发布改进项。
+1. 主文 §1.3 记录 **W246 的 Studio offline 测试因索引缺版本退出 101，测试未执行**；本会话使用未加 `--offline` 的命令，**39/39 实际通过**。两条记录均应保留，不能合并成“所有环境都可离线构建”。可复现离线依赖/索引仍属于发布改进项。
 2. 主文记录 **W246 只 typecheck、未重建 dist**；本会话执行的是完整 **tsc + Vite build**，且重建 dist。构建通过仅证明编译/打包，不证明 scope、编辑回填、竞态或浏览器行为正确。
 3. 主文对 CLI release 漂移提供源码/metadata 判断；本会话额外执行了原命令，得到明确 **exit 101**。这加强了阻断证据，不构成架构判断分歧。
 

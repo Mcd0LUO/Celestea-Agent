@@ -1,6 +1,6 @@
 # Celestea Studio · HTTP API 契约
 
-> 📦 历史文档（2026-09-11 归档）：描述的是已退役 Rust 后端（axum，39 端点）的 HTTP 契约。当前权威入口见 [/src/celestea_studio-ts/contracts/endpoints.json](/src/celestea_studio-ts/contracts/endpoints.json)（当前 47 端点）与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是已退役后端（39 端点）的 HTTP 契约。当前权威入口见 [/src/celestea_studio-ts/contracts/endpoints.json](/src/celestea_studio-ts/contracts/endpoints.json)（当前 47 端点）与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
 
 > 权威来源：`src/main.rs` 路由表（`src/main.rs:1333-1376`）+ 各 handler 实现。
 > 所有 `error` 字符串都是**代码原文**（可直接 grep）。契约字段名保留英文。
@@ -12,7 +12,7 @@
 |---|---|
 | 响应体 | 一律 JSON（`Content-Type: application/json`），SSE 与静态文件除外 |
 | 错误体 | `{"ok": false, "error": "<原文>"}`（`workspaces.rs:770-772`、`compact.rs:395-397` 各有一份同形实现）；少数 handler 只返回 `{"error": ...}` |
-| 请求体 | `POST` 端点若声明了 `Json<T>` 提取器，**缺 body / 非 JSON / 缺必填字段** 由 axum 0.8 直接拒绝（415 / 400 / 422），不进 handler |
+| 请求体 | `POST` 端点若声明了 `Json<T>` 提取器，**缺 body / 非 JSON / 缺必填字段** 由后端直接拒绝（415 / 400 / 422），不进 handler |
 | 无 body 的 POST | 前端仍会发 `{}`（`frontend/src/api.ts:70-76`），后端忽略 |
 | session id | `"<workspace>/<session>"`；路径参数里的 `/` **必须 `%2F` 编码**（`src/main.rs:1345-1348`）；另有 `worker:<sid>` 仅在 messages 端点生效 |
 | 工作区名 | 注册路径的文件夹 basename（`Path::file_name`）；路径参数同样 `encodeURIComponent` |
@@ -25,9 +25,9 @@
 |---|---|
 | 400 | 参数非法（空值、格式、路径非绝对/不存在、id 形态错误、活动会话保护） |
 | 404 | 未知 workspace / session / provider / prompt |
-| 405 | 路径存在但 method 不匹配（axum 默认） |
+| 405 | 路径存在但 method 不匹配（后端默认） |
 | 409 | 冲突：turn 进行中（busy 槽）、重复注册、目标已存在、已归档 |
-| 415 / 422 | 请求体缺失/非 JSON/字段类型不符（axum `Json` rejection，代码未定制） |
+| 415 / 422 | 请求体缺失/非 JSON/字段类型不符（`Json` 提取器 rejection，代码未定制） |
 | 500 | 落盘失败 / compose 失败 / 读写 IO 失败 |
 | 502 | **仅** worker 工具派发硬失败（`src/api.rs:419-433`） |
 

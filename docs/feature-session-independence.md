@@ -2,7 +2,6 @@
 
 > 状态：**已实现**（2026-09-11 核实）。本文是实现依据与契约记录；落地见 `packages/runtime/src/session-registry.ts`、`apps/studio/src/runtime/real-runtime-adapter.ts`。
 > 范围：`packages/runtime`、`apps/studio`（宿主 HTTP 层）、共用前端 `apps/web/src/**`。
-> 参照实现：Rust 版 `/src/celestea_studio-ts`（**已退役**，见其 `LEGACY-RUST-BACKEND.md`）。
 > 一句话目标：**会话就是会话**——任意时刻可打开任意会话视图，后台会话继续跑，互不串台；不存在"全局主会话"。
 
 ---
@@ -25,9 +24,9 @@
 
 ## 1. 现状与差距
 
-### 1.1 Rust 参考实现（当前生产）
+### 1.1 参考实现（改造前）
 
-| 维度 | Rust 现状 | 位置 |
+| 维度 | 改造前现状 | 位置 |
 |---|---|---|
 | 活动会话 | **全局唯一**，持久化在 `workspaces.json.active_session`；compose 时读 `CELESTEA_SESSION_DIR` 环境变量决定重放哪个会话目录 | `src/main.rs:1222-1249`、`src/workspaces.rs:139,163` |
 | 引擎世代 | **全局唯一** `AppState.gen: RwLock<Gen>`；`swap_gen` 全量替换 | `src/main.rs:475-497` |
@@ -122,11 +121,11 @@ export class SessionRuntimeRegistry {
 - 持有 `{ profile, config: SanitizedConfig, epoch }`，`epoch` 每次 `POST /api/config` 成功即 `+1`；
 - **不持有 runtime**（"唯一 runtime" 的概念被删除）；
 - `SessionRuntimeRegistry.invalidateAll()` 在 epoch 变更后调用；
-- 每个实例在自己的**下一个 turn 边界**检查 `profileEpoch < currentEpoch`，若落后则先 `dispose` 再 `build`（等价于 Rust 的"activate 时重新 compose"，但**按会话惰性**且**不打断在飞 turn**）。
+- 每个实例在自己的**下一个 turn 边界**检查 `profileEpoch < currentEpoch`，若落后则先 `dispose` 再 `build`（按会话惰性，且**不打断在飞 turn**）。
 
 保留原设计的不变量：**一个实例永远只由一个 profile 快照构建**，读者不可能看到混合态（`gen.ts:1-20` 的原始动机），只是"世代数 = 实例数"而不是 1。
 
-热点配置（模型/推理档位）变更的语义随之变为：**已打开的会话在下一轮开始时生效**（后台在飞的轮次不被中断）；前端在状态栏标注"配置将在会话下一轮生效"。这比 Rust 的"立刻 global swap"更保守。
+热点配置（模型/推理档位）变更的语义随之变为：**已打开的会话在下一轮开始时生效**（后台在飞的轮次不被中断）；前端在状态栏标注"配置将在会话下一轮生效"。
 
 ### 2.3 busy 槽与并发
 
@@ -151,7 +150,7 @@ data: {"v":1,"session":"ws1/cli-main","turn":3,"seq":812,"payload":{"delta":"…
 ```
 
 - `session`：**必填**（字符串）。属于哪个会话的流。进程级事件（如 `lagged`）用 `session: null`。
-- `v`：信封版本，`1`。缺失视为 `0`（Rust 老信封）。前端据此选择路由策略（也可经 `/api/health.capabilities`，见 §4.10）。
+- `v`：信封版本，`1`。缺失视为 `0`（旧信封）。前端据此选择路由策略（也可经 `/api/health.capabilities`，见 §4.10）。
 - `turn`：**语义变更** —— 从"进程全局 turn 序号"变为"**该会话内**的 turn 序号"（每实例 `turnNo`）。这是本设计中最需要显式声明的契约变更。
 - `seq`：**保持进程级单调**（单一原子计数器）。理由：跨会话全序对丢帧检测/诊断/看门狗有价值，且 `lagged` 逻辑（`sse.ts:127-138`）与订阅者队列语义都不用改。
 - `payload` 内容**逐字不变**（8 个事件名与字段均不动）。
@@ -159,7 +158,7 @@ data: {"v":1,"session":"ws1/cli-main","turn":3,"seq":812,"payload":{"delta":"…
 **分流策略**（两个都要，职责不同）：
 
 1. **默认：全量广播 + 客户端本地路由**（推荐默认）。
-   `GET /api/events` 不传参 = 订阅全部会话（与 Rust 现有行为完全一致）。前端**一个 tab 一条连接**，按 `session` 把帧路由到对应视图；后台会话的帧用于更新侧栏卡片状态（运行中/错误/完成），但**不渲染进聚焦视图**。
+   `GET /api/events` 不传参 = 订阅全部会话。前端**一个 tab 一条连接**，按 `session` 把帧路由到对应视图；后台会话的帧用于更新侧栏卡片状态（运行中/错误/完成），但**不渲染进聚焦视图**。
    优点：连接数不随会话数增长；后台状态天然可见（这是"会话卡片显示各自运行状态"的前提）。
 2. **可选：`GET /api/events?session=<id>` = 服务端只推该会话（+ `session:null` 的进程级帧）**。
    为 headless/CLI/窄客户端准备。多会话订阅可重复 query：`?session=a&session=b`。
@@ -285,7 +284,7 @@ sse.onFrame((env, name, payload) => {
 1. 注册表保证 `ensure(id)` 返回**同一实例**（不会因两次并发请求建出两个实例）；
 2. 该实例的 `TurnRunner.busy` 保证同一实例只有一个 turn（`turn-runner.ts:114-127`）。
 
-外部进程（Rust 后端 / CLI）同时写同一 `cli-main.jsonl` 仍是**未防护**的（现状也如此），记为已知限制：**切换期间不要让两个后端同时写同一工作区**。
+外部进程（其他后端 / CLI）同时写同一 `cli-main.jsonl` 仍是**未防护**的（现状也如此），记为已知限制：**切换期间不要让两个后端同时写同一工作区**。
 
 ### 3.3 从"单活动会话"平滑迁移
 
@@ -298,20 +297,6 @@ sse.onFrame((env, name, payload) => {
 | M5 | `/api/config` 去 409，改 epoch 失效 | 需配套前端提示"下一轮生效" |
 
 每一步都**前后端可独立回滚**，这是选择"纯增字段 + 缺省回退"而非"改字段语义"的原因。
-
-### 3.4 与 Rust 后端同跑时的行为差异（前端必须同时容忍）
-
-| 场景 | Rust 后端 | TS 后端（目标） | 前端策略 |
-|---|---|---|---|
-| 切会话 | `POST activate`，turn 中 **409** | 本地切换 + 预热；**不 409** | 本地切换**先行**；activate 失败只记诊断，不弹错、不回滚视图 |
-| 切会话代价 | 重新 compose（全局，可能数百 ms） | 首次 `ensure` 重放日志；已打开则 ~0 | 首次切换显示轻量进度条（现有 `.switch-progress`），之后瞬时 |
-| SSE 信封 | `{turn,seq,payload}` | `{v,session,turn,seq,payload}` | 缺 `session` → 归给焦点会话；`turn` 只与该会话视图内的 `turn` 比较 |
-| turn 序号 | 进程全局递增 | **每会话**递增 | 不跨会话比较；卡片不显示绝对 turn |
-| `/api/cancel` | 取消唯一在跑 turn | 取消指定会话的 turn | 传 `{session: focus}` |
-| `/api/status` | 单一 `session` 字段 | `session` = 请求指定会话；缺省 `active_session` | 焦点会话状态栏轮询带 `?session=` |
-| `/api/worker/status` | 单 registry | 跨会话聚合 + `by_session` | 只用 `total/by_status/workers`（两版都有） |
-
-> **待确认项 ①**：`POST /api/cancel` 传多余 body 字段、`GET /api/status` 传未知 query，在 axum 侧需确认是"忽略"而非 400/422。若 Rust 严格拒绝，则前端必须在 `/api/health` 能力探测（§4.10）通过之后才附带这些参数——**M2/M3 的落地前提**。用 `capabilities` 兜底即可消除该风险。
 
 ---
 
@@ -339,7 +324,7 @@ sse.onFrame((env, name, payload) => {
 | 响应 | 不变：`202 {turn, status:"started"}`。`turn` 现在是**该会话内**的序号。 |
 | 409 | **作用域收窄**：由"任一会话在跑"→"该会话在跑"。错误串逐字不变（`"a turn is already running"`）。 |
 | 404 | **新增**：`session` 指向未知会话 → `404 {ok:false,error:"unknown session '<id>'"}`（与 `GET /messages` 同款）。缺省路径不产生新 404。 |
-| 会话级模型覆盖 | 不变：`session.json.model` 在 `ensure`/重建时作为 profile 覆盖（等价 Rust `post_session_activate` 的 `pj["model"]`，`workspaces.rs:1352-1358`）；模型名非法时 `400 invalid session model: {e}`。**注意**：Rust 在 activate 时报这个 400，TS 可能在 `turn` 时报——前端两种都要能显示。 |
+| 会话级模型覆盖 | 不变：`session.json.model` 在 `ensure`/重建时作为 profile 覆盖（等价 `post_session_activate` 的 `pj["model"]`，`workspaces.rs:1352-1358`）；模型名非法时 `400 invalid session model: {e}`。**注意**：该 400 可能在 activate 时报，也可能在 `turn` 时报——前端两种都要能显示。 |
 | 自动 `ensure` | `session` 指向的会话尚无实例时，`turn` **自动创建实例**（不要求先 activate）。 |
 
 ### 4.3 `POST /api/cancel`
@@ -375,7 +360,7 @@ sse.onFrame((env, name, payload) => {
 | 响应 | **兼容增字段**：`{ok:true, active_session, runtime:"created"\|"existing", busy:boolean, rebuilt:boolean}`。 |
 | 409 | **移除**（本设计的核心变更）。语义：activate 不再修改全局引擎。 |
 | 400/404/500 | 不变（`invalid session model` / 未知会话 / `cannot persist active session`）。`compose failed: {e}` 现在只发生在**该会话实例**创建失败时。 |
-| 副作用 | **减弱**：不再重写进程环境（Rust 的 `set_var(CELESTEA_SESSION_DIR)` 不再存在），因此 Rust 的"compose 失败但 env 已改且不回滚"（pitfalls P12）在 TS 里**结构性消失**。 |
+| 副作用 | **减弱**：不再重写进程环境，因此"compose 失败但 env 已改且不回滚"（pitfalls P12）在本实现里**结构性消失**。 |
 
 ### 4.7 `GET /api/sessions`
 
@@ -419,7 +404,7 @@ sse.onFrame((env, name, payload) => {
 }
 ```
 
-前端**必须**在启动时读一次：无 `capabilities`（= Rust 后端）时退回"单会话模式"（点击会话仍走 activate 并容忍 409、SSE 不路由、取消不带 `session`）。这是 §3.4 里所有"待确认"项的统一解法，也让迁移期不需要人为配置。
+前端**必须**在启动时读一次：能力缺失时退回"单会话模式"（点击会话仍走 activate 并容忍 409、SSE 不路由、取消不带 `session`）。
 
 ### 4.11 错误码汇总
 
@@ -467,8 +452,7 @@ sse.onFrame((env, name, payload) => {
 
 ## 7. 开放问题
 
-1. §3.4 的 axum 宽容度确认（多余 body 字段 / 未知 query 是否被拒）→ 由 `capabilities` 兜底，但仍建议实测 Rust 侧行为。
-2. `turn` 从全局改为每会话，是否破坏任何**外部**消费者（监控/看门狗读 SSE 的 `turn`）？建议先 grep 平台侧消费者；若需要，可加 `turn_global`（纯增字段）。
-3. `/api/config` 去 409 后，"改了模型但会话正在跑"的用户体验需要前端明示（状态栏 + 会话卡片角标）。
-4. 是否需要"会话模板/克隆"（新会话继承另一个会话的 grants/模型）——不在本设计范围，但 §2.2 的 epoch 机制已为其留好接口。
-5. 无人值守场景（headless worker 会话）：`MAX_LIVE_SESSIONS` 的 503 是否会让 worker 派发失败？建议 worker 会话不计入该上限（单独配额）。
+1. `turn` 从全局改为每会话，是否破坏任何**外部**消费者（监控/看门狗读 SSE 的 `turn`）？建议先 grep 平台侧消费者；若需要，可加 `turn_global`（纯增字段）。
+2. `/api/config` 去 409 后，"改了模型但会话正在跑"的用户体验需要前端明示（状态栏 + 会话卡片角标）。
+3. 是否需要"会话模板/克隆"（新会话继承另一个会话的 grants/模型）——不在本设计范围，但 §2.2 的 epoch 机制已为其留好接口。
+4. 无人值守场景（headless worker 会话）：`MAX_LIVE_SESSIONS` 的 503 是否会让 worker 派发失败？建议 worker 会话不计入该上限（单独配额）。

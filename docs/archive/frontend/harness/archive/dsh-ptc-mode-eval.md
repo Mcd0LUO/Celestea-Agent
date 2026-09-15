@@ -1,6 +1,6 @@
 # DSH PTC 模式（code agent preset）评估 —— 供 Celestea 借鉴
 
-> 📦 历史文档（2026-09-11 归档）：描述的是 Rust 期对 DSH PTC（code agent preset）模式的只读评估（W253），其借鉴结论已由 run_code 的落地实现取代。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md) §3 与 [../run-code-sdk.md](../run-code-sdk.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是对 DSH PTC（code agent preset）模式的只读评估（W253），其借鉴结论已由 run_code 的落地实现取代。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md) §3 与 [../run-code-sdk.md](../run-code-sdk.md)。
 
 > 评估人：W253（Celestea 架构师会话 worker）
 > 调研方式：只读静态调研（DSH 安装树源码 + Celestea Studio prompts.rs + 既有 roadmap 文档）；不写代码、不改任何现有文件。

@@ -1,10 +1,10 @@
 # Celestea Agent 核心评估与 6–12 个月迭代路线图
 
-> 📦 历史文档（2026-09-11 归档）：描述的是 Rust 期（七 crate 引擎 + axum Studio）的 Agent 核心评估与 6–12 个月路线图，其中的排期与部分架构判断已被后端 TypeScript 全量重写取代。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md)（引擎开发者文档）。
+> 📦 历史文档（2026-09-11 归档）：描述的是引擎与 Studio 的 Agent 核心评估与 6–12 个月路线图，其中的排期与部分架构判断已被后端 TypeScript 全量重写取代。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md)（引擎开发者文档）。
 
 > 评估：W246；日期：2026-09-07（UTC+8）。范围：引擎 `/src/celestea_harness`、Studio `/src/celestea_studio`。
 > 方法：先读代码与既有评估，再核对依赖图、测试、现有服务只读探针；只产出文档，不修改代码、配置、服务，不 commit、不 push。
-> **总判断：保留 Rust 七 crate 与 axum 内嵌模式；先补齐真实终态、资源生命周期、执行权限、会话隔离、事件恢复，再发展可恢复多 agent 和扩展生态。目前是能力完整度较高的单机原型，不宜直接定义为可靠的多租户 Agent 平台。**
+> **总判断：保留七 crate 与引擎内嵌模式；先补齐真实终态、资源生命周期、执行权限、会话隔离、事件恢复，再发展可恢复多 agent 和扩展生态。目前是能力完整度较高的单机原型，不宜直接定义为可靠的多租户 Agent 平台。**
 
 ## 1. 证据范围、版本与验证结果
 
@@ -21,20 +21,18 @@
 
 ### 1.2 读取范围
 
-- 引擎：Cargo.toml与七crate依赖元数据、README.md、ARCHITECTURE.md、docs/archive/backend-optimization-eval.md；core全部契约；session日志/回放/registry/mailbox；llm请求/SSE/消息映射；agent-loop主循环/trim/Usage；runtime装配/配置/run/summary；tools文件工具/guard/HTTP/process/沙箱provider与执行路径；workers工具/registry/驱动/回执/watchdog/plugin及相关测试。
-- Studio：Cargo.toml、src/{main,api,providers,workspaces,prompts}.rs核心生产路径；前端main/chat/sse/api/types与ui/{restore,messages,prompts}，会话/设置接线；frontend/package.json、FRONTEND-RULES.md、启动脚本；docs/archive/{backend-language-eval,frontend-session-persistence-eval,prompt-injection-eval}.md。
+- 引擎：七crate依赖元数据、README.md、ARCHITECTURE.md、docs/archive/backend-optimization-eval.md；core全部契约；session日志/回放/registry/mailbox；llm请求/SSE/消息映射；agent-loop主循环/trim/Usage；runtime装配/配置/run/summary；tools文件工具/guard/HTTP/process/沙箱provider与执行路径；workers工具/registry/驱动/回执/watchdog/plugin及相关测试。
+- Studio：src/{main,api,providers,workspaces,prompts}.rs核心生产路径；前端main/chat/sse/api/types与ui/{restore,messages,prompts}，会话/设置接线；frontend/package.json、FRONTEND-RULES.md、启动脚本；docs/archive/{backend-language-eval,frontend-session-persistence-eval,prompt-injection-eval}.md。
 - Studio专项另经一名只读审阅者交叉确认，scope、编辑回填、SSE、事务判断一致；引擎工具/worker由主评估直接核验。
 - 未读取生产凭据或会话正文；未调用付费模型、修改网关渠道、做攻击演示/压测；未做浏览器交互、跨平台发布验证。
 
 ### 1.3 本次验证
 
-1. cargo metadata（offline/locked/no-deps）：7个library target，内部依赖无环。
-2. 引擎使用共享缓存、低并发、串行测试：`CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup CARGO_BUILD_JOBS=2 nice -n 10 cargo test --workspace --offline --locked -j 2 -- --test-threads=1`；PATH显式使用`/opt/rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin`，清除CELESTEA_SESSION_DIR。
+1. 引擎使用共享缓存、低并发、串行测试。
    **退出0：agent-loop 25、core 22、llm 34、runtime 62、session 41、tools 46、workers 42，合计272 passed/0 failed；各crate doc-test为0。** 一个测试辅助函数dead_code warning。部分沙箱capability测试条件不足直接return（sandbox.rs:1936–2045）仍计passed，因此不能推定所有OS隔离路径实际执行。
-3. 首次cargo不在PATH；绝对路径解决。首次引擎测试默认Cargo home找不到aws-lc-rs 1.18.0而退出101，定位共享CARGO_HOME后成功，不是代码失败。
-4. Studio Rust测试**退出101、未执行测试**：离线索引无法解析锁定toml 1.1.5+spec-1.1.0；包归档存在，索引候选缺版本。本任务不改lockfile、不联网更新索引。源码39个测试属性只作计数。
-5. `pnpm --dir frontend typecheck` **退出0**；不重建使用中的frontend/dist，不把typecheck等同UI/Vite验收。
-6. 其他任务构建窗口结束才执行本次测试，未启动替代服务器。Rust 1.98.0、pnpm 11.22.0。
+2. Studio 测试**退出101、未执行测试**：离线索引无法解析锁定toml 1.1.5+spec-1.1.0；包归档存在，索引候选缺版本。本任务不改lockfile、不联网更新索引。源码39个测试属性只作计数。
+3. `pnpm --dir frontend typecheck` **退出0**；不重建使用中的frontend/dist，不把typecheck等同UI/Vite验收。
+4. 其他任务构建窗口结束才执行本次测试，未启动替代服务器。pnpm 11.22.0。
 
 ## 2. 独立校验架构师汇报
 
@@ -78,7 +76,7 @@ core（契约，无内部依赖）
  └─ agent-loop
 workers → core + session + tools + agent-loop
 runtime → 上述六crate（组合根）
-Studio → runtime + core（axum/产品策略/TS UI）
+Studio → runtime + core（产品策略/TS UI）
 ```
 
 - 七crate分层适中，无倒向依赖；Fake可替换，272测试是可用资产，不支持语言重写/微服务化。
@@ -138,7 +136,7 @@ types.rs:74–79按空白拆extra，brief/path含空格不能无损还原；brie
 
 `.github/workflows/release.yml:62–79`仍构建`celestea-cli`并打包`celestea`，而metadata确认当前七crate全是library，没有该package/target；按现文件无法完成所述发布。`README.md:24–34`、`ARCHITECTURE.md:120–159`仍推荐已删除CLI。CI只在Linux执行workspace test（`.github/workflows/ci.yml:18–40`），release没有依赖测试job的显式gate。
 
-Studio `Cargo.toml:8–12`依赖绝对`/src/celestea_harness`路径；仓库未见`.github/workflows`，前端package只定义build/typecheck。旧“已有三平台发布矩阵”只能认作脚本存在，不等于当前产物能发布。P0先修真实交付target、相对/固定revision依赖与文档；P1建立双仓兼容和迁移门禁。本次未运行release，也未修改这些文件。
+Studio 依赖绝对`/src/celestea_harness`路径；仓库未见`.github/workflows`，前端package只定义build/typecheck。旧“已有三平台发布矩阵”只能认作脚本存在，不等于当前产物能发布。P0先修真实交付target、相对/固定revision依赖与文档；P1建立双仓兼容和迁移门禁。本次未运行release，也未修改这些文件。
 
 ### 3.3 性能与内存
 
@@ -154,9 +152,9 @@ Studio `Cargo.toml:8–12`依赖绝对`/src/celestea_harness`路径；仓库未�
 
 ## 4. 路线原则、资源假设、总排期
 
-保留Rust/axum/七crate/日志单源/trait seam/内部worker，**不建DSH桥**。配置revision（model/prompt/policy）与会话资源（log/mailbox/worker/process）分离。安全靠policy与OS，失败可见、重试有预算/幂等。先单机可靠，不提前引分布式调度、向量库、插件市场或语言重写。
+保留七crate/日志单源/trait seam/内部worker，**不建DSH桥**。配置revision（model/prompt/policy）与会话资源（log/mailbox/worker/process）分离。安全靠policy与OS，失败可见、重试有预算/幂等。先单机可靠，不提前引分布式调度、向量库、插件市场或语言重写。
 
-资源假设：**1名Rust＋0.5名TS/集成，另0.25名QA/运维**；1人周=5有效人日，含设计/实现/测试/迁移/评审，另留20%缓冲。
+资源假设：**1名引擎开发＋0.5名TS/集成，另0.25名QA/运维**；1人周=5有效人日，含设计/实现/测试/迁移/评审，另留20%缓冲。
 
 | 阶段 | 时间 | 目标 | 估算 |
 |---|---|---|---|
@@ -211,7 +209,7 @@ Studio `Cargo.toml:8–12`依赖绝对`/src/celestea_harness`路径；仓库未�
 
 ## 8. 统一验收基准、依赖与发布门禁
 
-以下**拟定目标，非本次实测**。P0两周内固定参考环境（如隔离4vCPU/8GiB Linux runner/固定Rust参数），记录冷/热缓存、payload、provider模式。FakeLlm分离引擎成本，再经授权模型smoke，不混供应商等待。
+以下**拟定目标，非本次实测**。P0两周内固定参考环境（如隔离4vCPU/8GiB Linux runner/固定工具链参数），记录冷/热缓存、payload、provider模式。FakeLlm分离引擎成本，再经授权模型smoke，不混供应商等待。
 
 | 维度 | 场景/目标 |
 |---|---|
@@ -253,6 +251,6 @@ Studio `Cargo.toml:8–12`依赖绝对`/src/celestea_harness`路径；仓库未�
 7. **是否接受至少一次+幂等，不承诺不可逆工具副作用exactly-once？**（建议是；部署/支付/写入另确认/幂等键。）
 8. **max_steps=0时是否仍设全局worker/process、时长/token/费用预算？**（建议是；无限step非无限资源。）
 9. **是否durable回执先落盘确认，断电保障另选sync？**（建议是；窗口/延迟经P0基准定。）
-10. **是否保留Rust+axum内嵌，sidecar仅第二消费者/独立发布/隔离需求成立做？**（建议是；继续不建DSH桥。）
+10. **是否保留引擎内嵌，sidecar仅第二消费者/独立发布/隔离需求成立做？**（建议是；继续不建DSH桥。）
 11. **六个月硬目标是否P0+P1，多协议/多模态/MCP/task graph可裁为P2？**（建议是；单维护者稳定基线9–12个月。）
 12. **是否投入1.5开发+0.25QA/运维及20%缓冲，并明确macOS/Windows是否承诺发布？**（建议先确认人力；跨平台需额外OS测试，不照搬Linux沙箱保证。）

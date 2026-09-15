@@ -83,7 +83,7 @@
 |---|---|
 | 不做「`run_code` 是唯一可直调工具」的**禁令**（DSH `PTC_ONLY`） | 那需要把 `workflow`/`spawn_worker`/`http_request` 等全部工具接进 SDK，且禁令一旦生效，程序写不出来就没有出路；Celestea 的编排面与网络面必须保持直调 |
 | 不做**全量 SDK 代码生成器**（schema→TS/Python 投影） | 无宿主代码运行时红利；现行 SDK 是引擎侧常量文本（`run-code/sdk.ts`），9 个工具名本身就是合法 Python 标识符，无生成器即无投影边界问题 |
-| 不做 TS flavor | W254 §5：收益在 Rust 单体下不成立 |
+| 不做 TS flavor | W254 §5：收益在单体架构下不成立 |
 | 不删 `run_code` 的回退路径 | 程序失败后模型必须能退回直调（W254 §9 的"天然保险"）；执行模式的折叠**只是把 4 个工具从直调面移出**，`http_request`/`process_control`/worker 三工具与 `run_code` 本身始终直调 |
 
 ### 1.2 差异矩阵（每格都是可观测断言或明确标注为估值）
@@ -179,7 +179,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 
 | 端点 | 变更 |
 |---|---|
-| `POST /api/sessions/{id}/mode`（新） | body `{mode}`；200 `{ok, session, mode, effective: "next_turn"}`；409 `{ok:false,error:"turn 进行中，无法切换模式"}`（与 `compact` 同款冻结文案）；404 未知会话；400 非法 mode。**TS-only 端点**，须登记进 `contracts/rust-route-table.snapshot.json` 的 `tsOnlyRoutes`（W516 先例） |
+| `POST /api/sessions/{id}/mode`（新） | body `{mode}`；200 `{ok, session, mode, effective: "next_turn"}`；409 `{ok:false,error:"turn 进行中，无法切换模式"}`（与 `compact` 同款冻结文案）；404 未知会话；400 非法 mode。**TS-only 端点**，须登记进 `contracts/` 路由表快照的 `tsOnlyRoutes`（W516 先例） |
 | `POST /api/turn` | 无变更（mode 不是每轮参数，D2） |
 
 **为什么 P0 不给切换端点**：P0 的差异只在提示词，创建期固定即可闭环；把切换推到 P1 与 UI 选择器同批上线，可避免"能切但无处点"的半成品，也让"切换是否安全"（U3）有实测机会。
@@ -233,7 +233,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | `contracts/data-files/index.json` | **无新增文件、计数不变**（本设计不引入任何新数据文件） | — |
 | `contracts/sse-events.json` | `status.payload` 增 **optional** `mode`（仅切换/首轮携带）；事件名集合**逐字不变**（8 个） | P1 |
 | `contracts/tools.json` | `spawn_worker.parameters` 增可选 `mode`（enum）；`count` 仍 10、`title` 仍 "(10 tools)"；`run_code` 的 description **不变**（限额数字已一致，`limits.ts:26-43`） | P0 |
-| `contracts/rust-route-table.snapshot.json` | `tsOnlyRoutes` 增 `POST /api/sessions/{id}/mode`（W516 先例） | P1 |
+| `contracts/` 路由表快照 | `tsOnlyRoutes` 增 `POST /api/sessions/{id}/mode`（W516 先例） | P1 |
 | `docs/ARCHITECTURE.md` | §7.1「加一个工具」旁增一句：**工具的模型可见面由 registry 暴露装饰器决定**，新增"按会话隐藏工具"的能力登记到 §3.1 seam 表（若 `exposedRegistry` 被视为新 seam）；§5 例外表若超线需登记 | P1 |
 | 本文 | 落地后逐条回填「已实现 / 偏离」 | 全程 |
 
@@ -360,7 +360,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | U5 | **折叠的 token 净收益** | **本次静态测算**（10 schema 10 768 B；4 个被折叠 1 321 B；段文本 +400~700 B）→ 净收益接近 0 甚至略负 | 禁止用"省 token"当 P1 卖点；收益论证必须回到往返折叠 |
 | U6 | `{{tools}}` 取值源改动（默认实例 → 会话实例）的外部影响面 | **设计判断**：grep 全仓仅 `config-shape.ts:83` 一处消费该变量；**未做前端实测** | 若发现别处消费，需一并纳入 S2 |
 | U7 | 前端 `statusline.ts` 的按会话快照缓存能否直接承载 `mode` 字段 | **未验证**（前端无测试基建） | P1 的人工联调项：两会话分别为标准/执行时徽标不串台 |
-| U8 | `POST /api/sessions/{id}/mode` 的忙碌守卫与 `compact` 是否可完全同款（含 Rust 共存期语义） | **未验证**：Rust 参考实现无此端点（TS-only），需登记 `tsOnlyRoutes` 并确认前端在 Rust 后端下不调用（`/api/health.capabilities.session_mode_tools` 能力位兜底） | P1 落地前确认；能力位已设计 |
+| U8 | `POST /api/sessions/{id}/mode` 的忙碌守卫与 `compact` 是否可完全同款 | **未验证**：参考实现无此端点（TS-only），需登记 `tsOnlyRoutes` 并确认前端在能力位缺失时不调用（`/api/health.capabilities.session_mode_tools` 能力位兜底） | P1 落地前确认；能力位已设计 |
 | U9 | 「无 mode 键 = standard」在**旧会话目录**（历史创建，无 mode）上的行为 | **已定**：等价 standard（K8），但**未**对生产会话目录做全量盘点（可能已有手工写入的未知键） | `additionalProperties: true` 容忍未知键；M3 只断言"不传 mode 时字节不变" |
 
 ---

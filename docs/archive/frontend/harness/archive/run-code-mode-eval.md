@@ -33,7 +33,6 @@ Celestea 侧（`/src/celestea_harness/crates/`，只读）：
 | `agent-loop/src/loop.rs:436-484` | 工具派发流程：先 append 全部 ToolCall → 按 max_parallel_tool_calls 分批 dispatch → append ToolResult |
 | `session/src/persistent.rs` | 每会话追加式 jsonl，flush_each_append 默认开 |
 | `workers/src/lib.rs` | 3 worker 工具 spawn_worker/session_send_message/worker_status（+ registry.tsv/watchdog） |
-| Cargo.toml | **引擎无 HTTP 服务端依赖**（只有 reqwest 客户端）——loopback 方案需新增依赖 |
 
 宿主环境实测：`python3` 3.14.4 与 `node` v24.19.0 均可用；沙箱内可见性取决于 bwrap 根挂载（与 run_shell 运行任意二进制同前提，见 §4.4）。
 
@@ -104,7 +103,7 @@ Celestea 侧（`/src/celestea_harness/crates/`，只读）：
 - **run_shell 三层沙箱**：bwrap（namespaces+只读根）→ raw → userspace v1，rlimit（CPU/AS/NPROC/FSIZE/NOFILE/CORE=0），默认断网、/tmp 私有 tmpfs、可选 seccomp，超时 30s/上限 300s，输出字节 cap，生效层在结果里显式回报（`sandbox` 对象）。**关键承接点**：`spawn_sandboxed` 已经支持活 stdin/stdout/stderr 管道（background 路径为 process_control 预留）——parent-broker 直接复用。
 - **ToolGuard**：守卫链在 `dispatch` 内、工具执行前，首个非 Allow 短路；PathGuard 生产接线（路径白名单）；判定写入 `ToolOutput.decision`。
 - **SessionEvent**：ToolCall{id,name,args}/ToolResult{id,value,error}，追加式 jsonl（`serde(tag="type")`、无 deny_unknown_fields → **加可选字段是纯增量**），`derive_messages` 是唯一模型可见投影；agent-loop 先 append 全部 ToolCall 再派发（确定性日志序）。
-- **引擎无 HTTP 服务端依赖**（只有 reqwest 客户端）——loopback 方案要新增 axum/hyper。
+- **引擎无 HTTP 服务端依赖**（只有 reqwest 客户端）——loopback 方案要新增 HTTP 服务端框架。
 
 ---
 
@@ -114,7 +113,7 @@ Celestea 侧（`/src/celestea_harness/crates/`，只读）：
 
 ```
 run_code(code, description)
-  │ 引擎（父进程，Rust）
+  │ 引擎（父进程）
   │ ① 校验 → 把 code 写入沙箱 workdir（.celestea/run_code_<n>.py）
   │ ② spawn_sandboxed("python3 -u <程序>")   ← 复用三层沙箱 + rlimit + 默认断网（stdin_piped 已有）
   │ ③ 沙箱内 SDK（引擎注入的 ~120 行 Python 常量文本，embed 在 crate 里）
@@ -138,16 +137,16 @@ run_code(code, description)
 
 ```
 run_code → 引擎启动一次性监听器 127.0.0.1:<随机端口>，token 注入沙箱 env
-  │ 沙箱内 SDK 用标准库 urllib POST {"tool":..., "args":...} → 引擎 axum handler → dispatch → 返回结果
+  │ 沙箱内 SDK 用标准库 urllib POST {"tool":..., "args":...} → 引擎 handler → dispatch → 返回结果
 ```
 
 - **代价清单**（Celestea 现状下每一项都是新增）：
-  1. 引擎需新增 HTTP 服务端依赖（axum/hyper）——现在完全没有。
+  1. 引擎需新增 HTTP 服务端依赖——现在完全没有。
   2. **网络例外**：沙箱默认断网；`CELESTEA_SANDBOX_NET=1` 是**全开**（恢复宿主 netns），不是"仅 loopback"。要做到"仅 127.0.0.1 放行"需在 bwrap/raw 层加过滤（iptables/nft 或 netns 路由），这是沙箱层改动 + 新攻击面。
   3. 端口/token 治理：随机端口 + 一次性 token 的泄露面（沙箱内程序可扫 loopback 上引擎同机其它服务）、每 run 监听器生命周期、并发端口冲突。
   4. 结果回流需要引擎主动 poll/等 POST，与 run_shell 的管道模型割裂，事件时序更难保证。
 - **唯一优势**：协议"标准"、未来跨进程/跨机器执行（如把程序发给远端沙箱池）可平移；TS/前端同语言 SDK 时心智统一。
-- **结论**：Celestea 引擎是 Rust 单体、无 HTTP 面、沙箱已断网——B 的适配成本显著高于 A，且引入新的网络攻击面；**若做只选 A**。B 留作"未来需要远程执行或多语言 SDK"时的再评估项。
+- **结论**：Celestea 引擎是单体、无 HTTP 面、沙箱已断网——B 的适配成本显著高于 A，且引入新的网络攻击面；**若做只选 A**。B 留作"未来需要远程执行或多语言 SDK"时的再评估项。
 
 ### 4.3 对比表
 
@@ -182,13 +181,13 @@ run_code → 引擎启动一次性监听器 127.0.0.1:<随机端口>，token 注
 | 维度 | python3（宿主 3.14.4） | node/TS（宿主 v24.19.0） |
 |---|---|---|
 | 运行时依赖 | 0（标准库 asyncio/json/sys 写 SDK） | 需 node 在沙箱根内可见 + `--input-type` 类执行（无 strip-types 等价物则要限制纯 JS） |
-| 引擎同语言收益 | —（引擎是 Rust） | —（前端同语言与工具执行无关，Celestea 无 DSH 的"宿主即 Node"红利） |
+| 引擎同语言收益 | — | —（前端同语言与工具执行无关，Celestea 无 DSH 的"宿主即 Node"红利） |
 | DSH 可抄度 | 协议形态可抄，运行时**无开源代码可抄**（Python 后端私有） | worker-thread 全套开源可抄，但抄的是 Node 宿主件，Celestea 无 Node 宿主 |
 | 模型遵从度（预估） | flash-0731/pro-0813 均为强代码模型，Python 单文件脚本语料密度高；类型注解可选、写法宽松 → 正确率最高 | TS 异步/类型标注对 flash 档模型更易出现类型注解残渣与未 await 错误 |
 | SDK 声明大小（9 工具投影，估算见 §8） | ~0.9–1.4k token | ~1.0–1.5k token |
 | 维护面 | 一份常量文本（P0 手写，与 schema 同仓 + 一致性测试） | 运行时安装/版本治理 + 类型剥离 |
 
-**结论：只做 python3。** TS 作为 P1 可选项的唯一理由（与前端团队同语言、未来复用 DSH worker-thread 参考实现）在 Celestea 的 Rust 单体架构下不成立。
+**结论：只做 python3。** TS 作为 P1 可选项的唯一理由（与前端团队同语言、未来复用 DSH worker-thread 参考实现）在 Celestea 的单体架构下不成立。
 
 模型写程序能力预估（用于 §8 成败率，**需 P0 实测校准**）：
 - pro-0813（1.6T MoE，编码基准顶配）：3–5 步只读/轻写 Python 组合程序，一次写对概率估 85–93%；失败主因是 schema 形状错配/非 JSON 返回值，而非语法。
@@ -302,4 +301,4 @@ W253 的"不抄"针对**完整 L2 复制**（提示词段 + TS worker 运行时 
 ## 附录 B：Celestea 源码引用清单
 
 - `crates/tools/src/builtin.rs`（6 工具 + run_shell background/notify）、`crates/tools/src/sandbox.rs`（三层沙箱/rlimit/断网/spawn_sandboxed 活管道/环境白名单/超时上限）、`crates/tools/src/guard.rs`（PathGuard + 生产挂载）、`crates/tools/src/registry.rs`（dispatch=守卫链→工具）、`crates/core/src/session_log.rs`（SessionEvent 全型）、`crates/core/src/tool.rs`（ToolInput/ToolOutput/ToolDecision）、`crates/agent-loop/src/loop.rs:436-484`（派发与事件序）、`crates/session/src/persistent.rs`（jsonl 追加）、`crates/workers/src/lib.rs`（3 worker 工具）。
-- 环境实测：python3 3.14.4、node v24.19.0；引擎无 HTTP 服务端依赖（Cargo.toml 仅 reqwest 客户端）。
+- 环境实测：python3 3.14.4、node v24.19.0；引擎无 HTTP 服务端依赖（仅 reqwest 客户端）。

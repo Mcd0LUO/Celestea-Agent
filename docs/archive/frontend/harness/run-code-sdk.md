@@ -268,7 +268,7 @@ while True:
 ```
 
 > 注意：这只是**协议级**验证，不覆盖真实沙箱、guard 与真实工具。端到端行为以
-> `crates/tools/tests/run_code_e2e.rs`（真实注册表）与 `cargo test -p celestea-tools run_code` 为准。
+> `crates/tools/tests/run_code_e2e.rs`（真实注册表）为准。
 
 ---
 

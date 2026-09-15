@@ -1,10 +1,10 @@
 # Celestea-Agent 引擎后端优化评估报告（只读评估）
 
-> 📦 历史文档（2026-09-11 归档）：描述的是 Rust 引擎（HEAD 5a19083）的后端优化评估，其中的拆分/压测建议未全部落地，属 Rust 期事实。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是引擎（HEAD 5a19083）的后端优化评估，其中的拆分/压测建议未全部落地。当前权威入口见 [../DEVELOPMENT.md](../DEVELOPMENT.md)。
 
-> 仓库：/src/celestea_harness（Rust workspace，7 crate）@ HEAD 5a19083
+> 仓库：/src/celestea_harness（workspace，7 crate）@ HEAD 5a19083
 > （feat(engine): context reliability + v2 sandbox + memory-leak fixes）
-> 评估方式：只读静态分析（read/grep/sed 片段，未跑 cargo，未跑压测，未改任何源码）。
+> 评估方式：只读静态分析（read/grep/sed 片段，未跑压测，未改任何源码）。
 > 产物：本文件（docs/ 为本次新建目录）。评估后 git status：仅新增 docs/，无其它改动。
 > 行号基准：一律以 HEAD 5a19083 为准；涉及正在进行的 W232 的部分单独标注（见 §0.4）。
 > 证据引用格式：`文件:行号`；「实码行数」= 总行数 − 测试行数（按 #[cfg(test)] 起止估算）。
@@ -84,9 +84,7 @@
 ### 0.1 与 W232 的边界（重要）
 
 评估期间 W232 正在本仓库工作树改 worker 通讯闭环，未提交增量（评估结束时最终观测，
-git status/diff 实测）：`Cargo.lock`、`crates/runtime/src/{compose,run}.rs`、
-`crates/workers/Cargo.toml`、`crates/workers/src/{lib,registry,tools,types,watchdog}.rs`
-共 9 文件修改 + 未跟踪新增 `crates/workers/src/bridge.rs`（W232 所有，本评估未触碰）。
+git status/diff 实测）：共 9 文件修改 + 未跟踪新增 `crates/workers/src/bridge.rs`（W232 所有，本评估未触碰）。
 本报告所有行号以 HEAD 5a19083 为准；两处与 W232 直接相关：
 - §0-P0-3（mailbox 无消费方）在 W232 工作树中已开始修复（registry.rs 出现 recv 循环）；
 - §1.7 watchdog.rs 拆分建议**等 W232 合并后再动**，避免同文件冲突。
@@ -212,7 +210,7 @@ git status/diff 实测）：`Cargo.lock`、`crates/runtime/src/{compose,run}.rs`
 
 ## 2. 解耦分析
 
-### 2.1 依赖图（Cargo.toml 实测，无环）
+### 2.1 依赖图（无环）
 
 ```
 core        （无内部依赖；叶子，无 tokio 依赖 —— 分层良好）
@@ -343,7 +341,7 @@ RSS 用 /proc/self/status（VmRSS/RssAnon）；孤儿进程用 `pgrep -P` 树核
 
 | # | 场景 | 驱动方式 | 观测指标 | 判定阈值 | 验收 |
 |---|---|---|---|---|---|
-| 1 | 并发多 turn | cargo test --release 集成：16 并发 task × 共享 Runtime（或独立 Runtime 对照），FakeLlm 恒定 10ms 延迟 | turn p50/p95；append 锁等待（span）；alive task 数 | p95 < 2s；锁等待 < turn 时长 10%；task 数回落 | 全绿无 panic |
+| 1 | 并发多 turn | 16 并发 task × 共享 Runtime（或独立 Runtime 对照），FakeLlm 恒定 10ms 延迟 | turn p50/p95；append 锁等待（span）；alive task 数 | p95 < 2s；锁等待 < turn 时长 10%；task 数回落 | 全绿无 panic |
 | 2 | 长上下文到 trim | 程序化注入 5k/50k 事件后跑 turn；记录 TrimOutcome | trim 耗时、removed_tokens、RSS 曲线 | 单次 trim < 50ms；RSS 增长 < 事件字节×3 | 修剪后对话协议完整（safe_cut 不拆 tool 组） |
 | 3 | 高频 tool 调用 | 每 turn 20-50 次真实 sandbox 调用（bwrap） | spawn 耗时分布；进程泄漏（每 10 轮 pgrep）；stdout 截断正确性 | p50 往返 < 50ms；无孤儿 bwrap；截断标记正确 | 与 §4-3 量级吻合 |
 | 4 | 取消风暴 | 每 10ms 触发 cancel watch × 1000 次 | TurnOutcome::Cancelled 占比；TurnStart/TurnEnd 成对；task 数 | 全 Cancelled；事件成对；metrics.num_alive_tasks 回落 | 无流/任务残留 |
@@ -367,7 +365,7 @@ crates/agent-loop/src/{lib,context}.rs；crates/runtime/src/{run,compose}.rs（�
 结构扫描（grep/sed 片段 + 行号取证）：crates/tools/src/sandbox.rs；
 crates/llm/src/client.rs；crates/runtime/src/{config,summary,tools}.rs；
 crates/agent-loop/src/loop.rs；crates/workers/src/watchdog.rs（含 git show HEAD 校对）；
-crates/session/src/registry.rs；全部 7 个 Cargo.toml。
+crates/session/src/registry.rs。
 
 未读部分（报告不涉及）：core/message.rs 细节、core/agent.rs、core/session_log.rs、
 llm/config.rs、session/lib.rs、runtime/lib.rs 全文。

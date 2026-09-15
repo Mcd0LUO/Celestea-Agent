@@ -10,7 +10,6 @@
 | `frontend/` | `apps/web/` |
 | `docs/DEVELOPMENT.md`、`data-files.md`、`pitfalls.md` | `docs/`（README 并入 `docs/README-frontend.md`） |
 | `docs/archive/**` | `docs/archive/frontend/` |
-| `src/*.rs`、`Cargo.toml`、`Cargo.lock`、`celestea.toml`、`LEGACY-RUST-BACKEND.md`、`scripts/run-studio.sh`、`scripts/studio-tunnel.ps1` | `docs/archive/rust-studio-backend/` |
 | `tools/**` | `scripts/model-sync/`（本次起被 git 真正跟踪） |
 | `notes/**` | `docs/notes/`（仅一篇 3 行插话测试残留，2026-09-15 清理时删除；内容为 `插话测试：立刻记下这条`） |
 | `README.md` | 并入 Celestea-Agent 的 README「文档与仓库角色」段 |
@@ -28,5 +27,5 @@
 
 ## 本仓现状
 
-工作树已于 W781 收束后**删除**（`/src/celestea_studio` 整个目录连同 `.git`）；`target/` 在删除前已 `cargo clean` 回收 4.2 GiB。
+工作树已于 W781 收束后**删除**（`/src/celestea_studio` 整个目录连同 `.git`）；构建产物目录在删除前已清理，回收 4.2 GiB。
 **回滚**见 `/server-center/runtime/backups/celestea-merge-20260914-213707/`。

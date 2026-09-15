@@ -4,9 +4,8 @@
 > 标注 `TODO` 的地方表示当前代码无法给出确定结论。代码标识符、契约字段、环境变量名保留英文原样。
 >
 > - 核对基线：`main` 分支 `ac937e6`（reasoning_effort free-form passthrough）
-> - 工具链：`rustc 1.98.0` / `cargo 1.98.0`
-> - 测试基线：`cargo test --workspace` → **347 passed; 0 failed; 1 ignored**（2026-09-09 实测）
-> - 只写文档，不改 `src/`、`crates/`、`Cargo.toml`
+> - 测试基线：**347 passed; 0 failed; 1 ignored**（2026-09-09 实测）
+> - 只写文档，不改 `src/`、`crates/`
 
 ---
 
@@ -17,7 +16,7 @@
 | 文档 | 定位 | 与本文的关系 |
 | --- | --- | --- |
 | [`README.md`](./README.md) | **`docs/` 全量索引**：状态（当前 / 设计 / 历史）、一句话、权威入口 | 找文档时先看它 |
-| [`archive/agent-iteration-roadmap.md`](./archive/agent-iteration-roadmap.md) | 历史：Agent 核心评估与 6–12 个月路线图（P0/P1/P2、决策清单），Rust 期 | §1/§4 的架构判断曾引用它；结论已归档 |
+| [`archive/agent-iteration-roadmap.md`](./archive/agent-iteration-roadmap.md) | 历史：Agent 核心评估与 6–12 个月路线图（P0/P1/P2、决策清单） | §1/§4 的架构判断曾引用它；结论已归档 |
 | [`archive/agent-iteration-roadmap-w245-supplement.md`](./archive/agent-iteration-roadmap-w245-supplement.md) | 历史：上述路线图的 W245 独立验证补充 | 同上 |
 | [`archive/dsh-ptc-mode-eval.md`](./archive/dsh-ptc-mode-eval.md) | 历史：DSH PTC（code agent preset）模式评估 | §3 run_code 的动机背景 |
 | [`archive/run-code-mode-eval.md`](./archive/run-code-mode-eval.md) | 历史：run_code 折叠机制评估（方案 A/B、语言选择、安全分析、事件映射设计） | §3 的**设计依据**（当时）；本文只写**已落地实现** |
@@ -31,7 +30,7 @@
 - 要改 LLM/用量：§6 → §7
 - 要把引擎接进前端：§1.5 → §9
 
-**仓库角色与互链**：本仓是 Rust **引擎**参考实现（不是 Studio 后端）。Studio 生产后端是 TypeScript 仓
+**仓库角色与互链**：本仓是**引擎**参考实现（不是 Studio 后端）。Studio 生产后端是 TypeScript 仓
 [`/src/celestea_studio-ts`](/src/celestea_studio-ts/docs/README.md)（W781 起前端也已并入该仓）。本页所属的 `/src/celestea_harness` 已于 2026-09-11 删除。
 
 ---
@@ -40,7 +39,7 @@
 
 ### 1.1 仓库布局与 7 个 crate
 
-虚拟 workspace（根 `Cargo.toml`：`members = ["crates/*"]`），**共 7 个 crate**：
+虚拟 workspace（`members = ["crates/*"]`），**共 7 个 crate**：
 
 | crate（包名） | 目录 | 职责 | 关键入口 |
 | --- | --- | --- | --- |
@@ -56,8 +55,6 @@
 > 现存的 `README.md` / `ARCHITECTURE.md` 里仍残留 CLI 段落，属于过时文档（见 §10）。
 
 ### 1.2 依赖方向（无环）
-
-以各 crate 的 `Cargo.toml` 为准：
 
 ```
 celestea-core            （叶子，无内部依赖）
@@ -629,7 +626,7 @@ agent-loop 在每条退出路径上都写 `TurnEnd`（`crates/agent-loop/src/loo
 
 `crates/core/src/message.rs:82`：
 
-```rust
+```
 pub struct Usage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
@@ -795,7 +792,6 @@ pub struct Usage {
 | --- | --- |
 | `HOME` / `USERPROFILE` | `~/.celestea` home 配置目录与 `.env` 定位 |
 | `PATH` / `LANG` / `LC_ALL` / `LC_CTYPE` / `LC_MESSAGES` / `TERM` | 沙箱环境白名单（唯一会传给子进程的宿主变量） |
-| `CARGO_HOME` / `RUSTUP_HOME` / `CARGO_HTTP_PROXY` / `HTTPS_PROXY` | 构建期，见 §8.1 |
 
 布尔解析规则（`env_flag`，`sandbox.rs:358`）：`1|on|true|yes` = 真，`0|off|false|no` = 假，其它取默认值。
 
@@ -805,37 +801,12 @@ pub struct Usage {
 
 ### 8.1 构建环境
 
-本机工具链**不在默认 PATH**，需要显式导出（实测值）：
-
-```bash
-export RUSTUP_HOME=/opt/rustup
-export CARGO_HOME=/opt/cargo
-export PATH=/opt/cargo/bin:$PATH
-
-# 需要走代理拉依赖时（本仓库依赖已缓存于 /opt/cargo/registry，通常不必）
-export CARGO_HTTP_PROXY=http://<proxy-host>:<port>
-export HTTPS_PROXY=http://<proxy-host>:<port>
-
-cargo --version   # cargo 1.98.0 (797e8a9bc 2026-08-05)
-rustc --version   # rustc 1.98.0 (88d9e12ae 2026-08-18)
-```
-
-常用命令：
-
-```bash
-cargo build --workspace                 # 全量编译
-cargo test  --workspace                 # 全量测试
-cargo test  -p celestea-tools           # 只跑工具 crate
-cargo test  -p celestea-tools run_code  # 只跑 run_code 相关用例
-cargo test  --workspace -- --nocapture  # 看 eprintln 日志（含 [bench] 行）
-```
-
-CI 见 `.github/workflows/ci.yml`（push/PR 跑 `cargo test --workspace`）与
+CI 见 `.github/workflows/ci.yml`（push/PR 触发）与
 `.github/workflows/release.yml`（`v*` tag 构建三平台产物）。
 
 ### 8.2 当前测试覆盖与真实用例数
 
-2026-09-09 实测 `cargo test --workspace`：
+2026-09-09 实测：
 
 | target | 用例数 | 结果 |
 | --- | --- | --- |
@@ -879,8 +850,6 @@ Studio（`/src/celestea_studio`）是引擎的 Web 前端，**通过 path 依赖
 
 ### 9.1 path 依赖
 
-`/src/celestea_studio/Cargo.toml`：
-
 ```toml
 celestea-runtime    = { path = "/src/celestea_harness/crates/runtime" }
 celestea-core       = { path = "/src/celestea_harness/crates/core" }       # Content / ToolDecision
@@ -890,7 +859,7 @@ celestea-agent-loop = { path = "/src/celestea_harness/crates/agent-loop" } # Usa
 
 所以 Studio 与引擎**共用同一份源码**，不存在版本漂移；但也意味着：
 
-> **引擎改动必须在 Studio 侧重新 `cargo build` 并重启服务才生效。**
+> **引擎改动必须在 Studio 侧重新构建并重启服务才生效。**
 > 只改 harness 仓库不会热更新正在运行的 Studio 进程。
 
 Studio 的装配入口是 `build_gen` / `prepare_gen`（`/src/celestea_studio/src/main.rs:397`、`:413`）：
@@ -953,7 +922,7 @@ spawn_worker(wid, brief, report_to)
 
 | # | 位置 | 不一致 |
 | --- | --- | --- |
-| 1 | `README.md`（安装段） | 仍写 `cargo install --path crates/cli`、产物 `target/release/celestea`——**仓库已无 `crates/cli`**（W214 删除 CLI，能力下沉到 `celestea-runtime`）。 |
+| 1 | `README.md`（安装段） | 仍写产物 `target/release/celestea`——**仓库已无 `crates/cli`**（W214 删除 CLI，能力下沉到 `celestea-runtime`）。 |
 | 2 | `README.md`（用法段） | 写“内置工具共 7 个”“配置键（9 个）”——实际工具面 **10 个**、profile 键 **12 个**（缺 `context_window_tokens`/`context_trim_threshold`/`context_keep_recent`）。 |
 | 3 | `README.md`（配置表） | `system_prompt` 默认写作 `You are a helpful assistant.`；代码 `Profile::default` 与 `AgentConfig::default` 都是 `You are celestea, an AI agent. You are concise, accurate and direct.` |
 | 4 | `README.md`（配置表） | `reasoning_effort` 写作 `low` / `medium` / `high` 三档；W260 已改为**自由字符串透传**，任意非空档位原样发送。 |
@@ -967,7 +936,7 @@ spawn_worker(wid, brief, report_to)
 
 **验证记录**（本文档声称的可复现事实）：
 
-- `cargo test --workspace` 实跑：347 passed / 0 failed / 1 ignored（§8.2）。
+- 测试实跑：347 passed / 0 failed / 1 ignored（§8.2）。
 - §3.8 的三段 Python 示例：用 `run_code.rs` 中真实的 `RUN_CODE_SDK` + `RUN_CODE_RUNNER` 拼装程序，
   配一个模拟 broker（按协议回 JSON），实测得到注释里写的结果——覆盖直接调用、`await`、`_AttrDict`
   属性/下标、`ToolCallError` 捕获四条路径。

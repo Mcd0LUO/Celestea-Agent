@@ -81,7 +81,7 @@
 
 ### 2.1 每包一句话职责
 
-| 包 | 一句话职责 | 对应 Rust | 公开入口 |
+| 包 | 一句话职责 | 对应参考实现 | 公开入口 |
 |---|---|---|---|
 | `packages/core` | 冻结契约类型 + 六个 seam 定义 + 事件总线 + JSON/脱敏/路径工具；**零实现、零依赖** | `crates/core` | `src/index.ts` |
 | `packages/session` | `SessionLog` 的实现（内存/JSONL 持久化）、日志回放与修复、`turn-<n>` 单调计数、两套消息投影 | `crates/session` | `src/index.ts` |
@@ -96,27 +96,27 @@
 
 1. **唯一公开面 = `<pkg>/src/index.ts`**。`package.json#exports` 只暴露 `"."`；包外引用内部模块在 `lint:arch` 里是错误（`entry-only-<pkg>`）。
 2. **内部模块随便拆**，公开面不受目录结构影响。拆目录（`log/memory.ts`、`log/file.ts`）不构成破坏性变更；**改 `index.ts` 的导出才是**。
-3. **`index.ts` 必须带 module map 注释**：逐行列出内部模块 → 职责 → 对应 Rust 文件（现状已如此，新包照做）。
+3. **`index.ts` 必须带 module map 注释**：逐行列出内部模块 → 职责 → 对应参考实现文件（现状已如此，新包照做）。
 4. **`export *` 只在同包内聚合时使用**，且被聚合模块的导出即公开 API；新增导出前先问一句：**这是 seam（契约）还是实现？实现不进公开面。**
 5. **公开面只导出两类东西**：seam 类型/接口，以及经由 seam 类型表达的工厂（`createXxx`）与插件（`xxxPlugin`）。具体实现类（如内部 SSE 解析器）默认不导出。
 6. **跨包引用必须用别名**（`@celestea/<pkg>`），包内相对引用必须带 `.js` 后缀（NodeNext + `verbatimModuleSyntax`），纯类型引用用 `import type`。
 
 ---
 
-## 3. 一切皆插件（seam 契约 ↔ Rust `crates/core`）
+## 3. 一切皆插件（seam 契约 ↔ 参考实现 `crates/core`）
 
-设计原点与 `/src/celestea_harness`（原 Rust 参照实现，2026-09-11 已删除）的 `crates/core/src/lib.rs` 一一对应：
+设计原点与 `/src/celestea_harness`（参照实现，2026-09-11 已删除）的 `crates/core/src/lib.rs` 一一对应：
 **该 crate 只有 seam 定义与 re-export，没有任何具体实现**；具体 provider 住在兄弟 crate，在 compose 期挂载。
 TS 侧保持同一形状：`packages/core` 只放接口与容器，实现全在 L1 包里。
 
 ### 3.1 seam 清单
 
-| seam | TS 落点（`packages/core/src/`） | Rust 契约 | TS 形状 | 语义要点 |
+| seam | TS 落点（`packages/core/src/`） | 参考契约 | TS 形状 | 语义要点 |
 |---|---|---|---|---|
 | **Plugin** | `plugin.ts` | `plugin.rs` | `interface Plugin { name: string; mount(ctx: Context): void }` | 插件唯一的自我安装方式：往 `Context` 里 provide 服务、往注册表里 insert 行 |
 | **Context** | `context.ts` | `context.rs` | 类型键服务容器 `provide / get / scoped` | 后注册覆盖先注册（patch 语义）；`scoped()` 给每个 agent 一层子作用域，查不到回退父级 |
 | **EventBus** | `event-bus.ts` | `event_bus.rs` | `on / emit`、`bail / runBail`、`waterfall / runWaterfall`（同步）、`waterfallAsync / runWaterfallAsync`（异步） | 三种派发模式分别存放，互不干扰：广播=观察；bail=首个 `Some` 短路；waterfall=按序折叠变换。**W783 新增异步版**：`(event, next)` 逐层委托（对齐 DSH cordis），走独立表，同步 API 一行未动 |
-| **UserQuestionService** | `question.ts` | —（本仓新增，无 Rust 对应；对齐 DSH `dsh-user-questions`） | `interface UserQuestionService { ask(req): Promise<AskUserQuestionOutcome> }` + token `USER_QUESTION_SERVICE` + 7 个稳定错误码 | 模型向用户提问。答案经 **waterfall 返回值**唤醒挂起的 `await`，**绝不走消息注入**（挂起时 turn 单槽被占，`POST /api/turn` 只会变成永远送不到的 steering）；宿主（`apps/studio`）实现 `PendingQuestion` 表，`packages/tools` 的 `ask_user_question` 以**构造注入**消费（工具层不接触 `Context`）。本仓增量为最大等待时间（超时返回**空答案集**，不替模型决策）与本地化 |
+| **UserQuestionService** | `question.ts` | —（本仓新增，无参考对应；对齐 DSH `dsh-user-questions`） | `interface UserQuestionService { ask(req): Promise<AskUserQuestionOutcome> }` + token `USER_QUESTION_SERVICE` + 7 个稳定错误码 | 模型向用户提问。答案经 **waterfall 返回值**唤醒挂起的 `await`，**绝不走消息注入**（挂起时 turn 单槽被占，`POST /api/turn` 只会变成永远送不到的 steering）；宿主（`apps/studio`）实现 `PendingQuestion` 表，`packages/tools` 的 `ask_user_question` 以**构造注入**消费（工具层不接触 `Context`）。本仓增量为最大等待时间（超时返回**空答案集**，不替模型决策）与本地化 |
 | **SessionLog** | `session-log.ts` | `session_log.rs` | `append / events / deriveMessages / clear / nextTurnId` | **append-only 日志是唯一真源**；模型可见历史是派生物，绝不另存一份；`turn-<n>` 计数器归日志所有（重启后从磁盘最大值恢复，不复用 id） |
 | **Llm** | `llm.ts` | `llm.rs` | `interface Llm { generate(req): Promise<LlmStream> }` + `LlmRegistry` | 生成返回**流**而非字符串；注册表按名字注册，**last-wins**（同名后注册覆盖先注册），compose 期注册一次 |
 | **ToolGuard** | `tool.ts` | `tool.rs` | `check(input) → Allow / Deny(reason) / Ask(reason)` | guard 链是 waterfall/intercept：按注册顺序跑，**首个非 Allow 短路**；判定是结果的一等字段（`decision`），不是错误字符串 |
@@ -255,10 +255,10 @@ apps/studio → runtime.compose(profile)
 
 1. **位置**：单元测试与被测文件同级（`packages/<pkg>/src/*.test.ts`）；跨包契约测试、端到端回放放 `tests/`。
 2. **命名**：`describe(<被测单元>)` + `it(<可观察行为>)`；不写"应该"式散文。
-3. **每条 seam 契约必须有测试**；纯逻辑优先镜像 Rust 单测，实现与参考实现用 fixture 对拍。
+3. **每条 seam 契约必须有测试**；纯逻辑优先镜像参考实现单测，实现与参考实现用 fixture 对拍。
 4. **测试也受规模规则约束**（同为 `SOURCE_GLOBS`），但允许 `import` 自己被测的包（`*.test.ts` 豁免横向导入限制）。
 5. **不要 mock 掉被验证的 seam 本身**；要 mock 的是 HTTP、进程、时钟、文件系统这类外部边界。
-6. 金标准来源优先级：**运行中的 Rust 实机 > Rust 单测 > TS 自洽**。前两者产出的 fixture 入库；自洽对比必须在报告里标注 `derived`。
+6. 金标准来源优先级：**运行中的实机 > 参考实现单测 > TS 自洽**。前两者产出的 fixture 入库；自洽对比必须在报告里标注 `derived`。
 
 ---
 
@@ -300,7 +300,7 @@ apps/studio → runtime.compose(profile)
 | 2. 注册与选择 | `packages/workers/src/index.ts` + compose 期注入 |
 | 3. 注册表契约（若新增列/键） | `contracts/data-files/registry-tsv.schema.json` + 解析器 round-trip 测试 |
 | 4. 测试 | `packages/workers/src/<backend>.test.ts`（含进程生命周期与清理路径） |
-| 5. 看门狗 | 若需存活判定，注册为独立插件（参考 Rust `WatchdogPlugin`），不要塞进后端实现里 |
+| 5. 看门狗 | 若需存活判定，注册为独立插件（参考 `WatchdogPlugin`），不要塞进后端实现里 |
 
 ### 7.4 加一个新 seam（慎重：这会动 `core`）
 
@@ -369,9 +369,9 @@ ARCH_STRICT=1 pnpm lint   # 复核例外清单是否还有必要（见 §5）
 
 ---
 
-## 附录 A：与 Rust `crates/core` 的对应关系（迁移期口径）
+## 附录 A：与参考实现 `crates/core` 的对应关系（迁移期口径）
 
-| Rust | TS | 迁移口径 |
+| 参考实现 | TS | 迁移口径 |
 |---|---|---|
 | `crates/core`（只有 seam + re-export，无实现） | `packages/core` | 类型 1:1；TS 侧同样"零实现、零依赖" |
 | `crates/<impl>` 各自 `impl Plugin`，在 `crates/runtime/src/compose.rs` 挂载 | `packages/<impl>` + `packages/runtime/src/compose.ts` | 装配顺序即语义顺序，注释与测试对齐 |
@@ -380,7 +380,7 @@ ARCH_STRICT=1 pnpm lint   # 复核例外清单是否还有必要（见 §5）
 | `NamedRegistry` last-wins（patch 语义） | 命名注册表 / `LlmRegistry` | 后注册覆盖先注册，不报错 |
 | 会话日志是唯一真源，`derive_messages` 是派生 | 同左 | TS 侧禁止另存一份历史 |
 
-**迁移期唯一放宽**：P1–P3 期间，若 TS 侧某 seam 的形状与 Rust 有出入，以 `contracts/` 与对拍结果为准，并在本文 §3.1 表格里标注差异与收敛阶段；**不允许在实现包里私自定义第二套语义**。
+**迁移期唯一放宽**：P1–P3 期间，若 TS 侧某 seam 的形状与参考实现有出入，以 `contracts/` 与对拍结果为准，并在本文 §3.1 表格里标注差异与收敛阶段；**不允许在实现包里私自定义第二套语义**。
 
 ## 附录 B：规则 ↔ 检查器 ↔ 出处
 

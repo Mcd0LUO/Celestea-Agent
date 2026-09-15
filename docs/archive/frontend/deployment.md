@@ -1,8 +1,8 @@
-> ⚠️ **已过时（仅存史）**：本文描述的是已退役的 Rust 后端 `celestea-studio.service`。生产现为 TypeScript 后端 `celestea-studio-ts.service`（127.0.0.1:3777）。退役与回滚见仓库根 `LEGACY-RUST-BACKEND.md`。
+> ⚠️ **已过时（仅存史）**：本文描述的是已退役后端 `celestea-studio.service`。生产现为 TypeScript 后端 `celestea-studio-ts.service`（127.0.0.1:3777）。
 
 # Celestea Studio · 部署与运维
 
-> 📦 历史文档（2026-09-11 归档）：描述的是已退役 Rust 后端 `celestea-studio.service` 的 systemd / nginx 部署（紧邻的原「已过时」提示仍然有效）。当前权威入口见 [/src/celestea_studio-ts/scripts/run-studio-ts.sh](/src/celestea_studio-ts/scripts/run-studio-ts.sh) 与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
+> 📦 历史文档（2026-09-11 归档）：描述的是已退役后端 `celestea-studio.service` 的 systemd / nginx 部署（紧邻的原「已过时」提示仍然有效）。当前权威入口见 [/src/celestea_studio-ts/scripts/run-studio-ts.sh](/src/celestea_studio-ts/scripts/run-studio-ts.sh) 与 [/src/celestea_studio-ts/docs/README.md](/src/celestea_studio-ts/docs/README.md)。
 
 > 目标机器：`ubuntu-mc-server`，服务运行用户 `celestea`（uid 1003），仓库 `/src/celestea_studio`。
 > 本文所有内容都来自机器上的**实际配置**（systemd 单元、`scripts/run-studio.sh`、nginx 站点文件），不是设计稿。
@@ -35,7 +35,7 @@ celestea-studio.service (systemd, User=celestea)
 
 ```ini
 [Unit]
-Description=Celestea Studio backend (axum + SSE)
+Description=Celestea Studio backend
 After=network.target
 
 [Service]
@@ -179,9 +179,6 @@ tail -n 50 /tmp/celestea-studio.log
 
 ```bash
 cd /src/celestea_studio
-export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
-cargo test --release                 # 全绿再往下（校对时 69 passed）
-cargo build --release
 sudo systemctl restart celestea-studio
 systemctl is-active celestea-studio
 curl -s http://127.0.0.1:3777/api/health
@@ -231,4 +228,4 @@ curl -sI http://127.0.0.1:3777/ | head -1
 | 模型调用失败 | `GET /api/config` 看 `model`/`base_url`；`POST /api/providers/test` 测上游；日志里的 engine 错误 |
 | 服务起不来 | `tail -50 /tmp/celestea-studio.log`；常见原因：`workspaces.json` 畸形（进程 `exit(1)`）、端口占用、compose 失败、`run-studio.sh` 取不到 key |
 | 改了前端没变化 | 忘了 `pnpm build`；或浏览器缓存了旧 `index.html`（强刷） |
-| 改了后端没变化 | 忘了 `cargo build --release` 或忘了 `systemctl restart` |
+| 改了后端没变化 | 忘了 build 或忘了 `systemctl restart` |

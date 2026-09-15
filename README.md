@@ -5,12 +5,8 @@ Celestea Studio **全栈仓**：TypeScript 后端（**生产**）+ 线上前端�
 > W781（2026-09-14）：前端仓 `Celestea-Studio`（原 `/src/celestea_studio-ts`）已**全量并入本仓**，
 > 前端落在 `apps/web/`；本仓自此是 Celestea Studio 的**唯一仓**。
 
-> 前身：Rust 后端（axum）的 TypeScript 全量重构（W268 评估报告 §10 场景 B）。
-> **迁移已完成**：`celestea-studio-ts.service` 自 2026-09-11 起是生产后端，原 Rust
-> `celestea-studio.service` 已 masked 退役。评估报告存档见
-> `docs/archive/frontend/backend-ts-rewrite-eval.md`。
 > 本仓远端 = `https://github.com/Mcd0LUO/Celestea-Agent.git`。
-> 下文 §6/§7.2/§8 的迁移分期（P0–P4）与「Rust 对应」列是**立项时口径**，保留作迁移留痕；
+> 下文 §8 的分期（P0–P4）是**立项时口径**，保留作迁移留痕；
 > 现状以本段与 [docs/README.md](docs/README.md) 为准。
 
 ## 文档与仓库角色
@@ -23,8 +19,8 @@ Celestea Studio **全栈仓**：TypeScript 后端（**生产**）+ 线上前端�
 - **本仓角色**：Studio **后端**（TypeScript）。现状（2026-09-11）：`celestea-studio-ts.service` 跑在 127.0.0.1:3777，是**生产**后端。后端开发只在本仓。
 - **线上前端**在 [`apps/web/`](apps/web/)（Vite + TypeScript；构建产物 `apps/web/dist` 由后端作为静态根读取）。渲染铁律见 [`apps/web/FRONTEND-RULES.md`](apps/web/FRONTEND-RULES.md)。
 - **共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）在 `/var/lib/celestea-agent/`（W781 前在旧前端仓根）。
-- **Rust 引擎**参考实现（`celestea_harness`）随 W781 归档在 `docs/archive/frontend/harness/`；旧 Rust Studio 后端源码在 `docs/archive/rust-studio-backend/`。
-- 本仓 `docs/` 现在**含归档**：Rust 期的语言切换、迁移计划、旧 API 契约、旧部署等历史文档在 `docs/archive/frontend/`。
+- **引擎**参考实现（`celestea_harness`）随 W781 归档在 `docs/archive/frontend/harness/`。
+- 本仓 `docs/` 现在**含归档**：旧 API 契约、旧部署、旧评估等历史文档在 `docs/archive/frontend/`。
 
 ---
 
@@ -90,7 +86,7 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 
 ## 2. 目录职责
 
-| 路径 | 职责 | 对应 Rust |
+| 路径 | 职责 | 对应参考实现 |
 |---|---|---|
 | `packages/core` | 类型/seam/契约加载/事件总线/脱敏：`SessionEvent`、`TurnOutcome`、SSE 信封、`EventBus`(512 + lagged) | `celestea_harness/crates/core` + `studio/src/main.rs` 的信封部分 |
 | `packages/session` | `cli-main.jsonl` 解析（撕裂尾）/序列化/`turn-<n>` 归属/两套消息投影/回放统计 | 引擎 `session_log.rs` + `studio/src/api.rs:94-153` |
@@ -112,14 +108,14 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 | 文件 | 内容 | 数量 | 校验方式 |
 |---|---|---|---|
 | `endpoints.json` | 47 端点：method/path/请求字段/响应字段/错误码原文/只读探针结果 | **47** | `tests/contracts.test.ts` + `pnpm contracts:verify` |
-| `rust-route-table.snapshot.json` | 从 `src/main.rs:1333-1376` 提取的路由表快照 | 38 条声明 = **43** method+path（39 Rust API + 4 静态）；另有 8 条 TS-only | 测试断言「Rust 39 + TS-only 8 = 契约 47」逐条相等 |
+| `contracts/` 内的路由表快照 | 从旧后端路由表提取的快照 | 38 条声明 = **43** method+path（39 API + 4 静态）；另有 8 条 TS-only | 测试断言「39 + TS-only 8 = 契约 47」逐条相等 |
 | `sse-events.json` | 8 个 SSE 事件名 + 信封 `{turn,seq,payload}` + `lagged` 语义 + 512 容量 | **8** | 测试 + 实机 content-type 探针 |
 | `session-event.schema.json` | `SessionEvent` 7 变体 + `TurnOutcome` 5 态 + `turn-<n>` 单调规则 + 两套投影 | 7 / 5 | 测试 + 回放 |
-| `tools.json` | 10 个工具 spec（描述取自运行中的引擎 `/api/tools`，parameters 逐字转写自 Rust `ToolSpec`） | **10** | 测试 + 实机工具名集合比对 |
+| `tools.json` | 10 个工具 spec（描述取自运行中的引擎 `/api/tools`，parameters 逐字转写自 `ToolSpec`） | **10** | 测试 + 实机工具名集合比对 |
 | `data-files/*.schema.json` | `workspaces.json`(v2) / `providers.json`(+public_view 不含 key) / `prompts.json` / `session.json` / `cli-main.jsonl` / `cli-main.jsonl.precompact` / `registry.tsv` / `pricing.json` / `usage-ledger.jsonl` / `checkpoint.json`，外加 `index.json` | **10**（+ `index.json`） | 测试（含"无 version 字段"与 round-trip 要求） |
 | `probe-evidence.json` | `pnpm contracts:verify` 的实机证据 | 25 checks | 生成 |
 
-**实机校验抽样**：12 个 GET 端点（health/status/tools/config/sessions/sessions-id-messages/workspaces/providers/prompts/fs-browse/worker-status + events 头）+ 8 个只读安全错误分支 = **20 个端点**，全部通过。错误分支的"不可写"性在 Rust 源码中逐条举证（见 `reports/contract-probe.md` 末表）。
+**实机校验抽样**：12 个 GET 端点（health/status/tools/config/sessions/sessions-id-messages/workspaces/providers/prompts/fs-browse/worker-status + events 头）+ 8 个只读安全错误分支 = **20 个端点**，全部通过。错误分支的"不可写"性逐条举证（见 `reports/contract-probe.md` 末表）。
 
 ---
 
@@ -135,7 +131,7 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 | `CelesteaTeamAPI/scratch-cancel-e2e-…` | cancelled outcome | 6 | 1 | 0 | 0 | cancelled |
 | `CelesteaTeamAPI/scratch-timeout-…` | error outcome | 3 | 1 | 0 | 0 | error |
 
-每个会话导出：`cli-main.jsonl`（脱敏原文）、`messages-expected.json`（**Rust 实机** `GET …/messages`）、`derive-messages-expected.json`（TS 推导，标注 derived）、`sse-transcript-derived.jsonl`、`meta.json`。
+每个会话导出：`cli-main.jsonl`（脱敏原文）、`messages-expected.json`（**实机** `GET …/messages`）、`derive-messages-expected.json`（TS 推导，标注 derived）、`sse-transcript-derived.jsonl`、`meta.json`。
 另有：`sse/live-capture.*`（被动抓取的真实 SSE 帧 + 头）、`workers/registry.tsv` + 解析结果、`providers/public-view.json`、`workspaces/*`、`live/*`（10 个 GET 快照）、`redaction-audit.json`、`index.json`（含每个文件的 sha256）。
 
 ### 脱敏做法
@@ -156,29 +152,13 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 
 | 对比项 | 是否 golden | 说明 |
 |---|---|---|
-| A. Studio `messages` 投影 | **是（来自运行中的 Rust）** | `GET /api/sessions/{id}/messages` 为真源 |
-| B. 引擎 `derive_messages` | 否（自洽） | 引擎无 HTTP 面；P1 用 Rust 单测把它变成 golden |
+| A. Studio `messages` 投影 | **是（实机真源）** | `GET /api/sessions/{id}/messages` 为真源 |
+| B. 引擎 `derive_messages` | 否（自洽） | 引擎无 HTTP 面；P1 用引擎单测把它变成 golden |
 | C. SSE transcript | 否（自洽） | `seq` 是进程全局计数器，无法从日志还原 |
 | D. `public_view` | **是** | 断言不含 `api_key` 键 |
 | E. `registry.tsv` | **是** | `serialize(parse(x)) === x` 字节级 round-trip |
 
 P0 实测结果：**5 个真实会话、1531 条消息投影、golden 分歧 0**（`pnpm replay:compare --strict` 通过）。B/C 为自洽对比，P0 只保证工具链跑通与确定性；分歧非空时报告照样输出（不掩盖）。
-
----
-
-## 6. 与 Rust 实现的对应关系（P1–P4 入口）
-
-| Rust | TS 落点 | 阶段 | 验收线 |
-|---|---|---|---|
-| `crates/core`（类型/seam/EventBus） | `packages/core` | P1 | 类型 1:1 + 回放对拍 100% |
-| `crates/session`（JSONL/derive_messages/mailbox） | `packages/session` | **P1 入口** | §7.2 第 1 条：3 真实 + ≥15 合成 fixture |
-| `crates/agent-loop`（turn/step/裁剪/取消） | `packages/agent-loop` | P1 | 镜像 Rust 纯逻辑单测 ≈150–190 |
-| `crates/llm`（裸 SSE/usage/三档超时） | `packages/llm` | P2 | 录制帧回放 + timeout 分类 |
-| `crates/tools` + `crates/workers/src/tools.rs` | `packages/tools` | P2 | 沙箱矩阵 ≥20 + guard 16 条 + SSRF fail-closed |
-| `crates/runtime` + `crates/workers` | `packages/runtime`、`packages/workers` | P3 | compose 15 步、registry 互读互写 |
-| `studio/src/*.rs`（38 路由/handlers） | `apps/studio` | P4 | 39 端点契约测试全绿（`apps/studio` 已把 39 条路由全部注册，P0 用 501 点名） |
-
-**P1 入口**：`packages/session` 与 `packages/agent-loop`。当前 `packages/session` 已完成 JSONL 解析/序列化、`turn-<n>` 单调归属、两套投影与回放统计，并且 Studio 投影已与 Rust 实机 100% 对齐——P1 直接在其上补 mailbox / 上下文裁剪 / 取消语义，并把 `derive_messages` 与 SSE transcript 升格为 golden 对比。
 
 ---
 
@@ -231,7 +211,7 @@ pnpm check
 ## P4: apps/studio（Hono HTTP 层 + 数据存储）
 
 > 契约真源：`contracts/endpoints.json`（47 端点）、`contracts/sse-events.json`、
-> `contracts/data-files/`、`docs/archive/frontend/api-contract.md`（旧 Rust 后端契约，已归档）。
+> `contracts/data-files/`、`docs/archive/frontend/api-contract.md`（旧后端契约，已归档）。
 
 ### 一句话
 
@@ -326,15 +306,15 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
 
 1. **引擎是假的**：`turn/cancel/clear/compact/worker` 由 `createFakeRuntimeAdapter` 应答，
    真实 runtime 由另一条线交付后替换。
-2. **静态模型目录**：`/api/config.available.models` 目前**只**从 providers store 重建
-   （Rust 还有一份静态 `AVAILABLE_MODELS` 兜底表），providers 为空时该数组为空。
+2. **静态模型目录**：`/api/config.available.models` 目前**只**从 providers store 重建，
+   providers 为空时该数组为空。
    W750：每条形如 `{id,name,provider,provider_id,active,reasoning}`，**去重按 provider 做**
    （同一 id 由两个 provider 提供 = 两个可选条目，`provider_id` 才是切换要回传的稳定
    id，`provider` 只是显示名）；`active` 由「同模型 id + 同端点」判定，端点都不匹配且
    id 撞名时不标任何一条。
 3. **`POST /api/config` 的 base_url 空串**：清覆盖后回落链在 P4 只覆盖 env/provider；
    引擎代际重算随真实 runtime 落地。
-4. **请求体拒绝**：axum 的 415/422 语义按「缺 body=415、非 JSON=400、字段类型错=422」复刻，
+4. **请求体拒绝**：按「缺 body=415、非 JSON=400、字段类型错=422」实现，
    文案是 TS 侧自拟（契约只冻结了成功形状与业务错误串）。
 
 ### 运行
