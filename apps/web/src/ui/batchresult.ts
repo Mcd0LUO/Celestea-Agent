@@ -42,8 +42,9 @@ export function failedTail(it: BatchFailedItem): string {
 
 /**
  * 批量响应 → 失败提示行；**无失败（含 legacy 服务缺省 failed）返回空串**。
- *   · 单项失败 → 优先给**可行动原因**（`删除失败：当前会话正在使用，请先切换到其它会话`），
- *     原因无法识别时退回 `删除失败：<id 末段>`；
+ *   · 单项失败 → 先给**可理解的原因**（`删除失败：该会话已不存在（可能已被删除）`），
+ *     原因无法识别时退回 `删除失败：<id 末段>`（**不**为 `active session` 之类编特例文案：
+ *     活动与否只是状态标记，见下面 failureReasonText 的说明）；
  *   · 多项失败 → `删除失败 2 个：a、b（已成功 1 个）`（成功条数来自响应，不臆造）。
  */
 export function batchFailureText(verb: string, resp: BatchOpResp | null | undefined): string {

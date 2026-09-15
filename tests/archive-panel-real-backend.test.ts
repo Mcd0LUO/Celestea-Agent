@@ -60,9 +60,11 @@ interface Doc {
 
 const doc = (globalThis as unknown as { document: Doc }).document;
 const Ev = (globalThis as unknown as { Event: new (t: string) => unknown }).Event;
-const click = (n: El | null): void => void n?.dispatchEvent(new Ev("click"));
-const text = (n: El | null): string => n?.textContent ?? "";
-const all = (root: El | null, sel: string): El[] => (root ? [...root.querySelectorAll(sel)] : []);
+const click = (n: El | null | undefined): void => void n?.dispatchEvent(new Ev("click"));
+const text = (n: El | null | undefined): string => n?.textContent ?? "";
+// Array.from（不是展开运算符）：根 tsconfig 只有 lib:ES2023、无 DOM lib，ArrayLike 不可迭代。
+const all = (root: El | null, sel: string): El[] =>
+  root ? Array.from(root.querySelectorAll(sel)) : [];
 const ids = (root: El | null, sel: string): Array<string | undefined> =>
   all(root, sel).map((n) => n.dataset["id"]);
 const wait = (ms = 40): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -244,31 +246,33 @@ const listedIds = async (path: string): Promise<string[]> =>
 
 const live = LIVE ? describe : describe.skip;
 
-live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
-  afterAll(async () => {
-    if (!LIVE) return;
-    // 我建的会话若还在（缺省或归档列表里）⇒ 真删掉；随后清掉回收目录里我的条目。
-    try {
-      const alive = new Set([
-        ...(await listedIds("/api/sessions")),
-        ...(await listedIds("/api/sessions?archived=1")),
-      ]);
-      const left = created.filter((id) => alive.has(id));
-      if (left.length > 0) await post("/api/sessions/batch-delete", { ids: left });
-    } catch {
-      /* 清理尽力而为：失败不影响验收结论 */
-    }
-    try {
-      for (const name of readdirSync(TRASH)) {
-        if (/^w792-/.test(name)) rmSync(join(TRASH, name), { recursive: true, force: true });
-      }
-    } catch {
-      /* 回收目录可能不存在 */
-    }
-    vi.unstubAllGlobals();
-  });
+/** 面板用例共用的那条归档会话。 */
+let panelId = "";
 
-  let panelId = ""; // 面板用例共用的那条归档会话
+afterAll(async () => {
+  if (!LIVE) return;
+  // 我建的会话若还在（缺省或归档列表里）⇒ 真删掉；随后清掉回收目录里我的条目。
+  try {
+    const alive = new Set([
+      ...(await listedIds("/api/sessions")),
+      ...(await listedIds("/api/sessions?archived=1")),
+    ]);
+    const left = created.filter((id) => alive.has(id));
+    if (left.length > 0) await post("/api/sessions/batch-delete", { ids: left });
+  } catch {
+    /* 清理尽力而为：失败不影响验收结论 */
+  }
+  try {
+    for (const name of readdirSync(TRASH)) {
+      if (/^w792-/.test(name)) rmSync(join(TRASH, name), { recursive: true, force: true });
+    }
+  } catch {
+    /* 回收目录可能不存在 */
+  }
+  vi.unstubAllGlobals();
+});
+
+live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
 
   it("真实响应形状：缺省列表不含归档行、连 archived 键都没有；?archived=1 才有", async () => {
     panelId = await createSession("panel");
@@ -364,6 +368,10 @@ live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
     expect(text(doc.getElementById("settingsArchiveHint"))).toContain("已恢复会话");
   });
 
+});
+
+/** 会话树里的删除/归档动作：确认即生效（乐观）+ 失败可见 + 回滚。 */
+live("W792 · 真实服务：会话树的删除/归档动作", () => {
   it("会话树归档：行立即消失，归档面板随之多出这一行（成功不重载整棵树）", async () => {
     const id = await createSession("fromtree");
     mountDom();
