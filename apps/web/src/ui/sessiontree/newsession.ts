@@ -12,6 +12,8 @@ import { openFsBrowser } from '../fsbrowser';
 import { openSession } from '../restore';
 import { note } from './live';
 import { getWsList, setActiveSession } from './store';
+import { MODE_CHOICES } from '../mode/copy';
+import { buildCreateReq } from '../mode/create-req';
 
 /** 新建后需要重新载入侧栏（= 编排入口的 loadSessions）。 */
 export interface NewsessionHost {
@@ -94,6 +96,23 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
       modelSel.appendChild(o);
     });
 
+  // 工作方式（W788 设计 §3.2 主入口）：标准模式 / 执行模式（PTC），默认标准。
+  // 与上面三行同款两列网格（.prov-field + .prov-field-label，沿用 --field-label-w）。
+  // 只有「执行模式」才随请求携带 mode（默认路径与今天的请求体逐字节一致，K8）。
+  const modeSel = document.createElement('select');
+  modeSel.className = 'cfg-input';
+  for (const m of MODE_CHOICES) {
+    const o = document.createElement('option');
+    o.value = m.value;
+    o.textContent = m.label;
+    modeSel.appendChild(o);
+  }
+  modeSel.value = 'standard';
+  const modeRow = el('label', 'prov-field');
+  modeRow.appendChild(el('span', 'prov-field-label', '工作方式'));
+  modeRow.appendChild(modeSel);
+  card.appendChild(modeRow);
+
   // 可选提示词（W245 任务2）：跟随默认 + 注册的 prompts（标注全局/工作区）；404 隐藏
   const promptRow = el('label', 'prov-field');
   promptRow.appendChild(el('span', 'prov-field-label', '提示词'));
@@ -154,15 +173,16 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
     const prompt = promptSel.value === '' ? undefined : promptSel.value;
     create.disabled = true;
     create.textContent = '创建中…';
-    const doCreate = (withModel: boolean) =>
-      api.createSession(
-        withModel && model ? { workspace: ws, title: t, model, prompt } : { workspace: ws, title: t, prompt },
-      );
+    const mode = modeSel.value;
+    // W788：请求体组装收口在纯函数（buildCreateReq），便于机械断言 mode 的携带规则
+    const doCreate = (includeOptional: boolean) =>
+      api.createSession(buildCreateReq({ workspace: ws, title: t, model, prompt, mode }, includeOptional));
     void doCreate(true)
       .catch((err: unknown) => {
-        // 降级：后端未支持 model 字段时（4xx）重试不带 model
+        // 降级：服务不认新增的可选字段（model / mode）时（4xx）重试不带它们
         const e = err as { status?: number };
-        if (model && e && typeof e.status === 'number' && e.status >= 400 && e.status < 500) {
+        const optional = model !== undefined || mode !== 'standard';
+        if (optional && e && typeof e.status === 'number' && e.status >= 400 && e.status < 500) {
           return doCreate(false);
         }
         throw err;

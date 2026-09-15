@@ -70,6 +70,10 @@
             <button class="sl-model" id="slModel" title="当前模型（点击快速切换）">—</button>
             <span class="sl-sep">·</span>
             <button class="sl-effort" id="slEffort" title="思考强度（点击快速切换）">—</button>
+            <span class="sl-sep">·</span>
+            <!-- W788：会话工作方式（只读徽标「标准」/「执行」；点击弹层切换）。
+                 显隐真源 = statusline/mode.ts —— 快照里没有 mode（老服务）时保持 .hidden。 -->
+            <button class="sl-mode hidden" id="slMode" type="button" title="工作方式（点击切换）"></button>
             <span class="sl-spacer"></span>
             <!-- W701：本会话权限盾牌（三态：未授予 / 已授予 / 即将失效）。
                  显隐真源 = ui/grants.ts —— 能力位未就绪时保持 .hidden（入口隐藏，不置灰报错）。 -->

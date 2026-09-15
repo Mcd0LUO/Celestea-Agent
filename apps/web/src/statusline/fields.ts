@@ -15,5 +15,6 @@ export function pickStatusFields(p: StatusSnapshot): StatusSnapshot {
   if (p.context_usage !== undefined) out.context_usage = p.context_usage;
   if (p.usage !== undefined) out.usage = p.usage; // W263 缓存命中率
   if (p.busy !== undefined) out.busy = p.busy; // W514 运行态
+  if (p.mode !== undefined) out.mode = p.mode; // W788 工作方式（SSE status.payload.mode）
   return out;
 }
