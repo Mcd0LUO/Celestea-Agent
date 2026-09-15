@@ -69,6 +69,9 @@ function appendObserved(log: SessionLog, store: CheckpointStore, event: SessionE
   try {
     if (event.type === "turn_start") store.turnStarted(event.id);
     else if (event.type === "turn_end") store.turnEnded(event.outcome);
+    // E §1.3 P1 ③: a write that the disk refused leaves memory and disk forked —
+    // sample it HERE too, so even a degraded non-boundary row is sidecar-visible.
+    if (writeErrorCountOf(log) > 0) store.noteLogWriteErrors();
   } catch (e) {
     process.stderr.write(`[celestea-session] checkpoint not updated: ${String(e)}\n`);
   }

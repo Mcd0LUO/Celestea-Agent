@@ -29,6 +29,7 @@
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
 import type { LedgerCostBlock } from "@celestea/runtime";
+import { emptyRecoveryView } from "../runtime/recovery-view.js";
 import type { FallbackStatusView } from "../runtime/fallback-host.js";
 import { activeSession, modeOfSession, type Deps } from "./common.js";
 import { baseUrlOf } from "./config-shape.js";
@@ -65,6 +66,10 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       busy: deps.runtime.isBusy(session),
       grants_active: activeGrantCaps(deps, session),
       ...costField(deps, session),
+      // E §1.3 P1 ② (W787): the session's checkpoint view. A PURE ADDITION, always
+      // present (an adapter without checkpointing answers the empty block), so a
+      // client can rely on the key existing without inventing a default.
+      recovery: recoveryBlockOf(deps, session),
       // E §4.2.3 #4 (W785): `model` stays the CONFIGURED value; these two are
       // the only place a downgrade shows. Pure additions, always present.
       effective_model: fallbackView(deps, session)?.effective_model ?? line.model,
@@ -88,6 +93,11 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
 /** E §4.2.3 #4 (W785): the fallback view of this session (null = not armed). */
 function fallbackView(deps: Deps, session: string | null): FallbackStatusView | null {
   return deps.runtime.fallbackView?.(session) ?? null;
+}
+
+/** E §1.3 P1 ②: the `recovery` block of the queried session (never a new endpoint). */
+function recoveryBlockOf(deps: Deps, session: string | null): Record<string, unknown> {
+  return { ...(deps.runtime.recoveryView?.(session) ?? emptyRecoveryView(session)) };
 }
 
 /**

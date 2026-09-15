@@ -42,6 +42,9 @@ import { createSessionGrants } from "./runtime/session-grants.js";
 import { grantsEnv } from "./store/grants-service.js";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
 import { recoverActiveSessionOnBoot } from "./runtime/boot-recovery.js";
+import { RecoveryAuditWriter } from "./runtime/recovery-audit.js";
+import { observeWorkerTableOnBoot } from "./runtime/worker-recovery.js";
+import { workerTablePath } from "./runtime/worker-table.js";
 
 export interface StudioAppOptions {
   cwd?: string;
@@ -112,10 +115,17 @@ export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
   return (stores) => {
     const input = deps(stores);
     const dataDir = dirname(input.workspacesFile);
+    const resultsDir = join(dataDir, "worker-results");
     return createRealRuntimeAdapter({
+      // E §2.3 P0 ①: the studio's OWN table — never the DSH fleet's (R2-1/B6).
+      workerRegistryPath: workerTablePath({ env: input.env, dataDir }),
+      // W787 (§5.2③): the audit channel of a degraded session log. The BOOT
+      // observer builds its own writer on the same append-only file (the two
+      // lines are written at different moments and never interleave a record).
+      recoveryAudit: new RecoveryAuditWriter({ dataDir, env: input.env }),
       profile: input.profile,
       env: input.env,
-      resultsDir: join(dataDir, "worker-results"),
+      resultsDir,
       // W516: every instance reads its session's grants at compose time. The env
       // is pinned to the workspaces file the host ACTUALLY composed, so the
       // fail-closed root rules resolve the same data dir (grants-service.ts).
@@ -237,11 +247,24 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   const app = new Hono();
 
   primeEnginePrompt(services, env);
+  // W787 (§5.2③): the ONE boot audit channel — the checkpoint repair and the
+  // worker-table observation both report into `<data dir>/recovery-audit.jsonl`.
+  const bootAudit = new RecoveryAuditWriter({ dataDir: dirname(config.paths.workspacesFile), env });
   // E §1.3 P0 ③: close the turn the previous process died inside — BEFORE any
   // instance of the active session is composed, because composing one replays the
   // log and takes its turn counter from it. A clean log, a missing checkpoint or
   // an unresolvable active session are all no-ops (fail-safe).
-  recoverActiveSessionOnBoot({ workspaces: services.workspaces, sessions: services.sessions });
+  recoverActiveSessionOnBoot({ workspaces: services.workspaces, sessions: services.sessions, audit: bootAudit });
+  // E §2.3 P0 ③: OBSERVE the persisted worker table (dead owner / missing host
+  // session) and record it. Never re-dispatch: that is P2, behind an explicit
+  // switch, and it needs the tool side-effect table first (§5.1).
+  const dataDir = dirname(config.paths.workspacesFile);
+  observeWorkerTableOnBoot({
+    path: workerTablePath({ env, dataDir }),
+    knownHost: (sid) => services.sessions.resolve(sid).ok,
+    resultsDir: join(dataDir, "worker-results"),
+    audit: bootAudit,
+  });
   const endpointIds = registerHandlers(app, services, table);
   assertCoverage(table.routes, endpointIds);
 

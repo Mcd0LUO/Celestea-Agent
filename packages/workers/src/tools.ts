@@ -90,7 +90,19 @@ async function spawnWorker(registry: WorkerRegistry, args: Record<string, unknow
     wid,
     started_at: utcNow(),
     status: "RUNNING",
-    extra: extraTokens(args, { sid: session.meta.id, short, driven, reportTo, injected, mode }),
+    // E §2.2.2: every row carries who dispatched it (`host=`), which try it is
+    // (`attempt=`, first = 1) and who owns it right now (`lease=<pid>@<unix>`).
+    extra: extraTokens(args, {
+      sid: session.meta.id,
+      short,
+      driven,
+      reportTo,
+      injected,
+      mode,
+      host: registry.hostSessionId,
+      attempt: 1,
+      lease: registry.lease(),
+    }),
   });
   const actuallyDriven = driven ? registry.driveIfPossible(session.meta.id, injected) : false;
   const result: Record<string, unknown> = {
@@ -117,6 +129,12 @@ interface SpawnTokens {
   injected: string;
   /** W729: already resolved (explicit argument, else the owning session's mode). */
   mode: string | null;
+  /** E §2.2.2: the dispatching host conversation (null = an embedded registry). */
+  host: string | null;
+  /** E §2.2.2: the try number this row is (first spawn = 1). */
+  attempt: number;
+  /** E §2.2.2: `lease=<pid>@<unix>` of the spawning process. */
+  lease: string;
 }
 
 function extraTokens(args: Record<string, unknown>, t: SpawnTokens): string {
@@ -132,6 +150,9 @@ function extraTokens(args: Record<string, unknown>, t: SpawnTokens): string {
     const value = optionalArg(args, key);
     if (value !== null) tokens.push([key === "reasoning_effort" ? "effort" : key, value]);
   }
+  if (t.host !== null) tokens.push(["host", t.host]);
+  tokens.push(["attempt", String(t.attempt)]);
+  tokens.push(["lease", t.lease]);
   if (t.reportTo !== null) tokens.push(["report_to", t.reportTo]);
   if (t.mode !== null) tokens.push(["mode", t.mode]);
   tokens.push(["brief", truncateChars(sanitizeExtra(t.injected), 300)]);

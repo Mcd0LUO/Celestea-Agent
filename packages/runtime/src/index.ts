@@ -26,6 +26,7 @@
  *   session-binding.ts session id/dir + log opener + rebind      (compose.rs:131-146)
  *   turn-runner.ts     one turn: busy slot, sink, cancel, outcome (runtime/run.rs)
  *   inbox.ts           per-session mid-turn injection queue      (W513)
+ *   inbox-checkpoint.ts W787: queue + delivered ids -> checkpoint.json (§1.3 P1)
  *   session-registry.ts session id -> independent Runtime        (W513)
  *   worker-wiring.ts   worker driver seams + host receipt drain  (compose.rs:148-193)
  *   watchdog-mount.ts  W740: mount the liveness watchdog (workers/watchdog.ts)
@@ -57,6 +58,7 @@ export * from "./frames.js";
 export * from "./session-binding.js";
 export * from "./turn-runner.js";
 export * from "./inbox.js";
+export * from "./inbox-checkpoint.js";
 export * from "./session-registry.js";
 export * from "./recovery.js";
 export * from "./worker-wiring.js";

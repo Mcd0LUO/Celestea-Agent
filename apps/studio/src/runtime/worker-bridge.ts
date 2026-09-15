@@ -16,7 +16,7 @@
 
 import { isRecord, type ToolRegistry } from "@celestea/core";
 import { projectMessages } from "@celestea/session";
-import { getExtra, type WorkerRegistry } from "@celestea/workers";
+import { getExtra, workerAttempt, type WorkerRegistry } from "@celestea/workers";
 import type { WorkerSessionRow, WorkerSpawnOutcome, WorkerStatusReport } from "../runtime-adapter.js";
 
 /**
@@ -49,6 +49,11 @@ export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId:
       status: entry.status,
       state: getExtra(entry, "state") ?? "",
       host_session: hostSessionId,
+      // E §2.3 P1 ③ (W787): which try this row is and the key of the receipt it
+      // already delivered — the two facts a coordinator needs to tell a
+      // re-dispatch from a duplicate.
+      attempt: workerAttempt(entry),
+      last_receipt: getExtra(entry, "receipt"),
     };
   });
 }

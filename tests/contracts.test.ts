@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { API_ENDPOINT_COUNT } from "../apps/studio/src/routes.js";
 import {
   loadDataFileSchema,
   loadDataFilesIndex,
@@ -166,8 +167,11 @@ describe("contracts/data-files", () => {
 
   // W785 (E §4.2.4 P1): 11 -> 12 — `fallbacks.json` (the model-fallback
   // sidecar) joined the frozen set; no existing schema changed.
-  it("freezes 12 data-file schemas and forbids a version field", () => {
-    expect(idx.files).toHaveLength(12);
+  // W787 (E §2.2.1/§2.3 P0): 12 -> 13 — the STUDIO's own worker table
+  // (`<data dir>/worker-registry.tsv`) is a data file of its own, sharing the
+  // `registry-tsv.schema.json` format with the DSH-side `/tmp` one.
+  it("freezes 13 data-file schemas and forbids a version field", () => {
+    expect(idx.files).toHaveLength(13);
     expect(idx.freezeRule).toContain("NO format changes");
     for (const f of idx.files) expect(f.schema.endsWith(".schema.json")).toBe(true);
   });
@@ -224,12 +228,50 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
       properties: Record<string, Record<string, unknown>>;
     };
     expect(schema.additionalProperties).toBe(false);
-    expect(schema.required).toEqual(["version", "session", "pid", "boot_id", "updated_at", "clean_shutdown", "open_turn", "last_outcome", "degraded", "lanes", "repaired"]);
+    // W787 (E §1.3 P1 ①): `delivered_ids` joined the required set — the bounded
+    // ledger of accepted injection ids that makes a receipt's idempotency key
+    // survive a restart. The lanes now reference a declared message shape.
+    expect(schema.required).toEqual(["version", "session", "pid", "boot_id", "updated_at", "clean_shutdown", "open_turn", "last_outcome", "degraded", "lanes", "delivered_ids", "repaired"]);
     expect(schema.properties["version"]?.["const"]).toBe(1);
     expect(schema.properties["boot_id"]?.["pattern"]).toBe("^b-[0-9a-f]{8}$");
     expect(schema.properties["open_turn"]?.["type"]).toEqual(["object", "null"]);
     const repaired = schema.properties["repaired"] as { items: { properties: Record<string, { const?: string }> } };
     expect(repaired.items.properties["action"]?.["const"]).toBe("synthesize_turn_end");
+  });
+
+  it("A8/W787: registers the P1 status field and the worker tables (contract sync §5.3)", () => {
+    const byId = new Map(loadEndpoints().endpoints.map((e) => [e.id, e]));
+    // capability 1-P1: `recovery` on the EXISTING status endpoint (no new endpoint).
+    const recovery = byId.get("get_status")?.response.fields.find((f) => f.name === "recovery");
+    expect(String(recovery?.type)).toContain("recovered_turns:array<string>");
+    expect(String(recovery?.type)).toContain("dangling_turns:integer");
+    // capability 2-P0: `stale[]` / `orphans[]` on the EXISTING worker status.
+    const worker = byId.get("get_worker_status")?.response.fields.map((f) => f.name) ?? [];
+    expect(worker).toContain("stale");
+    expect(worker).toContain("orphans");
+    expect(loadEndpoints().count).toBe(50);
+    expect(API_ENDPOINT_COUNT).toBe(50);
+  });
+
+  it("B7: the studio's own worker table is a declared data file with the new tokens", () => {
+    const entry = idx.files.find((f) => f.file === "<data dir>/worker-registry.tsv");
+    expect(entry?.schema).toBe("registry-tsv.schema.json");
+    expect(String(entry?.note)).toContain("CELESTEA_WORKER_REGISTRY");
+    // The registry schema keeps its shape at the TOP level (unlike the sidecar
+    // schemas, whose JSON Schema lives under `schema`).
+    const schema = loadDataFileSchema("registry-tsv.schema.json") as unknown as {
+      extraTokens: { whitelist: string[]; added: Record<string, string>; known: string[] };
+      path: Record<string, string>;
+      format: Record<string, string>;
+    };
+    expect(schema.extraTokens.whitelist).toEqual(["host", "attempt", "lease", "receipt"]);
+    expect(Object.keys(schema.extraTokens.added).sort()).toEqual(["attempt", "host", "lease", "receipt"]);
+    expect(schema.path["studio"]).toContain("<data dir>/worker-registry.tsv");
+    expect(schema.path["ownershipRule"]).toContain("MUST NEVER write each other");
+    // The three tokens a row is BUILT from are declared (the round-trip itself is
+    // asserted in `packages/workers/src/registry.test.ts`).
+    const tokens: string[] = schema.extraTokens.known;
+    for (const token of ["host=", "attempt=", "lease=", "receipt="]) expect(tokens.some((t) => t.startsWith(token))).toBe(true);
   });
 
   it("keeps the session-event contract untouched (interrupted is a legal outcome)", () => {
@@ -279,8 +321,9 @@ describe("W729 session modes (P0 contract delta)", () => {
     // W779 T2: the display name the GUI shows, next to the sanitized dir name.
     expect(schema.properties["title"]?.type).toBe("string");
     expect(schema.additionalProperties).toBe(true);
-    // W785: 11 -> 12 (`fallbacks.json`, the model-fallback sidecar).
-    expect(loadDataFilesIndex().files).toHaveLength(12);
+    // W785: 11 -> 12 (`fallbacks.json`, the model-fallback sidecar);
+    // W787: 12 -> 13 (the studio's own worker table, §2.2.1).
+    expect(loadDataFilesIndex().files).toHaveLength(13);
   });
 
   it("M14: one mode semantics — no host preset token in the Studio tree", () => {

@@ -61,6 +61,7 @@ describe("A4: a recovered session keeps handing out FRESH ids", () => {
       last_outcome: null,
       degraded: { log_write_errors: 0 },
       lanes: { next_turn: [], next_step: [] },
+      delivered_ids: [],
       repaired: [],
     };
     writeFileSync(checkpointPathFor(dir), JSON.stringify(checkpoint));

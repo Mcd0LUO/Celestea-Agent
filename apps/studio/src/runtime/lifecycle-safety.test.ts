@@ -82,7 +82,10 @@ describe("W742 §1: an epoch bump never tears down an instance with live worker 
     // never frozen in a stale generation because it once spawned a worker).
     await until(() => engine.ensureSession(session).rebuilt, "the deferred rebuild to land");
     expect(engine.workersOf(session)).not.toBe(registry);
-    expect(engine.workersOf(session)?.ownEntries()).toEqual([]);
+    // W787 (E §2.2.3 P0): the NEW generation reads the PERSISTED table, so the
+    // settled row is still there — that is the whole point of 2-P0 (before it,
+    // a restart emptied the table and the worker panel lost every finished row).
+    expect(engine.workersOf(session)?.ownEntries().map((row) => [row.wid, row.status])).toEqual([["W1", "DONE"]]);
   });
 });
 

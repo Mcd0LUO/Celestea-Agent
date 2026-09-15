@@ -55,6 +55,13 @@
       "mode": "0644"
     },
     {
+      "file": "<data dir>/worker-registry.tsv",
+      "schema": "registry-tsv.schema.json",
+      "version": "4-column TSV (same format as /tmp/celestea-workers-registry.tsv)",
+      "mode": "0644",
+      "note": "W787 (E §2.2.1/§2.3 P0 ①): the STUDIO's own worker table — `<data dir>/worker-registry.tsv`, env `CELESTEA_WORKER_REGISTRY`, empty value = in-memory only (`tsvPath: null`). It is a SEPARATE table from the DSH-side plugin's `workerBase/registry.tsv`; neither side ever writes the other's (R2-1, asserted by B6)."
+    },
+    {
       "file": "pricing.json",
       "schema": "pricing.schema.json",
       "version": "price snapshot (its own `version` is the price source's, not a data-file format version)",
@@ -86,7 +93,7 @@
     "cli-main.jsonl (engine)": "engine-owned",
     "cli-main.jsonl (compact rewrite)": "backup -> tmp+sync_all -> rename",
     "session.json": "plain write, NOT atomic",
-    "registry.tsv": "tmp+rename",
+    "registry.tsv": "tmp+rename (the write MERGES with the rows other session registries already wrote: one table carries every studio session, §2.2.1)",
     "pricing.json": "read-only snapshot (never written by the engine); missing/unparsable -> empty table (every model unpriced)",
     "usage-ledger.jsonl": "append-only, one writeSync per record on an O_APPEND fd (no fsync); rotated at 16 MiB to `<path>.1` (replaced), read() reads the current file only (W785 §3.3 P1 ④)",
     "checkpoint.json": "tmp-<pid> + rename, mode 0600, no fsync (observation only: a lost sidecar reads as 'no checkpoint', which is fail-safe)",
@@ -98,7 +105,11 @@
     "notImplemented": "scripts/sync-pricing.ts (the price snapshot is operator-supplied), SSE status.cost_delta, three-way reconciliation + budget stop-loss (P1/P2)"
   },
   "recovery": {
-    "implemented": "E-P0③ (§1.3 P0): checkpoint.json sidecar + idempotent boot synthesis of `turn_end: interrupted` + turnNo restored from the log; API_ENDPOINT_COUNT stays 44 (no endpoint in P0)",
-    "notImplemented": "inbox/lane + delivered_ids persistence, GET /api/status.recovery, step-level resume and the tool side-effect table (P1/P2)"
+    "implemented": "E-P0③ (§1.3 P0): checkpoint.json sidecar + idempotent boot synthesis of `turn_end: interrupted` + turnNo restored from the log; E-P1①②③ (§1.3 P1, W787): lane + delivered_ids persistence (the sidecar's `lanes`/`delivered_ids`), `GET /api/status.recovery` (pure addition, still no endpoint) and the degraded-log audit line (`<data dir>/recovery-audit.jsonl`)",
+    "notImplemented": "step-level resume and the tool side-effect table (§1.3 P2)"
+  },
+  "workerRegistry": {
+    "implemented": "E §2.3 P0 (W787): `<data dir>/worker-registry.tsv` (`CELESTEA_WORKER_REGISTRY`, `null` = in-memory) + `host=`/`attempt=`/`lease=` tokens + boot observation (`stale[]`/`orphans[]` on GET /api/worker/status, `<data dir>/recovery-audit.jsonl`) with NO re-dispatch; E §2.3 P1: attempt-ized report names (`results/<wid>-<short>-a<attempt>.md`) + `receipt=<wid>:<attempt>` idempotency (registry row and host inbox)",
+    "notImplemented": "E §2.3 P2 (auto-adopt / re-dispatch behind `CELESTEA_WORKER_RECOVER=1`, lease heartbeat, `autoDelete` interaction) and the optional read-only view of the DSH-side plugin's table"
   }
 }

@@ -64,7 +64,9 @@ import { TurnRunner, type LoopFactory, type PendingReceipt } from "./turn-runner
 import { createUsageTracker, type UsageAccounting } from "./usage.js";
 import type { InjectionLane, PendingInjection } from "@celestea/core";
 import { createSessionInbox, type SessionInbox } from "./inbox.js";
+import { checkpointInboxSink } from "./inbox-checkpoint.js";
 import { ensureWorkerWiring, type WorkerHost, type WorkerWiring } from "./worker-wiring.js";
+import { checkpointStoreOf } from "@celestea/session";
 import {
   WATCHDOG_PLUGIN_NAME,
   celesteaWatchdogSettings,
@@ -132,7 +134,7 @@ export function compose(config: ComposeConfig): Runtime {
   ctx.provide(STATUS_TRACKER_SERVICE, status);
 
   const binding = config.sessionBinding ?? null;
-  if (binding !== null) bindSession(ctx, binding);
+  const bound = binding === null ? null : bindSession(ctx, binding);
   const plugins = config.plugins ?? [];
   mountPlugins(ctx, plugins);
 
@@ -147,6 +149,11 @@ export function compose(config: ComposeConfig): Runtime {
 
   const agentConfig = agentConfigFromProfile(config.profile, config.agentConfig ?? {});
   const inbox = config.inbox ?? createSessionInbox();
+  // E §1.3 P1 ①: the lanes + the accepted-id ledger live in this session's
+  // checkpoint sidecar when the log is a checkpointed persistent one; an
+  // in-memory (detached) session has no sidecar and therefore no persistence.
+  const store = bound === null ? null : checkpointStoreOf(bound);
+  if (store !== null) inbox.bindPersistence(checkpointInboxSink(store));
   const receipts = (): PendingReceipt[] => workerHost?.drain() ?? [];
   const drained = (messages: PendingReceipt[], boundary: "turn-start" | "step"): PendingReceipt[] => {
     if (messages.length === 0) return messages;

@@ -17,7 +17,7 @@
  */
 
 import type { SessionRuntime, SessionRuntimeRegistry } from "@celestea/runtime";
-import type { Watchdog } from "@celestea/workers";
+import type { Watchdog, WorkerRecoveryReport } from "@celestea/workers";
 import { aggregateWorkerStatus } from "./worker-bridge.js";
 import type { WorkerSessionRow, WorkerStatusReport } from "../runtime-adapter.js";
 
@@ -40,9 +40,17 @@ export function watchdogCount(entries: readonly SessionRuntime[]): number {
 
 /**
  * The process-wide worker status: `by_status` counted from the merged rows (so a
- * watchdog verdict moves it) plus the number of live sweepers.
+ * watchdog verdict moves it), the number of live sweepers, and — E §2.3 P0 ③ —
+ * the boot observer's judgement of the PERSISTED table (`stale[]` / `orphans[]`).
+ * The last two are PURE ADDITIONS to the frozen response shape.
  */
-export function workerStatusOf(rows: readonly WorkerSessionRow[], watchdogs: number, wid?: string): WorkerStatusReport {
+export function workerStatusOf(
+  rows: readonly WorkerSessionRow[],
+  watchdogs: number,
+  wid?: string,
+  recovery?: WorkerRecoveryReport | null,
+): WorkerStatusReport {
   const report = aggregateWorkerStatus(rows, wid);
-  return watchdogs === 0 ? report : { ...report, watchdogs };
+  const sweepers = watchdogs === 0 ? report : { ...report, watchdogs };
+  return recovery == null ? sweepers : { ...sweepers, stale: recovery.stale, orphans: recovery.orphans };
 }

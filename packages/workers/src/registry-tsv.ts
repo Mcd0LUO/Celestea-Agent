@@ -3,8 +3,16 @@
  *
  * 4 tab-separated columns: wid \t started_at \t status \t extra
  * Bad rows are skipped, never fatal. `extra` is free text of k=v tokens.
+ *
+ * W787 (E §2.2.2): four tokens joined the vocabulary — `host=` (the dispatching
+ * host conversation), `attempt=` (which try this row is, first = 1), `lease=`
+ * (`<pid>@<unix>` of the owning process) and `receipt=` (the delivered receipt's
+ * idempotency key). The COLUMN COUNT does not change, so an older parser keeps
+ * reading the table (it only sees a longer `extra`), which is what makes this a
+ * backward-compatible change (B7 round-trip).
  */
 
+import { readFileSync } from "node:fs";
 import { WORKER_STATUSES, type WorkerEntry, type WorkerStatus } from "@celestea/core";
 
 export const REGISTRY_TSV_PATH = "/tmp/celestea-workers-registry.tsv";
@@ -54,6 +62,31 @@ export function serializeRegistryTsv(entries: readonly WorkerEntry[]): string {
   return entries.map((e) => `${e.wid}\t${e.started_at}\t${e.status}\t${e.extra}`).join("\n") + (entries.length > 0 ? "\n" : "");
 }
 
+/**
+ * E §2.2.1: ONE table per process carries the rows of every studio session, and
+ * `host=<sid>` tells them apart. A writer therefore MERGES its own rows into
+ * whatever the other session registries already wrote — writing `entries()`
+ * alone would silently delete a sibling session's worker.
+ *
+ * `mine` wins on a duplicate `wid` (the wid is the table's key); foreign rows
+ * keep their insertion order, new ones are appended.
+ */
+export function mergeTableRows(fileRows: readonly WorkerEntry[], mine: readonly WorkerEntry[]): WorkerEntry[] {
+  const merged = new Map<string, WorkerEntry>();
+  for (const row of fileRows) merged.set(row.wid, row);
+  for (const row of mine) merged.set(row.wid, row);
+  return [...merged.values()];
+}
+
+/** Read a table for a merge (`[]` for a missing / unreadable file). */
+export function readTableRows(path: string): WorkerEntry[] {
+  try {
+    return parseRegistryTsv(readFileSync(path, "utf8")).entries;
+  } catch {
+    return [];
+  }
+}
+
 /** k=v token lookup inside `extra` (whitespace separated). */
 export function getExtra(entry: WorkerEntry, key: string): string | null {
   for (const tok of entry.extra.split(/\s+/)) {
@@ -80,6 +113,60 @@ export function workerRetries(entry: WorkerEntry): number {
   const raw = getExtra(entry, "retries");
   const n = raw === null ? 0 : Number.parseInt(raw, 10);
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
+/** E §2.2.2: the four tokens P0/P1 add to a row (the schema's whitelist). */
+export const WORKER_ROW_TOKENS = ["host", "attempt", "lease", "receipt"] as const;
+
+/** The host session that dispatched this worker (`host=`; null when absent). */
+export function workerHost(entry: WorkerEntry): string | null {
+  return getExtra(entry, "host");
+}
+
+/**
+ * Which try this row is (`attempt=`). E §2.2.2: the FIRST spawn is `1` and a
+ * re-dispatch adds one — the worker protocol's own numbering, which is why a
+ * row with no token at all reads as 1 (every pre-P1 row was a first try).
+ */
+export function workerAttempt(entry: WorkerEntry): number {
+  const raw = getExtra(entry, "attempt");
+  const n = raw === null ? 1 : Number.parseInt(raw, 10);
+  return Number.isSafeInteger(n) && n > 0 ? n : 1;
+}
+
+/** `lease=<pid>@<unix>` — who owns the row and when it was last renewed. */
+export interface WorkerLease {
+  pid: number;
+  at: number;
+}
+
+export function workerLease(entry: WorkerEntry): WorkerLease | null {
+  const raw = getExtra(entry, "lease");
+  if (raw === null) return null;
+  const [pid, at] = raw.split("@");
+  const n = Number.parseInt(pid ?? "", 10);
+  const ts = Number.parseInt(at ?? "", 10);
+  return Number.isSafeInteger(n) && Number.isSafeInteger(ts) ? { pid: n, at: ts } : null;
+}
+
+/** `lease=<pid>@<unix>` of a process at a moment (seconds, like every other ts). */
+export function leaseToken(pid: number, nowMs: number): string {
+  return `${pid}@${Math.floor(nowMs / 1000)}`;
+}
+
+/** The idempotency key of a DELIVERED receipt, as stored in `receipt=` (§2.2.3). */
+export function receiptToken(wid: string, attempt: number): string {
+  return `${wid}:${attempt}`;
+}
+
+/** The same key in the injection namespace the host inbox deduplicates on. */
+export function receiptKey(wid: string, attempt: number): string {
+  return `receipt:${receiptToken(wid, attempt)}`;
+}
+
+/** Has a receipt for exactly this `(wid, attempt)` already been delivered? */
+export function receiptDelivered(entry: WorkerEntry, attempt: number): boolean {
+  return getExtra(entry, "receipt") === receiptToken(entry.wid, attempt);
 }
 
 export function workerReportTo(entry: WorkerEntry): string | null {
