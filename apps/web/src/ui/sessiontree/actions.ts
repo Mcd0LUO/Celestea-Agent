@@ -10,6 +10,7 @@ import { refreshArchivePane } from '../archive/panel';
 import { batchFailedIds, batchFailureText } from '../batchresult';
 import { confirmDialog } from '../confirm';
 import { removeRowOptimistic, type RowUndo } from '../optimistic';
+import { forgetSession, forgetSessions } from '../sessiongone';
 import { openSession } from '../restore';
 import { updateActiveHighlight, updateBusyDots, note } from './live';
 import { getSessions, setActiveSession, setBatchMode, setSessions, selected } from './store';
@@ -58,10 +59,12 @@ export async function batchDelete(host: TreeHost, container: HTMLElement): Promi
     // catch 不会触发 —— 不看响应体就会「点了删除，界面既没报错也没变化」。
     const fail = batchFailureText('删除', resp);
     if (fail === '') {
+      forgetSessions(ids); // 收尾：选中态/高亮/视图容器（含其中若有当前聚焦会话）
       exitBatch(host, container); // 成功：静默收工（树已就地更新，不做整树重载）
       note('已删除 ' + ids.length + ' 个会话');
     } else {
       const keep = batchFailedIds(resp);
+      forgetSessions(ids.filter((id) => !keep.includes(id))); // 只收尾真的删掉的那些
       for (const id of keep) undos.get(id)?.restore(); // 只把**失败项**插回原位
       setSessions(before);
       selected.clear();
@@ -167,6 +170,7 @@ export async function archiveSession(_host: TreeHost, container: HTMLElement, id
       setSessions(before);
       note(fail);
     } else {
+      forgetSession(id); // 归档后它已不在当前会话集合里：焦点回 LOCAL 空态，不自动切会话
       note('已归档会话：' + label);
     }
     refreshArchivePane(); // 归档跑到设置页的归档 pane 里去了，在场就静默刷新
@@ -201,6 +205,7 @@ export async function deleteSession(_host: TreeHost, container: HTMLElement, id:
       setSessions(before);
       note(fail);
     } else {
+      forgetSession(id); // 收尾：S.selSession / 高亮 / 视图容器都不许再指着它
       note('已删除会话：' + label);
     }
     refreshArchivePane();

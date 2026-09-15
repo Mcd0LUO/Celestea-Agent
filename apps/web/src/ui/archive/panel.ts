@@ -23,6 +23,7 @@ import { el } from '../../utils/dom';
 import { batchFailureText } from '../batchresult';
 import { confirmDialog } from '../confirm';
 import { removeRowOptimistic } from '../optimistic';
+import { forgetSession } from '../sessiongone';
 import {
   archiveCountText,
   archiveDeleteConfirmText,
@@ -163,6 +164,7 @@ async function applyAction(
       undo?.restore();
       setStatus(fail, true);
     } else {
+      if (verb === '删除') forgetSession(id); // 面板里删掉的归档会话同样要收尾
       setStatus(done);
       // 成功才静默对账一次（归档集合已变）：不清计数位、不闪加载态。
       await loadArchiveSection(ctx.container, ctx.countEl, { quiet: true });
