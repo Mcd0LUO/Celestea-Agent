@@ -7,6 +7,7 @@
 //         GET /api/status · POST /api/clear
 // 视图层合同（AssistantView / ToolOpView）见 ui/view.ts（与 API 合同分离）。
 // ============================================================================
+import type { OkResp } from './types/batch';
 import type { SessionMode } from './types/mode';
 
 // ---- SSE -------------------------------------------------------------------
@@ -324,14 +325,6 @@ export interface SessionCreateResp extends OkResp {
   id?: string;
 }
 
-export interface BatchIdsReq {
-  ids?: string[];
-}
-
-export interface BatchNamesReq {
-  names?: string[];
-}
-
 // ---- 模型提供商（W236） --------------------------------------------------------
 
 export interface ProviderModelSpec {
@@ -413,14 +406,9 @@ export interface PromptUpsertReq {
   is_default?: boolean;
 }
 
-export interface OkResp {
-  ok?: boolean;
-  error?: string;
-}
-
-export interface ClearResp extends OkResp {}
-
-export interface CancelResp extends OkResp {}
+// 通用回执（OkResp/ClearResp/CancelResp）、批量请求体与批量响应（含 failed[]）
+// 见 ./types/batch（W792）—— 为守住本文件模块体积棘轮而整族拆出，此处再导出。
+export type { BatchFailedItem, BatchIdsReq, BatchNamesReq, BatchOpResp, CancelResp, ClearResp, OkResp } from './types/batch';
 
 export interface TurnResp {
   ok?: boolean;

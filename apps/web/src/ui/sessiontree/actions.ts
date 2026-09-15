@@ -6,10 +6,13 @@
 import { api, ApiError } from '../../api';
 import { S } from '../../state';
 import { el } from '../../utils/dom';
+import { refreshArchivePane } from '../archive/panel';
+import { batchFailedIds, batchFailureText } from '../batchresult';
 import { confirmDialog } from '../confirm';
+import { removeRowOptimistic, type RowUndo } from '../optimistic';
 import { openSession } from '../restore';
 import { updateActiveHighlight, updateBusyDots, note } from './live';
-import { setActiveSession, setBatchMode, selected } from './store';
+import { getSessions, setActiveSession, setBatchMode, setSessions, selected } from './store';
 import type { TreeHost } from './types';
 
 /** 退出批量勾选模式（清空选择并重绘）。 */
@@ -40,10 +43,37 @@ export async function batchDelete(host: TreeHost, container: HTMLElement): Promi
     danger: true,
   });
   if (!ok) return;
+  // 乐观更新（W792）：确认后**立即**把选中行从树里拿掉 —— 没有「删除中…」占位、
+  // 不阻塞；请求在后台发。`selected` 先留着，失败时按失败的 id 精确回滚。
+  const undos = new Map<string, RowUndo>();
+  for (const id of ids) {
+    const u = removeRowOptimistic({ container, id, rowSel: '.sess-leaf' });
+    if (u) undos.set(id, u);
+  }
+  const before = getSessions();
+  setSessions(before.filter((s) => !ids.includes(s.id ?? '')));
   try {
-    await api.batchDeleteSessions(ids);
-    exitBatch(host, container);
+    const resp = await api.batchDeleteSessions(ids);
+    // 端点**永远 HTTP 200**：失败只在 {ok:true,deleted:N,failed:[{id,error}]} 里，
+    // catch 不会触发 —— 不看响应体就会「点了删除，界面既没报错也没变化」。
+    const fail = batchFailureText('删除', resp);
+    if (fail === '') {
+      exitBatch(host, container); // 成功：静默收工（树已就地更新，不做整树重载）
+      note('已删除 ' + ids.length + ' 个会话');
+    } else {
+      const keep = batchFailedIds(resp);
+      for (const id of keep) undos.get(id)?.restore(); // 只把**失败项**插回原位
+      setSessions(before);
+      selected.clear();
+      for (const id of keep) selected.add(id); // 失败项保持勾选，便于修正后重试
+      refreshChecks(container);
+      note(fail);
+    }
+    refreshArchivePane(); // 归档集合可能跟着变（后台静默刷新）
   } catch (err) {
+    for (const u of undos.values()) u.restore();
+    setSessions(before);
+    refreshChecks(container);
     note('批量删除失败：' + (err instanceof Error ? err.message : String(err)));
   }
 }
@@ -121,18 +151,33 @@ export function openSessionRow(
     });
 }
 
-export async function archiveSession(host: TreeHost, container: HTMLElement, id: string, label: string): Promise<void> {
+export async function archiveSession(_host: TreeHost, container: HTMLElement, id: string, label: string): Promise<void> {
   const ok = await confirmDialog({ title: '归档会话', message: '确认归档会话「' + label + '」？', okLabel: '归档' });
   if (!ok) return;
+  // 同删除口径（W792）：确认后立即从树里拿掉，请求后台发；失败再插回原位。
+  const undo = removeRowOptimistic({ container, id, rowSel: '.sess-leaf' });
+  const before = getSessions();
+  setSessions(before.filter((s) => s.id !== id));
   try {
-    await api.archiveSession(id);
-    void host.loadTreeInto(container, null);
+    const resp = await api.archiveSession(id);
+    // 单条归档失败走非 2xx（ApiError）→ catch；响应体里的 failed[] 一并兜住，口径统一。
+    const fail = batchFailureText('归档', resp);
+    if (fail !== '') {
+      undo?.restore();
+      setSessions(before);
+      note(fail);
+    } else {
+      note('已归档会话：' + label);
+    }
+    refreshArchivePane(); // 归档跑到设置页的归档 pane 里去了，在场就静默刷新
   } catch (err) {
+    undo?.restore();
+    setSessions(before);
     note('归档失败：' + (err instanceof Error ? err.message : String(err)));
   }
 }
 
-export async function deleteSession(host: TreeHost, container: HTMLElement, id: string, label: string): Promise<void> {
+export async function deleteSession(_host: TreeHost, container: HTMLElement, id: string, label: string): Promise<void> {
   const ok = await confirmDialog({
     title: '删除会话「' + label + '」',
     message: '删除后可在回收目录恢复，确认？',
@@ -140,10 +185,28 @@ export async function deleteSession(host: TreeHost, container: HTMLElement, id: 
     danger: true,
   });
   if (!ok) return;
+  // 1) 立即生效（乐观）：行马上消失，无进度文案、不阻塞输入。
+  const undo = removeRowOptimistic({ container, id, rowSel: '.sess-leaf' });
+  const before = getSessions();
+  setSessions(before.filter((s) => s.id !== id));
   try {
-    await api.batchDeleteSessions([id]);
-    void host.loadTreeInto(container, null);
+    // 2) 后台发请求；3) 成功静默（不重载整棵树）。
+    const resp = await api.batchDeleteSessions([id]);
+    // 端点**永远 HTTP 200**：失败（不存在的会话 / 删不掉的会话）只在
+    // {ok:true,deleted:0,failed:[{id,error}]} 里 —— 不看响应体就会「点了删除，
+    // 界面既没报错也没变化」的静默失败。
+    const fail = batchFailureText('删除', resp);
+    if (fail !== '') {
+      undo?.restore(); // 4) 失败：把行插回原位，并说明原因
+      setSessions(before);
+      note(fail);
+    } else {
+      note('已删除会话：' + label);
+    }
+    refreshArchivePane();
   } catch (err) {
+    undo?.restore();
+    setSessions(before);
     note('删除失败：' + (err instanceof Error ? err.message : String(err)));
   }
 }

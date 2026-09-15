@@ -8,6 +8,15 @@
  *   ② 真实 DOM 行为（渲染分组行、恢复 / 删除按钮、二次确认、竞态守卫、错误与空态）
  *      —— 动态加载生产模块 archive/panel.ts，fetch 打桩，派发真实 click 事件。
  *
+ * W792 强化（本文件的桩不再是「一张响应喂所有请求」）：
+ *   · 桩按**真实端点的形状**分流：`GET /api/sessions?archived=1` 才回归档行（每行带
+ *     `archived:true`）；缺省 `GET /api/sessions` 回未归档行且**连 archived 键都没有**
+ *     （2026-09-16 对运行中的 3777 实测的响应形状）—— 面板若回头改拿缺省列表，本文件
+ *     立刻变红；
+ *   · 桩按真实语义改动「服务端」状态（unarchive 移出归档、batch-delete 真的删掉，
+ *     并可指定某些 id 回 `failed[]`）—— 面板「以服务端为准重列」才有意义；
+ *   · 新增 `failed[]` 非空 ⇒ 提示可见 + 行回原位的用例。
+ *
  * 仍未覆盖：CSS 布局/观感（jsdom 不加载样式表）—— 见报告「未验证」一节。
  */
 import { dirname, join } from "node:path";
@@ -78,19 +87,68 @@ const SESSIONS: Array<Record<string, unknown>> = [
 
 let calls: Array<{ url: string; method: string; body: string }>;
 let status = 200;
-let payload: unknown = { ok: true, sessions: SESSIONS };
+let payload: unknown = { ok: true };
+/** 「服务端」当前的会话集合（忠实仿真 3777 的两条列表端点 + 两个动作端点）。 */
+let live: Array<Record<string, unknown>> = [];
+/** 让 batch-delete 对这几个 id 回 failed[]（模拟删除被拒：HTTP 仍 200 + ok:true）。 */
+let failIds: string[] = [];
+
+/** 缺省列表的行：**连 archived 键都没有**（与 3777 实测一致）。 */
+function stripArchived(s: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(s)) if (k !== "archived") out[k] = v;
+  return out;
+}
+function idOf(url: string, suffix: string): string {
+  const head = "/api/sessions/";
+  return decodeURIComponent(url.slice(head.length, url.length - suffix.length));
+}
 
 beforeEach(() => {
   calls = [];
   status = 200;
-  payload = { ok: true, sessions: SESSIONS };
+  payload = { ok: true };
+  live = SESSIONS.map((s) => ({ ...s }));
+  failIds = [];
   vi.stubGlobal("fetch", async (url: unknown, init?: { method?: string; body?: unknown }) => {
+    const u = String(url);
+    const method = init?.method ?? "GET";
     calls.push({
-      url: String(url),
-      method: init?.method ?? "GET",
+      url: u,
+      method,
       body: init?.body === undefined ? "" : String(init.body),
     });
-    return { ok: status < 400, status, json: async () => payload };
+    if (status >= 400) return { ok: false, status, json: async () => payload };
+
+    // GET /api/sessions[?archived=1] —— 归档端点/缺省列表的真实形状
+    if (method === "GET" && u.startsWith("/api/sessions")) {
+      const wantArchived = u.includes("archived=1");
+      const rows = live
+        .filter((s) => (s.archived === true) === wantArchived)
+        .map((s) => (wantArchived ? { ...s, archived: true } : stripArchived(s)));
+      return { ok: true, status: 200, json: async () => ({ ok: true, sessions: rows }) };
+    }
+    // POST /api/sessions/{id}/unarchive —— 真的移出归档
+    if (method === "POST" && u.endsWith("/unarchive")) {
+      const id = idOf(u, "/unarchive");
+      live = live.map((s) => (s.id === id ? { ...s, archived: false } : s));
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    }
+    // POST /api/sessions/batch-delete —— 真的删掉；指定 id 回 failed[]（**HTTP 仍 200**）
+    if (method === "POST" && u.endsWith("/batch-delete")) {
+      const ids = ((JSON.parse(String(init?.body ?? "{}")) as { ids?: string[] }).ids ?? []).slice();
+      const failed = ids
+        .filter((id) => failIds.includes(id))
+        .map((id) => ({ id, error: "unknown session '" + id + "'" }));
+      const gone = ids.filter((id) => !failIds.includes(id));
+      live = live.filter((s) => !gone.includes(String(s.id)));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, deleted: gone.length, failed }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => payload };
   });
 });
 afterEach(() => {
@@ -163,7 +221,7 @@ describe("W786 归档会话管理的 DOM 行为", () => {
     expect(h.container.querySelector(".ws-search-input")).toBeNull();
     expect(text(h.container.querySelector(".arc-row") ?? null)).toContain("甲");
 
-    payload = { ok: true, sessions: [{ id: "s", title: "无归档", archived: false }] };
+    live = [{ id: "s", title: "无归档", archived: false }]; // 「服务端」只剩未归档会话
     await panel.loadArchiveSection(h.container, h.count);
     expect(h.count.textContent).toBe("—");
     expect(text(h.container)).toContain(rows.archiveEmptyText());
@@ -185,11 +243,14 @@ describe("W786 归档会话管理的 DOM 行为", () => {
     click(okBtn());
     await wait(30);
     expect(calls.map((c) => c.method + " " + c.url)).toEqual([
-      "GET /api/sessions",
+      "GET /api/sessions?archived=1", // W792：取数走归档端点（缺省列表里没有归档行）
       "POST /api/sessions/ws-a%2Fs1/unarchive",
-      "GET /api/sessions",
+      "GET /api/sessions?archived=1",
     ]);
     expect(text(doc.getElementById("settingsArchiveHint"))).toBe("已恢复会话：甲");
+    // 以服务端为准重列：恢复掉的那行不再出现
+    expect(rowFor(h, "ws-a/s1")).toBeNull();
+    expect([...h.container.querySelectorAll(".arc-row")].length).toBe(3);
   });
 
   it("删除：二次确认（危险按钮）后 POST batch-delete，载荷为 ids 数组", async () => {
@@ -204,16 +265,41 @@ describe("W786 归档会话管理的 DOM 行为", () => {
     expect(del?.method).toBe("POST");
     expect(JSON.parse(del?.body ?? "{}")).toEqual({ ids: ["ws-b/s2"] });
     expect(text(doc.getElementById("settingsArchiveHint"))).toBe("已删除会话：乙");
+    expect(rowFor(h, "ws-b/s2"), "删成功就该从归档列表消失").toBeNull();
+    // 取数只走归档端点：整个用例里没有一次「缺省列表」请求
+    expect(calls.filter((c) => c.method === "GET").every((c) => c.url.includes("archived=1"))).toBe(true);
+  });
+
+  it("删除被拒（failed[] 非空，HTTP 仍 200）：提示失败并把行插回原位", async () => {
+    const h = mount();
+    await panel.loadArchiveSection(h.container, h.count);
+    const row = rowFor(h, "ws-b/s2");
+    expect(row).not.toBeNull();
+    failIds = ["ws-b/s2"]; // 「服务端」拒绝删这一条（batch-delete 依旧返回 200）
+    click(row?.querySelector(".btn-mini.danger") ?? null);
+    await wait(5);
+    click(doc.body.querySelector(".modal-card-actions .btn-danger"));
+    await wait(60);
+    const hint = text(doc.getElementById("settingsArchiveHint"));
+    expect(hint, "失败必须可见，不得静默吞掉").toContain("删除失败");
+    expect(hint).toContain("已不存在");
+    expect(rowFor(h, "ws-b/s2"), "失败要把行插回原位").not.toBeNull();
+    expect([...h.container.querySelectorAll(".arc-row")].length).toBe(4);
   });
 
   it("竞态守卫：晚到的旧结果被丢弃，不覆盖新列表", async () => {
     const releases: Array<() => void> = [];
     let n = 0;
+    const archived = SESSIONS.filter((x) => x.archived === true).map((x) => ({ ...x, archived: true }));
     vi.stubGlobal("fetch", async () => {
       n += 1;
       const mine = n;
       await new Promise<void>((res) => releases.push(() => res()));
-      return { ok: true, status: 200, json: async () => (mine === 1 ? { ok: true, sessions: [] } : payload) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => (mine === 1 ? { ok: true, sessions: [] } : { ok: true, sessions: archived }),
+      };
     });
     const h = mount();
     const stale = panel.loadArchiveSection(h.container, h.count);
