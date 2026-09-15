@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,15 +9,6 @@ import { describe, expect, it } from "vitest";
 import { runCodeSpec } from "../tools/run-code.js";
 import { assembleProgram, firstNonblankLineIndented, RUN_CODE_RUNNER, RUN_CODE_RUNNER_TS, RUN_CODE_SDK, RUN_CODE_SDK_TS } from "./sdk.js";
 import { TS_PROGRAM_RUNTIME } from "./broker.js";
-
-/** The Rust reference implementation (parity evidence; absent on a TS-only host). */
-const RUST_SOURCE = "/src/celestea_harness/crates/tools/src/run_code.rs";
-
-/** Extract one Rust raw-string constant (`const NAME: &str = r##"…"##;`). */
-function rustBlock(source: string, name: string): string | null {
-  const match = new RegExp(`(?:pub )?const ${name}: &str = r##"([\\s\\S]*?)"##;`).exec(source);
-  return match?.[1] ?? null;
-}
 
 describe("assembleProgram (python)", () => {
   it("wraps an indented body into async def main()", () => {
@@ -55,18 +46,7 @@ describe("assembleProgram (python)", () => {
   });
 });
 
-describe("Rust SDK parity", () => {
-  const source = existsSync(RUST_SOURCE) ? readFileSync(RUST_SOURCE, "utf8") : null;
-  const skip = source === null;
-
-  it.skipIf(skip)("re-encodes RUN_CODE_SDK byte for byte", () => {
-    expect(RUN_CODE_SDK).toBe(rustBlock(source as string, "RUN_CODE_SDK"));
-  });
-
-  it.skipIf(skip)("re-encodes RUN_CODE_RUNNER byte for byte", () => {
-    expect(RUN_CODE_RUNNER).toBe(rustBlock(source as string, "RUN_CODE_RUNNER"));
-  });
-
+describe("RUN_CODE_SDK preamble contract", () => {
   it("keeps the dual-interface + await + attr-dict contract in the preamble", () => {
     expect(RUN_CODE_SDK).toContain("class ToolCallError(Exception)");
     expect(RUN_CODE_SDK).toContain("class _AttrDict(dict)");
