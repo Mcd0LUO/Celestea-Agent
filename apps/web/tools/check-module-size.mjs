@@ -12,7 +12,7 @@
  * 为什么「陈旧项」默认只报警而不失败：本仓是**多 worker 共用一个工作树**，
  * messages.ts / grants/panel.ts 正由别的 worker 拆分——它们一拆小，本门禁就会
  * 看到陈旧项。让别人的成功把自己的门禁搞红是错的，所以默认报⚠继续；
- * CI 要收紧时置 `CELESTEA_MODULE_SIZE_STRICT=1`，陈旧项即失败。
+ * CI 要收紧时置 `CELESTEA_MODULE_SIZE_STRICT=1`，**陈旧项与可收紧项都失败**（R3 W838-F6：此前只有陈旧项进 STRICT，棘轮「可收紧」提示与退出码不一致）。
  *
  * 用法（frontend/ 目录下）：
  *   node tools/check-module-size.mjs                          # pnpm check:size
@@ -111,12 +111,12 @@ if (over.length > 0) {
 
 const note = (mark, text) => console.log(`  ${mark} ${text}`);
 if (stale.length > 0 || tighten.length > 0) {
-  console.log(`⚠ 例外表有可收紧项（不影响退出码${STRICT ? '；STRICT=1 时失败' : ''}）：`);
+  console.log(`⚠ 例外表有可收紧项（不影响退出码${STRICT ? '；STRICT=1 时陈旧与可收紧项都失败' : ''}）：`);
   for (const s of stale) note('·', `${s.rel}: 陈旧项 —— ${s.why}（登记上限 ${s.limit}）`);
   for (const t of tighten) note('·', `${t.rel}: 可收紧到 ${t.lines}（登记上限 ${t.limit}）`);
 }
-if (STRICT && stale.length > 0) {
-  console.error('\n✗ CELESTEA_MODULE_SIZE_STRICT=1：例外表存在陈旧项，请删除后重跑\n');
+if (STRICT && (stale.length > 0 || tighten.length > 0)) {
+  console.error('\n✗ CELESTEA_MODULE_SIZE_STRICT=1：例外表存在可收紧项（陈旧 / 可收紧到更小），请处理后重跑\n');
   process.exit(1);
 }
 if (unlisted.length > 0) note('·', `（已登记的超大文件 ${Object.keys(limits).length} 个，均有上限约束）`);
