@@ -100,6 +100,14 @@
     "fallbacks.json": "read-only sidecar config (never written by the engine); missing/unparsable -> chain assembled from the composed profile + the problem reported in /api/status.fallback.problems"
   },
   "roundTripRequirement": "Every file needs a read -> write -> re-read round-trip test; both implementations must agree byte-for-byte on the written form.",
+  "attachments": {
+    "location": "<session-dir>/attachments/<sha256>.<ext>",
+    "kind": "binary image objects (PNG/JPEG/WebP/GIF), content-addressed; NEVER JSON",
+    "introduced": "W804 (multimodal P0 section 5): read_image and POST /api/turn inline uploads; the session log stores only ImageRef references (no base64)",
+    "lifecycle": "moves/archives/deletes with the session directory (rename); P0 does no GC",
+    "fixtures": "excluded: attachment bytes never enter fixtures/ (scripts/export-golden.ts hard rule)",
+    "schema": "none (binary; the JSONL reference shape is frozen by session-event.schema.json $defs/AttachmentRef)"
+  },
   "ledger": {
     "implemented": "W728 P0 (iteration E §3): step-granular append-only ledger + pricing snapshot + unpriced marking; W785 P1: GET /api/usage/ledger aggregate view (session|turn|model|day + since/until) + /api/status.cost + 16 MiB rotation",
     "notImplemented": "scripts/sync-pricing.ts (the price snapshot is operator-supplied), SSE status.cost_delta, three-way reconciliation + budget stop-loss (P1/P2)"

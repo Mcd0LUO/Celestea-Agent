@@ -19,6 +19,48 @@
     "compactRewrites": "/compact renumbers the kept turns as turn-1..turn-(K+1); the next live turn is turn-(K+2)"
   },
   "$defs": {
+    "AttachmentRef": {
+      "title": "AttachmentRef (W804 multimodal P0)",
+      "type": "object",
+      "required": [
+        "attachment_id",
+        "media_type",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "attachment_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "media_type": {
+          "type": "string",
+          "enum": [
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/gif"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "original": {
+          "type": "object",
+          "description": "present only when the stored bytes are a downscaled/re-encoded variant (P0 never writes it)"
+        }
+      },
+      "additionalProperties": false,
+      "note": "A CONTENT-ADDRESSED REFERENCE, never bytes: the object lives at <session-dir>/attachments/<attachment_id>.<ext> and the log stores only this shape (no base64 is ever written to cli-main.jsonl)."
+    },
     "TurnOutcome": {
       "title": "TurnOutcome (5 terminal states)",
       "oneOf": [
@@ -132,6 +174,13 @@
             },
             "text": {
               "type": "string"
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AttachmentRef"
+              },
+              "description": "W804: optional image references; omitted entirely when there are none (a legacy row is byte-identical)"
             }
           },
           "additionalProperties": true
@@ -337,7 +386,8 @@
       "turn_end": "(omitted)",
       "user_message": {
         "role": "user",
-        "content": "<text>"
+        "content": "<text>",
+        "attachments": "[AttachmentRef] (omitted when absent; W804)"
       },
       "assistant_message": {
         "role": "assistant",

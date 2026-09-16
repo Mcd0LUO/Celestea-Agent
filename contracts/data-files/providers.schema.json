@@ -14,7 +14,8 @@
     "NO version field and NO migration logic. id/name/base_url/request_format have no serde(default): a missing field is a deserialization failure.",
     "ProviderModel deliberately does NOT derive Debug so a key can never be printed.",
     "open(): missing file -> empty store; malformed JSON -> HARD error (never overwrite an unreadable file with an empty store).",
-    "save(): pretty JSON -> .tmp -> OpenOptions mode 0600 -> write_all + sync_all -> rename. Every save resets 0600."
+    "save(): pretty JSON -> .tmp -> OpenOptions mode 0600 -> write_all + sync_all -> rename. Every save resets 0600.",
+    "W804 (multimodal P0 section 7): models[].input_modalities / output_modalities are ADDITIVE optional fields (additionalProperties is already true). Missing = the optimistic default input [\"text\",\"image\"], output [\"text\"]; publicView exposes both so the frontend can disable the image entry only for a model EXPLICITLY configured without \"image\"."
   ],
   "schema": {
     "type": "object",
@@ -94,6 +95,27 @@
                       "integer",
                       "null"
                     ]
+                  },
+                  "input_modalities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": [
+                      "text",
+                      "image"
+                    ],
+                    "description": "W804 OPTIMISTIC DEFAULT: absent = [\"text\",\"image\"]. A model is assumed vision-capable; configuring [\"text\"] is the ONLY way to disable the image entry points. The code never hard-codes a capability."
+                  },
+                  "output_modalities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": [
+                      "text"
+                    ],
+                    "description": "W804 default: [\"text\"]. Models do not return images over chat-completions in P0."
                   }
                 },
                 "additionalProperties": true
@@ -129,6 +151,8 @@
       "models[].reasoning_efforts",
       "models[].context_window",
       "models[].max_output_tokens",
+      "models[].input_modalities",
+      "models[].output_modalities",
       "is_default",
       "has_key"
     ],

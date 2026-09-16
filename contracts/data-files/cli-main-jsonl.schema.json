@@ -17,5 +17,6 @@
     "tornTail": "STOP at the first unparsable line; the rest of the file is ignored (never treated as content)"
   },
   "writer": "engine PersistentSessionLog (Studio never appends); /compact rewrites it atomically after backing up to cli-main.jsonl.precompact",
+  "attachments": "W804: a user_message row MAY carry an `attachments` array of content-addressed ImageRefs (see session-event.schema.json $defs/AttachmentRef). The image BYTES are NOT in this file: they live at <session-dir>/attachments/<sha256>.<ext>. No base64 / data: URL is ever written here.",
   "generatedAt": "2026-09-10T01:20:00Z"
 }

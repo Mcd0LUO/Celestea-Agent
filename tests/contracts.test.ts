@@ -80,6 +80,20 @@ describe("contracts/endpoints.json", () => {
     expect(fieldNames).toEqual(["providers", "default_model"]);
     expect(JSON.stringify(fieldNames)).not.toContain("api_key");
   });
+
+  it("freezes the W804 per-model modality bits with the optimistic default", () => {
+    const doc = loadDataFileSchema("providers.schema.json");
+    const schema = doc["schema"] as {
+      properties: { providers: { items: { properties: { models: { items: { properties: Record<string, { default?: unknown; description?: string }> } } } } } };
+    };
+    const models = schema.properties.providers.items.properties.models.items.properties;
+    expect(models["input_modalities"]?.default).toEqual(["text", "image"]);
+    expect(models["output_modalities"]?.default).toEqual(["text"]);
+    expect(models["input_modalities"]?.description).toContain("OPTIMISTIC");
+    const pv = doc["publicView"] as { fields: string[] };
+    expect(pv.fields).toContain("models[].input_modalities");
+    expect(pv.fields).toContain("models[].output_modalities");
+  });
 });
 
 describe("contracts/sse-events.json", () => {
@@ -185,6 +199,15 @@ describe("contracts/data-files", () => {
 
   it("requires a round-trip test for every file", () => {
     expect(idx.roundTripRequirement).toContain("read -> write -> re-read");
+  });
+
+  // W804 (multimodal P0 section 5): the attachment object store is a binary,
+  // content-addressed store — deliberately NOT a 14th "data file" (there is no
+  // JSON schema for a directory), so it is recorded as its own block.
+  it("records the W804 attachment object store and its fixtures exclusion", () => {
+    expect(idx.attachments?.location).toBe("<session-dir>/attachments/<sha256>.<ext>");
+    expect(idx.attachments?.fixtures).toContain("never enter fixtures");
+    expect(idx.attachments?.schema).toContain("AttachmentRef");
   });
 
   // W728 §3 P0: the ledger and its price snapshot are data files; P0 added no

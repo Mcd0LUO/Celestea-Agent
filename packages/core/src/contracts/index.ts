@@ -179,6 +179,8 @@ export interface DataFilesIndex {
   recovery?: { implemented: string; notImplemented: string };
   /** W787 (capability 2): the worker table's own implementation split. */
   workerRegistry?: { implemented: string; notImplemented: string };
+  /** W804 (multimodal P0): the per-session attachment object store. */
+  attachments?: { location: string; kind: string; introduced: string; lifecycle: string; fixtures: string; schema: string };
 }
 
 export function loadDataFilesIndex(): DataFilesIndex {
