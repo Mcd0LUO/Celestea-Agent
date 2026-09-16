@@ -46,7 +46,7 @@ import { resolve } from "node:path";
 import { envFlag, envString } from "../env.js";
 import { contractError } from "../errors.js";
 import type { SessionFsScope } from "../sandbox/config.js";
-import { isDirectory, isInside, resolveExistingTarget, resolveWriteTarget } from "./paths.js";
+import { absolutize, isDirectory, isInside, resolveExistingTarget, resolveWriteTarget } from "./paths.js";
 
 export const ENV_TOOL_ROOTS = "CELESTEA_TOOL_ROOTS";
 export const ENV_TOOL_WORKDIR = "CELESTEA_TOOL_WORKDIR";
@@ -252,10 +252,16 @@ export class PathGuard implements ToolGuard {
   }
 
   async check(input: ToolInput): Promise<ToolDecision> {
-    const targets = pathArguments(input.args);
-    if (targets.length === 0) return ALLOW;
     const access = this.access.get(input.name) ?? "write";
     if (access === "self") return ALLOW;
+    // W824 (W812 P0-2): normalize relative path arguments against the SESSION
+    // workspace BEFORE arbitrating and before the tool opens them. The fs tools
+    // receive the same args object the guard inspected, so rewriting it here
+    // makes the checked path and the opened path byte-identical; leaving them
+    // relative let the guard check <workspace>/x while fs opened
+    // <process.cwd()>/x.
+    const targets = normalizePathArguments(input.args, this.policy.workspace);
+    if (targets.length === 0) return ALLOW;
     return this.checkAll(targets, access);
   }
 
@@ -269,15 +275,28 @@ export class PathGuard implements ToolGuard {
   }
 }
 
-/** Every path-like string argument of a call, in [PATH_ARG_KEYS] order. */
-function pathArguments(args: unknown): string[] {
+/**
+ * Rewrite every relative path-like argument to its absolute workspace-relative
+ * form (in place) and return the normalized values in [PATH_ARG_KEYS] order.
+ */
+function normalizePathArguments(args: unknown, workspace: string): string[] {
   if (typeof args !== "object" || args === null) return [];
   const record = args as Record<string, unknown>;
   const found: string[] = [];
   for (const key of PATH_ARG_KEYS) {
     const value = record[key];
-    if (typeof value === "string") found.push(value);
-    else if (Array.isArray(value)) found.push(...value.filter((entry): entry is string => typeof entry === "string"));
+    if (typeof value === "string") {
+      const absolute = absolutize(value, workspace);
+      if (absolute !== value) record[key] = absolute;
+      found.push(absolute);
+    } else if (Array.isArray(value)) {
+      record[key] = value.map((entry) => {
+        if (typeof entry !== "string") return entry;
+        const absolute = absolutize(entry, workspace);
+        found.push(absolute);
+        return absolute;
+      });
+    }
   }
   return found;
 }

@@ -14,7 +14,7 @@
  * `crates/tools/src/guard.rs`).
  */
 
-import { realpathSync, statSync } from "node:fs";
+import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve, sep } from "node:path";
 
 /** `realpath` or `null` when the path does not exist / cannot be resolved. */
@@ -51,11 +51,41 @@ export function resolveExistingTarget(target: string, workspace: string): string
   return canonicalExisting(absolutize(target, workspace));
 }
 
-/** Canonical path a write would land on, or `null` when no ancestor exists. */
+/**
+ * The target of a symlink at p (resolved against its own directory), or null
+ * when p is missing / not a symlink. lstat does NOT follow the final component,
+ * so a DANGLING link still reports as a link here.
+ */
+function symlinkTarget(p: string): string | null {
+  try {
+    if (!lstatSync(p).isSymbolicLink()) return null;
+    const link = readlinkSync(p);
+    return isAbsolute(link) ? resolve(link) : resolve(dirname(p), link);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Canonical path a write would land on, or null when no ancestor exists.
+ *
+ * W824 (W812 P0-1): the FINAL component must never be treated as a plain
+ * missing file when it is a symlink. realpath fails for a dangling link, and
+ * the lexical re-append below would then hand back the link's own
+ * (in-workspace) path while fs.writeFile follows the link out of the
+ * workspace. Resolve the link target first - even when that target does not
+ * exist yet - so containment is decided on where the bytes would actually land.
+ */
 export function resolveWriteTarget(target: string, workspace: string): string | null {
-  const absolute = absolutize(target, workspace);
-  const direct = canonicalExisting(absolute);
-  if (direct !== null) return direct;
+  let absolute = absolutize(target, workspace);
+  // Walk the final component through any symlink chain (bounded: ELOOP parity).
+  for (let hops = 0; hops < 40; hops += 1) {
+    const direct = canonicalExisting(absolute);
+    if (direct !== null) return direct;
+    const link = symlinkTarget(absolute);
+    if (link === null) break;
+    absolute = link;
+  }
   const missing: string[] = [];
   let current = absolute;
   for (;;) {
