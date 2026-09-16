@@ -29,7 +29,15 @@
  */
 
 import { serdeJsonString } from "./json.js";
-import { assistantText, toolCallIds, toolResultMessage, userMessage } from "./message.js";
+import {
+  assistantText,
+  attachmentRefsOfValue,
+  toolCallIds,
+  toolResultMessage,
+  toolResultWithImages,
+  userMessage,
+  userMessageWithImages,
+} from "./message.js";
 import type { Message, ToolCall } from "./message.js";
 import type { SessionEvent } from "./types.js";
 
@@ -81,12 +89,18 @@ export function flushToolCalls(messages: Message[], pending: ToolCall[]): void {
 export function projectEvent(event: SessionEvent): Message | null {
   switch (event.type) {
     case "user_message":
-      return userMessage(event.text);
+      // W804 §4.2A: attachments become image content blocks; with none the
+      // construct is byte-identical to the pre-W804 userMessage.
+      return event.attachments !== undefined && event.attachments.length > 0
+        ? userMessageWithImages(event.text, event.attachments)
+        : userMessage(event.text);
     case "assistant_message":
       return assistantText(event.text);
     case "tool_result":
       if (event.parent_id !== undefined) return null; // W255 sub-call result
-      return toolResultMessage(event.id, toolResultText(event.error, event.value));
+      // W804 §6.4: the tool value's attachments (read_image) become image blocks
+      // on the SAME tool message; the JSON text (with the metadata) stays first.
+      return toolResultOf(event);
     case "turn_start":
     case "turn_end":
     case "thinking_delta":
@@ -102,6 +116,13 @@ export function projectEvent(event: SessionEvent): Message | null {
       // Legacy: unreachable!("ToolCall must be accumulated by derive_messages…")
       throw new Error("ToolCall must be accumulated by derive_messages, not projected");
   }
+}
+
+/** W804: one projected tool result — JSON text first, image references after. */
+function toolResultOf(event: Extract<SessionEvent, { type: "tool_result" }>): Message {
+  const text = toolResultText(event.error, event.value);
+  const images = attachmentRefsOfValue(event.value);
+  return images.length > 0 ? toolResultWithImages(event.id, text, images) : toolResultMessage(event.id, text);
 }
 
 /** The text of a projected ToolResult: error first, else the value as JSON. */

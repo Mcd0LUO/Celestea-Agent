@@ -9,6 +9,8 @@
  * Field names are contract, not style: do not rename anything here.
  */
 
+import type { ImageRef } from "./message.js";
+
 // ---------------------------------------------------------------------------
 // Session log (engine v1 JSONL)
 // ---------------------------------------------------------------------------
@@ -42,6 +44,13 @@ export interface TurnEndEvent {
 export interface UserMessageEvent {
   type: "user_message";
   text: string;
+  /**
+   * W804: content-addressed image references attached to this message. Omitted
+   * entirely when there are none (serde style), so every pre-W804 row is
+   * byte-identical; the bytes live in the session's attachments/ directory and
+   * NEVER in the log.
+   */
+  attachments?: ImageRef[];
 }
 export interface AssistantMessageEvent {
   type: "assistant_message";
@@ -133,6 +142,11 @@ export type SessionEventType = (typeof SESSION_EVENT_TYPES)[number];
 export interface UserMessageOut {
   role: "user";
   content: string;
+  /**
+   * W804: the attachments of this user message (references only). Omitted when
+   * there are none, so every existing golden message stays byte-identical.
+   */
+  attachments?: ImageRef[];
 }
 export interface AssistantMessageOut {
   role: "assistant";

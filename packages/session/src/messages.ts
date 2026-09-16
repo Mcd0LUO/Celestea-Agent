@@ -23,8 +23,13 @@ export function sessionEventToMessage(ev: SessionEvent): StudioMessage | null {
     case "turn_start":
     case "turn_end":
       return null;
-    case "user_message":
-      return { role: "user", content: ev.text };
+    case "user_message": {
+      // W804 §4.2D: the Studio projection carries the attachment references (the
+      // bytes stay on disk); no attachments => the pre-W804 object byte for byte.
+      const out: StudioMessage = { role: "user", content: ev.text };
+      if (ev.attachments !== undefined && ev.attachments.length > 0) out.attachments = ev.attachments;
+      return out;
+    }
     case "assistant_message":
       return { role: "assistant", content: ev.text };
     case "thinking_delta":

@@ -229,6 +229,73 @@ export function hasToolCalls(m: Message): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Attachment reference helpers (W804: the log/event side of ImageRef)
+// ---------------------------------------------------------------------------
+
+/**
+ * True when v has the ImageRef shape the event codec and projection accept.
+ * name and original are optional and their absence is the normal case.
+ */
+export function isImageRef(v: unknown): v is ImageRef {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    typeof r["attachment_id"] === "string" &&
+    isImageMediaType(r["media_type"]) &&
+    typeof r["width"] === "number" &&
+    Number.isFinite(r["width"]) &&
+    typeof r["height"] === "number" &&
+    Number.isFinite(r["height"]) &&
+    (r["name"] === undefined || typeof r["name"] === "string")
+  );
+}
+
+/**
+ * Field-whitelist normalization of one decoded attachment reference: unknown
+ * fields are dropped and absent optionals stay omitted (serde style). Returns
+ * null when the value is not an ImageRef at all.
+ */
+export function normalizeImageRef(v: unknown): ImageRef | null {
+  if (!isImageRef(v)) return null;
+  const out: ImageRef = {
+    attachment_id: v.attachment_id,
+    media_type: v.media_type,
+    width: v.width,
+    height: v.height,
+  };
+  if (typeof v.name === "string") out.name = v.name;
+  if (typeof v.original === "object" && v.original !== null) {
+    const o = v.original as Record<string, unknown>;
+    if (
+      typeof o["width"] === "number" &&
+      typeof o["height"] === "number" &&
+      typeof o["bytes"] === "number" &&
+      typeof o["media_type"] === "string"
+    ) {
+      out.original = { width: o["width"], height: o["height"], bytes: o["bytes"], media_type: o["media_type"] };
+    }
+  }
+  return out;
+}
+
+/**
+ * The image references carried by a tool_result value (its attachments field,
+ * section 6.3). Anything that is not a valid reference is ignored, so a
+ * malformed tool value can never smuggle a bogus image into the prompt.
+ */
+export function attachmentRefsOfValue(value: unknown): ImageRef[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+  const raw = (value as Record<string, unknown>)["attachments"];
+  if (!Array.isArray(raw)) return [];
+  const out: ImageRef[] = [];
+  for (const item of raw) {
+    const ref = normalizeImageRef(item);
+    if (ref !== null) out.push(ref);
+  }
+  return out;
+}
+
 // Usage (message.rs:81-108)
 // ---------------------------------------------------------------------------
 

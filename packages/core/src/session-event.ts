@@ -19,6 +19,7 @@
  */
 
 import { isRecord, serdeJsonString } from "./json.js";
+import { isImageRef, normalizeImageRef, type ImageRef } from "./message.js";
 import { SESSION_EVENT_TYPES, type SessionEvent, type SessionEventType, type TurnOutcome } from "./types.js";
 
 export type ValidateResult = { ok: true; event: SessionEvent } | { ok: false; errors: string[] };
@@ -81,6 +82,10 @@ export function validateSessionEvent(raw: unknown): ValidateResult {
       }
       break;
     case "user_message":
+      requireString(raw, "text", errors);
+      // W804 §4.2C: the ONLY extra field, optional and serde-shaped (null == absent).
+      optionalAttachments(raw, "attachments", errors);
+      break;
     case "assistant_message":
     case "thinking_delta":
       requireString(raw, "text", errors);
@@ -173,9 +178,62 @@ function normalizeSessionEvent(raw: Record<string, unknown>, type: SessionEventT
     // ALWAYS carries one (a legacy row reads as completed).
     return { type, id: raw["id"] as string, outcome: effectiveOutcome(raw["outcome"] as TurnOutcome | undefined) };
   }
+  // W804 §4.2C: an EXPLICIT user_message branch. Without it the generic
+  // fallthrough would outlive this change, but the moment the row gains a field
+  // the codec must own its normalization (field whitelist, null -> omitted).
+  if (type === "user_message") {
+    const ev: SessionEvent = { type, text: raw["text"] as string };
+    const refs = attachmentList(raw["attachments"]);
+    if (refs.length > 0) ev.attachments = refs;
+    return ev;
+  }
   return raw as unknown as SessionEvent;
 }
 
+/** Attachment array validation: null == absent; each item must be an ImageRef. */
+function optionalAttachments(raw: Record<string, unknown>, name: string, errors: string[]): void {
+  const v = raw[name];
+  if (v === undefined || v === null) return;
+  if (!Array.isArray(v)) {
+    errors.push(`field '${name}' must be an array when present`);
+    return;
+  }
+  for (const item of v) {
+    if (!isImageRef(item)) errors.push(`field '${name}' items must be ImageRef objects`);
+  }
+}
+
+/** Normalize a decoded attachment list: invalid items are dropped; [] means absent. */
+function attachmentList(v: unknown): ImageRef[] {
+  if (!Array.isArray(v)) return [];
+  const out: ImageRef[] = [];
+  for (const item of v) {
+    const ref = normalizeImageRef(item);
+    if (ref !== null) out.push(ref);
+  }
+  return out;
+}
+
+/**
+ * serde-exact ImageRef writer: field order attachment_id, media_type, width,
+ * height, name?, original?; a None optional is omitted, never written as null.
+ */
+function serializeAttachmentRef(ref: ImageRef): string {
+  const parts = [
+    `"attachment_id":${JSON.stringify(ref.attachment_id)}`,
+    `"media_type":${JSON.stringify(ref.media_type)}`,
+    `"width":${JSON.stringify(ref.width)}`,
+    `"height":${JSON.stringify(ref.height)}`,
+  ];
+  if (ref.name !== undefined) parts.push(`"name":${JSON.stringify(ref.name)}`);
+  if (ref.original !== undefined) {
+    const o = ref.original;
+    parts.push(
+      `"original":{"width":${JSON.stringify(o.width)},"height":${JSON.stringify(o.height)},"bytes":${JSON.stringify(o.bytes)},"media_type":${JSON.stringify(o.media_type)}}`,
+    );
+  }
+  return `{${parts.join(",")}}`;
+}
 function nullableString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
@@ -238,6 +296,14 @@ export function serializeSessionEvent(ev: SessionEvent): string {
       parts.push(`"outcome":${serializeOutcome(ev.outcome)}`);
       break;
     case "user_message":
+      parts.push(`"text":${JSON.stringify(ev.text)}`);
+      // W804 §4.2C (highest-risk site): serializeSessionEvent is hand-written
+      // per field. attachments MUST have an explicit branch or /compact's atomic
+      // log rewrite silently drops every image reference.
+      if (ev.attachments !== undefined && ev.attachments.length > 0) {
+        parts.push(`"attachments":[${ev.attachments.map(serializeAttachmentRef).join(",")}]`);
+      }
+      break;
     case "assistant_message":
     case "thinking_delta":
       parts.push(`"text":${JSON.stringify(ev.text)}`);
