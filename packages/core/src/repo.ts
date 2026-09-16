@@ -21,8 +21,13 @@ export function repoRoot(from: string = import.meta.url): string {
   throw new Error(`repository root not found above ${from}`);
 }
 
+/** Absolute path to the frozen `contracts/` directory. */
+export function contractsDir(): string {
+  return resolve(repoRoot(), "contracts");
+}
+
 export function contractPath(...parts: string[]): string {
-  return resolve(repoRoot(), "contracts", ...parts);
+  return resolve(contractsDir(), ...parts);
 }
 
 export function fixturePath(...parts: string[]): string {

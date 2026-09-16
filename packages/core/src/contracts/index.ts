@@ -1,12 +1,24 @@
 /**
- * Machine-readable contract loader (P0).
+ * Machine-readable contract loader (P0; hardened in W807).
  *
  * Everything under contracts/ is frozen data; this module only reads and
  * validates it. Counts are asserted here so a drifted contract fails loudly.
+ *
+ * W807 -- READ ONCE, THEN TRUST THE SNAPSHOT. The loader used to re-read every
+ * JSON file on every call while comparing it against counts baked in at module
+ * load time. A running process was therefore a contradiction waiting to happen:
+ * 2026-09-16 W804 bumped contracts/tools.json from 11 to 12 while production had
+ * 11 in memory, so every compose 500'd ("tools contract must hold 11 tools, got
+ * 12") until an operator restarted. A store now validates a contract file ONCE
+ * and caches it for the process lifetime, so a later disk edit cannot make a
+ * running process contradict itself. verifyContractsAtStartup() is the explicit
+ * boot gate: it refuses to start on a mismatch (naming file, expected and
+ * actual) instead of booting into a later 500.
  */
 
 import { readFileSync } from "node:fs";
-import { contractPath } from "../repo.js";
+import { resolve } from "node:path";
+import { contractsDir } from "../repo.js";
 import type { ToolSpec } from "../types.js";
 
 export interface EndpointField {
@@ -100,7 +112,7 @@ export interface RouteSnapshot {
   /**
    * W516: routes that exist ONLY in the TypeScript backend (no legacy
    * counterpart). The legacy extraction above stays intact; a contract endpoint
-   * must appear in `routes` or here.
+   * must appear in routes or here.
    */
   tsOnlyRoutes?: RouteSnapshotEntry[];
   tsApiEndpoints?: number;
@@ -110,51 +122,6 @@ export interface RouteSnapshot {
 export interface ToolsContract {
   count: number;
   tools: Array<ToolSpec & { sourceRef: string }>;
-}
-
-function readJson<T>(...parts: string[]): T {
-  return JSON.parse(readFileSync(contractPath(...parts), "utf8")) as T;
-}
-
-export function loadEndpoints(): EndpointsContract {
-  const c = readJson<EndpointsContract>("endpoints.json");
-  // W725: 43 -> 44 (GET /api/sessions/{id}/context).
-  // W767: 44 -> 47 (GET /login, POST /auth/login, GET /auth/check — Studio's own
-  // login-cookie gate; the two non-/api paths are declared in the contract too).
-  // W783 (2): 47 -> 49 — GET|POST /api/questions (+ the pending list on GET).
-  // W785 (1): 49 -> 50 — GET /api/usage/ledger (E-P1, capability 3).
-  // W791 (2): 50 -> 51 — POST /api/sessions/{id}/mode (P1 session working mode,
-  // TS-only; docs/modes-standard-vs-execution.md §3.1).
-  if (c.count !== 51 || c.endpoints.length !== 51) {
-    throw new Error(`endpoints contract must hold 51 endpoints, got ${c.endpoints.length}`);
-  }
-  return c;
-}
-
-export function loadSse(): SseContract {
-  const c = readJson<SseContract>("sse-events.json");
-  // W783: 8 -> 9 (the host-emitted `question` frame, while a turn is parked).
-  if (c.count !== 9 || c.events.length !== 9) {
-    throw new Error(`SSE contract must hold 9 events, got ${c.events.length}`);
-  }
-  return c;
-}
-
-export function loadRouteSnapshot(): RouteSnapshot {
-  return readJson<RouteSnapshot>("route-table.snapshot.json");
-}
-
-export function loadTools(): ToolsContract {
-  const c = readJson<ToolsContract>("tools.json");
-  // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`).
-  if (c.count !== 12 || c.tools.length !== 12) {
-    throw new Error(`tools contract must hold 12 tools, got ${c.tools.length}`);
-  }
-  return c;
-}
-
-export function loadSessionEventSchema(): Record<string, unknown> {
-  return readJson<Record<string, unknown>>("session-event.schema.json");
 }
 
 export interface DataFileEntry {
@@ -183,10 +150,187 @@ export interface DataFilesIndex {
   attachments?: { location: string; kind: string; introduced: string; lifecycle: string; fixtures: string; schema: string };
 }
 
+/**
+ * The frozen counts. These are the module-load-time constants a drifted
+ * contracts file used to contradict (W804). They are deliberately NOT derived
+ * from the files, and must never be edited to paper over a contract edit -- the
+ * file change is what gets reviewed and the counts only follow a deliberate
+ * freeze revision.
+ */
+export const FROZEN_COUNTS = {
+  endpoints: 51,
+  sseEvents: 9,
+  tools: 12,
+} as const;
+
+/** One frozen-count divergence, with everything an operator needs to act. */
+export interface ContractMismatch {
+  /** File name relative to the contracts directory (e.g. tools.json). */
+  file: string;
+  /** Absolute path of the file, so the operator can open it directly. */
+  path: string;
+  /** Which number diverged: the declared count field, or the array length. */
+  field: string;
+  expected: number;
+  actual: number;
+}
+
+/** Raised when a contract file contradicts a frozen count. */
+export class ContractValidationError extends Error {
+  readonly mismatches: ContractMismatch[];
+  readonly dir: string;
+
+  constructor(dir: string, mismatches: ContractMismatch[]) {
+    const detail = mismatches
+      .map((m) => m.file + " (" + m.field + "): expected " + m.expected + ", got " + m.actual + " [" + m.path + "]")
+      .join("; ");
+    super("frozen contract violated in " + dir + " -- refusing to start: " + detail);
+    this.name = "ContractValidationError";
+    this.dir = dir;
+    this.mismatches = mismatches;
+  }
+}
+
+interface FrozenCheck {
+  file: string;
+  field: string;
+  expected: number;
+  measure: (doc: unknown) => number;
+}
+
+/** Every frozen file is checked twice: its declared count and its array length. */
+const FROZEN_CHECKS: readonly FrozenCheck[] = [
+  { file: "endpoints.json", field: "count", expected: FROZEN_COUNTS.endpoints, measure: (d) => (d as EndpointsContract).count },
+  { file: "endpoints.json", field: "endpoints[]", expected: FROZEN_COUNTS.endpoints, measure: (d) => (d as EndpointsContract).endpoints.length },
+  { file: "sse-events.json", field: "count", expected: FROZEN_COUNTS.sseEvents, measure: (d) => (d as SseContract).count },
+  { file: "sse-events.json", field: "events[]", expected: FROZEN_COUNTS.sseEvents, measure: (d) => (d as SseContract).events.length },
+  { file: "tools.json", field: "count", expected: FROZEN_COUNTS.tools, measure: (d) => (d as ToolsContract).count },
+  { file: "tools.json", field: "tools[]", expected: FROZEN_COUNTS.tools, measure: (d) => (d as ToolsContract).tools.length },
+];
+
+const FROZEN_FILES: readonly string[] = [...new Set(FROZEN_CHECKS.map((c) => c.file))];
+
+function checkFrozen(file: string, doc: unknown, dir: string): ContractMismatch[] {
+  return FROZEN_CHECKS.filter((c) => c.file === file)
+    .map((c) => ({ file, path: resolve(dir, file), field: c.field, expected: c.expected, actual: c.measure(doc) }))
+    .filter((m) => m.actual !== m.expected);
+}
+
+/**
+ * A contract store bound to one directory. Every value is read from disk at
+ * most once: the first (validated) read wins and is reused for the rest of the
+ * process lifetime. Tests point a store at a throwaway copy; the process-wide
+ * contractStore() points at the real repository.
+ */
+export interface ContractStore {
+  readonly dir: string;
+  loadEndpoints(): EndpointsContract;
+  loadSse(): SseContract;
+  loadRouteSnapshot(): RouteSnapshot;
+  loadTools(): ToolsContract;
+  loadSessionEventSchema(): Record<string, unknown>;
+  loadDataFilesIndex(): DataFilesIndex;
+  loadDataFileSchema(name: string): Record<string, unknown>;
+  /** Validate the frozen files from disk NOW and prime the cache. Throws on drift. */
+  verifyAtStartup(): void;
+}
+
+export function createContractStore(dir: string): ContractStore {
+  const cache = new Map<string, unknown>();
+
+  function readJson<T>(...parts: string[]): T {
+    return JSON.parse(readFileSync(resolve(dir, ...parts), "utf8")) as T;
+  }
+
+  function cached<T>(key: string, load: () => T): T {
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit as T;
+    const value = load();
+    cache.set(key, value);
+    return value;
+  }
+
+  function loadChecked<T>(file: string): T {
+    return cached(file, () => {
+      const value = readJson<T>(file);
+      const mismatches = checkFrozen(file, value, dir);
+      if (mismatches.length > 0) throw new ContractValidationError(dir, mismatches);
+      return value;
+    });
+  }
+
+  function verifyAtStartup(): void {
+    const mismatches: ContractMismatch[] = [];
+    const snapshot = new Map<string, unknown>();
+    for (const file of FROZEN_FILES) {
+      const value = readJson<unknown>(file);
+      mismatches.push(...checkFrozen(file, value, dir));
+      snapshot.set(file, value);
+    }
+    if (mismatches.length > 0) throw new ContractValidationError(dir, mismatches);
+    for (const [file, value] of snapshot) cache.set(file, value);
+  }
+
+  return {
+    dir,
+    loadEndpoints: () => loadChecked<EndpointsContract>("endpoints.json"),
+    loadSse: () => loadChecked<SseContract>("sse-events.json"),
+    loadTools: () => loadChecked<ToolsContract>("tools.json"),
+    loadRouteSnapshot: () => cached("route-table.snapshot.json", () => readJson<RouteSnapshot>("route-table.snapshot.json")),
+    loadSessionEventSchema: () => cached("session-event.schema.json", () => readJson<Record<string, unknown>>("session-event.schema.json")),
+    loadDataFilesIndex: () => cached("data-files/index.json", () => readJson<DataFilesIndex>("data-files", "index.json")),
+    loadDataFileSchema: (name: string) => cached("data-files/" + name, () => readJson<Record<string, unknown>>("data-files", name)),
+    verifyAtStartup,
+  };
+}
+
+let singleton: ContractStore | null = null;
+
+/** The process-wide store: one validated snapshot, reused for the process lifetime. */
+export function contractStore(): ContractStore {
+  if (singleton === null) singleton = createContractStore(contractsDir());
+  return singleton;
+}
+
+export function loadEndpoints(): EndpointsContract {
+  return contractStore().loadEndpoints();
+}
+
+export function loadSse(): SseContract {
+  return contractStore().loadSse();
+}
+
+export function loadRouteSnapshot(): RouteSnapshot {
+  return contractStore().loadRouteSnapshot();
+}
+
+export function loadTools(): ToolsContract {
+  return contractStore().loadTools();
+}
+
+export function loadSessionEventSchema(): Record<string, unknown> {
+  return contractStore().loadSessionEventSchema();
+}
+
 export function loadDataFilesIndex(): DataFilesIndex {
-  return readJson<DataFilesIndex>("data-files", "index.json");
+  return contractStore().loadDataFilesIndex();
 }
 
 export function loadDataFileSchema(name: string): Record<string, unknown> {
-  return readJson<Record<string, unknown>>("data-files", name);
+  return contractStore().loadDataFileSchema(name);
+}
+
+/**
+ * The explicit startup gate (W807): Studio calls this once at boot, before it
+ * binds a port. It reads the frozen contract files from disk, throws a
+ * ContractValidationError naming file / expected / actual on any drift, and on
+ * success primes the cache with the exact snapshot that was validated -- so the
+ * running process stays internally consistent for its whole lifetime even if
+ * contracts/*.json changes underneath it.
+ *
+ * A drifted file is a REFUSAL TO START, not a warning: the previous behaviour
+ * was to boot and then 500 on the first request that touched the contract.
+ */
+export function verifyContractsAtStartup(): void {
+  contractStore().verifyAtStartup();
 }

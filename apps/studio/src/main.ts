@@ -35,6 +35,7 @@ import { createStudioApp } from "./app.js";
 import { engineLlmView } from "./runtime/llm-assembly.js";
 import type { RealRuntimeAdapter } from "./runtime/real-runtime-adapter.js";
 import { autowakeEnabled, ENV_AUTOWAKE } from "@celestea/runtime";
+import { verifyContractsAtStartup } from "@celestea/core";
 
 const port = Number.parseInt(process.env["STUDIO_TS_PORT"] ?? "3778", 10);
 const hostname = process.env["STUDIO_TS_BIND"] ?? "127.0.0.1";
@@ -42,6 +43,19 @@ const hostname = process.env["STUDIO_TS_BIND"] ?? "127.0.0.1";
 const DRAIN_MS = Number.parseInt(process.env["CELESTEA_SHUTDOWN_DRAIN_MS"] ?? "2000", 10);
 /** Ceiling for the whole teardown: a hung hook must not hang the operator's restart. */
 const TEARDOWN_MS = Number.parseInt(process.env["CELESTEA_SHUTDOWN_TIMEOUT_MS"] ?? "5000", 10);
+
+/**
+ * W807 -- explicit contract gate. The frozen-count contract files are read and
+ * validated ONCE here, before the port is bound, and the validated snapshot is
+ * cached for the whole process lifetime. A drifted contracts/*.json refuses the
+ * boot loudly (file / expected / actual) instead of booting into a later 500.
+ */
+try {
+  verifyContractsAtStartup();
+} catch (e) {
+  console.error("[celestea-studio-ts] FATAL: " + (e instanceof Error ? e.message : String(e)));
+  process.exit(1);
+}
 
 const { app, routes, services } = createStudioApp();
 const profile = services.runtime.profile();
