@@ -60,9 +60,12 @@ export interface ToolRegistry {
   addGuard(guard: ToolGuard): void;
   get(name: string): Tool | undefined;
   /**
-   * The model-facing specs. Sorted by name, exactly like
-   * `ToolRegistry::schemas` (crates/tools/src/registry.rs) — a deterministic
-   * order keeps the prompt prefix stable across registrations.
+   * The model-facing specs. The registry's own order is by name, exactly like
+   * `ToolRegistry::schemas` (crates/tools/src/registry.rs); a disclosure
+   * decorator may re-project it into a **stable disclosure order** (baseline
+   * first, newly disclosed names appended) so the prompt prefix stays
+   * append-only across a session. The order is NOT part of the contract (only
+   * the name set is), so a decorator is free to choose it.
    */
   schemas(): ToolSpec[];
   /** Run the guard chain, then the tool. Errors are captured, not thrown. */

@@ -65,6 +65,15 @@ export {
   type ExposureOptions,
 } from "./exposure.js";
 export type { ArgsValidationFailure } from "./schema.js";
+
+// --- disclosure (W806): the cache-safe second hidden layer --------------------
+export {
+  DisclosurePolicy,
+  disclosureExposure,
+  type DisclosureGuidance,
+  type DisclosurePolicyOptions,
+  type DisclosureSnapshot,
+} from "./disclosure.js";
 export { validateArgs } from "./schema.js";
 
 // --- errors: the structured contract ------------------------------------------
