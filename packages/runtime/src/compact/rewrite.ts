@@ -45,7 +45,26 @@ function writeDurable(tmp: string, text: string): void {
   }
 }
 
-/** Rewrite `path` with `events` (backup + fsync + atomic rename). */
+/**
+ * fsync the PARENT directory so the rename itself is durable (P2-6, W836):
+ * the tmp file's own fsync orders its CONTENT, but only the directory fsync
+ * orders the directory ENTRY, which is what a power loss could otherwise undo.
+ */
+function fsyncDirectory(dir: string): void {
+  try {
+    const fd = openSync(dir, "r");
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    // Best effort: a filesystem that cannot fsync a directory must not fail a
+    // compaction (the content was already fsynced through the tmp file).
+  }
+}
+
+/** Rewrite `path` with `events` (backup + fsync + atomic rename + dir fsync). */
 export function rewriteAtomic(path: string, events: readonly SessionEvent[], pid: number = process.pid): void {
   const dir = dirname(path);
   const tmp = join(dir, `${COMPACT_TMP_PREFIX}${pid}`);
@@ -57,4 +76,5 @@ export function rewriteAtomic(path: string, events: readonly SessionEvent[], pid
     rmSync(tmp, { force: true });
     throw e instanceof Error ? e : new Error(String(e));
   }
+  fsyncDirectory(dir);
 }

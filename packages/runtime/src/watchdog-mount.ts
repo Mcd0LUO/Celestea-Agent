@@ -114,7 +114,10 @@ export function mountWatchdog(
   settings: Partial<WatchdogMountSettings> = {},
 ): MountedWatchdog | null {
   const cfg: WatchdogMountSettings = { ...WATCHDOG_MOUNT_DEFAULTS, ...settings };
-  if (!cfg.autostart || cfg.intervalMs <= 0) return null;
+  // P2-1 (W836): `autostart:false` still mounts (and still provides the token);
+  // only a non-positive period means "off". Returning null here contradicted the
+  // documented contract above and made a manual `tick()` impossible.
+  if (cfg.intervalMs <= 0) return null;
   const config: Partial<WatchdogConfig> = {
     intervalMs: cfg.intervalMs,
     resultsDir: registry.resultsDir,
@@ -123,7 +126,7 @@ export function mountWatchdog(
     watcherLog: cfg.watcherLog,
     alertsLog: cfg.alertsLog,
   };
-  mountPlugins(ctx, [watchdogPlugin({ registry, config, autostart: true, name: WATCHDOG_PLUGIN_NAME })]);
+  mountPlugins(ctx, [watchdogPlugin({ registry, config, autostart: cfg.autostart, name: WATCHDOG_PLUGIN_NAME })]);
   const watchdog = ctx.get<Watchdog>(WATCHDOG_SERVICE);
   if (watchdog === undefined) return null;
   return { watchdog, stop: (): void => watchdog.stop() };
