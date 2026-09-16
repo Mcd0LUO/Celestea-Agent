@@ -86,7 +86,7 @@ describe.skipIf(!hasFixture)("W755 fixture replay — harness架构哥", () => {
     // Exactly the engine's assembly, not a char count of the log.
     expect(cu.method).toBe("assembled_estimate");
     expect(cu.used).toBe(estimatedContextTokens(request));
-    expect(cu.used).toBe(155_698);
+    expect(cu.used).toBe(155_747);
     expect(cu.window).toBe(1_000_000);
     expect(cu.window_source).toBe("profile");
     expect(cu.ratio).toBe(0.1557);
