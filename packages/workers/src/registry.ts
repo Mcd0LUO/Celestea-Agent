@@ -30,7 +30,7 @@
  * `tsvPath = null` keeps the whole table in memory (tests, ephemeral hosts).
  */
 
-import { readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { SessionLog, WorkerEntry, WorkerStatus } from "@celestea/core";
 import { runDriverLoop, type DriverExit, type WorkerDrivers } from "./driver.js";
@@ -44,7 +44,7 @@ import {
   leaseToken,
   mergeTableRows,
   parseRegistryTsv,
-  readTableRows,
+  readTable,
   receiptDelivered,
   receiptKey,
   receiptToken,
@@ -56,6 +56,7 @@ import {
 import { dropTokens, entryView, isOwn, setToken as setTokenOf, terminalEntry, withProc, withState, withTokens } from "./row.js";
 import { observeWorkerTable, type WorkerRecoveryOptions, type WorkerRecoveryReport } from "./recovery.js";
 import { sanitizeExtra, truncateChars, utcNow, type WorkerSession, type WorkerVerdict } from "./types.js";
+import { PersistFailureLog, type PersistFailure } from "./persist-log.js";
 
 // W787: the pure ROW-FORMAT helpers moved to `row.ts` (§4.1 budget); their public
 // import path stays `registry.js`, so no caller changed.
@@ -95,6 +96,12 @@ export interface WorkerRegistryOptions {
   hostSessionId?: string | null;
   now?: () => number;
   pid?: number;
+  /**
+   * W831 R3 B4 (R2-A4): file a failed persist is appended to (null = no file).
+   * Persist never throws (W180 B1(c)), so without a sink the mismatch
+   * "memory DONE / disk RUNNING" would be invisible.
+   */
+  alertsLog?: string | null;
 }
 
 export class WorkerRegistry {
@@ -108,6 +115,7 @@ export class WorkerRegistry {
   private readonly pending = new Set<Promise<void>>();
   private readonly now: () => number;
   private readonly ownPid: number;
+  private readonly persistLog: PersistFailureLog;
   private drivers: WorkerDrivers | null = null;
   private resultsDirValue: string;
   private sourceLabelValue: string;
@@ -123,6 +131,7 @@ export class WorkerRegistry {
     this.hostSessionValue = opts.hostSessionId ?? null;
     this.now = opts.now ?? Date.now;
     this.ownPid = opts.pid ?? process.pid;
+    this.persistLog = new PersistFailureLog(opts.alertsLog ?? null);
     this.sessionRegistry = new SessionRegistry({
       logFactory: opts.logFactory,
       ...(opts.sessionIdPrefix === undefined ? {} : { prefix: opts.sessionIdPrefix }),
@@ -173,7 +182,7 @@ export class WorkerRegistry {
   /** Insert/replace one row (stamping this process's `proc` token) + persist. */
   upsert(entry: WorkerEntry): string | null {
     this.rows.set(entry.wid, withProc(entry, this.ownPid));
-    return this.persist();
+    return this.persistObserved(entry.wid);
   }
 
   /** Mark a worker's state token (`idle` / `in-turn`); DONE/FAILED rows are frozen. */
@@ -185,7 +194,7 @@ export class WorkerRegistry {
     // "the owner is still driving this row" observable without a timer (P2 adds
     // the heartbeat cadence).
     this.rows.set(wid, withTokens(withState(entry, state), { lease: this.lease() }));
-    void this.persist();
+    void this.persistObserved(wid);
   }
 
   /**
@@ -200,7 +209,7 @@ export class WorkerRegistry {
     if (entry === undefined || !this.isMine(entry) || entry.status !== "RUNNING") return null;
     const settled = terminalEntry(entry, verdict, this.now());
     this.rows.set(wid, settled);
-    void this.persist();
+    void this.persistObserved(wid);
     return { ...settled };
   }
 
@@ -220,6 +229,10 @@ export class WorkerRegistry {
     this.sessionRegistry.remove(sid);
     this.mailboxRegistry.purge(sid);
     this.stopDriver(sid);
+    // W831 R3 B4 (W813 P1-spawns): the readable brief dies with the session.
+    // respawn() copies the facts out BEFORE calling this, so a re-dispatch still
+    // has its brief; without this a long-lived host pins every brief forever.
+    this.spawns.delete(sid);
   }
 
   /**
@@ -264,7 +277,7 @@ export class WorkerRegistry {
       reportTo: remembered.reportTo,
       mode,
     });
-    void this.persist();
+    void this.persistObserved(wid);
     if (this.canDrive()) this.driveIfPossible(session.meta.id, remembered.brief);
     return session.meta.id;
   }
@@ -479,7 +492,7 @@ export class WorkerRegistry {
     const row = this.rows.get(wid);
     if (row === undefined) return;
     this.rows.set(wid, { ...row, extra: setTokenOf(row.extra, "receipt", receiptToken(wid, attempt)) });
-    void this.persist();
+    void this.persistObserved(wid);
   }
 
   /**
@@ -501,16 +514,35 @@ export class WorkerRegistry {
     if (this.path === null) return null;
     try {
       mkdirSync(dirname(this.path), { recursive: true });
-      const merged = mergeTableRows(readTableRows(this.path), this.ownEntries());
+      // W831 R3 B4 (W813 P1-persist-foreign): a READ failure ABORTS the write.
+      // The old readTableRows -> [] made the merge base empty, so the rename
+      // deleted every foreign row. Only an absent file is an empty table.
+      const read = readTable(this.path);
+      if (read.error !== null) return "registry write aborted: cannot read " + this.path + ": " + read.error;
+      const merged = mergeTableRows(read.rows, this.ownEntries());
       this.rows.clear();
       for (const row of merged) this.rows.set(row.wid, row);
       const tmp = `${this.path}.tmp-${this.ownPid}-${this.now()}`;
-      writeFileSync(tmp, serializeRegistryTsv(merged), "utf8");
+      // W831 R3 B4 (W813 P1-persist-foreign): carry unparsed lines through.
+      writeFileSync(tmp, serializeRegistryTsv(merged) + read.raw.map((line) => line + "\n").join(""), "utf8");
       renameSync(tmp, this.path);
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
+  }
+
+  /** W831 R3 B4 (R2-A4): [persist] plus the observability sink (never throws). */
+  private persistObserved(wid: string | null): string | null {
+    const error = this.persist();
+    if (error === null) return null;
+    this.persistLog.record({ at: utcNow(this.now()), path: this.path ?? "", wid, error });
+    return error;
+  }
+
+  /** W831 R3 B4 (R2-A4): the persist failures this instance has seen. */
+  persistFailures(): readonly PersistFailure[] {
+    return this.persistLog.list();
   }
 
   /**
@@ -543,6 +575,10 @@ export class WorkerRegistry {
    */
   private driverExited(sid: string, reason: DriverExit): void {
     this.finalizeSession(sid, { ok: false, reason: `driver exited: ${reason}` });
+    // W831 R3 B4 (W813 P1-spawns): the loop is gone, so its in-memory brief is
+    // dead too. runDriverLoop ALWAYS reports onExit, so this is the single
+    // cleanup for every driven session; releaseSession covers the rest.
+    this.spawns.delete(sid);
   }
 
   /** W736: abandon every still-RUNNING own row as FAILED (see [shutdown]). */
@@ -553,7 +589,7 @@ export class WorkerRegistry {
       this.rows.set(entry.wid, terminalEntry(entry, { ok: false, reason }, this.now()));
       touched = true;
     }
-    if (touched) void this.persist();
+    if (touched) void this.persistObserved(null);
   }
 
   /**

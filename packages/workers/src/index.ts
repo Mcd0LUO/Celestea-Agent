@@ -35,6 +35,7 @@
  */
 
 export * from "./registry-tsv.js";
+export * from "./persist-log.js";
 export * from "./types.js";
 export * from "./log.js";
 export * from "./sessions.js";

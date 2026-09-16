@@ -79,12 +79,49 @@ export function mergeTableRows(fileRows: readonly WorkerEntry[], mine: readonly 
 }
 
 /** Read a table for a merge (`[]` for a missing / unreadable file). */
-export function readTableRows(path: string): WorkerEntry[] {
+/**
+ * W831 R3 B4 (W813 P1-persist-foreign): the table as READ, without lying about
+ * failure. A missing file is an empty table (ENOENT, the normal first-run
+ * state); any other read error is reported so the writer can ABORT instead of
+ * merging its own rows against an empty base and deleting every foreign row.
+ *
+ * `raw` carries the physical lines that did not parse, verbatim, so a rewrite
+ * can pass them through instead of dropping them.
+ */
+export interface RegistryTableRead {
+  rows: WorkerEntry[];
+  raw: string[];
+  /** Non-null only for a real read failure (ENOENT is an empty table). */
+  error: string | null;
+}
+
+export function readTable(path: string): RegistryTableRead {
+  let text: string;
   try {
-    return parseRegistryTsv(readFileSync(path, "utf8")).entries;
-  } catch {
-    return [];
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    if (errorCodeOf(error) === "ENOENT") return { rows: [], raw: [], error: null };
+    return { rows: [], raw: [], error: messageOf(error) };
   }
+  const parsed = parseRegistryTsv(text);
+  return { rows: parsed.entries, raw: parsed.skipped.map((s) => s.raw), error: null };
+}
+
+/**
+ * Read just the rows of a table (`[]` for a missing / unreadable file). Kept for
+ * callers that only observe; a WRITER must use [readTable] so a read failure can
+ * stop the write.
+ */
+export function readTableRows(path: string): WorkerEntry[] {
+  return readTable(path).rows;
+}
+
+function errorCodeOf(error: unknown): string {
+  return typeof error === "object" && error !== null && "code" in error ? String((error as { code: unknown }).code) : "";
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** k=v token lookup inside `extra` (whitespace separated). */
