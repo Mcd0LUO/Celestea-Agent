@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { OpenAiCompatClient } from "./client.js";
 import { LlmError } from "./errors.js";
-import { collectStream, userMessage, type StreamEvent } from "./seam.js";
+import { assistantText, collectStream, userMessage, type Llm, type LlmStream, type StreamEvent, type Usage } from "./seam.js";
 import {
   createFallbackLlm,
   DEFAULT_FALLBACK_POLICY,
@@ -318,5 +318,69 @@ describe("chain exhaustion", () => {
 
   it("requires at least one target", () => {
     expect(() => createFallbackLlm({ targets: [], clientFor: () => scripted([]) })).toThrow(/at least one target/);
+  });
+});
+
+// W835 (R3 batch C / W811 P1-2): the last target must not sleep Retry-After.
+// Source: W826-R3修复计划 §批次 C P1-2 probe (真实 fallback 入口 + sleep spy).
+describe("W835 P1-2 — no Retry-After sleep once the chain is exhausted", () => {
+  it("does not sleep and rethrows the original error for a single failed target", async () => {
+    const only = await startMockUpstream("http-error", {
+      status: 429,
+      headers: { "retry-after": "2" },
+      body: "slow down",
+    });
+    const waits: number[] = [];
+    const llm = createFallbackLlm({
+      targets: [{ name: "only", provider: "p", model: "m", baseUrl: only.baseUrl }],
+      clientFor: (t) =>
+        new OpenAiCompatClient({
+          baseUrl: t.baseUrl ?? "",
+          apiKey: "k",
+          model: t.model,
+          connectTimeoutMs: 1000,
+          responseTimeoutMs: 1000,
+        }),
+      sleep: async (ms) => void waits.push(ms),
+    });
+
+    await expect(collectStream(await llm.generate(REQ))).rejects.toBeInstanceOf(LlmError);
+    expect(waits).toEqual([]);
+    await only.close();
+  });
+});
+
+// W835 (R3 batch C / W811 P1-3): abandoning the consumer must still close the
+// step. Source: W826-R3修复计划 §批次 C P1-3 probe (真实 fallback + step sink).
+describe("W835 P1-3 — abandoning a step still closes it with its usage", () => {
+  it("records the usage then closes the step as ok when the consumer breaks", async () => {
+    const usage: Usage = { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10, cache_read: 0, reasoning_tokens: 0 };
+    const recorded: Usage[] = [];
+    const closed: string[] = [];
+    const inner: Llm = {
+      generate: async (): Promise<LlmStream> => ({
+        async *[Symbol.asyncIterator](): AsyncGenerator<StreamEvent> {
+          yield { kind: "usage", usage };
+          yield { kind: "done", message: assistantText("never read") };
+        },
+      }),
+    };
+    const llm = createFallbackLlm({
+      targets: [{ name: "only", provider: "p", model: "m" }],
+      clientFor: () => inner,
+      steps: {
+        beginStep: () => ({
+          record: (u) => recorded.push(u),
+          close: (outcome) => closed.push(outcome.kind),
+        }),
+      },
+    });
+
+    for await (const event of await llm.generate(REQ)) {
+      if (event.kind === "usage") break;
+    }
+
+    expect(recorded).toEqual([usage]);
+    expect(closed).toEqual(["ok"]);
   });
 });

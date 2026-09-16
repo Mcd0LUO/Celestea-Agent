@@ -283,9 +283,13 @@ async function* attemptLoop(rt: FallbackRuntime, req: ModelRequestDraft): LlmStr
       noteFailure(rt, target, info);
       if (!info.retryable) throw error;
       lastError = error;
+      // W835 (P1-2): only wait for Retry-After when another target will run.
+      // An exhausted chain must fail fast instead of sleeping up to cooldownMs.
       const next = plan[attempt + 1];
-      await honourRetryAfter(rt, info);
-      if (next !== undefined) announce(rt, next, attempt + 1, target.name, info);
+      if (next !== undefined) {
+        await honourRetryAfter(rt, info);
+        announce(rt, next, attempt + 1, target.name, info);
+      }
       from = target.name;
       continue;
     }
@@ -302,9 +306,12 @@ async function* attemptLoop(rt: FallbackRuntime, req: ModelRequestDraft): LlmStr
       return;
     }
     lastError = outcome.error;
+    // W835 (P1-2): no last-target Retry-After sleep (see the catch branch above).
     const next = plan[attempt + 1];
-    await honourRetryAfter(rt, outcome.info);
-    if (next !== undefined) announce(rt, next, attempt + 1, target.name, outcome.info);
+    if (next !== undefined) {
+      await honourRetryAfter(rt, outcome.info);
+      announce(rt, next, attempt + 1, target.name, outcome.info);
+    }
     from = target.name;
   }
   throw lastError ?? new LlmError("llm fallback: every target failed", "generate", { retryable: false });
@@ -322,11 +329,26 @@ async function* consume(
   policy: FallbackPolicy,
 ): AsyncGenerator<StreamEvent, AttemptOutcome, undefined> {
   let produced = 0;
+  let closed = false;
+  // W835 (P1-3): close the step EXACTLY once. The `finally` covers the case the
+  // old code missed: the consumer abandoned the attempt (break / cancel), the
+  // generator is returned, and the usage already recorded must still be booked
+  // instead of silently dropped.
+  const closeStep = (outcome: {
+    kind: "ok" | "error";
+    error_kind?: string | null;
+    http_status?: number | null;
+    retryable?: boolean | null;
+  }): void => {
+    if (closed) return;
+    closed = true;
+    step?.close(outcome);
+  };
   try {
     for await (const event of stream) {
       if (isProducedEvent(event)) produced += 1;
       if (event.kind === "done") {
-        step?.close({ kind: "ok" });
+        closeStep({ kind: "ok" });
         // The terminal event is FORWARDED, not swallowed: the loop derives the
         // turn's `assistant_message` from it (loop.ts:246-253).
         yield event;
@@ -337,19 +359,24 @@ async function* consume(
       if (event.kind === "usage") step?.record(event.usage);
       if (event.kind === "failed" || event.kind === "interrupted") {
         const info = describeEvent(event, produced);
-        step?.close({ kind: "error", error_kind: info.kind, http_status: null, retryable: info.retryable });
+        closeStep({ kind: "error", error_kind: info.kind, http_status: null, retryable: info.retryable });
         return { kind: "failed", info, terminal: event, error: errorOfEvent(event, info) };
       }
       yield event;
     }
+    const info = describeEvent({ kind: "interrupted" }, produced);
+    closeStep({ kind: "error", error_kind: info.kind, http_status: null, retryable: info.retryable });
+    return { kind: "failed", info, terminal: { kind: "interrupted" }, error: errorOfEvent({ kind: "interrupted" }, info) };
   } catch (error) {
     const info = describeFailure(error, produced, policy);
-    step?.close({ kind: "error", error_kind: info.kind, http_status: info.httpStatus, retryable: info.retryable });
+    closeStep({ kind: "error", error_kind: info.kind, http_status: info.httpStatus, retryable: info.retryable });
     return { kind: "failed", info, terminal: { kind: "interrupted" }, error };
+  } finally {
+    // Early `return()` from the consumer (break / cancel): book the attempt as
+    // ok so its already-recorded usage keeps its row. A no-op on every normal
+    // exit because [closeStep] is idempotent.
+    closeStep({ kind: "ok" });
   }
-  const info = describeEvent({ kind: "interrupted" }, produced);
-  step?.close({ kind: "error", error_kind: info.kind, http_status: null, retryable: info.retryable });
-  return { kind: "failed", info, terminal: { kind: "interrupted" }, error: errorOfEvent({ kind: "interrupted" }, info) };
 }
 
 /** One attempt's failure, in the vocabulary of §4.2.2's table. */

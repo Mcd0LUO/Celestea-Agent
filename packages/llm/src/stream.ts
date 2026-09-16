@@ -5,7 +5,8 @@
  *   * the body is read chunk by chunk with the SSE idle guard applied to the
  *     gap between any two chunks (including the wait for the first one);
  *   * frames are decoded incrementally, `[DONE]` terminates, keepalive and
- *     non-JSON frames are skipped;
+ *     non-JSON frames are skipped, and an upstream error frame terminates the
+ *     stream as failed{kind:"stream"} (never a fake done);
  *   * reasoning deltas stream as thinking events, content as text deltas, tool
  *     calls accumulate per index, usage is surfaced just before the terminal
  *     event;
@@ -23,6 +24,7 @@ import { SseDecoder, type SseFrame } from "./sse/frames.js";
 import {
   parseArguments,
   parseRawChunk,
+  parseStreamError,
   thinkingEvent,
   type RawChunk,
 } from "./sse/chunks.js";
@@ -92,20 +94,35 @@ export class TurnAccumulator {
   }
 }
 
-/** Fold a batch of frames in; `done` reports the [DONE] sentinel. */
+/**
+ * Fold a batch of frames in; `done` reports the [DONE] sentinel and `failure`
+ * an upstream error frame (W835 R3 batch C / P1-1).
+ */
 function processFrames(
   frames: readonly SseFrame[],
   turn: TurnAccumulator,
-): { events: StreamEvent[]; done: boolean } {
+): { events: StreamEvent[]; done: boolean; failure: StreamEvent | null } {
   const events: StreamEvent[] = [];
   for (const frame of frames) {
-    if (frame.data === "[DONE]") return { events, done: true };
+    if (frame.data === "[DONE]") return { events, done: true, failure: null };
     if (frame.event === "keepalive") continue;
     const chunk = parseRawChunk(frame.data);
-    if (chunk === undefined) continue;
-    events.push(...turn.push(chunk));
+    if (chunk !== undefined) {
+      events.push(...turn.push(chunk));
+      continue;
+    }
+    const error = parseStreamError(frame.data);
+    if (error !== undefined) {
+      // An upstream error frame is a terminal failure, never skippable noise:
+      // a following [DONE] must not turn it into a fake `done`.
+      return {
+        events,
+        done: false,
+        failure: { kind: "failed", kindOf: "stream", message: "upstream stream error: " + error },
+      };
+    }
   }
-  return { events, done: false };
+  return { events, done: false, failure: null };
 }
 
 /**
@@ -208,6 +225,10 @@ export async function* streamEvents(
     for await (const bytes of readBodyChunks(response, idleMs)) {
       const result = processFrames(decoder.push(textDecoder.write(bytes)), turn);
       yield* result.events;
+      if (result.failure !== null) {
+        failure = result.failure;
+        break;
+      }
       if (result.done) {
         sawDone = true;
         break;

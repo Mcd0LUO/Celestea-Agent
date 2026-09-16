@@ -135,6 +135,46 @@ export function parseRawChunk(data: string): RawChunk | undefined {
   return chunk;
 }
 
+/**
+ * The upstream-reported error message of one SSE payload, or undefined when the
+ * payload carries none (W835 R3 batch C / P1-1).
+ *
+ * OpenAI-compatible gateways report a failed generation as a 200 SSE frame
+ * whose body is `{"error":{...}}` (some send `{"message":"..."}`). Such a frame
+ * carries no choices/usage, so [parseRawChunk] returns undefined; without this
+ * check it was silently dropped and a following `[DONE]` could even turn it
+ * into a "successful" empty reply. Recognising it lets the stream terminate as
+ * `failed{kindOf:"stream"}` instead.
+ */
+export function parseStreamError(data: string): string | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(data) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  const error = value["error"];
+  if (error !== undefined && error !== null) {
+    const text = errorText(error);
+    if (text !== undefined) return text;
+  }
+  const message = str(value["message"]);
+  return message !== undefined && message.trim() !== "" ? message : undefined;
+}
+
+/** Best-effort text of an `error` payload (string, or a nested message/detail). */
+function errorText(error: unknown): string | undefined {
+  if (typeof error === "string") return error.trim() === "" ? undefined : error;
+  if (!isRecord(error)) return undefined;
+  for (const key of ["message", "detail"]) {
+    const text = str(error[key]);
+    if (text !== undefined && text.trim() !== "") return text;
+  }
+  const json = JSON.stringify(error);
+  return json === undefined || json === "{}" ? undefined : json;
+}
+
 /** Build a thinking event for a non-blank reasoning delta (blank-gated). */
 export function thinkingEvent(reasoning: string): StreamEvent | null {
   return reasoning.trim() === "" ? null : { kind: "thinking", text: reasoning };

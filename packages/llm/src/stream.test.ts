@@ -186,6 +186,36 @@ describe("terminal states (R1: never a fake done)", () => {
     const events = await runFrames([]);
     expect(events).toEqual([{ kind: "interrupted" }]);
   });
+
+  // W835 (R3 batch C / W811 P1-1): an upstream error frame is a terminal
+  // failure, not noise. Source: W826-R3修复计划 §批次 C P1-1 probe.
+  it("turns an upstream error frame into failed{kindOf:'stream'} (no fake done)", async () => {
+    const events = await runFrames([
+      sseFrame({ error: { message: "upstream content filter", code: "content_filter" } }),
+    ]);
+    expect(events.map((e) => e.kind)).toEqual(["failed"]);
+    expect(events[0]).toMatchObject({ kind: "failed", kindOf: "stream" });
+    expect((events[0] as { message: string }).message).toContain("upstream content filter");
+  });
+
+  it("stays failed even when the upstream follows the error frame with [DONE]", async () => {
+    const events = await runFrames([
+      sseFrame({ error: { message: "rate limited", type: "rate_limit_error" } }),
+      sseFrame("[DONE]"),
+    ]);
+    expect(events.some((e) => e.kind === "done")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ kind: "failed", kindOf: "stream" });
+  });
+
+  it("recognises a message-only error frame and still surfaces prior usage", async () => {
+    const events = await runFrames([
+      sseFrame({ choices: [], usage: { prompt_tokens: 5, total_tokens: 5 } }),
+      sseFrame({ message: "gateway overloaded" }),
+      sseFrame("[DONE]"),
+    ]);
+    expect(events.map((e) => e.kind)).toEqual(["usage", "failed"]);
+    expect(events.at(-1)).toMatchObject({ kind: "failed", kindOf: "stream" });
+  });
 });
 
 describe("request body on the wire", () => {
