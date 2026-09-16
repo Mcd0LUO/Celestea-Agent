@@ -9,7 +9,8 @@
  *   - no POST /api/turn, no /api/clear, no provider/workspace/prompt writes
  *
  * Writes contracts/probe-evidence.json + reports/contract-probe.md.
- * Exits non-zero when a probe disagrees with the frozen contract.
+ * Exits 1 when a probe disagrees with the frozen contract, 2 when a face could
+ * not be probed at all (degraded; recorded, never a silent pass).
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -25,7 +26,7 @@ const TIMEOUT = num(args, "timeout-ms", 10_000);
 interface Check {
   endpoint: string;
   kind: "response-shape" | "error-branch" | "sse-transport" | "tool-set" | "contract-count";
-  status: "pass" | "fail" | "skip";
+  status: "pass" | "fail" | "skip" | "degraded";
   detail: string;
   observedStatus?: number;
   safeBecause?: string;
@@ -38,6 +39,85 @@ function fail(endpoint: string, kind: Check["kind"], detail: string, observedSta
 }
 function pass(endpoint: string, kind: Check["kind"], detail: string, observedStatus?: number, safeBecause?: string): void {
   checks.push({ endpoint, kind, status: "pass", detail, ...(observedStatus === undefined ? {} : { observedStatus }), ...(safeBecause === undefined ? {} : { safeBecause }) });
+}
+function degraded(endpoint: string, kind: Check["kind"], detail: string, observedStatus?: number): void {
+  checks.push({ endpoint, kind, status: "degraded", detail, ...(observedStatus === undefined ? {} : { observedStatus }) });
+}
+
+/**
+ * Section 4 -- session-explicit tool faces (W803 probe follow-up).
+ *
+ * A bare GET /api/tools answers for the FOCUSED/active session, whose mode can
+ * drift (an execution session folds the face to 6), while contracts/tools.json is
+ * the full registry (11). So name the session explicitly, one probe per face:
+ *   - mode=standard  -> MUST equal the full registry exactly (11 names);
+ *   - mode=execution -> MUST be the documented fold: exactly 6, a subset of the
+ *     registry, folding out the four SDK bridge tools + ask_user_question
+ *     (contracts/endpoints.json#get_tools, W791 P1).
+ */
+async function probeToolFaces(
+  sessions: Array<{ id: string; mode?: string }>,
+  contractNames: string[],
+): Promise<void> {
+  const standardSession = sessions.find((s) => s.mode === "standard");
+  const executionSession = sessions.find((s) => s.mode === "execution");
+  const contractSet = new Set(contractNames);
+  const EXPECTED_FOLDED = ["ask_user_question", "list_dir", "read_file", "run_shell", "write_file"].sort();
+
+  async function toolNamesFor(sessionId: string): Promise<{ names: string[]; status: number }> {
+    const res = await probe(STUDIO, "/api/tools?session=" + encodeURIComponent(sessionId), { timeoutMs: TIMEOUT });
+    const names = (((res.json as { tools?: Array<{ name: string }> }).tools) ?? []).map((t) => t.name).sort();
+    return { names, status: res.status };
+  }
+  function sameNames(a: string[], b: string[]): boolean {
+    return a.length === b.length && a.every((n, i) => n === b[i]);
+  }
+  const STANDARD_LABEL = "GET /api/tools?session=...(standard)";
+  const EXECUTION_LABEL = "GET /api/tools?session=...(execution)";
+
+  if (standardSession !== undefined) {
+    const r = await toolNamesFor(standardSession.id);
+    if (sameNames(r.names, contractNames)) {
+      pass(STANDARD_LABEL, "tool-set", "session=" + standardSession.id + " (mode=standard); " + r.names.length + " names match contracts/tools.json exactly (full registry)", r.status);
+    } else {
+      fail(STANDARD_LABEL, "tool-set", "session=" + standardSession.id + " (mode=standard); live=[" + r.names.join(",") + "] contract=[" + contractNames.join(",") + "]", r.status);
+    }
+  } else {
+    // No standard session: the primary equality assertion cannot run. Degrade
+    // EXPLICITLY and recordably -- assert the weaker contract-superset-live
+    // invariant, mark the check degraded (never a silent pass) and exit 2. A
+    // live name outside the contract is still a hard fail.
+    const fallback = sessions.find((s) => s.mode !== "execution");
+    if (fallback === undefined) {
+      degraded(STANDARD_LABEL, "tool-set", "DEGRADED: /api/sessions lists " + sessions.length + " session(s), none with mode=standard; the full-registry equality could not be asserted at all");
+    } else {
+      const r = await toolNamesFor(fallback.id);
+      const outside = r.names.filter((n) => !contractSet.has(n));
+      if (outside.length === 0) {
+        degraded(STANDARD_LABEL, "tool-set", "DEGRADED: no mode=standard session in /api/sessions (" + sessions.length + " listed); asserted the weaker invariant contract superset-of live (" + r.names.length + " live <= " + contractNames.length + " contract) via session=" + fallback.id + " mode=" + (fallback.mode ?? "unknown") + "; activate a standard session to restore exact-equality", r.status);
+      } else {
+        fail(STANDARD_LABEL, "tool-set", "no mode=standard session AND live reports name(s) outside the contract: [" + outside.join(",") + "]", r.status);
+      }
+    }
+  }
+
+  if (executionSession !== undefined) {
+    const r = await toolNamesFor(executionSession.id);
+    const outside = r.names.filter((n) => !contractSet.has(n));
+    const folded = contractNames.filter((n) => !r.names.includes(n));
+    const problems: string[] = [];
+    if (r.names.length !== 6) problems.push("expected exactly 6 names, got " + r.names.length);
+    if (outside.length > 0) problems.push("name(s) outside the contract: [" + outside.join(",") + "]");
+    if (!sameNames(folded, EXPECTED_FOLDED)) problems.push("folded-out=[" + folded.join(",") + "] expected=[" + EXPECTED_FOLDED.join(",") + "]");
+    const base = "session=" + executionSession.id + " (mode=execution); live=[" + r.names.join(",") + "] folded-out=[" + folded.join(",") + "]";
+    if (problems.length === 0) {
+      pass(EXECUTION_LABEL, "tool-set", base + "; exactly 6: the full registry folded by the four SDK bridge tools + ask_user_question", r.status);
+    } else {
+      fail(EXECUTION_LABEL, "tool-set", base + "; " + problems.join("; "), r.status);
+    }
+  } else {
+    degraded(EXECUTION_LABEL, "tool-set", "DEGRADED: no mode=execution session in /api/sessions (" + sessions.length + " listed); the folded face could not be probed. The bare GET /api/tools answer follows the active session's mode, which is why this probe is session-explicit");
+  }
 }
 
 /**
@@ -239,27 +319,24 @@ async function main(): Promise<void> {
     fail("GET /api/events", "sse-transport", `content-type=${ct || "(none)"}`, sseProbe.status);
   }
 
-  // ---- 4. live tool set --------------------------------------------------
-  const liveTools = await probe(STUDIO, "/api/tools", { timeoutMs: TIMEOUT });
-  const liveNames = ((liveTools.json as { tools: Array<{ name: string }> }).tools ?? []).map((t) => t.name).sort();
+  // ---- 4. live tool set (session-explicit; W803 probe follow-up) ----------
+  const sessions = (((sessionList.json as { sessions?: Array<{ id?: string; mode?: string }> }).sessions) ?? [])
+    .filter((s): s is { id: string; mode?: string } => typeof s.id === "string");
   const contractNames = tools.tools.map((t) => t.name).sort();
-  if (JSON.stringify(liveNames) === JSON.stringify(contractNames)) {
-    pass("GET /api/tools", "tool-set", `${liveNames.length} names match contracts/tools.json exactly`, liveTools.status);
-  } else {
-    fail("GET /api/tools", "tool-set", `live=[${liveNames.join(",")}] contract=[${contractNames.join(",")}]`, liveTools.status);
-  }
+  await probeToolFaces(sessions, contractNames);
 
   // ---- 5. report ---------------------------------------------------------
   const passed = checks.filter((c) => c.status === "pass").length;
   const failed = checks.filter((c) => c.status === "fail").length;
+  const degradedCount = checks.filter((c) => c.status === "degraded").length;
   const endpointsSampled = new Set(checks.filter((c) => c.kind === "response-shape" || c.kind === "error-branch").map((c) => c.endpoint)).size;
 
   const evidence = {
     generatedAt: new Date().toISOString(),
     studio: STUDIO,
     policy: "read-only: GET probes + error branches proven mutation-free in the retired backend source",
-    counts: { checks: checks.length, passed, failed, endpointsSampled, sseEvents: sse.events.length, tools: tools.tools.length },
-    verdict: failed === 0 ? "consistent" : "INCONSISTENT",
+    counts: { checks: checks.length, passed, failed, degraded: degradedCount, endpointsSampled, sseEvents: sse.events.length, tools: tools.tools.length },
+    verdict: failed > 0 ? "INCONSISTENT" : degradedCount > 0 ? "DEGRADED" : "consistent",
     checks,
   };
   const root = resolve(join(import.meta.dirname ?? ".", ".."));
@@ -267,17 +344,19 @@ async function main(): Promise<void> {
   mkdirSync(join(root, "reports"), { recursive: true });
   writeFileSync(join(root, "reports", "contract-probe.md"), render(evidence));
 
-  console.log(`[verify-contracts] checks=${checks.length} pass=${passed} fail=${failed} endpointsSampled=${endpointsSampled}`);
-  for (const c of checks.filter((x) => x.status === "fail")) console.log(`  FAIL ${c.endpoint}: ${c.detail}`);
-  console.log(`[verify-contracts] wrote contracts/probe-evidence.json + reports/contract-probe.md`);
+  console.log("[verify-contracts] checks=" + checks.length + " pass=" + passed + " fail=" + failed + " degraded=" + degradedCount + " endpointsSampled=" + endpointsSampled);
+  for (const c of checks.filter((x) => x.status === "fail")) console.log("  FAIL " + c.endpoint + ": " + c.detail);
+  for (const c of checks.filter((x) => x.status === "degraded")) console.log("  DEGRADED " + c.endpoint + ": " + c.detail);
+  console.log("[verify-contracts] wrote contracts/probe-evidence.json + reports/contract-probe.md");
   if (failed > 0) process.exit(1);
+  if (degradedCount > 0) process.exit(2);
 }
 
 interface Evidence {
   generatedAt: string;
   studio: string;
   policy: string;
-  counts: { checks: number; passed: number; failed: number; endpointsSampled: number; sseEvents: number; tools: number };
+  counts: { checks: number; passed: number; failed: number; degraded: number; endpointsSampled: number; sseEvents: number; tools: number };
   verdict: string;
   checks: Check[];
 }
@@ -286,35 +365,36 @@ function render(e: Evidence): string {
   const lines: string[] = [];
   lines.push("# Contract probe evidence (live :3777, read-only)");
   lines.push("");
-  lines.push(`- generated: ${e.generatedAt}`);
-  lines.push(`- target: ${e.studio}`);
-  lines.push(`- policy: ${e.policy}`);
+  lines.push("- generated: " + e.generatedAt);
+  lines.push("- target: " + e.studio);
+  lines.push("- policy: " + e.policy);
   lines.push("");
   lines.push("## Verdict");
   lines.push("");
-  lines.push(`| metric | value |`);
-  lines.push(`|---|---|`);
-  lines.push(`| checks | ${e.counts.checks} |`);
-  lines.push(`| passed | ${e.counts.passed} |`);
-  lines.push(`| failed | ${e.counts.failed} |`);
-  lines.push(`| **endpoints sampled** | **${e.counts.endpointsSampled}** |`);
-  lines.push(`| SSE event names frozen | ${e.counts.sseEvents} |`);
-  lines.push(`| tool specs | ${e.counts.tools} |`);
-  lines.push(`| verdict | ${e.verdict} |`);
+  lines.push("| metric | value |");
+  lines.push("|---|---|");
+  lines.push("| checks | " + e.counts.checks + " |");
+  lines.push("| passed | " + e.counts.passed + " |");
+  lines.push("| failed | " + e.counts.failed + " |");
+  lines.push("| degraded | " + e.counts.degraded + " |");
+  lines.push("| **endpoints sampled** | **" + e.counts.endpointsSampled + "** |");
+  lines.push("| SSE event names frozen | " + e.counts.sseEvents + " |");
+  lines.push("| tool specs | " + e.counts.tools + " |");
+  lines.push("| verdict | " + e.verdict + " |");
   lines.push("");
   lines.push("## Checks");
   lines.push("");
   lines.push("| endpoint | kind | status | observed | detail |");
   lines.push("|---|---|---|---|---|");
   for (const c of e.checks) {
-    lines.push(`| ${c.endpoint} | ${c.kind} | ${c.status} | ${c.observedStatus ?? "-"} | ${c.detail.replace(/\|/g, "\\|")} |`);
+    lines.push("| " + c.endpoint + " | " + c.kind + " | " + c.status + " | " + (c.observedStatus ?? "-") + " | " + c.detail.replace(/\|/g, "\\|") + " |");
   }
   lines.push("");
   lines.push("## Mutation safety of the error-branch probes");
   lines.push("");
   lines.push("| endpoint | why it cannot mutate |");
   lines.push("|---|---|");
-  for (const c of e.checks.filter((x) => x.safeBecause !== undefined)) lines.push(`| ${c.endpoint} | ${c.safeBecause} |`);
+  for (const c of e.checks.filter((x) => x.safeBecause !== undefined)) lines.push("| " + c.endpoint + " | " + c.safeBecause + " |");
   lines.push("");
   return lines.join("\n");
 }

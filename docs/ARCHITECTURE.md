@@ -206,7 +206,7 @@ apps/studio → runtime.compose(profile)
 |---|---|---|---|---|---|
 | EX-01 | `packages/core/src/redact.ts` | `createRedactor` 81 行（限 80）；`discover()` 与 `collectKnownSecrets()` 嵌套 5 层（限 4） | P0 遗留代码：脱敏规则表与凭据上下文直接内联在函数体内 | 把 `DEFAULT_RULES` / `CREDENTIAL_CONTEXTS` / 环境变量名单提到模块级常量表，并抽出 `collectProviderKeys()`；两个函数即可回到 ≤80 行 / ≤4 层 | P1（core 收口时；`packages/core` 归 W271 领地） |
 | EX-02 | `scripts/export-golden.ts` | `main()` 249 行（限 80）；嵌套 5 层（限 4） | P0 一次性黄金样本导出脚本：探针清单 → 拉取 → 脱敏 → 写盘全在一个线性 `main()` 里 | 拆 `scripts/golden/{probe,fetch,redact,write}.ts`，`main()` 只保留步骤编排 | P1 工具链整理 |
-| EX-03 | `scripts/verify-contracts.ts` | `main()` 162 行（限 80） | P0 校验脚本：20 端点 × 断言的线性探针清单 | 探针清单抽成数据表（数组字面量）+ `runProbe()` 循环 | P1 工具链整理 |
+| EX-03 | `scripts/verify-contracts.ts` | `main()` 169 行（限 80） | P0 校验脚本：22 端点 × 断言的线性探针清单 | 探针清单抽成数据表（数组字面量）+ `runProbe()` 循环 | P1 工具链整理 |
 | EX-04 | `scripts/compare-replay.ts` | `main()` 115 行（限 80） | P0 对拍脚本：依次跑 A–E 五组对比并汇总写报告 | 每组对比抽成独立 `compareX()`，`main()` 只做调度与汇总 | P1 工具链整理 |
 
 **当前状态**：`ARCH_STRICT=1 pnpm lint` 的输出恰好是上表 4 个文件、8 条错误——**没有隐藏例外**。

@@ -1,6 +1,6 @@
 # Contract probe evidence (live :3777, read-only)
 
-- generated: 2026-09-16T04:15:08.748Z
+- generated: 2026-09-16T04:27:16.371Z
 - target: http://127.0.0.1:3777
 - policy: read-only: GET probes + error branches proven mutation-free in the retired backend source
 
@@ -8,13 +8,14 @@
 
 | metric | value |
 |---|---|
-| checks | 27 |
-| passed | 26 |
-| failed | 1 |
+| checks | 28 |
+| passed | 28 |
+| failed | 0 |
+| degraded | 0 |
 | **endpoints sampled** | **22** |
 | SSE event names frozen | 9 |
 | tool specs | 11 |
-| verdict | INCONSISTENT |
+| verdict | consistent |
 
 ## Checks
 
@@ -46,7 +47,8 @@
 | GET /api/fs/browse?path=relative-not-absolute | error-branch | pass | 400 | HTTP 400 + "must be absolute" |
 | GET /api/worker/status?wid=__p0_probe_missing__ | error-branch | pass | 200 | HTTP 200 + "no worker" |
 | GET /api/events | sse-transport | pass | 200 | content-type=text/event-stream; envelope + 9 event names frozen from source (passive connect, no turn running) |
-| GET /api/tools | tool-set | fail | 200 | live=[http_request,process_control,run_code,session_send_message,spawn_worker,worker_status] contract=[ask_user_question,http_request,list_dir,process_control,read_file,run_code,run_shell,session_send_message,spawn_worker,worker_status,write_file] |
+| GET /api/tools?session=...(standard) | tool-set | pass | 200 | session=server-center/center-架构师-1788940601.93642104 (mode=standard); 11 names match contracts/tools.json exactly (full registry) |
+| GET /api/tools?session=...(execution) | tool-set | pass | 200 | session=CelesteaTeamAPI/中转哥-1789192958.416000000 (mode=execution); live=[http_request,process_control,run_code,session_send_message,spawn_worker,worker_status] folded-out=[ask_user_question,list_dir,read_file,run_shell,write_file]; exactly 6: the full registry folded by the four SDK bridge tools + ask_user_question |
 
 ## Mutation safety of the error-branch probes
 

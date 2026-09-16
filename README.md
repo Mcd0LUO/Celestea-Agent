@@ -73,7 +73,7 @@ pnpm typecheck          # tsc --noEmit（strict + noUncheckedIndexedAccess + ver
 pnpm test               # vitest（全量单测）
 
 # 契约与实机对拍（只读 :3777）
-pnpm contracts:verify   # 20 端点抽样 + 8 SSE 事件名 + 10 工具，写 contracts/probe-evidence.json
+pnpm contracts:verify   # 22 端点抽样 + 9 SSE 事件名 + 11 工具，写 contracts/probe-evidence.json
 pnpm golden:export      # 导出 fixtures/（只读现有会话日志 + 只读 /api/events）
 pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时 golden 分歧即退出码 1）
 ```
@@ -113,7 +113,7 @@ pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时
 | `session-event.schema.json` | `SessionEvent` 7 变体 + `TurnOutcome` 5 态 + `turn-<n>` 单调规则 + 两套投影 | 7 / 5 | 测试 + 回放 |
 | `tools.json` | 10 个工具 spec（描述取自运行中的引擎 `/api/tools`，parameters 逐字转写自 `ToolSpec`） | **10** | 测试 + 实机工具名集合比对 |
 | `data-files/*.schema.json` | `workspaces.json`(v2) / `providers.json`(+public_view 不含 key) / `prompts.json` / `session.json` / `cli-main.jsonl` / `cli-main.jsonl.precompact` / `registry.tsv` / `pricing.json` / `usage-ledger.jsonl` / `checkpoint.json`，外加 `index.json` | **10**（+ `index.json`） | 测试（含"无 version 字段"与 round-trip 要求） |
-| `probe-evidence.json` | `pnpm contracts:verify` 的实机证据 | 25 checks | 生成 |
+| `probe-evidence.json` | `pnpm contracts:verify` 的实机证据 | 28 checks | 生成 |
 
 **实机校验抽样**：12 个 GET 端点（health/status/tools/config/sessions/sessions-id-messages/workspaces/providers/prompts/fs-browse/worker-status + events 头）+ 8 个只读安全错误分支 = **20 个端点**，全部通过。错误分支的"不可写"性逐条举证（见 `reports/contract-probe.md` 末表）。
 
@@ -202,7 +202,7 @@ pnpm check
 - ✅ 契约冻结（39 端点 / 8 SSE / 7+5 SessionEvent / 10 工具 / 8 数据文件）
 - ✅ pnpm workspace 骨架（7 packages + apps/studio，Node 24 + Hono + strict TS + vitest）
 - ✅ 黄金样本导出器（只读、脱敏、可复现）与回放对拍脚本骨架
-- ✅ 实机契约校验（20 端点抽样，只读）
+- ✅ 实机契约校验（22 端点抽样，只读）
 - ❌ 不含真实业务实现（LLM 调用、沙箱、agent loop、HTTP handler 行为）——P1–P4
 - ❌ 不启动任何服务、不改 systemd/nginx、不写任何生产数据文件
 
