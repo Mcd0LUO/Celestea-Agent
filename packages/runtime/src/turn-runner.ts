@@ -105,6 +105,8 @@ export class TurnRunner {
   private controller: AbortController | null = null;
   private turnNo = 0;
   private released = false;
+  /** The in-flight turn promise, so shutdown can wait for it (P1-5, W836). */
+  private inFlight: Promise<TurnOutcome> | null = null;
 
   constructor(deps: TurnRunnerDeps) {
     this.deps = deps;
@@ -144,11 +146,29 @@ export class TurnRunner {
     const controller = new AbortController();
     if (opts.signal !== undefined) linkAbort(opts.signal, controller);
     this.controller = controller;
+    const run = this.drive(input, opts, controller.signal);
+    this.inFlight = run;
     try {
-      return await this.drive(input, opts, controller.signal);
+      return await run;
     } finally {
       this.controller = null;
       this.busy = false;
+      this.inFlight = null;
+    }
+  }
+
+  /**
+   * P1-5 (W836): wait for the in-flight turn to settle. `stop()` only ABORTS it;
+   * a shutdown that claims a clean exit must first see the turn's own terminal
+   * write, or a crash inside that window strands the turn forever.
+   */
+  async join(): Promise<void> {
+    const run = this.inFlight;
+    if (run === null) return;
+    try {
+      await run;
+    } catch {
+      // The starter observes the outcome; shutdown only needs the turn stopped.
     }
   }
 

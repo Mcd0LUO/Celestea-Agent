@@ -35,6 +35,7 @@ import type {
 } from "@celestea/core";
 import type { Watchdog, WorkerRegistry } from "@celestea/workers";
 import { markCleanShutdown } from "@celestea/session";
+import { closeLog } from "./host/engine-session.js";
 import { RuntimeReleasedError, TurnBusyError } from "./errors.js";
 import type { InjectionLane } from "@celestea/core";
 import type { InboxPushOptions, InjectedMessage, SessionInbox } from "./inbox.js";
@@ -330,8 +331,13 @@ export class Runtime {
   rebind(binding: SessionBinding): SessionLog {
     this.assertLive();
     if (this.p.runner.isBusy) throw new TurnBusyError("rebind");
+    const previous = this.p.sessionRef.log;
     const log = bindSession(this.p.ctx, binding);
     this.p.sessionRef.log = log;
+    // P1-4 (W836): the swapped-out log descriptor is closed HERE, not left for
+    // a shutdown that may be generations away; a long-lived studio otherwise
+    // leaks one fd per rebind.
+    closeLog(previous);
     this.binding = binding;
     // W762: the cached assembly belonged to the log that was just swapped out.
     this.snapshotCache = null;
@@ -351,11 +357,16 @@ export class Runtime {
   private async doShutdown(): Promise<void> {
     const parts = this.parts;
     parts?.runner.stop();
+    // P1-5 (W836): stop() only aborts cooperatively. Defer the clean-shutdown
+    // claim until the in-flight turn has written its own terminal row.
+    await parts?.runner.join();
     // E §1.3 P0 ⑤: a graceful teardown is the ONLY thing that may claim
     // `clean_shutdown: true` in the session's checkpoint sidecar — that flag is
     // what tells the next boot "do not repair", so a crash (no shutdown at all)
     // keeps it false. A log without a checkpoint (tests, embedded use) is a no-op.
     markCleanShutdown(parts?.sessionRef.log);
+    // P1-4 (W836): and a graceful teardown is where the log descriptor dies.
+    closeLog(parts?.sessionRef.log);
     const host = parts?.workerHost ?? null;
     if (host !== null) {
       host.registry.abortAllNow();
@@ -378,6 +389,10 @@ export class Runtime {
     const parts = this.parts;
     if (parts === null) return;
     parts.runner.stop();
+    // P1-4 (W836): release is the generation's last breath even when shutdown
+    // was skipped (GenerationHub / registry teardown). Close is idempotent, so
+    // the host's own closeLog before release cannot fail here.
+    closeLog(parts.sessionRef.log);
     if (parts.workerHost !== null) {
       parts.workerHost.registry.abortAllNow();
       parts.workerHost.registry.release();
