@@ -88,6 +88,15 @@ function registerCompact(app: Hono, deps: Deps, table: RouteTable): string {
   app.on(route.method, route.honoPath, async (c) => {
     const id = c.req.param("id") ?? "";
     if (deps.runtime.isBusy(id)) return failJson(c, 409, "turn 进行中，无法压缩");
+    // W825 P0: a session with LIVE worker work is PINNED — its instance may not
+    // be evicted, so compacting it would rewrite the log under a live descriptor
+    // (the old fd survives the rename and every later append is lost). Refuse up
+    // front, exactly like the busy guard above; the lifecycle refuses again if a
+    // worker appears between this check and the eviction. `workerSessions()` only
+    // reports LIVE instances, which is exactly when a descriptor can be orphaned.
+    if (deps.runtime.workerSessions().some((row) => row.host_session === id && row.status === "RUNNING")) {
+      return failJson(c, 409, "worker 进行中，无法压缩");
+    }
     const resolved = deps.sessions.require(id);
     if (!resolved.ok) return storeFail(c, resolved);
     try {

@@ -15,7 +15,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
-import { activate, engineOf, makeEngineHarness, turns } from "./test-util.js";
+import { activate, engineOf, makeEngineHarness, readSessionLog, turns } from "./test-util.js";
 
 /** A brief turn slow enough to observe the worker while its row is RUNNING. */
 const SLOW_BRIEF = { script: [{ text: "x".repeat(4_000) }], deltaMs: 4, chunkChars: 8 };
@@ -132,5 +132,26 @@ describe("W742 §2: the idle reclaimer is wired in the host", () => {
     expect(engine.liveSessions()).not.toContain(session);
     // The detached default instance is pinned and stays (it backs `/api/tools`).
     expect(engine.tools().length).toBeGreaterThan(0);
+  });
+});
+
+describe("W825 P0: compact refuses a session that still owns live worker work", () => {
+  it("409s the pinned session and leaves its log untouched", async () => {
+    // A compactable log (9 complete turns) plus a slow worker on the SAME session:
+    // the instance is pinned, so the compaction used to rewrite cli-main.jsonl
+    // behind the live descriptor and orphan every later append.
+    const h = make({ sessions: { s1: turns(9) }, llm: SLOW_BRIEF, env: { CELESTEA_AUTOWAKE: "0" } });
+    const session = "sample-ws/s1";
+    await activate(h, session);
+    expect((await getJson(h.app, "/api/worker/spawn", jsonRequest("POST", { wid: "W1", brief: "a long brief", title: "T", session }))).status).toBe(200);
+    expect(running(h, "W1")).toBe(true);
+
+    const before = readSessionLog(h, "s1");
+    const res = await getJson(h.app, `/api/sessions/${encodeURIComponent(session)}/compact`, jsonRequest("POST"));
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ ok: false, error: "worker 进行中，无法压缩" });
+    // The rename never happened and the pinned instance (and its worker) survived.
+    expect(readSessionLog(h, "s1")).toBe(before);
+    expect(running(h, "W1")).toBe(true);
   });
 });
