@@ -98,7 +98,23 @@ export { processControlSpec, processControlTool } from "./tools/process-control.
 export { RegistryHandle, runCodeSpec, runCodeTool, runCodeToolWithHandle, type RunCodeToolOptions } from "./tools/run-code.js";
 export { httpRequestSpec, httpRequestTool, type HttpRequestToolOptions } from "./tools/http-request.js";
 export { ASK_USER_DESCRIPTION, askUserSpec, askUserTool, type AskUserToolOptions } from "./tools/ask-user.js";
+export { READ_IMAGE_DESCRIPTION, readImageSpec, readImageTool, type ReadImageToolOptions } from "./tools/read-image.js";
 export { builtinTools, type BuiltinToolsOptions } from "./builtin.js";
+
+// --- attachments (W804): the per-session content-addressed image store ---------
+export {
+  ATTACHMENTS_DIRNAME,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_PIXELS,
+  ATTACHMENT_MAX_SIDE,
+  AttachmentError,
+  createAttachmentStore,
+  readImageDimensions,
+  sniffImageMediaType,
+  type AttachmentErrorCode,
+  type AttachmentStore,
+  type StoredAttachment,
+} from "./attachments/store.js";
 
 // --- http policy + transport contract -----------------------------------------
 export {

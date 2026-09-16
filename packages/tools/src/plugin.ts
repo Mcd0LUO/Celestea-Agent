@@ -28,6 +28,7 @@ import {
   type UserQuestionService,
 } from "@celestea/core";
 
+import type { AttachmentStore } from "./attachments/store.js";
 import { builtinTools } from "./builtin.js";
 import { mountProductionGuards, type PathGuardGrants } from "./guard/path-guard.js";
 import { HttpTargetPolicy, type SsrfGrantView } from "./http/ssrf.js";
@@ -85,6 +86,15 @@ export interface ToolsPluginOptions {
    * answerer must not offer a tool that could only ever hang).
    */
   questions?: UserQuestionService | null;
+  /**
+   * W804: the session's attachment store. Supplied = the default tool set also
+   * carries `read_image`; absent = it does not (no store, no image tool).
+   */
+  attachments?: AttachmentStore | null;
+  /** W804: false ONLY when the model explicitly excludes image input (section 6.6). */
+  imageInputAllowed?: boolean;
+  /** W804: the target model id, for the read_image refusal text. */
+  model?: string;
 }
 
 /** The wired handles a compose root keeps after mounting the plugin. */
@@ -113,7 +123,15 @@ export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
   // through `assembleTools` would silently lose the tool.
   const tools =
     options.tools
-    ?? builtinTools({ sandbox, processes, http: httpOptions(env, grants), ...(options.questions === undefined ? {} : { questions: options.questions }) });
+    ?? builtinTools({
+      sandbox,
+      processes,
+      http: httpOptions(env, grants),
+      ...(options.questions === undefined ? {} : { questions: options.questions }),
+      ...(options.attachments === undefined ? {} : { attachments: options.attachments }),
+      ...(options.imageInputAllowed === undefined ? {} : { imageInputAllowed: options.imageInputAllowed }),
+      ...(options.model === undefined ? {} : { model: options.model }),
+    });
   for (const tool of tools) registry.register(tool);
   const runCode = mountRunCode(registry, sandbox, options);
 

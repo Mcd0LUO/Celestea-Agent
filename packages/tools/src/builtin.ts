@@ -20,7 +20,9 @@ import { askUserTool } from "./tools/ask-user.js";
 import { httpRequestTool, type HttpRequestToolOptions } from "./tools/http-request.js";
 import { listDirTool } from "./tools/list-dir.js";
 import { processControlTool } from "./tools/process-control.js";
+import { readImageTool } from "./tools/read-image.js";
 import { readFileTool } from "./tools/read-file.js";
+import type { AttachmentStore } from "./attachments/store.js";
 import { runShellTool } from "./tools/run-shell.js";
 import { writeFileTool } from "./tools/write-file.js";
 import { ProcessRegistry } from "./process/registry.js";
@@ -35,6 +37,19 @@ export interface BuiltinToolsOptions {
    * registered (11 tools); absent = it is not (the frozen 10).
    */
   questions?: UserQuestionService | null;
+  /**
+   * W804: the session's attachment store. Present = `read_image` is mounted
+   * (12 tools); absent = the tool is not offered, so the model is never told it
+   * exists (the same "register only what works" rule as ask_user_question).
+   */
+  attachments?: AttachmentStore | null;
+  /**
+   * W804: false ONLY when the target model's input_modalities was explicitly
+   * configured without "image" (section 6.6). Absent/true = optimistic default.
+   */
+  imageInputAllowed?: boolean;
+  /** W804: the model id, for the read_image refusal text. */
+  model?: string;
 }
 
 /** The six builtins, sharing one sandbox + one process registry. */
@@ -51,5 +66,15 @@ export function builtinTools(options: BuiltinToolsOptions = {}): Tool[] {
   ];
   // W783: only when a human answerer actually exists in this host.
   if (options.questions !== undefined && options.questions !== null) tools.push(askUserTool({ questions: options.questions }));
+  // W804: only when the session has an attachment store to read from / write to.
+  if (options.attachments !== undefined && options.attachments !== null) {
+    tools.push(
+      readImageTool({
+        attachments: options.attachments,
+        imageInputAllowed: options.imageInputAllowed ?? true,
+        ...(options.model === undefined ? {} : { model: options.model }),
+      }),
+    );
+  }
   return tools;
 }

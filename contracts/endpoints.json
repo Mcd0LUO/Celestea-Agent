@@ -210,7 +210,7 @@
             "name": "tools",
             "type": "array<{name:string,description:string}>",
             "required": false,
-            "note": "schemas() of the queried session's generation; sorted by name; 11 tools in standard mode, the 6 execution-mode names in execution mode"
+            "note": "schemas() of the queried session's generation; sorted by name; up to 12 tools in standard mode (read_image is mounted only when the session has an attachment store), the 6 execution-mode names in execution mode"
           }
         ]
       },
@@ -281,7 +281,13 @@
             "name": "input",
             "type": "string",
             "required": true,
-            "note": "non-empty after trim"
+            "note": "non-empty after trim UNLESS at least one attachment is present"
+          },
+          {
+            "name": "attachments",
+            "type": "array",
+            "required": false,
+            "note": "W804 P0 optional inline image attachments, no upload endpoint: each item is {data:<base64 without the data: prefix>, name?:<original filename>}; the server magic-byte sniffs PNG/JPEG/WebP/GIF, writes <session-dir>/attachments/<sha256>.<ext> and puts ONLY content-addressed refs in the log (never base64). Empty input is legal when at least one attachment is present."
           }
         ]
       },

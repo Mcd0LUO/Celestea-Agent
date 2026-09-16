@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@celestea/core": "workspace:*"
+    "@celestea/core": "workspace:*",
+    "image-size": "^2.0.4"
   }
 }

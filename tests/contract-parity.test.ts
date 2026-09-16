@@ -14,7 +14,9 @@
  * Every failure names the field, the event or the tool it came from.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   fixturePath,
@@ -26,7 +28,7 @@ import {
   type SessionEvent,
   type UserQuestionService,
 } from "@celestea/core";
-import { assembleTools } from "@celestea/tools";
+import { assembleTools, createAttachmentStore } from "@celestea/tools";
 import { compareToolSpecs, describeFindings, uncoveredTools } from "./lib/tool-parity.js";
 import { describeViolations, schemaAccepts, unsupportedKeywords, validateSchema } from "./lib/json-schema.js";
 import { runProductionTurn } from "./lib/engine-corpus.js";
@@ -42,6 +44,8 @@ const REGISTRY_TOOLS = ["http_request", "list_dir", "process_control", "read_fil
 const WORKER_TOOLS = ["session_send_message", "spawn_worker", "worker_status"];
 /** W783: the same registry once the host mounts the user-question capability. */
 const QUESTION_TOOLS = ["ask_user_question"];
+/** W804: mounted only once the host supplies a session attachment store. */
+const READ_IMAGE_TOOL = "read_image";
 
 /** The golden fixtures are exported on demand (`pnpm golden:export`). */
 const HAS_FIXTURES = existsSync(fixturePath("index.json"));
@@ -173,9 +177,10 @@ describe("W744 · all 7 builtin tool specs match the implementation registry", (
   });
 
   it("leaves no contract tool uncovered (worker trio + W783 question tool come from elsewhere)", () => {
-    // W783: 10 -> 11; `ask_user_question` is covered by its own check below.
-    expect(CONTRACT.tools).toHaveLength(11);
-    expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS])).toEqual([]);
+    // W783: 10 -> 11; W804: 11 -> 12. ask_user_question and read_image are each
+    // covered by their own optional-mount check below.
+    expect(CONTRACT.tools).toHaveLength(12);
+    expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS, READ_IMAGE_TOOL])).toEqual([]);
   });
 
   /**
@@ -194,6 +199,23 @@ describe("W744 · all 7 builtin tool specs match the implementation registry", (
     // The spec the model is offered must equal the frozen contract entry, field
     // for field — otherwise the tool would drift from what the contract promises.
     expect(describeFindings(compareToolSpecs(CONTRACT, withQuestions.filter((s) => s.name === "ask_user_question")))).toBe("");
+  });
+
+  /**
+   * W804: `read_image` is OPTIONAL the same way: `builtinTools` mounts it only
+   * when a session attachment store is supplied, and its spec must equal the
+   * frozen contract entry field for field.
+   */
+  it("mounts read_image when (and only when) an attachment store is supplied", () => {
+    const without = assembleTools({ guard: null, env: {}, sandbox: stubSandbox() }).registry.schemas().map((s) => s.name);
+    expect(without).not.toContain(READ_IMAGE_TOOL);
+
+    const dir = mkdtempSync(join(tmpdir(), "w804-att-"));
+    const store = createAttachmentStore(join(dir, "attachments"));
+    const withStore = assembleTools({ guard: null, env: {}, sandbox: stubSandbox(), attachments: store }).registry.schemas();
+    expect(withStore.map((s) => s.name)).toContain(READ_IMAGE_TOOL);
+    expect(describeFindings(compareToolSpecs(CONTRACT, withStore.filter((s) => s.name === READ_IMAGE_TOOL)))).toBe("");
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("the mounted question tool parks on the service and returns its answers verbatim", async () => {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea engine tool specs (11 tools)",
+  "title": "Celestea engine tool specs (12 tools)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
     "liveEndpoint": "http://127.0.0.1:3777/api/tools (descriptions taken verbatim from the running engine)",
@@ -28,9 +28,17 @@
       "sourceRef": "packages/tools/src/tools/ask-user.ts (schema copied field-for-field from @deepseek-ai/dsh-tool-ask-user)",
       "why": "The model needs to ask the user a question mid-turn. The answer arrives through POST /api/questions/{id}/answer (NOT /api/turn, which would be steering that a parked tool call never drains) and reaches the model as an ordinary tool_result.",
       "notInRust": "The retired engine has no counterpart: /api/tools there answered 10 tools and this tool did not exist."
+    },
+    "w804Delta": {
+      "addedTool": "read_image",
+      "count": "11 -> 12",
+      "sourceRef": "docs/feature-multimodal-attachments.md#6",
+      "why": "The model needs to look at a local image (or a user-uploaded attachment by id) and have a vision-capable model actually see it; read_file is UTF-8 text only and rejects binary.",
+      "optionalMount": "builtinTools mounts read_image only when the host supplies a session attachment store; the default registry of record stays the 7 contract tools.",
+      "endpoints": "P0 adds ZERO endpoints: uploads ride POST /api/turn as inline base64 (attachment refs only in the log), so API_ENDPOINT_COUNT stays 51."
     }
   },
-  "count": 11,
+  "count": 12,
   "tools": [
     {
       "name": "ask_user_question",
@@ -261,6 +269,30 @@
         "additionalProperties": false
       },
       "sourceRef": "crates/tools/src/builtin.rs:186-199"
+    },
+    {
+      "name": "read_image",
+      "description": "Read an image (PNG/JPEG/WebP/GIF) and attach it to the conversation so a vision-capable model can see it. Returns metadata; the image content block is delivered with the tool result. Fails on models without image input.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Filesystem path of the image to read (PNG/JPEG/WebP/GIF; format detected by content, not extension)."
+          },
+          "attachment_id": {
+            "type": "string",
+            "description": "Content-addressed id of an already-uploaded attachment (from a user message). Use instead of path."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "sourceRef": "docs/feature-multimodal-attachments.md#6"
     },
     {
       "name": "run_code",

@@ -146,9 +146,9 @@ export function loadRouteSnapshot(): RouteSnapshot {
 
 export function loadTools(): ToolsContract {
   const c = readJson<ToolsContract>("tools.json");
-  // W783: 10 -> 11 (`ask_user_question`).
-  if (c.count !== 11 || c.tools.length !== 11) {
-    throw new Error(`tools contract must hold 11 tools, got ${c.tools.length}`);
+  // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`).
+  if (c.count !== 12 || c.tools.length !== 12) {
+    throw new Error(`tools contract must hold 12 tools, got ${c.tools.length}`);
   }
   return c;
 }
