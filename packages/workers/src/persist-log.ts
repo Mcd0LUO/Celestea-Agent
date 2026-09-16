@@ -36,6 +36,7 @@ export class PersistFailureLog {
   record(failure: PersistFailure): void {
     if (this.entries.length >= LIMIT) this.entries.shift();
     this.entries.push(failure);
+    process.stderr.write("[celestea-workers] registry persist failed: " + failure.error + "\n");
     this.append(
       "[" + failure.at + "] registry persist failed wid=" + (failure.wid ?? "-") + " path=" + failure.path + ": " + failure.error,
     );

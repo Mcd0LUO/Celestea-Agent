@@ -133,8 +133,14 @@ function registerHost(registry: WorkerRegistry, hostSessionId: string, model: st
 
 /**
  * FIFO drain of the host queue, annotated with the sender label, the envelope
- * (`source`) and an IDEMPOTENCY key (W515 §3/§4): a receipt replayed by a
- * restarted driver carries the same id and is injected once.
+ * (`source`) and a stable key (W515 §3/§4).
+ *
+ * W840 (R2 N1): the key is NOT a duplicate filter on this path. The drained
+ * messages are concatenated straight into the turn at compose.ts (never pushed
+ * through `SessionInbox.push`), so the inbox B3 rule never sees them; the id only
+ * surfaces in the SSE `context` frame (session-publisher.ts). The single
+ * once-only gate for a receipt is WorkerRegistry.closeLoop's durable
+ * `receipt:<wid>:<attempt>` token (registry.ts, receiptDelivered).
  */
 function drainHost(registry: WorkerRegistry, hostSessionId: string): PendingReceipt[] {
   return registry.mailbox.poll(hostSessionId).map((m) => ({
@@ -147,13 +153,17 @@ function drainHost(registry: WorkerRegistry, hostSessionId: string): PendingRece
 }
 
 /**
- * E §2.2.3 (2-P1 ②): the idempotency key of a drained message.
+ * E §2.2.3 (2-P1 ②): the stable key of a drained message.
  *
  * A RECEIPT is keyed by `receipt:<wid>:<attempt>` — stable across processes, so
- * a receipt replayed after a restart (or delivered twice by two generations) is
- * dropped by the inbox's existing duplicate rule (B3). Every other message (a
- * deliberate relay, a stimulus) keeps the in-process mailbox sequence: keying a
- * relay by `(wid, attempt)` would silently drop a SECOND intentional message.
+ * the SSE `context` frame for a replayed receipt carries the same id. W840
+ * (R2 N1): this key does NOT deduplicate on the production injection path — the
+ * drained receipts are appended straight to the turn (compose.ts), bypassing
+ * `SessionInbox.push` and its B3 rule; closeLoop's durable receiptDelivered token
+ * is the only once-only gate. Routing receipts through the inbox (to make B3
+ * apply here) is a semantics change left for adjudication. Every other message
+ * (a deliberate relay, a stimulus) keeps the in-process mailbox sequence: keying
+ * a relay by `(wid, attempt)` would silently drop a SECOND intentional message.
  */
 function idempotencyKeyOf(registry: WorkerRegistry, message: MailboxMessage): string {
   const receipt = message.kind === "receipt" ? registry.receiptKeyFor(message.from_label) : null;
