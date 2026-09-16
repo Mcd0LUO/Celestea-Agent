@@ -26,6 +26,7 @@ import { ProvidersStore } from "./store/providers.js";
 import { PromptsStore } from "./store/prompts.js";
 import { WorkspacesStore } from "./store/workspaces.js";
 import { StudioSettings } from "./settings.js";
+import { SerialQueue } from "./serial-queue.js";
 import type { StudioConfig } from "./config.js";
 import type { RuntimeAdapter } from "./runtime-adapter.js";
 
@@ -78,6 +79,12 @@ export interface StudioServices {
   prompts: PromptsStore;
   /** W516: grant file I/O helpers, audit channel, confirm tokens, limits. */
   grants: GrantsServices;
+  /**
+   * W815-N2: the ONE serial queue behind the studio's hot-apply writes — the
+   * prompt registry (`POST /api/prompts`) and `POST /api/config` both snapshot,
+   * mutate and `await` the engine, so the two must never interleave.
+   */
+  applyQueue: SerialQueue;
 }
 
 /**
@@ -132,5 +139,5 @@ export function composeStudio(input: ComposeInput): StudioServices {
     ...(input.env === undefined ? {} : { env: input.env }),
     ...(input.now === undefined ? {} : { now: input.now }),
   });
-  return { ctx, config: input.config, bus, runtime, settings: ctx.require(SETTINGS_SERVICE), grants, ...stores };
+  return { ctx, config: input.config, bus, runtime, settings: ctx.require(SETTINGS_SERVICE), grants, applyQueue: new SerialQueue(), ...stores };
 }

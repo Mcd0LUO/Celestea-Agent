@@ -54,6 +54,13 @@ function registerUpsert(app: Hono, deps: Deps, table: RouteTable): string {
     const read = await readJsonBody(c);
     if (!read.ok) return read.response;
     const body = read.body;
+    const models = body["models"];
+    // W815-7: a PRESENT but wrongly-typed `models` is a 400. It used to fall
+    // through as `undefined`, which the store reads as "absent" and therefore
+    // CLEARS the list — only an absent/null field may clear (docs/pitfalls P1b).
+    if (models !== undefined && models !== null && !Array.isArray(models)) {
+      return failJson(c, 400, "models must be an array");
+    }
     const res = deps.providers.upsert({
       id: typeof body["id"] === "string" ? body["id"] : undefined,
       name: typeof body["name"] === "string" ? body["name"] : undefined,
@@ -61,7 +68,7 @@ function registerUpsert(app: Hono, deps: Deps, table: RouteTable): string {
       base_url: typeof body["base_url"] === "string" ? body["base_url"] : undefined,
       request_format: typeof body["request_format"] === "string" ? body["request_format"] : undefined,
       api_key: typeof body["api_key"] === "string" ? body["api_key"] : null,
-      models: Array.isArray(body["models"]) ? (body["models"] as Array<Record<string, unknown>>) : undefined,
+      models: Array.isArray(models) ? (models as Array<Record<string, unknown>>) : undefined,
     });
     if (!res.ok) return storeFail(c, res);
     return c.json(res.value);

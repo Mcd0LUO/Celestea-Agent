@@ -11,7 +11,7 @@
  * `persist -> hot apply -> roll the file back when the apply fails`.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { readJsonIfExists, writeJsonAtomic } from "./fs-json.js";
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
@@ -145,8 +145,19 @@ export class PromptsStore {
     return existsSync(scope.file) ? readFileSync(scope.file, "utf8") : null;
   }
 
+  /**
+   * Roll a failed hot apply back to its snapshot.
+   *
+   * W815-1: a null snapshot means the scope file did NOT exist before the
+   * mutate, so "back to the snapshot" is "remove the file" — returning early
+   * left the fresh content on disk while the engine had rejected it (registry
+   * ahead of the engine). A present snapshot is restored verbatim.
+   */
   restore(scope: PromptScope, text: string | null): void {
-    if (text === null) return;
+    if (text === null) {
+      rmSync(scope.file, { force: true });
+      return;
+    }
     writeJsonAtomic(scope.file, JSON.parse(text) as unknown);
   }
 

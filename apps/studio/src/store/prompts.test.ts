@@ -168,14 +168,31 @@ describe("build_gen assembly", () => {
     expect(out.indexOf("APPENDED m-1")).toBeGreaterThan(out.indexOf("Celestea engine"));
   });
 
-  it("applies the bound prompt's overrides last and truncates to the byte cap", () => {
+  it("applies the bound prompt's overrides last", () => {
     const s = store();
     s.upsert(s.scopeGlobal(), { id: "p", name: "P", section_overrides: { identity: "BOUND" } });
     const out = assembleSystemPrompt(s, s.scopeGlobal(), "p", VARS);
     expect(out.startsWith("BOUND")).toBe(true);
-    const huge = store();
-    huge.upsert(huge.scopeGlobal(), { id: "big", name: "Big", section_overrides: { big: "x".repeat(9000) } });
-    expect(Buffer.byteLength(assembleSystemPrompt(huge, huge.scopeGlobal(), "big", VARS), "utf8")).toBeLessThanOrEqual(PROMPT_MAX_LEN);
+  });
+
+  // W815-11: the old case fed a 9000-byte override (over the cap, so `upsert`
+  // returned 400) and DISCARDED that result, then only asserted the builtin-only
+  // assembly — the truncate branch never ran (false green). Split it into the two
+  // facts it claimed to pin, each able to fail on its own.
+  // (Source: W828-R3 修复计划 B1 · W815-11 验收探针.)
+  it("W815-11: an over-cap override is refused with 400 and writes nothing", () => {
+    const s = store();
+    const rejected = s.upsert(s.scopeGlobal(), { id: "big", name: "Big", section_overrides: { big: "x".repeat(9000) } });
+    expect(rejected).toEqual({ ok: false, status: 400, error: "section 'big': template exceeds the 8192 byte cap (9000 bytes)" });
+    expect(existsSync(globalFile)).toBe(false);
+  });
+
+  it("W815-11: a legal 8000-byte override really truncates the assembly to 8192", () => {
+    const s = store();
+    const legal = s.upsert(s.scopeGlobal(), { id: "big", name: "Big", section_overrides: { big: "x".repeat(8000) } });
+    expect(legal.ok).toBe(true);
+    const out = assembleSystemPrompt(s, s.scopeGlobal(), "big", VARS);
+    expect(Buffer.byteLength(out, "utf8")).toBe(PROMPT_MAX_LEN);
   });
 
   it("resolves active_prompt through the session binding and the scope default", () => {

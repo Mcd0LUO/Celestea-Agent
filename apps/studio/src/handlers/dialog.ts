@@ -117,7 +117,15 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
     const session = target.value;
     // W804: decode + store the optional inline image attachments BEFORE the
     // empty-input check — a turn may legitimately carry images and no text.
-    const stored = await storeTurnAttachments(c, deps, session, read.body["attachments"]);
+    // W815-4: a busy session REFUSES image attachments (steering lanes carry
+    // text only), so refuse BEFORE `storeTurnAttachments` writes anything under
+    // <session>/attachments/ — the old order wrote up to 20 * 4 MiB and only then
+    // 409'd, leaking every byte for a turn that was never started.
+    const rawAttachments = read.body["attachments"];
+    if (deps.runtime.isBusy(session) && Array.isArray(rawAttachments) && rawAttachments.length > 0) {
+      return busyAttachmentError(c);
+    }
+    const stored = await storeTurnAttachments(c, deps, session, rawAttachments);
     if (!stored.ok) return stored.response;
     const attachments = stored.refs;
     if (text === "" && attachments.length === 0) return errorOnly(c, 400, "input must not be empty");

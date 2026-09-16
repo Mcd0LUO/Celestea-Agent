@@ -30,21 +30,34 @@ function resolveScope(deps: Deps, workspace: string | undefined): ScopeOut {
   return { scope: deps.prompts.scopeWorkspace(name, path) };
 }
 
-/** 409 -> persist -> hot apply -> rollback; returns the success body. */
-async function hotApply(deps: Deps, scope: PromptScope, mutate: () => StoreResult<unknown>): Promise<{ ok: true; body: JsonObject } | { ok: false; status: number; error: string }> {
+/** Outcome of a hot apply: the success body, or the failure status + text. */
+type HotApplyOutcome = { ok: true; body: JsonObject } | { ok: false; status: number; error: string };
+
+/**
+ * 409 -> persist -> hot apply -> rollback; returns the success body.
+ *
+ * W815-N2: the whole snapshot/mutate/configure/rollback window runs inside the
+ * shared serial queue, so a concurrent write cannot re-snapshot in the middle
+ * and have its success rolled back by an earlier failure.
+ */
+async function hotApply(deps: Deps, scope: PromptScope, mutate: () => StoreResult<unknown>): Promise<HotApplyOutcome> {
   if (deps.runtime.isBusy()) return { ok: false, status: 409, error: "turn in progress; prompt applies between turns" };
-  const snapshot = deps.prompts.snapshot(scope);
-  const res = mutate();
-  if (!res.ok) return { ok: false, status: res.status, error: res.error };
-  try {
-    // W729: a prompt hot-apply primes the BASE generation, so it stays on the
-    // DEFAULT mode and can never inherit the active session's mode variant.
-    await deps.runtime.configure({ system_prompt: assembleSystemPromptFor(deps, null, DEFAULT_SESSION_MODE) });
-  } catch (e) {
-    deps.prompts.restore(scope, snapshot);
-    return { ok: false, status: 500, error: `compose failed: ${e instanceof EngineError ? e.message : String(e)}` };
-  }
-  return { ok: true, body: { ok: true, ...(res.value as JsonObject) } };
+  return deps.applyQueue.run(async (): Promise<HotApplyOutcome> => {
+    const snapshot = deps.prompts.snapshot(scope);
+    const res = mutate();
+    if (!res.ok) return { ok: false, status: res.status, error: res.error };
+    try {
+      // W729: a prompt hot-apply primes the BASE generation, so it stays on the
+      // DEFAULT mode and can never inherit the active session's mode variant.
+      await deps.runtime.configure({ system_prompt: assembleSystemPromptFor(deps, null, DEFAULT_SESSION_MODE) });
+    } catch (e) {
+      // W815-1: a null snapshot means the scope file did not exist before this
+      // mutate; restoring must therefore REMOVE the file (PromptsStore.restore).
+      deps.prompts.restore(scope, snapshot);
+      return { ok: false, status: 500, error: `compose failed: ${e instanceof EngineError ? e.message : String(e)}` };
+    }
+    return { ok: true, body: { ok: true, ...(res.value as JsonObject) } };
+  });
 }
 
 function registerList(app: Hono, deps: Deps, table: RouteTable): string {
@@ -69,6 +82,12 @@ function registerUpsert(app: Hono, deps: Deps, table: RouteTable): string {
     const resolved = resolveScope(deps, workspace.ok ? workspace.value : undefined);
     if (resolved.scope === undefined) return failJson(c, 404, resolved.error ?? "unknown workspace");
     const overrides = read.body["section_overrides"];
+    // W815-6: a PRESENT but wrongly-typed field is a 400, never a silent
+    // "absent" that would replace the stored overrides with an empty map. Only
+    // absent/null falls back to the store's default.
+    if (overrides !== undefined && overrides !== null && !isStringMap(overrides)) {
+      return failJson(c, 400, "section_overrides must be an object of string templates");
+    }
     const out = await hotApply(deps, resolved.scope, () =>
       deps.prompts.upsert(resolved.scope as PromptScope, {
         id: (id.ok ? id.value : "") ?? "",

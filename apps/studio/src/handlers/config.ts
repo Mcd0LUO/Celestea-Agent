@@ -97,25 +97,36 @@ export function registerConfig(app: Hono, deps: Deps, table: RouteTable): string
     }
     if (baseUrl.value !== undefined) {
       if (baseUrl.value !== "" && !isHttp(baseUrl.value)) return failJson(c, 400, "base_url must be an http:// or https:// URL");
-      deps.settings.setBaseUrlOverride(baseUrl.value);
       if (baseUrl.value !== "") patch.base_url = baseUrl.value;
     }
     const numericFailure = numericPatch(c, body, patch);
     if (numericFailure !== null) return numericFailure;
-    if (systemPrompt.value !== undefined) {
-      deps.settings.setSystemPromptOverride(systemPrompt.value);
-      patch.system_prompt = deps.settings.systemPromptOverride() ?? "";
-    }
+    const nextSystemPrompt =
+      systemPrompt.value === undefined ? undefined : systemPrompt.value.trim() === "" ? null : systemPrompt.value;
+    if (nextSystemPrompt !== undefined) patch.system_prompt = nextSystemPrompt ?? "";
     if (apiKey.value !== undefined && apiKey.value !== "") {
       process.env[deps.config.apiKeyEnv] = apiKey.value;
     }
-    try {
-      await deps.runtime.configure(patch);
-    } catch (e) {
-      const message = e instanceof EngineError ? e.message : String(e);
-      return failJson(c, 500, `compose failed: ${message}`);
-    }
-    return c.json(configView(deps));
+    // W815-3 + N2: validate EVERYTHING first, then commit the two host-side
+    // overrides and the engine patch together inside the shared hot-apply queue.
+    // A rejected configure restores the previous overrides (W815-3: base_url may
+    // no longer stick while the patch that carried it was refused) and two
+    // concurrent writers can no longer roll each other back.
+    return deps.applyQueue.run(async () => {
+      const previousBaseUrl = deps.settings.baseUrlOverride();
+      const previousSystemPrompt = deps.settings.systemPromptOverride();
+      if (baseUrl.value !== undefined) deps.settings.setBaseUrlOverride(baseUrl.value);
+      if (nextSystemPrompt !== undefined) deps.settings.setSystemPromptOverride(nextSystemPrompt ?? "");
+      try {
+        await deps.runtime.configure(patch);
+      } catch (e) {
+        if (baseUrl.value !== undefined) deps.settings.setBaseUrlOverride(previousBaseUrl ?? "");
+        if (nextSystemPrompt !== undefined) deps.settings.setSystemPromptOverride(previousSystemPrompt ?? "");
+        const message = e instanceof EngineError ? e.message : String(e);
+        return failJson(c, 500, `compose failed: ${message}`);
+      }
+      return c.json(configView(deps));
+    });
   });
 
   return [get.id, post.id];
