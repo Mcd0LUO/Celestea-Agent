@@ -42,7 +42,7 @@ import {
 import { httpStatusLabel, readBodySnippet, redact, sendChatRequest } from "./transport.js";
 import { streamEvents } from "./stream.js";
 import type { Llm, LlmStream, ModelRequestDraft } from "./seam.js";
-import { DEFAULT_TIMEOUTS, type EnvLike, type TimeoutTiers } from "./timeouts.js";
+import { DEFAULT_TIMEOUTS, timeoutMsOf, type EnvLike, type TimeoutTiers } from "./timeouts.js";
 
 /** Constructor options. Timeout fields: 0 = disabled (`ms_to_duration`). */
 export interface OpenAiCompatOptions {
@@ -55,12 +55,6 @@ export interface OpenAiCompatOptions {
   connectTimeoutMs?: number | null;
   responseTimeoutMs?: number | null;
   streamIdleTimeoutMs?: number | null;
-}
-
-function toMs(value: number | null | undefined, fallback: number | null): number | null {
-  if (value === null || value === undefined) return fallback;
-  if (!Number.isFinite(value) || value < 0) return fallback;
-  return value === 0 ? null : Math.floor(value);
 }
 
 export class OpenAiCompatClient implements Llm {
@@ -78,10 +72,13 @@ export class OpenAiCompatClient implements Llm {
     this.#apiKey = options.apiKey;
     this.#model = options.model;
     this.#reasoningEffort = options.reasoningEffort ?? null;
-    this.#maxOutputTokens = options.maxOutputTokens ?? null;
-    this.#connectMs = toMs(options.connectTimeoutMs, DEFAULT_TIMEOUTS.connectMs);
-    this.#responseMs = toMs(options.responseTimeoutMs, DEFAULT_TIMEOUTS.responseMs);
-    this.#idleMs = toMs(options.streamIdleTimeoutMs, DEFAULT_TIMEOUTS.idleMs);
+    // W835 (R3 batch D / P2-2): 0 = "clear cap" (contracts/endpoints.json:540),
+    // never a literal max_tokens:0 on the wire.
+    const maxOut = options.maxOutputTokens;
+    this.#maxOutputTokens = typeof maxOut === "number" && Number.isFinite(maxOut) && maxOut > 0 ? Math.floor(maxOut) : null;
+    this.#connectMs = timeoutMsOf(options.connectTimeoutMs, DEFAULT_TIMEOUTS.connectMs);
+    this.#responseMs = timeoutMsOf(options.responseTimeoutMs, DEFAULT_TIMEOUTS.responseMs);
+    this.#idleMs = timeoutMsOf(options.streamIdleTimeoutMs, DEFAULT_TIMEOUTS.idleMs);
   }
 
   /** The configured model (used when a request leaves its model empty). */

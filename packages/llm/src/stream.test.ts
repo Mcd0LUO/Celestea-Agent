@@ -267,6 +267,21 @@ describe("request body on the wire", () => {
     expect(body["reasoning_effort"]).toBe("xhigh-custom");
   });
 
+  // W835 (R3 batch D / P2-2): a cleared cap (0) must not reach the wire as
+  // max_tokens:0 (OpenAI-compatible endpoints 400 on it).
+  it("omits max_tokens when the configured output cap is 0 (clear cap)", async () => {
+    upstream = await startMockUpstream("frames", { frames: [sseFrame("[DONE]")], end: true });
+    const llm = new OpenAiCompatClient({
+      baseUrl: upstream.baseUrl,
+      apiKey: DUMMY_KEY,
+      model: "deepseek-v4-flash-0731",
+      maxOutputTokens: 0,
+    });
+    await collectStream(await llm.generate({ model: "deepseek-v4-flash-0731", messages: [userMessage("ping")] }));
+    const body = upstream.requests[0]?.json as Record<string, unknown>;
+    expect("max_tokens" in body).toBe(false);
+  });
+
   it("omits reasoning_effort entirely when it is not configured", async () => {
     upstream = await startMockUpstream("frames", { frames: [sseFrame("[DONE]")], end: true });
     const llm = client(upstream.baseUrl, null);

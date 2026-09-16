@@ -57,8 +57,15 @@ export const DEFAULT_TIMEOUTS: TimeoutTiers = {
   idleMs: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
 };
 
-/** Milliseconds -> tier value; 0 disables (null); absent/invalid -> fallback. */
-export function msToDuration(
+/**
+ * Milliseconds -> tier value; 0 disables (null); absent/invalid -> fallback.
+ *
+ * W835 (R3 batch D / P2-6): this is the ONE "0 = disabled" mapping, shared by
+ * the client constructor (`client.ts`) and by [tiersFromConfig]. It replaced
+ * the unused, duplicate legacy helper so a 0/null fix cannot be applied in one
+ * place and missed in the other.
+ */
+export function timeoutMsOf(
   ms: number | null | undefined,
   fallbackMs: number | null,
 ): number | null {

@@ -37,7 +37,7 @@ timeout tiers, free-form `reasoning_effort` passthrough.
 | seam 工具（re-export core，除 helper） | `userMessage`, `systemMessage`, `assistantText`, `assistantToolCall`, `toolResultMessage`, `collectMessageText`, `messageToolCalls`, `collectStream` |
 | 用量 | `Usage`, `parseUsage`, `usageFromObject`, `usageIsEmpty`, `zeroUsage`, `ZERO_USAGE`, `cacheHitRatio`, `USAGE_REQUIRED_KEYS`, `CACHE_READ_FLAT_KEYS`, `CACHE_READ_NESTED`, `REASONING_TOKENS_NESTED` |
 | 错误 | `LlmError`, `LlmErrorKind`, `TimeoutStage`, `TIMEOUT_ERROR_PREFIX`, `timeoutError`, `responseHeaderTimeoutError`, `connectTimeoutError`, `streamIdleTimeoutMessage`, `isTimeoutError`, `errorKind` |
-| 超时三档 | `TimeoutTiers`, `TimeoutProfile`, `DEFAULT_TIMEOUTS`, `DEFAULT_*_TIMEOUT_MS`, `CONNECT_TIMEOUT_ENV`, `RESPONSE_TIMEOUT_ENV`, `STREAM_IDLE_TIMEOUT_ENV`, `PROFILE_TIMEOUT_KEYS`, `resolveTimeoutMs`, `resolveTimeoutTiers`, `readTimeoutProfile`, `msToDuration`, `isTimeoutMs`, `EnvLike` |
+| 超时三档 | `TimeoutTiers`, `TimeoutProfile`, `DEFAULT_TIMEOUTS`, `DEFAULT_*_TIMEOUT_MS`, `CONNECT_TIMEOUT_ENV`, `RESPONSE_TIMEOUT_ENV`, `STREAM_IDLE_TIMEOUT_ENV`, `PROFILE_TIMEOUT_KEYS`, `resolveTimeoutMs`, `resolveTimeoutTiers`, `readTimeoutProfile`, `isTimeoutMs`, `EnvLike` |
 | profile→配置 | `LlmProfile`, `ResolvedClientConfig`, `resolveClientConfig`, `resolveApiKey`, `tiersFromConfig`, `normalizeReasoningEffort`, `validateModel`, `API_KEY_ENV`, `BASE_URL_ENV`, `DEFAULT_BASE_URL`, `DEFAULT_MODEL` |
 | 适配器 | `OpenAiCompatClient`（实现 `Llm`）, `OpenAiCompatOptions`, `createDeepSeekLlm`, `LlmRegistry`, `createDeepSeekRegistry`, `DEEPSEEK_PROVIDER_NAME` |
 

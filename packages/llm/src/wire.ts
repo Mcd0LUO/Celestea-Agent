@@ -235,7 +235,8 @@ export function buildRequestBody(req: ModelRequestDraft, opts: BuildBodyOptions)
 
   const body: ChatCompletionsBody = { model: opts.model, messages, stream: true };
   if (tools.length > 0) body.tools = tools;
-  if (maxTokens !== null) body.max_tokens = maxTokens;
+  // W835 (R3 batch D / P2-2): 0/negative = "no cap" (the field is omitted).
+  if (maxTokens !== null && maxTokens > 0) body.max_tokens = maxTokens;
   if (req.temperature !== null && req.temperature !== undefined) {
     body.temperature = req.temperature;
   }

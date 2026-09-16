@@ -14,6 +14,7 @@
 import { LlmError } from "./errors.js";
 import {
   resolveTimeoutTiers,
+  timeoutMsOf,
   type EnvLike,
   type TimeoutProfile,
   type TimeoutTiers,
@@ -53,10 +54,12 @@ export interface ResolvedClientConfig {
 
 /** The tiers as configured (null = disabled), derived from resolved ms values. */
 export function tiersFromConfig(config: ResolvedClientConfig): TimeoutTiers {
+  // W835 (R3 batch D / P2-6): route the 0 -> null mapping through the SAME
+  // helper the client constructor uses.
   return {
-    connectMs: config.connectTimeoutMs === 0 ? null : config.connectTimeoutMs,
-    responseMs: config.responseTimeoutMs === 0 ? null : config.responseTimeoutMs,
-    idleMs: config.streamIdleTimeoutMs === 0 ? null : config.streamIdleTimeoutMs,
+    connectMs: timeoutMsOf(config.connectTimeoutMs, null),
+    responseMs: timeoutMsOf(config.responseTimeoutMs, null),
+    idleMs: timeoutMsOf(config.streamIdleTimeoutMs, null),
   };
 }
 
@@ -90,8 +93,10 @@ export function resolveClientConfig(
     model: nonEmpty(profile?.model) ?? DEFAULT_MODEL,
     reasoningEffort:
       typeof profile?.reasoning_effort === "string" ? profile.reasoning_effort : null,
+    // W835 (R3 batch D / P2-2): 0 means "clear the cap" (endpoints.json:540),
+    // so it resolves to null (the wire then omits max_tokens) rather than 0.
     maxOutputTokens:
-      typeof maxOut === "number" && Number.isInteger(maxOut) && maxOut >= 0 ? maxOut : null,
+      typeof maxOut === "number" && Number.isInteger(maxOut) && maxOut > 0 ? maxOut : null,
     connectTimeoutMs: tiers.connectMs ?? 0,
     responseTimeoutMs: tiers.responseMs ?? 0,
     streamIdleTimeoutMs: tiers.idleMs ?? 0,

@@ -6,7 +6,6 @@ import {
   DEFAULT_RESPONSE_TIMEOUT_MS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DEFAULT_TIMEOUTS,
-  msToDuration,
   normalizeReasoningEffort,
   PROFILE_TIMEOUT_KEYS,
   readTimeoutProfile,
@@ -18,6 +17,9 @@ import {
   STREAM_IDLE_TIMEOUT_ENV,
 } from "@celestea/llm";
 import { OpenAiCompatClient } from "@celestea/llm";
+// W835 (R3 batch D / P2-6): the single "0 = disabled" helper is internal, so it
+// is imported from the module that owns it rather than the public barrel.
+import { timeoutMsOf } from "./timeouts.js";
 
 describe("three timeout tiers: defaults and profile keys", () => {
   it("uses the legacy defaults (15s connect / 60s response / 90s idle)", () => {
@@ -77,9 +79,9 @@ describe("three timeout tiers: defaults and profile keys", () => {
   });
 
   it("maps 0 to a disabled stage and rejects invalid profile values leniently", () => {
-    expect(msToDuration(0, 90_000)).toBeNull();
-    expect(msToDuration(undefined, 90_000)).toBe(90_000);
-    expect(msToDuration(-1, 90_000)).toBe(90_000);
+    expect(timeoutMsOf(0, 90_000)).toBeNull();
+    expect(timeoutMsOf(undefined, 90_000)).toBe(90_000);
+    expect(timeoutMsOf(-1, 90_000)).toBe(90_000);
     const { profile, errors } = readTimeoutProfile({
       llm_connect_timeout_ms: 0,
       llm_response_timeout_ms: "soon",
@@ -122,6 +124,15 @@ describe("profile -> config resolution", () => {
     expect(resolveApiKey({ api_key_env: "MY_KEY" }, { MY_KEY: "sk-custom" })).toBe("sk-custom");
     // only the named env var is read; an unset key resolves to the empty string
     expect(resolveClientConfig({ api_key_env: "MY_KEY" }, {}).apiKey).toBe("");
+  });
+
+  // W835 (R3 batch D / P2-2): contracts/endpoints.json:540 says
+  // max_output_tokens 0 = clear cap, so resolveClientConfig must answer null
+  // (the wire then omits max_tokens) instead of passing 0 to the provider.
+  it("treats max_output_tokens 0 as a cleared cap, not a zero-token request", () => {
+    expect(resolveClientConfig({ max_output_tokens: 0 }, {}).maxOutputTokens).toBeNull();
+    expect(resolveClientConfig({ max_output_tokens: 4096 }, {}).maxOutputTokens).toBe(4096);
+    expect(resolveClientConfig({ max_output_tokens: -1 }, {}).maxOutputTokens).toBeNull();
   });
 
   it("resolves base_url / model / effort / caps with env fallbacks", () => {

@@ -92,7 +92,6 @@ export {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DEFAULT_TIMEOUTS,
   isTimeoutMs,
-  msToDuration,
   PROFILE_TIMEOUT_KEYS,
   readTimeoutProfile,
   RESPONSE_TIMEOUT_ENV,

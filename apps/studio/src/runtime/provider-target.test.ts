@@ -170,6 +170,11 @@ describe("live assembly (mode + profile mapping)", () => {
     expect(client.timeouts()).toEqual({ connectMs: 111, responseMs: 222, idleMs: null });
     const view = liveLlmView(profile, { ...env, CELESTEA_LLM_MODE: "offline" });
     expect(view).toMatchObject({ mode: "offline", contextWindow: 128_000, hasApiKey: false, maxOutputTokens: 4321 });
+    // W835 (R3 batch D / P2-1): the view uses the same null-when-disabled
+    // mapping as the client's own timeouts(), so a disabled stage reads "off"
+    // (null) instead of being printed as "0ms".
+    expect(view.timeouts).toEqual(client.timeouts());
+    expect(view.timeouts).toEqual({ connectMs: 111, responseMs: 222, idleMs: null });
     expect(JSON.stringify(view)).not.toContain("key");
   });
 

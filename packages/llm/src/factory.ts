@@ -23,8 +23,8 @@
 
 import { OpenAiCompatClient } from "./client.js";
 import { LlmError } from "./errors.js";
-import { resolveClientConfig, type LlmProfile } from "./profile.js";
-import { resolveTimeoutTiers, type EnvLike, type TimeoutTiers } from "./timeouts.js";
+import { resolveClientConfig, tiersFromConfig, type LlmProfile } from "./profile.js";
+import type { EnvLike, TimeoutTiers } from "./timeouts.js";
 
 /** `live` = the real provider; `offline` = the host's deterministic seam. */
 export const LLM_MODE_ENV = "CELESTEA_LLM_MODE";
@@ -95,7 +95,9 @@ export function liveLlmView(
     reasoningEffort: config.reasoningEffort,
     maxOutputTokens: config.maxOutputTokens,
     contextWindow: typeof window === "number" && window > 0 ? window : null,
-    timeouts: resolveTimeoutTiers(effective, env),
+    // W835 (R3 batch D / P2-1): the view must use the same null-when-disabled
+    // mapping as client.timeouts(), else a disabled stage is printed as "0ms".
+    timeouts: tiersFromConfig(config),
     hasApiKey: config.apiKey !== "",
   };
 }
