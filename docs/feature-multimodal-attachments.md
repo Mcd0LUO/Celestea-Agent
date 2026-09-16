@@ -17,12 +17,12 @@
 ## 0. 结论摘要（TL;DR）
 
 1. **图片当前确实没有任何入口**：11 个工具无 `read_image`；`Content` 联合无 image 变体；`POST /api/turn` 只收 `input: string`；wire 层 `content` 是纯字符串；前端没有 file input / 拖拽 / 粘贴。四层都要动，但**真正的冻结契约只有 `Content`（core）与 session 事件行**两处。
-2. **上游视觉能力是「按模型」而非「按 provider」**：实测 6 个 `celestea` 模型中 **4 个有视觉**（`glm-5.3-flash`、`deepseek-flash`、`deepseek-v4-pro`、`deepseek-v4.1-flash`），**2 个明确拒绝**（`deepseek-v4-flash-0731`、`deepseek-v4-flash`）。因此**必须有逐模型能力位**，不能假设「provider 支持视觉」。
+2. **上游视觉能力是「按模型」而非「按 provider」**：实测 6 个 `celestea` 模型中 **4 个有视觉**（`glm-5.3-flash`、`deepseek-flash`、`deepseek-v4-pro`、`deepseek-v4.1-flash`），**2 个明确拒绝**（`deepseek-v4-flash-0731`、`deepseek-v4-flash`）。因此**必须有逐模型能力位**，不能假设「provider 支持视觉」。该实测只作**事实证据**：设计上采用「乐观默认 + 可配置」，**不由代码硬判**某个模型有没有视觉（见 §7）。
 3. **线格式**：OpenAI 风格 `content: [{type:"text"},{type:"image_url",image_url:{url:"data:image/png;base64,…"}}]` 被 4 个视觉模型**全部接受并正确识图**（实测）。file id / Files API 本轮**不推荐**（见 §3）。
 4. **一个关键坑**：把图片放在 `role:"tool"` 的 content 数组里，`deepseek-v4-pro` **HTTP 200 但静默忽略图片**（回 `NO_IMAGE`）。因此 `read_image` 的工具结果图片**必须在 wire 层改走 `user` 角色消息**（实测 3/3 视觉模型可用），不能依赖 tool-role 多模态。
 5. **存储**：建议 `<workspace>/<session-dir>/attachments/<sha256>.<ext>`。会话目录整体被 `.celestea-trash` / `.celestea-archived` `rename` 搬走，附件天然跟随，无需额外 GC 逻辑。
 6. **红线**：`scripts/export-golden.ts` 的脱敏器目前只处理文本与已知 secret；附件字节**绝不允许**进入 `fixtures/`（见 §5.6）。
-7. **契约成本**：`Content` 加 `ImageContent` 会波及 **24 个非测试文件 / 40+ 处**（含 contracts 与脚本另计）（§4 逐处列出）；`contracts` 需改 4 个文件；CSS/前端另计。新增「上传 + 回读附件」端点则 `API_ENDPOINT_COUNT 51 → 53`（上传 + 读取各 1；见 §7）。
+7. **契约成本**：`Content` 加 `ImageContent` 会波及 **24 个非测试文件 / 40+ 处**（含 contracts 与脚本另计）（§4 逐处列出）；`contracts` 需改 4 个文件；CSS/前端另计。**端点成本：P0 零新端点，`API_ENDPOINT_COUNT` 保持 51 不变**（`POST /api/turn` body 内联 base64；见 §7）。
 
 ---
 
@@ -130,6 +130,7 @@ GUI ──✗── HTTP /api/turn ──✗── runtime.startTurn ──✗�
 - 其 key 只存在于 `/var/lib/celestea-agent/providers.json` 内联字段（该文件 mode `0600`，schema `contracts/data-files/providers.schema.json` 明确标注 `api_key: PLAINTEXT secret`）。
 - 本轮边界明确要求「**不读 providers.json 明文 key（用 env）**」。env 里没有基元的 key，故**不做探针**，按验收要求标注 **待验证**，并列入 §9 需用户裁决的开放问题。
 - 间接旁证（**不作为结论**）：`基元/deepseek-flash` 与 `celestea/deepseek-flash` 同名，而后者是网关别名到 `deepseek-v4.1-flash`（§2.4），两者视觉能力**可能**一致，但未实测，不得写成既成事实。
+- **策略更新（用户裁决 2026-09-16）**：能力位改为「乐观默认 + 可配置」后，**不再需要**为基元做探针；此行保留为**事实证据**，默认值不依赖它。该开放问题**已关闭**（§9.5）。
 
 ### 2.4 网关别名现象（重要，影响能力位设计）
 
@@ -513,7 +514,7 @@ packages/llm/src/{seam.ts:114-119, wire.ts:17,60,62,66,70, index.ts:32,34}
 | 规范化后总像素 | **2048×2048** | 参考 DSH 的 `normalizedImageMaxPixels`；**不放大**，只等比缩小 |
 | 请求期像素预算 | 每模型可配（如 640k 总像素） | 对齐 DSH 的 `imagePixelBudget` 概念；**我们未测每个模型的真实预算** → P1 才做 |
 
-**P0 简化建议**：只做「拒绝超限 + 原样存 PNG/JPEG/WebP（字节 ≤ 4MiB）」，**不做**质量阶梯降码与请求期二次缩放（那需要图像编码库，见 §6.5）。这样 P0 不需要新依赖也能落地 `read_image` 的「尺寸探测」吗？——**不行**：连宽高都需要解码。见 §6.5，这是**必须由用户裁决**的依赖问题。
+**P0 简化决策（用户裁决 2026-09-16）**：只做「拒绝超限 + 原样存 PNG/JPEG/WebP（字节 ≤ 4MiB）」，**不做**质量阶梯降码与请求期二次缩放；格式/宽高由 **`image-size`** 只读头部取得（见 §6.5）。
 
 ### 5.4 MIME 嗅探（不认扩展名）
 
@@ -640,32 +641,32 @@ tool 执行  →  LoopEvent{tool_result, value:unknown}
 - `buildRequestBody`：一条带图 tool 消息 → 展开成 tool + user 两条（顺序、`tool_call_id` 保留、图片在 user 里）。
 - `balanceToolCalls`：tool(user) 消息不被误判为「未应答的 tool call」——**注意它的 `i = j + inserted + 1` cursor quirk**（`core/projection.ts:147-153`），插入的 user 图片消息在 **wire 层**，不在 derive 输出里，所以 quirk 不受影响；但要在测试里钉死这一点。
 
-### 6.5 尺寸/像素上限与下采样（**依赖问题，需用户裁决**）
+### 6.5 尺寸/像素上限与下采样（**P0 依赖已裁决：`image-size`**）
 
-- **只报宽高就要解码**。Node 标准库**没有**图像解码能力；仓库当前**没有任何图像库**（实测：`package.json` 与各 workspace `package.json` 里 grep `sharp|jimp|image-size|file-type` **零命中**）。
+- **只报宽高也需要图像格式知识**（Node 标准库没有内置能力）：仓库当前**没有任何图像库**（实测：`package.json` 与各 workspace `package.json` 里 grep `sharp|jimp|image-size|file-type` **零命中**），因此 P0 必须新增 `image-size`（用户已裁决）。
 - 可选路径：
   1. **`sharp`**：DSH 用的就是它（`libvips`），解码/缩放/转码/EXIF/尺寸一把梭，但引入**原生二进制依赖**（跨平台体积、pnpm 构建脚本、CI 影响）。
   2. **`image-size`**：纯 JS 只读头部，能拿宽高与格式，**不能**下采样/转码。体积小、无原生依赖。
   3. **自己解析 PNG/JPEG/WebP/GIF 头**：零依赖，但 WebP 头较繁、JPEG 需走 SOF 段；维护成本高。
   4. **不做图片，`read_image` 只做「引用 + 原样透传」**：仍需要至少格式+尺寸（错误文案要用），还是要 2 或 3。
-- **建议**：P0 用 **`image-size`（或自写头部解析）** 拿到格式/宽高并做**「超限即拒绝」**；P1 再引入 `sharp` 做规范化与下采样。**但「不新增依赖」是本轮边界，实现期必须由用户拍板**（§9 开放问题 #2）。
+- **用户已裁决（2026-09-16）**：**P0 采用 `image-size`**（纯 JS、只读头部拿格式+宽高、无原生依赖；**超限即拒绝**）；**P1 再评估 `sharp`** 做规范化与下采样。P0 不做质量阶梯降码与请求期二次缩放。
 - 下采样策略（P1）：`scale = min(1, sqrt(maxPixels / (w*h)))`，**不放大**，向内取整；与 DSH 的 request-version 语义一致（借鉴其公式，不搬其全部预算体系）。
 
-### 6.6 模型不支持视觉时的明确拒绝
+### 6.6 配置显式排除视觉时的明确拒绝（与上游实际拒绝分开）
 
-**拒绝必须发生在 I/O 之前**（DSH 的 route gate 语义）：工具执行器先解析目标模型的能力位（§7），无 `image` 输入模态 → 直接抛 `ToolFailure("unsupported_modality", …)`，**不读文件、不写附件**。
+**工具级拒绝只在配置显式排除时发生**（这是与 DSH `fail-closed` 的**刻意分歧**，见 §7.1 的用户裁决）：工具执行器读目标模型的 `input_modalities`——**缺省/缺失 = 乐观支持**；只有用户**显式**把它配成不含 `image` 时，才在 I/O 之前抛 `ToolFailure("unsupported_modality", …)`，不读文件、不写附件。若配置乐观而**上游实际拒绝**，走 §7.6 的**用户可见降级**，而不是在这里提前拒绝。
 
 文案（定稿，中文；与项目现有工具错误文案风格一致）：
 
 ```
-当前模型 "<model>" 不支持图像输入（模型未声明 image 输入模态），read_image 未执行。
-请改用文本工具，或切换到支持视觉的模型（如 glm-5.3-flash / deepseek-v4-pro / deepseek-v4.1-flash）。
+当前模型 "<model>" 的 input_modalities 未包含 image（按配置显式排除），read_image 未执行。
+请改用文本工具，或在该模型的 provider 设置里打开 input_modalities（加入 "image"）。
 ```
 
 要点：
 
 - **说出具体模型 id**（便于用户换模型），**不说**「上游可能支持」这种模糊话。
-- 能力位**未知时 fail-closed**（拒绝），与 DSH 的「unknown capability refuses」一致。
+- 能力位**缺省时乐观放行**（用户裁决，**不是** fail-closed）；配置是唯一权威，代码**不替用户判断**某个模型有没有视觉。
 - 该拒绝是**工具级失败**（`{ok:false}` 的 tool_result），不中断整轮；与 `read_file` 的 `binary_file` 失败同构。
 
 ### 6.7 两个必须注意的既有机制
@@ -682,12 +683,12 @@ tool 执行  →  LoopEvent{tool_result, value:unknown}
 | 层 | 载体 | 作用 | 契约影响 |
 | --- | --- | --- | --- |
 | **部署级** | `GET /api/health.capabilities.multimodal = true` | 前端决定**是否显示**附件入口（粘贴/拖拽/选文件） | `handlers/health.ts:59` 加一个布尔；**PURE ADDITION**，与 W516/W725/W729/W767 完全同构。旧客户端看不到就降级为「无附件」 |
-| **模型级** | `providers.json` 的 `models[].input_modalities: ["text"] \| ["text","image"]` | 后端 `read_image` 的**执行前 gate**；前端选模型时决定附件入口是否可用 | `providers.schema.json` 的 `models[].properties` 加可选字段；`publicView.fields` 加 `models[].input_modalities`；`providers.ts` 的 public_view 映射加一行 |
-| **会话级** | 前端由当前会话的 model → provider → model 行推导；不新增端点 | 拖入图片时**当场**提示「当前模型不支持图像输入」 | 无（纯前端推导） |
+| **模型级** | `providers.json` 的 `models[].input_modalities` / `models[].output_modalities` | 后端 `read_image` 的**配置判据**；前端选模型时决定附件入口是否可用 | `providers.schema.json` 的 `models[].properties` 加两个可选字段；`publicView.fields` 加 `models[].input_modalities` / `models[].output_modalities`；`providers.ts` 的 public_view 映射同步 |
+| **会话级** | 前端由当前会话的 model → provider → model 行推导；不新增端点 | 乐观默认=允许；只有当该模型被**显式**排除 `image` 时才禁用入口并提示 | 无（纯前端推导） |
 
 **为什么能力位必须在模型级**：§2 实测同一个 provider 的 6 个模型里 4 个有视觉、2 个明确拒绝。放在 provider 级**一定是错的**。
 
-**默认值必须 fail-closed**：`input_modalities` 缺省 = `["text"]`（即「不声明 = 不支持」）。这样升级后未重新配置的 provider 不会把图片发给无视觉模型。**代价**：升级后 4 个有视觉模型默认被当成无视觉，用户需在 provider 面板勾选——**这是刻意的安全默认**，列为开放问题 #1 让用户裁决是否改为「按 §2.2 的实测表内置一份默认值」。
+**默认值 = 乐观（用户裁决 2026-09-16）**：`input_modalities` 缺省 = `["text","image"]`，`output_modalities` 缺省 = `["text"]`。**不 fail-closed、不由代码硬判**某个模型有没有视觉；某模型无视觉由**用户配置**关闭（`input_modalities: ["text"]`）。§2.2 的「4 有 / 2 无」保留为**事实证据**，但**不作为默认值的依据**。猜错的兜底见 §7.6。
 
 ### 7.2 `providers.json` 字段（schema 已是 `additionalProperties:true`，向后兼容）
 
@@ -695,11 +696,12 @@ tool 执行  →  LoopEvent{tool_result, value:unknown}
 {
   "id": "glm-5.3-flash",
   "name": "GLM 5.3 Flash",
-  "input_modalities": ["text", "image"]
+  "input_modalities": ["text", "image"],   // 缺省即此值（乐观）
+  "output_modalities": ["text"]            // 缺省即此值
 }
 ```
 
-`publicView`（`providers.schema.json` 的 `publicView.fields`）必须同步加 `models[].input_modalities`，否则前端拿不到。
+`publicView`（`providers.schema.json` 的 `publicView.fields`）必须同步加 `models[].input_modalities` 与 `models[].output_modalities`，否则前端拿不到。schema 的 `models[].properties` 是 `additionalProperties: true`，新增字段对旧数据向后兼容。
 
 ### 7.3 `GET /api/health.capabilities`
 
@@ -709,39 +711,99 @@ tool 执行  →  LoopEvent{tool_result, value:unknown}
 
 **PURE ADDITION**：`handlers/health.ts:59` 一处改动；旧前端忽略未知字段。**不新增端点**。
 
-### 7.4 `API_ENDPOINT_COUNT 51 → 52？`—— 直接回答
+### 7.4 `API_ENDPOINT_COUNT 51 → 52？`—— 直接回答：**P0 保持 51 不变**
 
-**取决于上传方式**，给出三种方案与计数：
+**用户裁决（2026-09-16）：P0 零新端点。**
 
-| 方案 | 上传 | 历史回读 | 新端点数 | `API_ENDPOINT_COUNT` |
-| --- | --- | --- | --- | --- |
-| **α 内联** | `POST /api/turn` body 内联 base64 附件 | 仍需 1 个读取端点 | +1 | **51 → 52** |
-| **β 上传+读取**（推荐为 P1 目标） | `POST /api/sessions/{id}/attachments` | `GET /api/sessions/{id}/attachments/{attachment_id}` | +2 | **51 → 53** |
-| **γ 纯引用** | 复用现有 `POST /api/sessions/{id}/...`？**没有合适端点** | 无 | 0 | 51 |
+| 阶段 | 方案 | 新端点数 | `API_ENDPOINT_COUNT` |
+| --- | --- | --- | --- |
+| **P0** | `POST /api/turn` body 内联 base64 附件；`read_image` 直接读本地文件 | **0** | **51（不变）** |
+| P1（仅当大图/历史回放成为问题） | 追加 `POST /api/upload`（或 `POST /api/sessions/{id}/attachments`）+ 一个按 `attachment_id` 回读字节的 GET | +1～2 | 51 → 52（或 53） |
 
-**推荐**：
+**P0 的直接后果（必须写清，否则是隐性缺陷）**：
 
-- **P0 = 方案 α，51 → 52**：`POST /api/turn` 增**可选** `attachments: [{media_type,data_base64,name?}]`；新增 `GET /api/sessions/{id}/attachments/{attachment_id}` 回读字节。理由：一次请求 = 一个乐观帧（§8），实现最直；代价是 turn body 可能较大（与 §5.3 上限配合）。
-- **P1 = 迁到方案 β，51 → 53**：上传与 turn 解耦（可断点续传、可复用附件 id、turn body 保持小）。`POST /api/turn` 的 `attachments` 改为 `attachment_id[]`。
-- 无论 α/β，新的端点都是 **TS-only**（退役后端没有对应物）⇒ `contracts/route-table.snapshot.json` 的 `tsOnlyRoutes` +1/+2，`tsApiEndpoints` 同步。
+- 前端在**同一次 `POST /api/turn`** 里把附件 base64 一起发出 ⇒ 一次请求 = 一个乐观帧（§8），无需 upload 往返。
+- **P0 没有「按 id 回读附件字节」的端点**：刷新/其它客户端回放历史时，图片只能渲染为**附件元数据**（文件名 + 尺寸 + MIME），不能内联显示；本会话内可继续用 `URL.createObjectURL` 显示。**这是 P0 的已知限制**，不是 bug；字节回读端点随 P1 一并加。
+- `read_image` 读**本地文件**不需要任何上传端点；它产出的附件写入 `<session-dir>/attachments/`，模型可见性由 §6.4 的 wire 拆分保证。
+- `contracts/endpoints.json` 的 `count`、`packages/core/src/contracts/index.ts:128-130` 的硬断言、`apps/studio/src/routes.ts:54`、`tests/contracts.test.ts` 的 51 —— **P0 全部不动**。
 
-### 7.5 逐条契约改动清单
+### 7.5 逐条契约改动清单（P0，端点计数不变）
 
 | # | 文件:行 | 改动 | 端点计数影响 |
 | --- | --- | --- | --- |
-| 1 | `contracts/endpoints.json` `count` | 51 → 52（P0） | +1 |
-| 2 | `contracts/endpoints.json` `post_turn.request.fields` | 加 `attachments`（optional，array） | — |
-| 3 | `contracts/endpoints.json` `endpoints[]` | 追加 `get_session_attachment`（GET `/api/sessions/{id}/attachments/{attachment_id}`） | +1 |
-| 4 | `contracts/endpoints.json` `source.routeTable` | 追加 W801 说明 | — |
-| 5 | `contracts/route-table.snapshot.json:247,309` | `tsOnlyRoutes` +1；`tsApiEndpoints` 51 → 52 | — |
-| 6 | `packages/core/src/contracts/index.ts:128-130` | 硬断言 `51` → `52` | — |
-| 7 | `apps/studio/src/routes.ts:54` | `API_ENDPOINT_COUNT = 51` → `52` | — |
-| 8 | `tests/contracts.test.ts`（11 处 51） | 全部 51 → 52；`:23-25` 工具数 11 → 12 | — |
-| 9 | `apps/studio/src/handlers/health.ts:59` | capabilities 加 `multimodal: true` | 0 |
-| 10 | `contracts/data-files/providers.schema.json` | model 加 `input_modalities`；`publicView.fields` 同步 | 0 |
-| 11 | `tests/studio-routes.test.ts:22-23` | 由 `API_ENDPOINT_COUNT` 推导，自动跟随（确认无硬编码） | — |
+| 1 | `contracts/endpoints.json` `post_turn.request.fields` | 加 `attachments`（optional，array；内联 base64 形状） | 0 |
+| 2 | `contracts/endpoints.json` `source.routeTable` | 追加 W801 说明（P0 不新增端点） | 0 |
+| 3 | `contracts/endpoints.json` `count` / `endpoints[]` | **P0 不动** | 0 |
+| 4 | `packages/core/src/contracts/index.ts:128-130` | **P0 不动**（硬断言仍是 51） | 0 |
+| 5 | `apps/studio/src/routes.ts:54` | **P0 不动**（`API_ENDPOINT_COUNT = 51`） | 0 |
+| 6 | `tests/contracts.test.ts` | **51 相关断言不动**；`:23-25` 工具数 11 → 12 | 0 |
+| 7 | `apps/studio/src/handlers/health.ts:59` | capabilities 加 `multimodal: true` | 0 |
+| 8 | `contracts/data-files/providers.schema.json` | model 加 `input_modalities` / `output_modalities`；`publicView.fields` 同步 | 0 |
+| 9 | `contracts/route-table.snapshot.json` | **P0 不动** | 0 |
+| 10 | `contracts/tools.json` | `count 11 → 12`，追加 `read_image` | 0 |
 
-**成本结论**：端点计数的机械改动集中在 4 个文件 + 1 个测试文件；**真正的风险不在计数，而在 §4.2C 的事件序列化**。
+**成本结论**：P0 的契约改动**不碰任何端点计数**（只加一个可选请求字段 + 两个能力字段 + 一个新工具），风险集中在 §4.2C 的事件序列化。
+
+### 7.6 乐观默认下「猜错」是常态：上游 400 → 用户可见降级（**新增设计**）
+
+**前提**：默认 `input_modalities = ["text","image"]` 意味着**我们默认假设每个模型都能看图**。§2.2 已证明该假设对 `deepseek-v4-flash-0731` / `deepseek-v4-flash` 是**错的**（上游 400）。因此「配置乐观 + 上游拒绝」不是异常，而是**必须一等公民处理的常态路径**。
+
+**原则（按重要性排序）**：
+
+1. **绝不静默失败**：不得吞掉上游 400、不得假装图片已送达、不得只写日志。
+2. **绝不让整个回合炸掉**：一次图片拒绝不能让用户的文本输入、工具调用、整轮对话全部丢失。
+3. **必须给出可执行的下一步**：告诉用户是哪个模型拒绝、可换哪个模型、或怎么改配置。
+
+**处理流程（一次自动降级 + 可见提示）**：
+
+```
+请求装配（wire）发现本次请求含 image 块
+        │
+        ├─ 上游 2xx           → 正常，图片已送达
+        │
+        └─ 上游 4xx 且被识别为「图像不支持」
+                 │
+                 ├─ ① 分类：上游报文含以下任一特征 → IMAGE_UNSUPPORTED
+                 │     "multimodal input is not supported"
+                 │     "Model only supports text input"
+                 │     "unsupported content type 'image_url'"
+                 │     （未能识别时按普通上游错误处理，不做猜测）
+                 │
+                 ├─ ② 降级重试一次：把本次请求里的**全部 ImageContent**
+                 │     替换为文本占位块：
+                 │     [图片已省略：模型 "<model>" 未接受图像输入（上游 400）；
+                 │      attachment <attachment_id>，本地文件 <path>]
+                 │     其余消息、工具调用、文本**逐字节不变**
+                 │
+                 ├─ ③ 可见提示（三重，确保用户看得到）：
+                 │     - SSE / 信息块：明确文案（下）
+                 │     - 状态栏：一次 err 提示
+                 │     - 会话日志 / 审计：记一条「图片未送达」事件（不改既有事件类型语义）
+                 │
+                 └─ ④ 降级重试若仍失败 → 才按普通 turn 失败处理
+                       （此时错误原因已随 ② 的请求与 ③ 的提示一并呈现）
+```
+
+**用户可见文案（定稿）**：
+
+```
+模型 "<model>" 拒绝了图像输入（上游 400），本轮已自动降级为「仅文本 + 图片占位」继续，
+图片内容未送达模型。
+下一步可选：
+  · 切换到已配置支持图像输入的模型（在模型选择器里切换）；
+  · 或在该模型的 provider 设置里确认 input_modalities 含 "image"；
+  · 若该模型确实不支持视觉，请把它设为 input_modalities = ["text"]，
+    这样附件入口会自动禁用，不再产生必然失败的请求。
+```
+
+**各层落点**：
+
+- **错误分类**：`packages/llm/src/errors.ts` 新增 `ImageUnsupportedError`，由 `stream.ts` / `client.ts` 从上游报文映射；**只认已知报文特征**，不猜。
+- **降级重试**：`packages/llm/src/fallback.ts` 已有「一次重试」的骨架，复用其位置；降级后的请求体由 wire 层重新装配（把 image 块换成占位文本）。
+- **可见提示**：`apps/studio` 的 SSE `status` / info 通道 + 前端 `renderInfoBlock`（与「发送失败」同一条通道）。
+- **不炸回合**：降级后模型仍能基于文本与占位继续回答；用户的输入**不丢**（§8 的乐观回执仍然成立，只是被标注为「图片未送达」）。
+- **`read_image` 工具路径**：工具本身已成功返回（附件已落盘），降级只影响**下一次请求**；模型会看到占位文本，并可在文本里说明「图片不可见」。
+- **与「显式排除」的区别**：若用户已把 `input_modalities` 配成 `["text"]`，则**根本不会发出带图请求**（前端禁用 + 工具 gate 拒绝，§6.6），走不到这里。本节 400 路径专门服务**乐观默认下的猜错**。
 
 ---
 
@@ -784,7 +846,7 @@ tool 执行  →  LoopEvent{tool_result, value:unknown}
    - 信息块 + 状态栏给**明确原因**（例如「附件过大：12.4 MiB > 20 MiB」「模型 deepseek-v4-flash 不支持图像输入」「上传失败：HTTP 413」）；
    - **绝不**保留一个「看起来发出去了」的假气泡。
 5. **前置校验也在「那一帧」**：格式/大小/数量超限时，附件**当场标红**并给原因，**不发请求**（避免必然失败的往返）。
-6. **能力位禁用**：模型无视觉时，📎/拖拽/粘贴图片 → 立即提示「当前模型不支持图像输入」；**按钮禁用 + tooltip**，而不是让用户白拖一次。
+6. **能力位禁用（仅显式排除时）**：乐观默认下**不**预先禁用；只有当该模型被**显式**配成 `input_modalities=["text"]` 时才禁用入口并给出原因。若配置乐观但上游实际 400，走 §7.6 的可见降级（气泡上标注「图片未送达」，文本照常）。
 7. **多会话**：待发附件属于**会话草稿**的一部分，切会话时随 `inputValue/setInputValue`（`inputbar.ts:141-151`）一起保存/恢复；避免「在 A 会话选的图出现在 B 会话」。
 
 ### 8.4 需要新增的前端状态
@@ -809,20 +871,21 @@ tool 执行  →  LoopEvent{tool_result, value:unknown}
 | P0-3 | `deriveMessagesFrom` 把附件引用投影成 image 块 | `packages/core/src/projection.ts` |
 | P0-4 | wire：user 图片走 content 数组；tool 图片**拆成 user 消息** | `packages/llm/src/{wire.ts,seam.ts}` |
 | P0-5 | `read_image` 工具（`path` \| `attachment_id`、魔数嗅探、尺寸、能力位 gate、明确拒绝文案） | `packages/tools/src/{tools/read-image.ts,builtin.ts}`、`contracts/tools.json` |
-| P0-6 | 逐模型 `input_modalities` + `health.capabilities.multimodal` | `providers.schema.json`、`handlers/health.ts`、`store/providers.ts` |
-| P0-7 | HTTP：`POST /api/turn` 可选内联附件 + `GET /api/sessions/{id}/attachments/{id}` | `handlers/dialog.ts`、`handlers/attachments.ts`（新）、`endpoints.json`（51→52） |
+| P0-6 | 逐模型 `input_modalities` / `output_modalities`（乐观默认）+ `health.capabilities.multimodal` | `providers.schema.json`、`handlers/health.ts`、`store/providers.ts` |
+| P0-7 | HTTP：`POST /api/turn` 可选内联 base64 附件（**零新端点，51 不变**） | `handlers/dialog.ts`、`endpoints.json`（只加请求字段）、`runtime-adapter.ts` |
 | P0-8 | 前端三入口 + 乐观渲染 + 完整回滚 + 历史附件渲染 | `apps/web/src/ui/{inputbar.ts,messages/user.ts,toolcards.ts}`、`chat.ts`、`api.ts`、`state.ts`、CSS |
 | P0-9 | 附件存储（内容寻址、原子写、去重、魔数嗅探） | 新 `packages/session/src/attachments/*` 或 `packages/runtime` |
 | P0-10 | golden 红线：脱敏器扩展 + 禁止附件入 fixtures | `scripts/export-golden.ts`、`packages/core/src/redact.ts` |
 | P0-11 | 逐处测试：`derive` 字节不变（无附件）、wire 拆分、serialize round-trip、契约计数 | 见 §4.5 |
+| P0-12 | §7.6 上游 400「图像不支持」分类 + 一次降级重试 + 可见提示 | `packages/llm/src/{errors.ts,fallback.ts,stream.ts}`、前端 info 通道 |
 
-P0 **明确不做**：图片规范化/降码、请求期二次缩放、Files API、跨会话去重、孤儿 GC、非图片文件附件、`run_code` 内 `read_image`。
+P0 **明确不做**：图片规范化/降码、请求期二次缩放、Files API、跨会话去重、孤儿 GC、非图片文件附件、`run_code` 内 `read_image`、**附件上传/回读端点**。
 
 ### 9.2 P1 —— 质量与治理
 
 1. **规范化/降采样**（引入 `sharp`）：EXIF 方向、去元数据、8-bit sRGB、质量阶梯（85/75/60）、`originalDimensions`。
 2. **请求期像素预算**（逐模型）：`scale = min(1, sqrt(maxPixels/(w*h)))`，不放大；请求版本缓存。
-3. **上传端点**（51 → 53）：`POST /api/sessions/{id}/attachments`，`/api/turn` 只带 `attachment_id`。
+3. **上传端点 + 附件字节回读端点**（51 → 52，仅当大图/历史回放成为问题时）：`POST /api/upload`（或 `POST /api/sessions/{id}/attachments`）+ 一个按 `attachment_id` 回读字节的 GET；`/api/turn` 改为只带 `attachment_id`。
 4. **文本模型的历史占位符投影**：无视觉模型仍能消费带图历史（`[图片已省略：模型仅接受文本；attachment sha256:<id>]`），而不是硬失败（DSH 的 `projectImagesForTextModel` 语义）。
 5. **工具卡片图片渲染** + lightbox + 失败重试。
 6. **compact 占位符**细化（`transcriptLine` 的 image 分支）。
@@ -841,25 +904,33 @@ P0 **明确不做**：图片规范化/降码、请求期二次缩放、Files API
 | R1 | `serializeSessionEvent` 手写逐字段，漏加 `attachments` 分支 ⇒ `/compact` 重写时**静默丢附件** | **高** | 显式分支 + 「读→写→再读」字节对拍测试；`/compact` 前后断言附件引用数不变 |
 | R2 | tool-role 图片被上游**静默丢弃**（`deepseek-v4-pro` 实测） | 中 | 定稿用 shape B（image 走 user 消息）；对每个视觉模型补一次「工具结果图片」实测 |
 | R3 | 附件字节泄入 `fixtures/`（红线） | **高** | 脱敏器加 `data:image` 规则 + `assertClean`；导出器加硬拒绝；`redaction-audit.json` 留证 |
-| R4 | 图片解码依赖（`sharp` 原生二进制）影响 CI/部署/可移植性 | 中 | P0 用头部解析（零依赖）；`sharp` 只在 P1 引入并做可选降级 |
-| R5 | turn body 内联 base64 ⇒ 内存/超时/网关体积上限 | 中 | §5.3 上限 + P1 切独立上传端点；JSON body 大小上限要显式配置并测试 |
+| R4 | 图像库依赖：P0 新增 `image-size`（纯 JS，风险低）；P1 若引入 `sharp` 则带原生二进制风险 | 低→中 | P0 已裁决用 `image-size`；`sharp` 留到 P1 评估并做可选降级 |
+| R5 | P0 turn body 内联 base64 ⇒ 内存/超时/网关体积上限；且 P0 **无附件字节回读端点** ⇒ 历史只能显示元数据 | 中 | §5.3 上限 + JSON body 大小上限显式配置并测试；P1 加 `POST /api/upload` 与回读端点 |
 | R6 | 会话目录不在 `CELESTEA_TOOL_ROOTS` ⇒ `read_image(path)` 对上传图失败 | 中 | `attachment_id` 入口绕开沙箱；文档写清两个入口的语义差异 |
-| R7 | 网关别名（`deepseek-flash` → `deepseek-v4.1-flash`）使静态能力位**静默失效** | 中 | 能力位按「我们配置的模型 id」登记；长期考虑运行时探测（开放问题 #1 的衍生） |
+| R7 | 网关别名（`deepseek-flash` → `deepseek-v4.1-flash`）使静态能力位**静默失效** | 中 | 乐观默认下由 §7.6 的 400 降级兜底；用户可把实际无视觉的模型配成 `["text"]` |
 | R8 | 上下文 token 估算低估图片（`context-trim.ts`） | 中 | 加 image 估算分支 + 单测 |
 | R9 | 前端 `createObjectURL` 泄漏 | 低 | 消息卸载/会话切换时 `revokeObjectURL`；加内存测试 |
 | R10 | 并发任务（W798 rust 全删 / W802 DSH 动态工具披露）导致的 `pnpm check` 红灯 | 低 | 本任务未改代码；若复现按协议登记 `git status --porcelain`（本轮**不跑** `pnpm check`，见 §11.4） |
 
-### 9.5 需用户裁决的开放问题
+### 9.5 开放问题（用户裁决后更新 2026-09-16）
 
-1. **`input_modalities` 默认值**：升级后未配置的模型一律按「无视觉」（fail-closed，安全但要手工勾 4 个模型），还是内置一份「按 §2.2 实测」的默认表（开箱即用，但网关换后端时会过期）？
-2. **是否允许新增依赖**：P0 只做「格式 + 尺寸探测」需要 `image-size` 或自写头解析；P1 的规范化需要 `sharp`。**本轮边界禁止新增依赖**，实现期需要拍板。
-3. **上传方式**：P0 内联 base64（`API_ENDPOINT_COUNT 51→52`）还是直接做独立上传端点（`51→53`）？
-4. **基元 provider 的视觉实测**：是否授权「一次性读取 `providers.json` 内联 key 做只读探针、全程不打印/不落盘」以补齐第 7 行结论？不授权则该行永久停留「待验证」。
-5. **附件目录位置**：会话内 `attachments/`（跟随 trash/archive，零额外生命周期，但不跨会话去重）还是中央对象库（去重好，但删除语义要改）？本设计强烈倾向前者。
-6. **范围**：非图片「文件附件」（PDF/文本/代码）是否在本功能范围内？本设计按「只做 PNG/JPEG/WebP/GIF」处理，文本类继续走 `read_file`。
-7. **文本模型消费历史图片**：硬拒绝（`read_image` 拒绝 + 发送拒绝）还是占位符投影（模型看到 `[图片已省略]`，不报错）？DSH 选后者。
-8. **上限数值**：是否直接采用 DSH 的默认（20 MiB / 20 张 / 200 MiB / 64 MP / 8192 px / 2048² / 4 MiB）作为我们 P0 的自限？
-9. **`read_image` 的访问面**：只允许「会话附件 + 沙箱 roots 内的路径」，还是也允许任意宿主可读路径（DSH 的 `/api/file` 路线允许任意 `ctx.fs` 可读文件）？后者更灵活但**扩大了模型可读面**。
+**已裁决 / 已关闭**：
+
+| 原 # | 问题 | 裁决 |
+| --- | --- | --- |
+| #1 | `input_modalities` 默认值 fail-closed 还是乐观 | ✅ **乐观默认 + 可配置**：缺省 `["text","image"]` / `["text"]`；某模型无视觉由**配置**关闭，代码不硬判（§7.1） |
+| #2 | 图像解码依赖 | ✅ **P0 用 `image-size`**（纯 JS、读头部、无原生依赖）；P1 再评估 `sharp`（§6.5） |
+| #3 | 上传方式 / 端点成本 | ✅ **P0 零新端点，`API_ENDPOINT_COUNT` 保持 51**：`POST /api/turn` 内联 base64；P1 才考虑上传端点（§7.4） |
+| #4 | 基元 provider 是否授权读 key 探针 | ✅ **不需要**：乐观默认已覆盖；`providers.json` 明文 key 红线不破；§2.2 第 7 行保留为「待验证」事实证据，不再是阻塞项（§2.3） |
+| #7 | 文本模型消费历史图片：硬拒绝 vs 占位符 | ✅ 倾向**占位符投影**（与 §7.6 的降级同源）；P1 落地 |
+
+**仍需用户裁决**：
+
+1. **附件目录位置**：会话内 `attachments/`（跟随 trash/archive，零额外生命周期，但不跨会话去重）还是中央对象库（去重好，但删除语义要改）？本设计倾向前者（§5.1）。
+2. **范围**：非图片「文件附件」（PDF/文本/代码）是否在本功能范围内？本设计按「只做 PNG/JPEG/WebP/GIF」处理，文本类继续走 `read_file`。
+3. **上限数值**：是否直接采用 DSH 的默认（20 MiB / 20 张 / 200 MiB / 64 MP / 8192 px / 2048² / 4 MiB）作为我们 P0 的自限（§5.3）？
+4. **`read_image` 的访问面**：只允许「会话附件 + 沙箱 roots 内的路径」，还是也允许任意宿主可读路径（DSH 的 `/api/file` 路线）？后者更灵活但**扩大了模型可读面**（§6.1 / §6.7）。
+5. **P0 的历史回放限制**：无回读端点时历史图片只能显示元数据，是否接受这一 P0 限制直到 P1（§7.4）？
 
 ---
 
@@ -875,7 +946,7 @@ P0 **明确不做**：图片规范化/降码、请求期二次缩放、Files API
 | wire | OpenAI 风格 `image_url.url = "data:<mime>;base64,…"`（`packages/llm/llm-deepseek/src/serialize.ts:157-160`）；`file_id` 走 Files API 失败才回落 base64（`adapter.ts:573-626`） | **P0 只做 data URL**；Files API 列 P2（§3.4） |
 | 图片角色限制 | pi-ai 适配器**硬拒绝非 user 消息里的图片**（`llm-pi-ai/src/context.ts:37-47` `assertSupportedImageRoles`）；DeepSeek 同（`serialize.ts:109-126`） | **与我们的 §3.2 实测一致**（tool-role 图片不可靠）⇒ §3.3 的 wire 拆分有独立佐证 |
 | `read_image` 返回值 | **结构化 JSON value（无字节）** + `output.render` 产出 `[text, ImageBlock]`（`packages/fs/tool-fs/src/read-image.ts:192-197,218-226,324-338`）；`presentationMeta` **刻意不复制**附件引用（`:228-236`） | **采纳「value 只带引用」**；但我们的日志就是 `value`，所以引用放 `value.attachments`（DSH 的 `message.content` 在这里不存在） |
-| 能力 gate | 执行前 `assertImageCapableRoute()`：解析路由模型，要求 `inputModalities` 含 `image`，**未知即拒绝**（`read-image.ts:111-131`） | **采纳**（§6.6），文案本地化 |
+| 能力 gate | 执行前 `assertImageCapableRoute()`：解析路由模型，要求 `inputModalities` 含 `image`，**未知即拒绝**（`read-image.ts:111-131`） | **刻意分歧**（用户裁决）：我们**乐观默认**（缺省=支持），只在**显式配置排除**时拒绝；上游猜错由 §7.6 的 400 降级兜底（§6.6） |
 | 拒绝文案 | `Model "<m>" does not support image input.`（`api/session-controller/src/commands.ts:335-348`）；工具侧 `cannot read "..." as an image: model "..." does not declare image input; switch to an image-capable model to read images`（`read-image.ts:119-131`） | **采纳结构**（模型 id + 可执行建议），文案按项目中文风格定稿（§6.6） |
 | 存储 | 中央对象库 `~/.dsh/attachments/v1/objects/<sha[0:2]>/<sha>`，硬链接发布 + `chmod 0400`（`packages/attachment/attachment-local/src/{index.ts:174, store.ts:51-54,350-388}`） | **改成每会话 `attachments/`**（§5.1）：我们的删除/归档是整目录 `rename`，中央库会与删除语义冲突 |
 | 上限 | 20 MiB / 20 张 / 200 MiB / 64 MP / 8192 px / 2048² / 4 MiB（`attachment-local/src/index.ts:33-58`） | **作为候选默认**（§5.3），但标注是我们的自限、非上游实测 |
