@@ -16,7 +16,7 @@
 import { ApiError, api, userErrorText } from '../../api';
 import { el, fmtNow } from '../../utils/dom';
 import type { QuestionItem } from '../../types';
-import { allPanes, LOCAL_ID, type SessionPane } from '../viewctx';
+import { allPanes, LOCAL_ID, onBusyChange, paneOf, type SessionPane } from '../viewctx';
 import { autoscroll, hideEmptyHint } from '../messages/scroll';
 import { buildQuestionBlock, type PickHost } from './controls';
 import {
@@ -58,6 +58,7 @@ export interface CardInfo {
 /** 一张提问卡片的 DOM 句柄 + 本地作答草稿。 */
 interface CardHandle extends PickHost {
   id: string;
+  paneId: string;
   root: HTMLElement;
   card: HTMLElement;
   timer: HTMLElement;
@@ -79,6 +80,11 @@ const registries = new WeakMap<HTMLElement, Map<string, CardHandle>>();
 const live = new Set<CardHandle>();
 let ticker: number | null = null;
 
+// dropPane 会 emitBusy(id, false)；注册表里已无此 pane = 容器已注销 → 同步回收卡片引用。
+onBusyChange((id, busy) => {
+  if (!busy && paneOf(id) === undefined) releasePaneId(id);
+});
+
 function registryOf(ctx: SessionPane): Map<string, CardHandle> {
   let map = registries.get(ctx.el);
   if (!map) {
@@ -93,7 +99,21 @@ function registryOf(ctx: SessionPane): Map<string, CardHandle> {
  * 两者皆无 = 节点已被消息区重载丢弃 → 条目作废（否则会以为卡片还在而不再渲染）。
  */
 function stillThere(h: CardHandle): boolean {
-  return h.root.isConnected || h.root.parentElement !== null;
+  if (h.root.isConnected) return true;
+  // 离屏构建：父容器仍被 viewctx 持有才算存活（容器 drop/淘汰后 pane 已注销 → 作废，
+  // 否则 live 强引用与 ticker 永不回收）。
+  return h.root.parentElement !== null && paneOf(h.paneId)?.el === h.root.parentElement;
+}
+
+function releasePaneId(paneId: string): void { // 容器被 drop → 同步回收卡片引用并停表（R3 W838-F5）
+  for (const h of Array.from(live)) if (h.paneId === paneId) live.delete(h);
+  stopTickerIfIdle();
+}
+function stopTickerIfIdle(): void {
+  if (live.size === 0 && ticker !== null) {
+    window.clearInterval(ticker);
+    ticker = null;
+  }
 }
 
 function liveCard(ctx: SessionPane, id: string): CardHandle | null {
@@ -117,10 +137,7 @@ function tickAll(): void {
     }
     if (h.state === 'pending') paintTimer(h, now);
   }
-  if (live.size === 0 && ticker !== null) {
-    window.clearInterval(ticker);
-    ticker = null;
-  }
+  stopTickerIfIdle();
 }
 
 /** 画一次倒计时；本地钟到点即转「已到时限」终态（绝不发出必然失败的作答）。 */
@@ -223,6 +240,7 @@ function buildCard(ctx: SessionPane, info: CardInfo): CardHandle {
   submitBtn.type = 'button';
   const h: CardHandle = {
     id: info.id,
+    paneId: ctx.id,
     root,
     card,
     timer: el('div', 'q-timer'),

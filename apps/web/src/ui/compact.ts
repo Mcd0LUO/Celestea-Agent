@@ -19,16 +19,18 @@ import { msgOf, sid } from './session-util';
 
 /** 压缩请求进行中（防连点）。 */
 let compacting = false;
-/** 本地刚压缩过的时间戳：吞掉同一动作回环回来的 compact SSE，避免重复重载。 */
-let localCompactAt = 0;
+/** R3 W838-F10：本地刚压缩过的**每会话**时间戳 —— 单一全局值会吞掉别的会话的 compact SSE。 */
+const localCompactAt = new Map<string, number>();
 const LOCAL_COMPACT_DEDUP_MS = 5_000;
 
 /** 收到 compact SSE：只对对应容器重载消息区（运行中不打断），不打扰其它会话。 */
 export function onCompact(p: CompactPayload): void {
-  if (Date.now() - localCompactAt < LOCAL_COMPACT_DEDUP_MS) return; // 本地已处理
   const id = typeof p.session === 'string' && p.session !== '' ? p.session : null;
   const ctx = id ? (paneOf(id) ?? null) : activePane();
-  if (!ctx || ctx.streaming) return;
+  if (!ctx) return;
+  // R3 W838-F10：去重按**路由后的会话**判定 —— A 刚压缩不吞 B 的 compact SSE。
+  if (Date.now() - (localCompactAt.get(ctx.id) ?? 0) < LOCAL_COMPACT_DEDUP_MS) return;
+  if (ctx.streaming) return;
   void (async () => {
     await restoreSessionHistory(ctx);
     if (isActivePane(ctx)) flashStatus(p.note || '上下文已压缩', 'ok');
@@ -60,7 +62,7 @@ export async function runCompact(ctx: SessionPane): Promise<void> {
       flashStatus(r.note || '历史不足，无需压缩', 'ok');
       return;
     }
-    localCompactAt = Date.now();
+    localCompactAt.set(id, Date.now());
     flashStatus(r.note || '历史已压缩', 'ok');
     await restoreSessionHistory(ctx); // 消息区 reload
   } catch (err) {

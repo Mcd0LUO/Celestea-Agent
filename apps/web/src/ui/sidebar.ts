@@ -57,7 +57,8 @@ export function initSidebar(): void {
   const applyWidth = (w: number) => {
     const px = clampWidth(w) + 'px';
     sidebar.style.width = px;
-    app.style.setProperty('--sidebar-w', px);
+    // R3 W838-F9：已收起时不得把 --sidebar-w 写回 px，否则 .mcol max-width clamp 失效。
+    if (!collapsed) app.style.setProperty('--sidebar-w', px);
   };
 
   applyCollapsed();
