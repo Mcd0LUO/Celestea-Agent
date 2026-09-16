@@ -39,10 +39,9 @@ import { ToolFailure } from "../tool-failure.js";
 import {
   EXIT_GRACE_MS,
   MAX_LINE_BYTES,
-  MAX_LOG_BYTES,
-  MAX_SUB_OUTPUT_BYTES,
   RUN_CODE_ERROR_PREFIX,
   SDK_TOOLS,
+  STDIN_WRITE_TIMEOUT_MS,
   resolveTimeoutMs,
   runCodeFailure,
   type RunCodeConfig,
@@ -207,13 +206,37 @@ async function executeProgram(
 ): Promise<void> {
   const child = await spawnProgram(ctx.sandbox, scriptName, language);
   const stderr = readCapped(child.stderr, ctx.config.maxLogBytes);
+  // W833 (R3 B1 / W812 P1-1): the wall clock is enforced HERE, not only while
+  // waiting for the next stdout line. A slow sub-call (run_shell itself allows
+  // 300s) or a reply write parked on a full pipe lives INSIDE pumpLines, where
+  // the reader's own deadline cannot be consulted; this timer kills the child
+  // and records code=timeout no matter which await the pump is parked on.
+  let wallTimer: NodeJS.Timeout | undefined;
+  let timedOut = false;
+  let pumpError: unknown = null;
+  const wallFired = new Promise<void>((resolve) => {
+    wallTimer = setTimeout(() => {
+      timedOut = true;
+      if (state.infraError === null) state.infraError = timeoutMessage(child, timeoutMs, state);
+      child.kill();
+      resolve();
+    }, timeoutMs);
+  });
+  const pump = pumpLines(ctx, child, timeoutMs, state).catch((error: unknown) => {
+    // Park the rejection: after the wall clock has already won, the pump may
+    // still fail (its write lands on a destroyed stdin) and must not surface as
+    // an unhandled rejection. The outcome is decided below.
+    pumpError = error;
+  });
   try {
-    await pumpLines(ctx, child, timeoutMs, state);
-  } catch (e) {
-    child.kill();
-    throw e;
+    await Promise.race([pump, wallFired]);
   } finally {
+    clearTimeout(wallTimer);
     endStdin(child.stdin);
+  }
+  if (pumpError !== null && !timedOut) {
+    child.kill();
+    throw pumpError;
   }
   const settled = await settleChild(child, EXIT_GRACE_MS);
   const captured = await stderr;
@@ -335,6 +358,13 @@ async function answerSubCall(
   try {
     await writeReply(child.stdin as Writable, encodeReply(reply, request.id));
   } catch (e) {
+    if (e instanceof ToolFailure && e.kind === "timeout") {
+      // W833 (R3 B1): a reply the child never drains is a wall-clock failure,
+      // not a protocol error. Record it, kill the child and let the pump stop.
+      if (state.infraError === null) state.infraError = e.message;
+      child.kill();
+      return;
+    }
     throw runCodeFailure("protocol", `cannot write reply to the program (stdin closed): ${errorText(e)}`);
   }
 }
@@ -392,10 +422,16 @@ function encodeReply(reply: Record<string, unknown>, id: number): string {
   return JSON.stringify({ id, ok: false, error: "reply not serializable" });
 }
 
-function writeReply(stdin: Writable, line: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+async function writeReply(stdin: Writable, line: string): Promise<void> {
+  const written = new Promise<void>((resolve, reject) => {
     stdin.write(`${line}\n`, (error) => (error === null || error === undefined ? resolve() : reject(error)));
   });
+  if ((await withTimeout(written, STDIN_WRITE_TIMEOUT_MS)) === TIMED_OUT) {
+    throw runCodeFailure(
+      "timeout",
+      `reply was not written after ${STDIN_WRITE_TIMEOUT_MS}ms (the program stopped reading stdin)`,
+    );
+  }
 }
 
 // ---- logs, render, outcome ---------------------------------------------------
@@ -425,17 +461,23 @@ function abortedMessage(state: RunState): string {
   return runCodeFailure("aborted", `program exited code=${code} (killed=${killed}) without a final line`).message;
 }
 
-/** Human rendering: stdout logs + stderr tail + budget warnings (bounded). */
-function composeRender(state: RunState): string | null {
+/**
+ * Human rendering: stdout logs + stderr tail + budget warnings (bounded).
+ *
+ * W833 (R3 B1 / W812 P2-2): the numbers come from the EFFECTIVE config, not the
+ * module constants — a caller that injects a smaller budget must see its own
+ * value in the render or the model is told a threshold that does not apply.
+ */
+function composeRender(config: RunCodeConfig, state: RunState): string | null {
   const parts: string[] = [];
   const settled = state.settle;
   if (state.logs !== "") parts.push(state.logs);
-  if (state.logsTruncated) parts.push(`[run_code] stdout logs truncated at ${MAX_LOG_BYTES} bytes`);
+  if (state.logsTruncated) parts.push(`[run_code] stdout logs truncated at ${config.maxLogBytes} bytes`);
   if (settled !== null && settled.stderrText !== "") parts.push(`[stderr]\n${settled.stderrText}`);
-  if (settled !== null && settled.stderrTruncated) parts.push(`[run_code] stderr truncated at ${MAX_LOG_BYTES} bytes`);
+  if (settled !== null && settled.stderrTruncated) parts.push(`[run_code] stderr truncated at ${config.maxLogBytes} bytes`);
   if (state.subOutputDropped > 0) {
     parts.push(
-      `[run_code] warning: sub-call output budget (${MAX_SUB_OUTPUT_BYTES} bytes) exceeded — ${state.subOutputDropped} bytes dropped`,
+      `[run_code] warning: sub-call output budget (${config.maxSubOutputBytes} bytes) exceeded — ${state.subOutputDropped} bytes dropped`,
     );
   }
   return parts.length === 0 ? null : parts.join("\n");
@@ -443,7 +485,7 @@ function composeRender(state: RunState): string | null {
 
 /** The canonical value, or the structured error (infra > program > aborted). */
 function outcomeOf(ctx: BrokerContext, state: RunState): ToolExecOutcome {
-  const render = composeRender(state);
+  const render = composeRender(ctx.config, state);
   const error = state.infraError ?? state.programError ?? (state.hasFinal ? null : abortedMessage(state));
   if (error !== null) throw new ToolFailure(errorCode(error) ?? RUN_CODE_ERROR_PREFIX, withLogsText(error, render));
   return { value: state.hasFinal ? state.finalValue : null, render };
@@ -456,7 +498,7 @@ function withLogsText(error: string, render: string | null): string {
 }
 
 function withLogs(error: unknown, ctx: BrokerContext, state: RunState): Error {
-  const text = withLogsText(errorText(error), composeRender(state));
+  const text = withLogsText(errorText(error), composeRender(ctx.config, state));
   return error instanceof ToolFailure ? new ToolFailure(error.kind, text) : new ToolFailure(RUN_CODE_ERROR_PREFIX, text);
 }
 

@@ -39,6 +39,14 @@ export const DEFAULT_TIMEOUT_MS = 120_000;
 export const MAX_TIMEOUT_MS = 120_000;
 /** Grace period for the child to exit after its final/error line. */
 export const EXIT_GRACE_MS = 2_000;
+/**
+ * W833 (R3 B1 / W812 P1-1): bounded wait for ONE protocol reply to reach the
+ * child's stdin. A program that requests a sub-call and then stops reading
+ * stdin fills the OS pipe buffer; without this bound the parent would park on
+ * the write callback forever (the wall clock only fires once the pump returns
+ * to the reader). A wedged write is a wall-clock failure: kill + code=timeout.
+ */
+export const STDIN_WRITE_TIMEOUT_MS = 5_000;
 /** Env var: default whole-run wall clock in ms (clamped to [1, 120000]). */
 export const ENV_RUN_CODE_TIMEOUT_MS = "CELAESTEA_RUN_CODE_TIMEOUT_MS";
 
