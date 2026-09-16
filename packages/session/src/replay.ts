@@ -104,6 +104,19 @@ export function analyzeReplay(parsed: ParseJsonlResult): ReplayStats {
  * Derive the SSE transcript a client would have observed for this log.
  * `seq` is synthetic (the real counter is process-global and not recoverable
  * from the log); `turn` is the engine turn number.
+ *
+ * W834 F08 — what is reconstructable (and what is not):
+ *   turn_start        -> status{phase:"start"}
+ *   thinking_delta    -> thinking
+ *   assistant_message -> text
+ *   tool_call         -> tool
+ *   tool_result       -> tool_result
+ *   turn_end          -> turn_end + status
+ *   user_question     -> question (payload mirrors runtime `questionFrame`)
+ * Deliberately NOT reconstructable: `user_message` (never an SSE frame),
+ * `user_answer` (the product emits no frame — the answer resolves the parked
+ * promise in-process, `apps/studio/src/runtime/question-view.ts`), and the
+ * `done`/`compact` frames (they have no session-log row).
  */
 export interface DerivedSseFrame {
   event: string;
@@ -127,6 +140,25 @@ export function deriveSseTranscript(events: readonly SessionEvent[], startTurn =
         break;
       case "user_message":
         break; // not an SSE event
+      case "user_question":
+        // W834 F08: the only frame a client can have seen for a question,
+        // rebuilt from the row's own fields. `session` is null because the
+        // derived envelope carries no session identity (the log does not
+        // either); the other four keys mirror `questionFrame` exactly.
+        push("question", {
+          session: null,
+          id: ev.id,
+          questions: [...ev.questions],
+          expires_at: ev.expires_at,
+          timeout_ms: ev.timeout_ms,
+        });
+        break;
+      case "user_answer":
+        // The product emits NO frame when a question is answered: POST
+        // /api/questions/{id}/answer resolves the parked promise directly
+        // (question-view.ts). The row is the durable record; there is no
+        // client-visible frame to rebuild, so it is explicitly skipped.
+        break;
       case "thinking_delta":
         push("thinking", { delta: ev.text });
         break;

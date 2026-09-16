@@ -186,3 +186,41 @@ describe("W834 F07 · a malformed attachment never reaches a projection", () => 
     });
   });
 });
+
+/**
+ * W834 F08 (R3 batch B): `deriveSseTranscript` promises "the SSE transcript a
+ * client would have observed", but it dropped both W783 question rows. The
+ * acceptance probe replays a log containing `user_question` + `user_answer` and
+ * checks the derived `question` frame against the PRODUCTION builder
+ * (`@celestea/runtime` questionFrame) — same payload keys and values.
+ */
+describe("W834 F08 · deriveSseTranscript rebuilds the host question frame", () => {
+  const QUESTION_LOG = [
+    '{"type":"turn_start","id":"turn-0"}',
+    '{"type":"user_question","id":"q-0","questions":[{"id":"mode","question":"选哪个？"}],"expires_at":1700000300000,"timeout_ms":300000}',
+    '{"type":"user_answer","id":"q-0","answers":[{"id":"mode","selected":["A"]}],"timed_out":false}',
+    '{"type":"turn_end","id":"turn-0","outcome":"completed"}',
+  ].join("\n") + "\n";
+
+  it("emits one question frame whose payload matches the runtime questionFrame", () => {
+    const frames = deriveSseTranscript(parseSessionJsonl(QUESTION_LOG).events);
+    const questions = frames.filter((f) => f.event === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0]?.data.payload).toEqual({
+      session: null,
+      id: "q-0",
+      questions: [{ id: "mode", question: "选哪个？" }],
+      expires_at: 1700000300000,
+      timeout_ms: 300000,
+    });
+    // Zero drift for the existing frames: seq stays contiguous and ordered.
+    expect(frames.map((f) => f.event)).toEqual(["status", "question", "turn_end", "status"]);
+    expect(frames.map((f) => f.data.seq)).toEqual(frames.map((_f, i) => i));
+  });
+
+  it("does NOT invent a frame for user_answer (the client sees none)", () => {
+    const frames = deriveSseTranscript(parseSessionJsonl(QUESTION_LOG).events);
+    expect(frames.map((f) => f.event)).not.toContain("user_answer");
+    expect(frames.map((f) => f.event)).not.toContain("answer");
+  });
+});
