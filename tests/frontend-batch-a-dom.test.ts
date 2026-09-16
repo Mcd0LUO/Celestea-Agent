@@ -271,9 +271,10 @@ describe("W789 · 运行态 composer 结构不变量（8）", () => {
     expect(ib.childElementCount).toBe(before.ibKids);
     // 第 1 行仍只有一个：运行态绝不新增 .sl-row（换行/加行都会改高 composer）
     expect(Array.from(sl.children).filter((c) => clsOf(c).includes("sl-row-main")).length).toBe(1);
-    // 三个按钮仍在同一个 .input-side 里（横排由 CSS 保证同一行高）
+    // 按钮仍在同一个 .input-side 里（横排由 CSS 保证同一行高）；
+    // W805 在行首新增图片入口 #btnAttach（能力位就绪前保持 .hidden）。
     const side = ib.querySelector(".input-side") as ElLike;
-    expect(["btnMode", "btnCancel", "btnSend"]).toEqual(
+    expect(["btnAttach", "btnMode", "btnCancel", "btnSend"]).toEqual(
       Array.from(side.children).map((c) => c.id),
     );
     bar.setBusy(false);
