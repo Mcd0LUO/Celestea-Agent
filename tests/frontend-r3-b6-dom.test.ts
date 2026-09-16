@@ -94,9 +94,23 @@ const reply = (status: number, payload: unknown): unknown => ({
 const flush = async (n = 16): Promise<void> => {
   for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
 };
-const store = (globalThis as unknown as {
-  localStorage: { setItem(k: string, v: string): void; clear(): void };
-}).localStorage;
+/**
+ * W839 incidental fix (environment drift, NOT a B8/B9 item): Node 26 defines a
+ * global localStorage that is unavailable without --localstorage-file, and
+ * Vitest's jsdom environment does not override an existing global, so
+ * globalThis.localStorage is undefined here. ui/sidebar.ts reads the bare
+ * global, so the test installs its own in-memory Storage. All assertions in
+ * this file are unchanged.
+ */
+function memoryStorage(): { setItem(k: string, v: string): void; getItem(k: string): string | null; clear(): void } {
+  const m = new Map<string, string>();
+  return {
+    setItem: (k: string, v: string): void => void m.set(k, v),
+    getItem: (k: string): string | null => m.get(k) ?? null,
+    clear: (): void => m.clear(),
+  };
+}
+const store = memoryStorage();
 
 const FRAME = {
   session: "ws/s1",
@@ -134,7 +148,7 @@ describe("R3 W838-F5 · dropPane 回收提问卡片", () => {
 });
 
 describe("R3 W838-F9 · 初始已收起时 --sidebar-w 保持 0px", () => {
-  beforeEach(() => { doc.body.innerHTML = HTML; vi.resetModules(); store.clear(); });
+  beforeEach(() => { doc.body.innerHTML = HTML; vi.resetModules(); vi.stubGlobal("localStorage", store); store.clear(); });
   afterEach(() => { vi.unstubAllGlobals(); store.clear(); doc.body.replaceChildren(); });
 
   it("collapsed=1 + width=400 → 初始化后 --sidebar-w 仍是 0px", async () => {
