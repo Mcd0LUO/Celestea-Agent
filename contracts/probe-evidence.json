@@ -1,22 +1,22 @@
 {
-  "generatedAt": "2026-09-15T12:25:35.120Z",
+  "generatedAt": "2026-09-16T04:15:08.748Z",
   "studio": "http://127.0.0.1:3777",
-  "policy": "read-only: GET probes + error branches proven mutation-free in the Rust source",
+  "policy": "read-only: GET probes + error branches proven mutation-free in the retired backend source",
   "counts": {
     "checks": 27,
-    "passed": 27,
-    "failed": 0,
+    "passed": 26,
+    "failed": 1,
     "endpointsSampled": 22,
     "sseEvents": 9,
     "tools": 11
   },
-  "verdict": "consistent",
+  "verdict": "INCONSISTENT",
   "checks": [
     {
       "endpoint": "contracts/endpoints.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "50 endpoints (contract declares 50)"
+      "detail": "51 endpoints (contract declares 51)"
     },
     {
       "endpoint": "contracts/sse-events.json",
@@ -41,7 +41,7 @@
       "endpoint": "GET /api/status",
       "kind": "response-shape",
       "status": "pass",
-      "detail": "HTTP 200; 13 key(s); additive (not in contract doc): busy, effective_model, fallback, grants_active",
+      "detail": "HTTP 200; 14 key(s); additive (not in contract doc): busy, effective_model, fallback, grants_active",
       "observedStatus": 200
     },
     {
@@ -104,7 +104,7 @@
       "endpoint": "GET /api/worker/status",
       "kind": "response-shape",
       "status": "pass",
-      "detail": "HTTP 200; 6 key(s); optional absent: error, wid; additive (not in contract doc): watchdogs",
+      "detail": "HTTP 200; 8 key(s); optional absent: error, wid; additive (not in contract doc): watchdogs",
       "observedStatus": 200
     },
     {
@@ -203,8 +203,8 @@
     {
       "endpoint": "GET /api/tools",
       "kind": "tool-set",
-      "status": "pass",
-      "detail": "11 names match contracts/tools.json exactly",
+      "status": "fail",
+      "detail": "live=[http_request,process_control,run_code,session_send_message,spawn_worker,worker_status] contract=[ask_user_question,http_request,list_dir,process_control,read_file,run_code,run_shell,session_send_message,spawn_worker,worker_status,write_file]",
       "observedStatus": 200
     }
   ]

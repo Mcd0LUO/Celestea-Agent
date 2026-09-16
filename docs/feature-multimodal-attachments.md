@@ -910,7 +910,7 @@ P0 **明确不做**：图片规范化/降码、请求期二次缩放、Files API
 | R7 | 网关别名（`deepseek-flash` → `deepseek-v4.1-flash`）使静态能力位**静默失效** | 中 | 乐观默认下由 §7.6 的 400 降级兜底；用户可把实际无视觉的模型配成 `["text"]` |
 | R8 | 上下文 token 估算低估图片（`context-trim.ts`） | 中 | 加 image 估算分支 + 单测 |
 | R9 | 前端 `createObjectURL` 泄漏 | 低 | 消息卸载/会话切换时 `revokeObjectURL`；加内存测试 |
-| R10 | 并发任务（W798 rust 全删 / W802 DSH 动态工具披露）导致的 `pnpm check` 红灯 | 低 | 本任务未改代码；若复现按协议登记 `git status --porcelain`（本轮**不跑** `pnpm check`，见 §11.4） |
+| R10 | 并发任务（W798 全仓退役后端词汇清理 / W802 DSH 动态工具披露）导致的 `pnpm check` 红灯 | 低 | 本任务未改代码；若复现按协议登记 `git status --porcelain`（本轮**不跑** `pnpm check`，见 §11.4） |
 
 ### 9.5 开放问题（用户裁决后更新 2026-09-16）
 
@@ -1024,7 +1024,7 @@ grep -rn 'API_ENDPOINT_COUNT\|must hold 51\|50 -> 51' packages apps tests contra
 
 ### 11.4 本轮**没有**做的事（重要）
 
-- **未跑 `pnpm check`**：本轮是设计稿，未改任何代码、contracts、tests、fixtures（`git status` 里与本任务相关的改动**只有本文件**）。跑全量检查只会看到 W798（rust 全删）与其它并发任务的路径噪声，无诊断价值。若验收方要求，可单独跑并登记 `git status --porcelain`。
+- **未跑 `pnpm check`**：本轮是设计稿，未改任何代码、contracts、tests、fixtures（`git status` 里与本任务相关的改动**只有本文件**）。跑全量检查只会看到 W798（全仓退役后端词汇清理）与其它并发任务的路径噪声，无诊断价值。若验收方要求，可单独跑并登记 `git status --porcelain`。
 - **未探测基元**（凭据边界，§2.3）。
 - **未实测**上游的单消息图片数/体积上限、远程 URL 图片、Files API（均标 **待验证**）。
 
