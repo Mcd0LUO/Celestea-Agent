@@ -141,6 +141,11 @@ export class AdapterFallback {
   flush(): Promise<void> {
     return this.wiring.flush();
   }
+
+  /** In-flight platform deliveries (diagnostics; bounded by construction). */
+  pendingCount(): number {
+    return this.wiring.pendingCount();
+  }
 }
 
 export interface FallbackWiring {
@@ -152,6 +157,8 @@ export interface FallbackWiring {
   view(sessionId: string | null): FallbackStatusView;
   /** Await in-flight platform deliveries (tests / shutdown). */
   flush(): Promise<void>;
+  /** In-flight platform deliveries (bounded: a delivered event leaves). */
+  pendingCount(): number;
 }
 
 export interface FallbackHostOptions {
@@ -201,6 +208,7 @@ export function createFallbackWiring(opts: FallbackHostOptions = {}): FallbackWi
     wrap: (input) => armedLlm(deps, input),
     view: (sessionId) => statusView(deps, sessionId),
     flush: () => audit.flush(),
+    pendingCount: () => audit.pendingCount(),
   };
 }
 
@@ -209,7 +217,13 @@ function disabledWiring(config: ReturnType<typeof loadFallbackConfig>, audit: Fa
   if (config !== null && !config.enabled) {
     audit.write({ event: "target_unavailable", session: null, detail: "config declares enabled:false" });
   }
-  return { enabled: false, wrap: () => null, view: () => DISABLED_VIEW, flush: () => audit.flush() };
+  return {
+    enabled: false,
+    wrap: () => null,
+    view: () => DISABLED_VIEW,
+    flush: () => audit.flush(),
+    pendingCount: () => audit.pendingCount(),
+  };
 }
 
 /** Everything one wiring instance needs (kept in one object for the helpers). */
@@ -332,13 +346,28 @@ class FallbackAudit {
   write(event: Omit<FallbackAuditEvent, "ts"> & { ts?: number }): void {
     const line: FallbackAuditEvent = { ts: event.ts ?? Math.floor(this.now() / 1000), ...event };
     if (this.path !== null) appendRotating(this.path, line);
-    this.pending.push(this.deliver(line));
+    // W833 (R3 B8 / W816 F4): a delivered line LEAVES the ledger, so the array
+    // is bounded by the number of in-flight deliveries — it used to grow with
+    // every event the process ever produced.
+    const task = this.deliver(line);
+    this.pending.push(task);
+    void task
+      .finally(() => {
+        const at = this.pending.indexOf(task);
+        if (at >= 0) this.pending.splice(at, 1);
+      })
+      .catch(() => undefined);
+  }
+
+  /** In-flight platform deliveries (diagnostics / bound assertion). */
+  pendingCount(): number {
+    return this.pending.length;
   }
 
   async flush(): Promise<void> {
-    const pending = this.pending;
-    this.pending = [];
-    await Promise.all(pending);
+    // Await everything in flight; completed deliveries have already removed
+    // themselves, and nothing new is written during shutdown.
+    while (this.pending.length > 0) await Promise.all([...this.pending]);
   }
 
   /** Unset `CELESTEA_AUDIT_URL` = local channel only; a failed one is recorded. */

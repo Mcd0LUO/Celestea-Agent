@@ -168,3 +168,28 @@ describe("D9 — the switch is off by default", () => {
     expect(existsSync(join(dataDir, "fallbacks-audit.jsonl"))).toBe(false);
   });
 });
+
+describe("W833 B8/F4: fallback audit pending is bounded", () => {
+  it("removes a delivered event from the pending ledger", async () => {
+    const dataDir = tempDir();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const wiring = createFallbackWiring({
+      dataDir,
+      env: { CELESTEA_LLM_FALLBACK: "on", CELESTEA_LLM_FALLBACKS: CONFIG, CELESTEA_AUDIT_URL: "http://127.0.0.1:1/api/audit" },
+      post: async () => {
+        await gate;
+        return { ok: true, status: 200 };
+      },
+    });
+    // BACKUP_KEY is missing -> one target_unavailable line is queued; its
+    // delivery is parked on the gate, so the ledger holds exactly that one.
+    expect(wiring.pendingCount()).toBeGreaterThan(0);
+    release();
+    const deadline = Date.now() + 2_000;
+    while (wiring.pendingCount() > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+    expect(wiring.pendingCount()).toBe(0);
+  });
+});

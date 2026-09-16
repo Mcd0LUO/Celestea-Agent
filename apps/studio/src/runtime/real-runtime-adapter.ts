@@ -298,7 +298,9 @@ class RealEngine implements RealRuntimeAdapter {
     if (this.shutdownPromise === null) {
       // W769: unpark the wake-up loops FIRST: a loop that grabbed a queue during
       // the teardown would otherwise start a turn on a disposing runtime.
-      this.shutdownPromise = this.autowake.stop().then(() => this.registry.shutdown());
+      // W833 (R3 B8 / W816 F4): flush the in-flight fallback audit POSTs before
+      // the process can drop them (main.ts flushes grants, this flushes llm).
+      this.shutdownPromise = this.autowake.stop().then(() => this.fallback.flush()).then(() => this.registry.shutdown());
     }
     await this.shutdownPromise;
   }
@@ -429,7 +431,10 @@ class RealEngine implements RealRuntimeAdapter {
   private launch(entry: SessionRuntime, input: string, attachments?: readonly ImageRef[], source?: "autowake"): number {
     const controller = new AbortController();
     const turn = this.beginTurn(entry, controller);
-    this.emitStatus(entry, turn, "start", source === null ? {} : { source });
+    // W833 (R3 B8 / W816 F5): the signature is source?: "autowake", so the
+    // sentinel is undefined — === null was always false and every manual turn
+    // carried a source: undefined KEY in the payload.
+    this.emitStatus(entry, turn, "start", source === undefined ? {} : { source });
     void this.drive(entry, input, turn, controller, attachments);
     return turn;
   }
@@ -517,8 +522,11 @@ class RealEngine implements RealRuntimeAdapter {
   }
 
   private newestBusy(): SessionRuntime | null {
-    for (const entry of this.registry.list()) if (entry.inFlight) return entry;
-    return null;
+    // W833 (R3 B8 / W816 F7): registry.list() is CREATION order, so pick the
+    // in-flight entry with the greatest lastActiveAt (the most recently used).
+    let newest: SessionRuntime | null = null;
+    for (const entry of this.registry.list()) if (entry.inFlight && (newest === null || entry.lastActiveAt >= newest.lastActiveAt)) newest = entry;
+    return newest;
   }
 
   lastTurnOutcome(): TurnOutcome | null {
@@ -542,7 +550,11 @@ class RealEngine implements RealRuntimeAdapter {
   workersOf(session?: string | null): WorkerRegistry | null { return this.registry.peek(session ?? null)?.runtime.workers ?? null; }
 
   private emitStatus(entry: SessionRuntime, turn: number, phase: string, extra: StatusExtra = {}): void {
-    if (entry.detached === true) return;
+    // W833 (R3 B8): a drive tail can land after the generation was released
+    // (adapter.shutdown -> registry.shutdown). Reading a released runtime's
+    // statusline throws RuntimeReleasedError; a status frame for it is
+    // meaningless anyway, so skip it exactly like the W794 detached case.
+    if (entry.detached === true || entry.runtime.isReleased) return;
     this.bus?.emit("status", turn, { phase, statusline: entry.runtime.statusline(), ...extra }, entry.sessionId);
   }
 
