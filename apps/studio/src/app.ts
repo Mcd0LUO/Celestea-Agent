@@ -41,6 +41,7 @@ import { readSessionMeta, type SessionMeta } from "./store/session-meta.js";
 import { createSessionGrants } from "./runtime/session-grants.js";
 import { grantsEnv } from "./store/grants-service.js";
 import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.js";
+import type { DisclosureOptions } from "./runtime/engine-plugins.js";
 import { recoverActiveSessionOnBoot } from "./runtime/boot-recovery.js";
 import { RecoveryAuditWriter } from "./runtime/recovery-audit.js";
 import { observeWorkerTableOnBoot } from "./runtime/worker-recovery.js";
@@ -95,6 +96,11 @@ export interface StudioEngineInput {
   /** Late-bound host services (per-session prompt assembly; see [HostRef]). */
   host: HostRef;
   /**
+   * W806 (P0): explicit dynamic-disclosure activation for the composed
+   * sessions. Absent = the static mode baseline (the default face).
+   */
+  disclosure?: DisclosureOptions;
+  /**
    * LLM seam override. Absent = the live provider assembled from the profile
    * (production); the real-engine tests inject the deterministic OFFLINE engine.
    */
@@ -137,6 +143,7 @@ export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
       // the ledger, so the fallback wiring needs the same data dir.
       dataDir,
       providerLabel: input.providerLabel,
+      ...(input.disclosure === undefined ? {} : { disclosure: input.disclosure }),
       ...(input.llm === undefined ? {} : { llm: input.llm }),
       resolveSession: (id) => {
         const resolved = stores.sessions.resolve(id);

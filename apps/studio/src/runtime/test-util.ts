@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import { serializeEventLog } from "@celestea/runtime";
 import type { SessionEvent } from "@celestea/core";
 import { createStudioEngine, type HostRef, type StudioEngineDeps } from "../app.js";
+import type { DisclosureOptions } from "./engine-plugins.js";
 import { jsonRequest, makeHarness, type StudioHarness } from "../harness.test-util.js";
 import type { BusFrame, BusSubscription } from "../sse.js";
 import type { EngineProfile } from "../runtime-adapter.js";
@@ -40,6 +41,11 @@ export interface EngineHarnessOptions {
   files?: Record<string, unknown>;
   /** Files planted VERBATIM (the worker table, a planted sidecar). */
   rawFiles?: Record<string, string>;
+  /**
+   * W806 (P0): turn dynamic tool disclosure ON for the harness engine (absent =
+   * the static mode baseline every existing test composes).
+   */
+  disclosure?: DisclosureOptions;
 }
 
 /** One complete turn in the engine's native JSONL shape. */
@@ -187,6 +193,7 @@ function offlineEngineDeps(opts: EngineHarnessOptions, host: HostRef): StudioEng
       providerLabel: null,
       host,
       llm: () => createOfflineLlm(opts.llm ?? {}),
+      ...(opts.disclosure === undefined ? {} : { disclosure: opts.disclosure }),
     };
   };
 }

@@ -46,8 +46,10 @@ import { agentConfigFromProfile, type Profile } from "@celestea/runtime";
 import {
   assembleTools,
   builtinTools,
+  DisclosurePolicy,
+  disclosureExposure,
   ENV_SANDBOX_FALLBACK,
-  executionExposure,
+  EXECUTION_TOOL_NAMES,
   exposedRegistry,
   fallbackMode,
   httpOptions,
@@ -88,6 +90,14 @@ export interface EnginePluginInput {
    * what every pre-P1 generation exposed.
    */
   mode?: SessionMode;
+  /**
+   * W806 (P0): dynamic tool disclosure. Absent = the static mode baseline, i.e.
+   * today's byte-identical face. Present = `initial` is offered from the start
+   * and the rest of the disclosable universe is revealed ONE TURN AT A TIME,
+   * appended at the tail, when a direct call is refused (monotonic; never
+   * reordered — see `disclosure.ts`).
+   */
+  disclosure?: DisclosureOptions;
   /** Worker registry to expose the three orchestration tools over (null = none). */
   workers: WorkerRegistry | null;
   /** Extra tools appended after the builtins. */
@@ -130,6 +140,19 @@ export interface BusHolder {
   current: EventBus | null;
 }
 
+/**
+ * W806: activation of the dynamic-disclosure layer. The mechanism is always
+ * assembled; this is what asks it to withhold anything.
+ */
+export interface DisclosureOptions {
+  /**
+   * Names offered from the start. Default = the whole disclosable universe for
+   * the session's mode (the mode baseline = today's face, a no-op). Names
+   * outside the registry, or blocked by the mode, are dropped.
+   */
+  initial?: readonly string[];
+}
+
 /** W783: everything the engine needs to mount the user-question capability. */
 export interface QuestionWiring {
   /** Process-wide pending table (shared by every session generation). */
@@ -165,6 +188,12 @@ export interface EngineTools {
   sandbox: Sandbox;
   /** Why that sandbox was chosen — auditable, never inferred by a caller. */
   decision: SandboxDecision;
+  /**
+   * W806: the dynamic-disclosure policy of this generation. Always present; inert
+   * (nothing withheld) unless `EnginePluginInput.disclosure` asked for a reduced
+   * initial set. The runtime calls `beginTurn()` at every turn start.
+   */
+  disclosure: DisclosurePolicy;
 }
 
 /** The tool set: six builtins + the three worker tools (when a registry exists). */
@@ -211,8 +240,17 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
   // face while `run_code`'s RegistryHandle stays bound to the INNER registry
   // (`assembleTools` bound it above), so a program's `tools.read_file(...)` is
   // dispatched exactly like a direct call was before the fold.
-  const face = (opts.mode ?? DEFAULT_SESSION_MODE) === "execution" ? executionExposure(assembly.registry.names()) : null;
-  const exposed = face === null ? assembly.registry : exposedRegistry(assembly.registry, face);
+  // W806 (P0): the SAME face is projected through the dynamic-disclosure policy.
+  // Absent `opts.disclosure` the policy's initial set IS the mode baseline, so
+  // `hidden()` is exactly the old fold and the wire array is byte-identical.
+  // Present, it withholds part of the disclosable universe and reveals it one
+  // turn at a time, appended at the tail (see `disclosure.ts`).
+  const mode = opts.mode ?? DEFAULT_SESSION_MODE;
+  const universe = assembly.registry.schemas().map((spec) => spec.name);
+  const blocked = mode === "execution" ? universe.filter((name) => !EXECUTION_TOOL_NAMES.includes(name)) : [];
+  const disclosure = new DisclosurePolicy({ universe, initial: opts.disclosure?.initial ?? universe, blocked });
+  const wrapped = mode === "execution" || opts.disclosure !== undefined;
+  const exposed: ToolRegistry = wrapped ? exposedRegistry(assembly.registry, disclosureExposure(disclosure)) : assembly.registry;
   const plugin = definePlugin("studio.engine.tools", (ctx: Context) => {
     ctx.provide(TOOL_REGISTRY_SERVICE, exposed);
     ctx.provide(SANDBOX_SERVICE, assembly.sandbox);
@@ -224,7 +262,7 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
       ctx.provide(USER_QUESTION_SERVICE, questions);
     }
   });
-  return { plugin, registry: exposed, sandbox, decision: choice.decision };
+  return { plugin, registry: exposed, sandbox, decision: choice.decision, disclosure };
 }
 
 // --- the provider policy, decided out loud (W516 grants, W741 fail semantics) --

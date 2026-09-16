@@ -42,7 +42,7 @@ import { CapacityError } from "../runtime-adapter.js";
 import { bindingFor, closeLog, workerSessionPrefix, type CheckpointWiring, type SessionTarget } from "./engine-session.js";
 import { sessionIdOfDir } from "./engine-grants.js";
 import { DEFAULT_SESSION_MODE, effectiveMode } from "../store/mode.js";
-import { enginePlugins, type QuestionWiring } from "./engine-plugins.js";
+import { enginePlugins, type DisclosureOptions, type QuestionWiring } from "./engine-plugins.js";
 import type { PendingQuestion, QuestionRegistry } from "../question-registry.js";
 import { questionAnsweredRow, questionAskedRow } from "../question-rows.js";
 import { EMPTY_GRANTS } from "./engine-grants.js";
@@ -107,6 +107,14 @@ export interface SessionComposerOptions {
   llm?: (profile: Profile) => Llm;
   /** Extra tools registered after the six builtins. */
   tools?: readonly Tool[];
+  /**
+   * W806 (P0): dynamic tool disclosure for the composed sessions. Absent = the
+   * static mode baseline (byte-identical face). Present = a reduced initial set
+   * is offered and the rest is revealed one turn at a time. The DETACHED
+   * generation never takes it: it backs `{{tools}}` / `GET /api/tools`, which
+   * must keep announcing the static disclosable universe (S3).
+   */
+  disclosure?: DisclosureOptions;
   sandbox?: Sandbox;
   /** Guard override: `undefined` = production guard, `null` = no guard. */
   guard?: ToolGuard | null;
@@ -255,6 +263,7 @@ export class SessionComposer {
       imageInputAllowed,
       llm: this.engineLlm(sessionId, profile, ledger, attachments),
       workers: null, // the workers plugin registers the three tools, in compose order
+      ...(this.opts.disclosure === undefined || sessionId === null ? {} : { disclosure: this.opts.disclosure }),
       ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),
       ...(this.opts.sandbox === undefined ? {} : { sandbox: this.opts.sandbox }),
       ...(this.opts.guard === undefined ? {} : { guard: this.opts.guard }),
@@ -275,13 +284,16 @@ export class SessionComposer {
       ...(ledger === null ? {} : { ledger }),
       inbox: hooks.inbox ?? createSessionInbox(),
       ...(hooks.onInjected === undefined ? {} : { onInjected: hooks.onInjected }),
-      loopFactory: (bindings) =>
-        new DefaultAgentLoop(bindings.config, {
+      loopFactory: (bindings) => {
+        // W806: the turn boundary is the ONLY place the disclosed set may move.
+        engine.tools.disclosure.beginTurn();
+        return new DefaultAgentLoop(bindings.config, {
           signal: bindings.signal,
           sink: bindings.sink,
           usage,
           ...(bindings.injections === undefined ? {} : { injections: bindings.injections }),
-        }),
+        });
+      },
       workers: this.workerWiring(sessionId, profile),
       // W740: the watchdog settings come from the process environment; the
       // composition root reads them and registers the stop hook with the sweep.
