@@ -144,13 +144,14 @@ export class TurnRunner {
     if (this.busy) throw new TurnBusyError();
     this.busy = true;
     const controller = new AbortController();
-    if (opts.signal !== undefined) linkAbort(opts.signal, controller);
+    const unlink = opts.signal === undefined ? null : linkAbort(opts.signal, controller);
     this.controller = controller;
     const run = this.drive(input, opts, controller.signal);
     this.inFlight = run;
     try {
       return await run;
     } finally {
+      unlink?.();
       this.controller = null;
       this.busy = false;
       this.inFlight = null;
@@ -267,13 +268,20 @@ export function formatReceipt(receipt: PendingReceipt): string {
   return receipt.from === "" ? receipt.text : `[from ${receipt.from}] ${receipt.text}`;
 }
 
-/** Link a caller signal into the turn's controller (idempotent, both directions safe). */
-export function linkAbort(source: AbortSignal, target: AbortController): void {
+/**
+ * Link a caller signal into the turn's controller. Returns the cleanup that
+ * removes the listener again (P1-7, W836): `once:true` only removes it when the
+ * source DOES abort, so a host signal that outlives many turns would otherwise
+ * accumulate one listener per turn.
+ */
+export function linkAbort(source: AbortSignal, target: AbortController): () => void {
   if (source.aborted) {
     target.abort();
-    return;
+    return () => undefined;
   }
-  source.addEventListener("abort", () => target.abort(), { once: true });
+  const onAbort = (): void => target.abort();
+  source.addEventListener("abort", onAbort, { once: true });
+  return () => source.removeEventListener("abort", onAbort);
 }
 
 /**

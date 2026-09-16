@@ -161,7 +161,14 @@ export function compose(config: ComposeConfig): Runtime {
     // what tells the client where it landed (W515 §1/§2).
     const lane: InjectionLane = boundary === "step" ? "next-step" : "next-turn";
     const annotated = messages.map((message) => (message.lane === undefined ? { ...message, lane } : message));
-    config.onInjected?.(annotated, boundary);
+    // P1-6 (W836): the lane was ALREADY drained (the message left the queue and
+    // the sidecar). A throwing observer must never take the message with it: the
+    // callback is a notification, so its failure is a warning, not a loss.
+    try {
+      config.onInjected?.(annotated, boundary);
+    } catch (e) {
+      process.stderr.write(`[celestea-runtime] onInjected callback failed: ${String(e)}\n`);
+    }
     return annotated;
   };
   const runner = new TurnRunner({
