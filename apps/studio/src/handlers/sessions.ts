@@ -191,8 +191,13 @@ function registerContext(app: Hono, deps: Deps, table: RouteTable): string {
 function registerMode(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_session_mode");
   app.on(route.method, route.honoPath, async (c) => {
-    const id = c.req.param("id") ?? "";
-    if (deps.runtime.isBusy(id)) return failJson(c, 409, "turn 进行中，无法切换模式");
+    // W815-5: resolve to the CANONICAL id BEFORE the busy guard. `require` trims
+    // and sanitizes the raw path segment, so `%2F`/`%20` used to produce an id
+    // whose isBusy() lookup never matched the canonical instance (guard bypass).
+    const resolved = deps.sessions.require(c.req.param("id") ?? "");
+    if (!resolved.ok) return storeFail(c, resolved);
+    const session = resolved.value.id;
+    if (deps.runtime.isBusy(session)) return failJson(c, 409, "turn 进行中，无法切换模式");
     const read = await readJsonBody(c);
     if (!read.ok) return read.response;
     const mode = strField(c, read.body, "mode");
@@ -200,9 +205,6 @@ function registerMode(app: Hono, deps: Deps, table: RouteTable): string {
     if (mode.value === undefined) return failJson(c, 422, "field 'mode' must be a string");
     const bad = validateMode(mode.value);
     if (bad !== null) return failJson(c, 400, bad);
-    const resolved = deps.sessions.require(id);
-    if (!resolved.ok) return storeFail(c, resolved);
-    const session = resolved.value.id;
     try {
       // W729 write path, key-preserving: title / model / prompt survive the switch.
       writeSessionMeta(resolved.value.dir, { ...(readSessionMeta(resolved.value.dir) ?? {}), mode: parseMode(mode.value) ?? DEFAULT_SESSION_MODE });

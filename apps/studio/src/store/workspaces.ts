@@ -13,6 +13,7 @@
  */
 
 import { renameSync } from "node:fs";
+import { resolve } from "node:path";
 import { writeJsonAtomic, isDirectory, isFile, listEntries, readJsonIfExists } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, serverError, type StoreResult } from "./result.js";
 import { workspaceBasename } from "./session-id.js";
@@ -80,6 +81,15 @@ function loadRegistry(file: string): RegistryData {
   return data;
 }
 
+/**
+ * W815-9: a registered path is stored normalized (absolute, no trailing slash).
+ * `register` used to keep whatever the client sent, so `/tmp/foo/` made the
+ * rename target `/tmp/foo/bar` — a child of the source folder (EINVAL).
+ */
+function normalizeWorkspacePath(path: string): string {
+  return resolve(path);
+}
+
 export class WorkspacesStore {
   private data: RegistryData;
 
@@ -137,9 +147,11 @@ export class WorkspacesStore {
 
   /** POST /api/workspaces — register only; the folder is never touched. */
   register(rawPath: string): StoreResult<string> {
-    const path = rawPath.trim();
-    if (path === "") return badRequest("path must not be empty");
-    if (!path.startsWith("/")) return badRequest(`path '${path}' must be absolute`);
+    const asked = rawPath.trim();
+    if (asked === "") return badRequest("path must not be empty");
+    if (!asked.startsWith("/")) return badRequest(`path '${asked}' must be absolute`);
+    // W815-9: canonicalize before storing (see `normalizeWorkspacePath`).
+    const path = normalizeWorkspacePath(asked);
     if (!isDirectory(path)) return badRequest(`path '${path}' is not an existing directory`);
     const base = workspaceBasename(path);
     if (base === null) return badRequest(`path '${path}' has no folder name`);
@@ -187,13 +199,17 @@ export class WorkspacesStore {
     if (this.data.workspaces.some((w) => workspaceBasename(w.path) === newName)) {
       return conflict(`workspace '${newName}' already exists`);
     }
-    const parent = row.path.slice(0, row.path.lastIndexOf("/")) || "/";
+    // W815-9: normalize a legacy row's path before deriving the sibling target.
+    const from = normalizeWorkspacePath(row.path);
+    row.path = from;
+    const parent = from.slice(0, from.lastIndexOf("/")) || "/";
     const target = `${parent === "/" ? "" : parent}/${newName}`;
     if (target !== row.path && isDirectory(target)) {
       return conflict(`target '${target}' already exists; rename the folder first`);
     }
+    const previousActive = this.data.active_session;
     try {
-      renameSync(row.path, target);
+      renameSync(from, target);
     } catch (e) {
       return fail(500, `move failed: ${errText(e)}`);
     }
@@ -202,12 +218,20 @@ export class WorkspacesStore {
       const [ws, sess] = this.data.active_session.split("/");
       if (ws === name && sess !== undefined) this.data.active_session = `${newName}/${sess}`;
     }
-    return this.persist();
-  }
-
-  /** Roll a rename back (compose/persist failure paths). */
-  rollbackRename(from: string, to: string): void {
-    const res = this.renameWorkspace(from, to);
-    void res;
+    const saved = this.persist();
+    if (!saved.ok) {
+      // W815-10: the registry is the source of truth and it did NOT accept the
+      // move — undo the folder rename and the in-memory row so disk and memory
+      // cannot diverge (the retired backend's rollback, restored).
+      row.path = from;
+      this.data.active_session = previousActive;
+      try {
+        renameSync(target, from);
+      } catch (e) {
+        return fail(500, `${saved.error}; rollback failed: ${errText(e)}`);
+      }
+      return saved;
+    }
+    return saved;
   }
 }

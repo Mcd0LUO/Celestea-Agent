@@ -73,7 +73,16 @@ export class SessionOps {
     // lives in session.json — an update that fails reports 500 rather than
     // leaving the session labelled with its old title.
     const titled = this.writeTitle(newDir, title);
-    if (!titled.ok) return titled;
+    if (!titled.ok) {
+      // N1 (W815): a failed meta write must not leave the directory moved — the
+      // caller (and `active_session`) still addresses the OLD id, so undo it.
+      try {
+        renameSync(newDir, res.dir);
+      } catch (e) {
+        return fail(500, `${titled.error}; rollback failed: ${errText(e)}`);
+      }
+      return titled;
+    }
     return ok(`${res.workspace}/${baseOf(newDir)}`);
   }
 

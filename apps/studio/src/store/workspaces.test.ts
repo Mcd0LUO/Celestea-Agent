@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -117,5 +117,38 @@ describe("workspaces.json v2 registry", () => {
     const out = store.batchDelete(["alpha", "ghost"]);
     expect(out.deleted).toBe(1);
     expect(out.failed).toEqual([{ name: "ghost", error: "unknown workspace 'ghost'" }]);
+  });
+
+  // W815-9 (source: W828-R3 修复计划 B2): a registered trailing slash used to
+  // make rename build '/root/foo/bar' — a CHILD of the source (renameSync EINVAL).
+  it("W815-9: a trailing-slash registration normalizes so rename makes a SIBLING", () => {
+    const foo = join(root, "foo");
+    mkdirSync(foo);
+    const store = new WorkspacesStore(file);
+    expect(store.register(foo + "/")).toEqual({ ok: true, value: "foo" });
+    expect(store.renameWorkspace("foo", "bar")).toEqual({ ok: true, value: undefined });
+    expect(existsSync(join(root, "bar"))).toBe(true);
+    expect(existsSync(foo)).toBe(false);
+    expect(store.view().workspaces.map((w) => w.path)).toEqual([join(root, "bar")]);
+  });
+
+  // W815-10 (source: W828-R3 修复计划 B2): a persist failure used to leave the
+  // folder moved while memory/disk still named the old path (a fork).
+  it("W815-10: a persist failure rolls the folder and the row back (no fork)", () => {
+    const ws = join(root, "alpha");
+    mkdirSync(ws);
+    const store = new WorkspacesStore(file);
+    store.register(ws);
+    store.setActiveSession("alpha/s1");
+    // Force the atomic write to fail: its temp path is an existing directory.
+    mkdirSync(file + ".tmp");
+    const res = store.renameWorkspace("alpha", "beta");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.status).toBe(500);
+    expect(existsSync(ws)).toBe(true);
+    expect(existsSync(join(root, "beta"))).toBe(false);
+    expect(store.view().workspaces.map((w) => w.name)).toEqual(["alpha"]);
+    expect(store.view().workspaces[0]?.path).toBe(ws);
+    expect(store.activeSession()).toBe("alpha/s1");
   });
 });

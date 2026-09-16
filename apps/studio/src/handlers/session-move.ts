@@ -52,15 +52,19 @@ async function cutEngineSession(deps: Deps, id: string): Promise<void> {
 function registerRename(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_session_rename");
   app.on(route.method, route.honoPath, async (c) => {
-    const id = c.req.param("id") ?? "";
-    if (deps.runtime.isBusy(id)) return failJson(c, 409, "turn in progress; rename applies between turns");
+    // W815-5: canonical id BEFORE the busy guard (raw `%2F`/`%20` segments
+    // bypassed the guard because the runtime keys instances by canonical id).
+    const resolved = deps.sessions.require(c.req.param("id") ?? "");
+    if (!resolved.ok) return storeFail(c, resolved);
+    const session = resolved.value.id;
+    if (deps.runtime.isBusy(session)) return failJson(c, 409, "turn in progress; rename applies between turns");
     const read = await readJsonBody(c);
     if (!read.ok) return read.response;
     const title = strField(c, read.body, "new_title");
     if (!title.ok) return title.response;
-    const res = deps.sessionOps.rename(id, title.value ?? "");
+    const res = deps.sessionOps.rename(session, title.value ?? "");
     if (!res.ok) return storeFail(c, res);
-    if (isActive(deps, id)) {
+    if (isActive(deps, session)) {
       const saved = deps.workspaces.setActiveSession(res.value);
       if (!saved.ok) return failJson(c, 500, `cannot persist active session: ${saved.error}`);
     }
@@ -86,21 +90,22 @@ function registerBranch(app: Hono, deps: Deps, table: RouteTable): string {
 function registerCompact(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_session_compact");
   app.on(route.method, route.honoPath, async (c) => {
-    const id = c.req.param("id") ?? "";
-    if (deps.runtime.isBusy(id)) return failJson(c, 409, "turn 进行中，无法压缩");
+    // W815-5: canonical id before the two guards.
+    const resolved = deps.sessions.require(c.req.param("id") ?? "");
+    if (!resolved.ok) return storeFail(c, resolved);
+    const session = resolved.value.id;
+    if (deps.runtime.isBusy(session)) return failJson(c, 409, "turn 进行中，无法压缩");
     // W825 P0: a session with LIVE worker work is PINNED — its instance may not
     // be evicted, so compacting it would rewrite the log under a live descriptor
     // (the old fd survives the rename and every later append is lost). Refuse up
     // front, exactly like the busy guard above; the lifecycle refuses again if a
     // worker appears between this check and the eviction. `workerSessions()` only
     // reports LIVE instances, which is exactly when a descriptor can be orphaned.
-    if (deps.runtime.workerSessions().some((row) => row.host_session === id && row.status === "RUNNING")) {
+    if (deps.runtime.workerSessions().some((row) => row.host_session === session && row.status === "RUNNING")) {
       return failJson(c, 409, "worker 进行中，无法压缩");
     }
-    const resolved = deps.sessions.require(id);
-    if (!resolved.ok) return storeFail(c, resolved);
     try {
-      const out = await deps.runtime.compact(resolved.value.id);
+      const out = await deps.runtime.compact(session);
       deps.bus.emit("compact", 0, { session: out.session, kept_turns: out.kept_turns ?? 0, note: out.note, rebound: out.rebound });
       const body: Record<string, unknown> = { ok: true, compacted: out.compacted, note: out.note };
       if (out.compacted) body["kept_turns"] = out.kept_turns ?? 0;
@@ -115,7 +120,13 @@ function registerCompact(app: Hono, deps: Deps, table: RouteTable): string {
 function registerMove(app: Hono, deps: Deps, table: RouteTable, id: "post_session_archive" | "post_session_unarchive"): string {
   const route = table.get(id);
   app.on(route.method, route.honoPath, async (c) => {
-    const target = c.req.param("id") ?? "";
+    const raw = c.req.param("id") ?? "";
+    // W815-5: the engine cut must name the CANONICAL session. `unarchive` may
+    // address an id whose live dir is absent, so `resolve` (not `require`) is the
+    // right canonicalization; an unresolvable id falls through to the store's own
+    // (identical) error.
+    const resolved = deps.sessions.resolve(raw);
+    const target = resolved.ok ? resolved.value.id : raw;
     // W794: archiving a LIVE session moves its directory away too, so it cuts the
     // same way a delete does. `unarchive` restores a directory that has no live
     // instance by construction (archiving released it) — nothing to cut.
@@ -138,7 +149,13 @@ function registerBatch(app: Hono, deps: Deps, table: RouteTable, id: "post_sessi
     // W794: cut every id before any directory moves. The response shape is
     // unchanged — one 200, `deleted`/`archived` count plus the per-id `failed[]`
     // (unknown ids included), so the client's optimistic update can rely on it.
-    for (const one of ids.value) await cutEngineSession(deps, one);
+    // W815-5: cut each id by its CANONICAL form; the store still receives the
+    // caller's ids so the per-id `failed[]` row keeps the id the caller sent.
+    const canonical = ids.value.map((one) => {
+      const resolved = deps.sessions.resolve(one);
+      return resolved.ok ? resolved.value.id : one;
+    });
+    for (const one of canonical) await cutEngineSession(deps, one);
     if (id === "post_sessions_batch_archive") {
       const out = deps.sessionOps.batchArchive(ids.value);
       return c.json({ ok: true, archived: out.archived, failed: out.failed });

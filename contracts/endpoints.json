@@ -911,6 +911,10 @@
         },
         {
           "status": 500,
+          "error": "meta write failed: {e}"
+        },
+        {
+          "status": 500,
           "error": "compose failed: {e}"
         },
         {
@@ -979,7 +983,7 @@
         },
         {
           "status": 500,
-          "error": "meta copy failed: {e}"
+          "error": "meta write failed: {e}"
         }
       ],
       "notes": [
