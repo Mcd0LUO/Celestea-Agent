@@ -96,6 +96,18 @@ function checkDefaults({ request, caps, presets }) {
   );
 }
 
+/** ⑤ W819-8：预留能力位（tool_extra）不得出现在「可授」集合里。 */
+function checkReserved({ caps }) {
+  const reserved = caps.CAPS.filter((d) => d.reserved === true).map((d) => d.cap);
+  check(
+    reserved.length === 1 && reserved[0] === 'tool_extra',
+    '预留能力位应恰为 tool_extra，实际 ' + JSON.stringify(reserved),
+  );
+  check(caps.OFFERED_CAPS.every((d) => d.reserved !== true), 'OFFERED_CAPS 不得包含预留能力位');
+  check(!caps.OFFERED_CAPS.some((d) => d.cap === 'tool_extra'), 'OFFERED_CAPS 不得包含 tool_extra');
+  check(caps.OFFERED_CAPS.length === caps.CAPS.length - reserved.length, 'OFFERED_CAPS 与预留位数量不一致');
+}
+
 /** ② 显式选择临时时长时，请求体必须照发（30 分钟 = 1800）。 */
 function checkExplicitTtl({ request, state, caps }) {
   const net = caps.CAPS.find((d) => d.cap === 'network');
@@ -214,6 +226,7 @@ function checkSources() {
 const { mod, cleanup } = await loadProductionModules();
 try {
   checkDefaults(mod);
+  checkReserved(mod);
   checkExplicitTtl(mod);
   checkCopy(mod);
   checkSources();

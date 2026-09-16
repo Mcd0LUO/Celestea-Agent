@@ -37,6 +37,15 @@ export type GrantCap = "network" | "read_roots" | "write_roots" | "net_hosts" | 
 
 export const GRANT_CAPS: readonly GrantCap[] = ["network", "read_roots", "write_roots", "net_hosts", "tool_extra", "unsandboxed"];
 
+/**
+ * W819-8: caps that are KNOWN and still read back (GRANT_CAPS) but are NOT
+ * offered any more. tool_extra is documented as reserved for future
+ * browser/net tools and no tool-exposure point ever consumed it, so offering
+ * it as a capability the deployment could honour was false. Stored entries
+ * keep parsing, echoing and warning; they just cannot be newly granted.
+ */
+export const RESERVED_GRANT_CAPS: readonly GrantCap[] = ["tool_extra"];
+
 /** Per-cap TTL ceiling, enforced by the SERVER (§2.3). */
 export const MAX_TTL_SEC: Readonly<Record<GrantCap, number>> = {
   network: 3600,
@@ -91,6 +100,11 @@ export function looksLikeCredential(value: string, known: readonly string[]): bo
 
 export function isGrantCap(value: unknown): value is GrantCap {
   return typeof value === "string" && (GRANT_CAPS as readonly string[]).includes(value);
+}
+
+/** Known AND currently offerable (reserved caps are deliberately excluded). */
+export function isOfferedGrantCap(value: unknown): value is GrantCap {
+  return isGrantCap(value) && !(RESERVED_GRANT_CAPS as readonly string[]).includes(value);
 }
 
 export function maxTtlOf(cap: GrantCap): number {

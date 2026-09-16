@@ -2764,7 +2764,7 @@
             "name": "cap",
             "type": "string",
             "required": true,
-            "note": "network|read_roots|write_roots|net_hosts|tool_extra|unsandboxed"
+            "note": "network|read_roots|write_roots|net_hosts|unsandboxed (W819-8: tool_extra is a RESERVED cap - still read back and revocable, no longer offered)"
           },
           {
             "name": "scope",

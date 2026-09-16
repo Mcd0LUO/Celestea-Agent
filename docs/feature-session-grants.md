@@ -82,7 +82,7 @@
 | `read_roots` | `{roots: string[]}` | 追加**只读**根（等价扩展 `CELESTEA_TOOL_ROOTS`） | `[]` | 中 |
 | `write_roots` | `{roots: string[]}` | 追加**可写**根（workspace 之外也能写） | `[]` | **高** |
 | `net_hosts` | `{hosts: string[]}` | 放宽 `http_request` 的目标策略：把列出的主机/IP 段**并入 allow**（并集放宽，永不收窄；且仅在进程级站点策略已启用时才生效，见下注 2 / §6.1） | `[]` | 中 |
-| `tool_extra` | `{tools: string[]}` | 启用**默认未挂载的额外工具**（为将来的 browser/net 工具预留；**不是**用来放行被 guard 拒绝的工具） | `[]` | 中 |
+| `tool_extra` | `{tools: string[]}` | **预留能力位（W819-8 起不再对外可授）**：为将来的 browser/net 工具预留；当前**没有任何工具暴露面消费它**，授予是空操作。存量条目仍可回读/撤销，`GET …/grants` 追加 `tool_extra_ineffective` 告警（**不是**用来放行被 guard 拒绝的工具） | `[]` | 中 |
 | `unsandboxed` | `{}` | 允许在**无 OS 隔离**（`userspace`）下执行，即使 provider 策略是 `fail` | 关 | **最高** |
 
 **明确说明三点**：

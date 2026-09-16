@@ -38,6 +38,12 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
     mark.title = '本部署未启用站点策略，这份站点清单不会改变会话可访问的范围。';
     head.appendChild(mark);
   }
+  if (def.reserved === true) {
+    // W819-8：预留能力位如实标注，且下面不再给「授予」入口。
+    const mark = el('span', 'grant-badge', '预留未生效');
+    mark.title = '该能力还没有任何工具消费它：授予不会改变会话能做什么。';
+    head.appendChild(mark);
+  }
   row.appendChild(head);
 
   row.appendChild(el('div', 'grant-impact', def.impact));
@@ -55,7 +61,7 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
     );
   }
 
-  if ((def.kind === 'hosts' || def.kind === 'tools') && !active) {
+  if ((def.kind === 'hosts' || def.kind === 'tools') && !active && def.reserved !== true) {
     const box = el('div', 'grant-hosts-row');
     const input = el('input', 'grant-input cfg-input') as HTMLInputElement;
     input.type = 'text';
@@ -79,7 +85,7 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
     rev.type = 'button';
     rev.addEventListener('click', () => void host.revoke(def.cap));
     actions.appendChild(rev);
-  } else {
+  } else if (def.reserved !== true) {
     // W773：主路径 = 直接授予（永久）。这一个按钮就发出 ttl_sec: 0，
     // 不再强迫用户先选时长；时长选项收在旁边的「临时授权…」次级入口里。
     const grant = el(

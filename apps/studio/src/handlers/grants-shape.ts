@@ -11,7 +11,7 @@ import type { EffectiveGrants } from "../runtime/engine-grants.js";
 import { unsandboxedAvailable } from "../runtime/engine-grants.js";
 import {
   DEFAULT_TTL_SEC,
-  GRANT_CAPS,
+  isOfferedGrantCap,
   MAX_TTL_SEC,
   canonicalScopeHash,
   knownSecretsOf,
@@ -82,10 +82,11 @@ export function parseGrantRequest(c: Context, body: JsonObject, env: NodeJS.Proc
  * not valid — the frozen `invalid cap '<x>'` error, never a special case.
  */
 export function offeredCap(raw: string, env: NodeJS.ProcessEnv): GrantCap | null {
-  const known = (GRANT_CAPS as readonly string[]).includes(raw);
-  if (!known) return null;
+  // W819-8: a cap that exists in the file format but has no consumption point
+  // (RESERVED_GRANT_CAPS) is simply not offered - the frozen 400.
+  if (!isOfferedGrantCap(raw)) return null;
   if (raw === "unsandboxed" && !unsandboxedAvailable(env)) return null;
-  return raw as GrantCap;
+  return raw;
 }
 
 /** `ttl_sec`: positive integer, 0 = no expiry, capped per cap (§2.3). */

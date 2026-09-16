@@ -23,7 +23,7 @@ import {
   setPanelOverlay,
   type GrantsHost,
 } from '../state';
-import { activeGrants } from './active';
+import { activeFor, activeGrants, expiredFor } from './active';
 import { attachPosition, detachPositionNow, positionPanel } from './position';
 import { previewText } from './phrase';
 import { renderPresets } from './quick';
@@ -133,6 +133,9 @@ export function renderPanel(host: GrantsHost): void {
   } else {
     for (const def of CAPS) {
       if (def.cap === 'unsandboxed' && getData()?.unsandboxed_available !== true) continue;
+      // W819-8：预留能力位不再作为可授项列出；仅当本会话已有存量条目时渲染，
+      // 好让运维仍能看见并撤销它。
+      if (def.reserved === true && activeFor(def.cap) === null && expiredFor(def.cap).length === 0) continue;
       off.appendChild(renderRow(def, host));
     }
   }

@@ -16,7 +16,7 @@
 import type { Context, Hono } from "hono";
 import type { RouteTable } from "../routes.js";
 import { effectiveGrantsOf, netHostsEffective, sessionIdOfDir, unsandboxedAvailable, type EffectiveGrants } from "../runtime/engine-grants.js";
-import { MAX_TTL_SEC, emptyGrantsFile, newGrantId, readGrantsFile, writeGrantsFile, type GrantCap, type GrantRecord, type GrantsFile } from "../store/grants.js";
+import { isOfferedGrantCap, MAX_TTL_SEC, emptyGrantsFile, newGrantId, readGrantsFile, writeGrantsFile, type GrantCap, type GrantRecord, type GrantsFile } from "../store/grants.js";
 import { CONFIRM_HEADER, SEC_FETCH_MODE, SEC_FETCH_SITE, ORIGIN_HEADER } from "../store/grants-tokens.js";
 import { nowSec, type GrantsServices } from "../store/grants-service.js";
 import { errText } from "../store/result.js";
@@ -36,6 +36,14 @@ const CONFIRM_REQUIRED = "grant confirmation required";
 const NET_HOSTS_INEFFECTIVE =
   "net_hosts_ineffective: 当前部署未设置站点策略（CELESTEA_HTTP_ALLOW / CELESTEA_HTTP_DENY 均未设置），列出的站点不会改变可访问范围 —— 该授权不生效";
 
+/**
+ * W819-8: the readable half of "tool_extra is reserved". The cap has no tool
+ * exposure point yet, so a stored entry is echoed but changes nothing; it is
+ * also no longer offered (only revocable).
+ */
+const TOOL_EXTRA_INEFFECTIVE =
+  "tool_extra_ineffective: tool_extra 预留给未来的 browser/net 工具，当前没有任何工具暴露面消费它 —— 该授权不生效（已停止新授，可撤销）";
+
 /** GET /api/sessions/{id}/grants (§6.1). */
 function registerList(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("get_session_grants");
@@ -49,7 +57,11 @@ function registerList(app: Hono, deps: Deps, table: RouteTable): string {
     // W757 (§6.1): report the DEPLOYMENT fact as well as the readable warning —
     // the verdict comes from the very policy the engine mounts its tools with.
     const netHosts = netHostsEffective(deps.grants.env, effective.grants);
-    const warnings = netHosts ? effective.warnings : [...effective.warnings, NET_HOSTS_INEFFECTIVE];
+    const warnings = [
+      ...effective.warnings,
+      ...(netHosts ? [] : [NET_HOSTS_INEFFECTIVE]),
+      ...(effective.grants.toolExtra.length > 0 ? [TOOL_EXTRA_INEFFECTIVE] : []),
+    ];
     return c.json({
       ok: true,
       session: resolved.value.id,
@@ -206,7 +218,7 @@ function registerConfirmToken(app: Hono, deps: Deps, table: RouteTable): string 
     if (!resolved.ok) return storeFail(c, resolved);
     if (!hasSameOriginEvidence(c)) return failJson(c, 403, NOT_SAME_ORIGIN_TOO);
     const cap = c.req.query("cap") ?? "";
-    const allowed = (["network", "read_roots", "write_roots", "net_hosts", "tool_extra", "unsandboxed"] as const).includes(cap as never);
+    const allowed = isOfferedGrantCap(cap);
     if (!allowed || (cap === "unsandboxed" && !unsandboxedAvailable(deps.grants.env))) return failJson(c, 400, `invalid cap '${cap}'`);
     const hash = c.req.query("scope_hash") ?? "";
     if (!/^[0-9a-f]{64}$/.test(hash)) return failJson(c, 400, "scope_hash must be a 64-char sha256 hex string");

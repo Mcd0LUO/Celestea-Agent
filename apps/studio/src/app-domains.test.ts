@@ -258,10 +258,13 @@ describe("session grants endpoints", () => {
     expect(replay.status).toBe(409);
     expect(replay.body).toEqual({ ok: false, error: "confirmation token already used" });
     reset();
-    const stale = await grantToken(h, S1, "tool_extra", { tools: ["browser"] });
+    // W819-8: tool_extra is reserved and no longer offerable; this token-expiry
+    // probe uses a still-offered cap instead (expiry semantics are unrelated to
+    // which cap is used).
+    const stale = await grantToken(h, S1, "net_hosts", { hosts: ["example.com"] });
     const issuedAt = h.studio.services.grants.now();
     h.studio.services.grants.now = () => issuedAt + 61_000;
-    expect((await grant(h, S1, { cap: "tool_extra", scope: { tools: ["browser"] } }, stale)).status).toBe(403);
+    expect((await grant(h, S1, { cap: "net_hosts", scope: { hosts: ["example.com"] } }, stale)).status).toBe(403);
 
     // §5.5.2: the token endpoint needs browser same-origin evidence.
     const hash = "0".repeat(64);

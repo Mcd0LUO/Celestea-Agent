@@ -20,6 +20,11 @@ export interface CapDef {
   kind: 'bool' | 'dirs' | 'hosts' | 'tools';
   danger: boolean;
   /**
+   * W819-8：预留能力位 —— 已知且仍可回读/撤销，但**不再对外可授**。
+   * 面板只在已有存量条目时渲染它（供撤销），否则不出现。
+   */
+  reserved?: boolean;
+  /**
    * 需要逐字输入的确认词（设计 §3.3）；空串 = 只需点击确认。
    * @deprecated W751：授予不再要求逐字输入确认词（只保留一次点击确认），
    *   本字段恒为空串，仅为结构兼容保留；新代码不要读取它，也不要再填值。
@@ -81,9 +86,11 @@ export const CAPS: readonly CapDef[] = [
   {
     cap: 'tool_extra',
     label: '启用额外工具',
-    impact: '启用默认未开放的额外工具（不放行已被拒绝的操作）。',
+    // W819-8：没有工具暴露面消费它，授予是空操作 —— 不再列为可授。
+    impact: '预留能力：为将来的 browser/net 工具准备，当前没有任何工具消费它，授予不会生效。',
     kind: 'tools',
     danger: false,
+    reserved: true,
     confirmWord: '',
     defaultTtl: 0,
     maxTtl: 86400,
@@ -101,6 +108,12 @@ export const CAPS: readonly CapDef[] = [
 ];
 
 export const CAP_BY_NAME = new Map<string, CapDef>(CAPS.map((c) => [c.cap, c]));
+
+/**
+ * W819-8：面板真正**可授**的能力位。预留位（tool_extra）仍留在 CAPS 里，
+ * 以便存量条目能显示与撤销，但绝不出现在可授集合里。
+ */
+export const OFFERED_CAPS: readonly CapDef[] = CAPS.filter((c) => c.reserved !== true);
 
 /**
  * 有效期选项（秒 → 用户语言标签）。**0 = 永久，且是第一位**（W773：主路径直接授予，

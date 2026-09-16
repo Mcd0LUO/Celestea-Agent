@@ -364,7 +364,8 @@ describe("grants through the live app (§4.2, §4.4, §5.5.5)", () => {
     const h = makeHarness({ session: { name: "s1", log: "" } });
     try {
       expect((await grant(h, S1, { cap: "network" })).status).toBe(200);
-      expect((await grant(h, S1, { cap: "tool_extra", scope: { tools: ["browser"] } })).status).toBe(200);
+      // W819-8: tool_extra is reserved (not offerable) - use read_roots here.
+      expect((await grant(h, S1, { cap: "read_roots", scope: { roots: [h.root] } })).status).toBe(200);
       expect((await grant(h, S1, { cap: "net_hosts", scope: { hosts: ["10.1.2.3"] } })).status).toBe(200);
       const fourth = await grant(h, S1, { cap: "read_roots", scope: { roots: [h.root] } });
       expect(fourth.status).toBe(429);
