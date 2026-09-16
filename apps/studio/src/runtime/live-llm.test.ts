@@ -20,7 +20,7 @@ import { parseSessionJsonl } from "@celestea/session";
 import { createStudioApp, type StudioApp } from "../app.js";
 import { loadStudioConfig } from "../config.js";
 import { jsonRequest } from "../harness.test-util.js";
-import { DONE_FRAME, startMockProvider, textDelta, toolCallDelta, usageChunk } from "./mock-provider.test-util.js";
+import { DONE_FRAME, sseChunk, startMockProvider, textDelta, toolCallDelta, usageChunk } from "./mock-provider.test-util.js";
 
 interface LiveHost {
   app: Hono;
@@ -190,6 +190,30 @@ describe("live LLM assembly (mock upstream, no real network)", () => {
       expect(tools.map((t) => t.function.name)).toContain("run_shell");
       const secondMessages = upstream.requests[1]?.body["messages"] as Array<{ role: string }>;
       expect(secondMessages.some((m) => m.role === "tool")).toBe(true);
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  // W835 (R3 batch C / W811 P1-1): the REAL runtime + agent-loop consumer must
+  // see a terminal stream error when the upstream reports an error frame —
+  // never a silent empty "done" / "interrupted". Source: W826-R3修复计划
+  // §批次 C P1-1 (agent-loop half of the probe).
+  it("ends the turn as a stream error (not a fake done) when the upstream sends an error frame", async () => {
+    const upstream = await startMockProvider([
+      [sseChunk({ error: { message: "content filter", type: "invalid_request_error" } })],
+    ]);
+    try {
+      const host = makeLiveHost({ baseUrl: upstream.v1BaseUrl, model: "mock-v4-flash" });
+      await runTurn(host.app, "hi");
+      await waitIdle(host.studio);
+
+      const events = eventsOf(host);
+      const turnEnd = events.find((e) => e["type"] === "turn_end");
+      expect(turnEnd?.["outcome"]).toMatchObject({ error: { kind: "stream" } });
+      expect(turnEnd?.["outcome"]).not.toBe("completed");
+      // No assistant reply was invented for a failed generation.
+      expect(events.some((e) => e["type"] === "assistant_message")).toBe(false);
     } finally {
       await upstream.close();
     }
