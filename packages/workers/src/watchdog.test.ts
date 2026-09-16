@@ -242,3 +242,56 @@ describe("watchdogPlugin", () => {
     expect(watchdog.tick()).toEqual([]);
   });
 });
+
+
+describe("W831 R3 B5 — deliverable probe + parseUtc (W813 P1-prefix / P2-sanitized-wid / P2-parseUtc)", () => {
+  /** W827-R3 B5 item 8: W1 must never claim W10's report. */
+  it("W813-8: hasDeliverable does not match a W10 report for W1", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "celestea-wd-prefix-"));
+    const results = join(prefix, "results");
+    mkdirSync(results, { recursive: true });
+    writeFileSync(join(results, "W10-report-a0.md"), "r", "utf8");
+    expect(hasDeliverable(results, "W1")).toEqual({ found: false, error: null });
+    expect(hasDeliverable(results, "W10")).toEqual({ found: true, error: null });
+  });
+
+  /** W827-R3 B5 item 12: the probe must share the writer's sanitizeFileStem. */
+  it("W813-12: hasDeliverable finds the sanitized report of a wid like W1/2", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "celestea-wd-sanitized-"));
+    const results = join(prefix, "results");
+    mkdirSync(results, { recursive: true });
+    writeFileSync(join(results, "W1_2-x-a0.md"), "r", "utf8");
+    expect(hasDeliverable(results, "W1/2")).toEqual({ found: true, error: null });
+    expect(hasDeliverable(results, "W1")).toEqual({ found: false, error: null });
+  });
+
+  it("W813-8 end-to-end: watchdog does NOT settle W1 DONE on a W10 report", () => {
+    const h = harness("w1w10");
+    const sid = endedWorker(h, "W1", "brief=work");
+    h.registry.sessions.remove(sid);
+    mkdirSync(h.results, { recursive: true });
+    writeFileSync(join(h.results, "W10-report-a0.md"), "r", "utf8");
+    expect(h.watchdog.tick()).toEqual([{ kind: "failed", wid: "W1", reason: "no recoverable brief to re-dispatch" }]);
+    expect(h.registry.getEntry("W1")!.status).toBe("FAILED");
+  });
+
+  it("W813-12 end-to-end: watchdog settles DONE for a sanitized wid with its report", () => {
+    const h = harness("sanitized");
+    endedWorker(h, "W1/2", "brief=work");
+    mkdirSync(h.results, { recursive: true });
+    writeFileSync(join(h.results, "W1_2-x-a0.md"), "r", "utf8");
+    expect(h.watchdog.tick()).toEqual([{ kind: "done", wid: "W1/2" }]);
+    expect(h.registry.getEntry("W1/2")!.status).toBe("DONE");
+  });
+
+  /** W827-R3 B5 item 15: a day that does not exist must not normalize to another. */
+  it("W813-15: parseUtc rejects a non-existent calendar day (round-trip)", () => {
+    expect(parseUtc("2026-02-31_00:00:00Z")).toBeNull();
+    expect(parseUtc("2026-04-31_00:00:00Z")).toBeNull();
+    expect(parseUtc("2026-02-29_00:00:00Z")).toBeNull();
+    expect(parseUtc("2024-02-29_00:00:00Z")).not.toBeNull();
+    expect(parseUtc("2026-02-28_00:00:00Z")).not.toBeNull();
+    // A malformed started_at therefore earns no (wrong) grace.
+    expect(inGrace("2026-02-31_00:00:00Z", NOW_SECS, 10_000_000)).toBe(false);
+  });
+});

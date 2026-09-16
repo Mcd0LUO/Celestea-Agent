@@ -11,7 +11,7 @@
  *
  *   - the worker is still working (a live driver task, or a turn whose
  *     `turn_end` has not been written yet)          -> KeepRunning;
- *   - ended, and `results/<wid>*.md` exists         -> DONE (deliverable read);
+ *   - ended, and its exact `<wid>` stem report exists -> DONE (deliverable read);
  *   - ended, no deliverable, still inside the grace
  *     window since `started_at`                     -> GraceDeferred (no retry
  *                                                      storm on a slow start);
@@ -45,6 +45,9 @@ import { definePlugin, type Plugin, type SessionEvent, type WorkerEntry } from "
 import type { WorkerRegistry } from "./registry.js";
 import { getExtra, workerRetries } from "./registry-tsv.js";
 import { utcNow, type WorkerVerdict } from "./types.js";
+// W831 R3 B5 (W813 P2-sanitized-wid): the probe and the writer must sanitize the
+// same way, so a wid like "W1/2" (file W1_2-...-a0.md) is found.
+import { sanitizeFileStem } from "./receipt.js";
 
 export const WATCHDOG_SERVICE = "celestea.workers.Watchdog";
 
@@ -106,7 +109,13 @@ export function parseUtc(text: string): number | null {
   const minute = part(5);
   const second = part(6);
   if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 60) return null;
-  return Math.floor(Date.UTC(year, month - 1, day, hour, minute, second) / 1_000);
+  // W831 R3 B5 (W813 P2-parseUtc): Date.UTC normalizes a non-existent day
+  // (2026-02-31 -> 2026-03-03), silently moving the grace/staleness origin.
+  // Round-trip the calendar fields and reject a stamp that moved.
+  const ms = Date.UTC(year, month - 1, day, hour, minute, second);
+  const at = new Date(ms);
+  if (at.getUTCFullYear() !== year || at.getUTCMonth() !== month - 1 || at.getUTCDate() !== day) return null;
+  return Math.floor(ms / 1_000);
 }
 
 /**
@@ -139,7 +148,25 @@ export function hasDeliverable(resultsDir: string, wid: string): DeliverableProb
       ? { found: false, error: null }
       : { found: false, error: messageOf(error) };
   }
-  return { found: names.some((name) => name.startsWith(wid) && name.endsWith(".md")), error: null };
+  return { found: names.some((name) => isDeliverableName(name, wid)), error: null };
+}
+
+/**
+ * W831 R3 B5 (W813 P1-prefix / P2-sanitized-wid): a report belongs to a wid only
+ * when the file name carries the wid as a complete STEM SEGMENT. The old
+ * `startsWith(wid)` let W1 claim W10's report (freezing a worker with no
+ * deliverable as DONE and suppressing re-dispatch), and the RAW wid never
+ * matched the sanitized name actually written for a wid like `W1/2`. Both sides
+ * now go through `sanitizeFileStem` (receipt.ts), and the stem must be followed
+ * by `-` or end the name, so `W1` cannot match `W10-...`. The legacy
+ * attempt-less `W3-report.md` still counts, preserving the documented read-side
+ * backward compatibility.
+ */
+export function isDeliverableName(name: string, wid: string): boolean {
+  if (!name.endsWith(".md")) return false;
+  const stem = sanitizeFileStem(wid);
+  if (stem === "") return false;
+  return name === stem + ".md" || name.startsWith(stem + "-");
 }
 
 /** Grace: `started_at` parsed, not in the future, younger than `graceSecs`. */

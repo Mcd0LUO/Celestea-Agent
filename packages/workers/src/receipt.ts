@@ -16,9 +16,11 @@
  * `[A-Za-z0-9._-]` becomes `_`, so a hostile `wid` cannot escape the results dir.
  *
  * Backward compatibility is a READ-side rule, not a second write: the
- * deliverable probe accepts ANY `results/<wid>*.md` (`hasDeliverable`, the legacy
- * prefix rule), so a report written before this change still counts — and we
- * never write the attempt-less name again (it is the collision we removed).
+ * deliverable probe matches `results/<stem>-*.md` where `<stem>` is the wid
+ * sanitized exactly as the writer sanitizes it (`hasDeliverable`, W831 R3 B5),
+ * so an attempt-less report written before W787 still counts AND `W1` can no
+ * longer claim `W10`'s report — and we never write the attempt-less name again
+ * (it is the collision we removed).
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";

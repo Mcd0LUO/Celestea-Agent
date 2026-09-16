@@ -150,3 +150,19 @@ describe("§2.2.1: the configured path resolution (worker-table.ts)", () => {
     expect(workerTablePath({ env: {}, dataDir: null, resultsDir: null })).toBeNull();
   });
 });
+
+
+describe("W831 R3 B5/A3: /api/worker/status uses the exact deliverable probe", () => {
+  it("a W10 report does not make W1 look DONE (action stays respawn)", async () => {
+    const tsv = "W1\t2026-09-10_12:00:00Z\tRUNNING\tsess=s1 title=t host=ws/gone attempt=0 lease=999999@1789000000 proc=999999\n";
+    const h = make({ rawFiles: { "worker-registry.tsv": tsv, "worker-results/W10-report-a0.md": "report" } });
+    const status = await getJson(h.app, "/api/worker/status");
+    const stale = status.body["stale"] as Array<Record<string, unknown>>;
+    const row = stale.find((c) => c["wid"] === "W1");
+    expect(row?.["action"]).toBe("respawn");
+    expect(row?.["artifact"]).toBe(false);
+    // The orphan list is the same judgement, so it must not silently drop W1 either.
+    const orphans = status.body["orphans"] as Array<Record<string, unknown>>;
+    expect(orphans.map((c) => c["wid"])).toEqual(["W1"]);
+  });
+});
