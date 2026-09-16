@@ -22,6 +22,15 @@ const dirs: string[] = [];
 const harnesses: StudioHarness[] = [];
 
 const HAS_HTPASSWD = spawnSync("htpasswd", ["-vbi"], { encoding: "utf8" }).error === undefined;
+// W839 (R3 B9 / W818-P2-3): a missing htpasswd no longer silently drops the
+// login/cookie gate. Locally the suite still SKIPS (vitest counts it), but with
+// CELESTEA_REQUIRE_HTPASSWD=1 (CI) a missing helper is a hard, visible failure.
+if (!HAS_HTPASSWD) {
+  if (process.env["CELESTEA_REQUIRE_HTPASSWD"] === "1") {
+    throw new Error("htpasswd is required for the login gate (CELESTEA_REQUIRE_HTPASSWD=1) but was not found on PATH");
+  }
+  console.warn("[auth] htpasswd not found: the login/password cases below are SKIPPED (not passed)");
+}
 
 /** A throwaway password file (the format `htpasswd -s` writes). */
 function passwordFile(): string {

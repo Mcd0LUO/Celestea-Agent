@@ -186,7 +186,15 @@ try {
 } catch {
   LIVE = false;
 }
-if (!LIVE) console.warn("[W792] 真实服务不可达，端到端用例整体跳过：" + BASE);
+// W839 (R3 B9 / W818-P2-5): LIVE=required (or CELESTEA_E2E_REQUIRED=1) turns an
+// unreachable real service into a hard failure; locally it stays a VISIBLE skip
+// (this banner + vitest's skipped count).
+const LIVE_REQUIRED = process.env["LIVE"] === "required" || process.env["CELESTEA_E2E_REQUIRED"] === "1";
+if (!LIVE) {
+  const banner = "[W792] 真实服务不可达，端到端用例整体 SKIPPED（不是通过）：" + BASE;
+  if (LIVE_REQUIRED) throw new Error(banner);
+  console.warn(banner);
+}
 
 const created: string[] = [];
 async function createSession(suffix: string): Promise<string> {
@@ -301,32 +309,30 @@ live("W792 · 真实服务：归档「正在看的活动会话」之后的收尾
 
 afterAll(async () => {
   if (!LIVE) return;
-  // 1) 把活动会话拨回测试开始时的那个（用户要求：CelesteaTeamAPI/中转哥-…）
-  const target = capturedActive !== "" ? capturedActive : WANT_ACTIVE;
   try {
-    const r = await post("/api/sessions/" + enc(target) + "/activate", {});
-    const now = await activeOnServer();
-    if (now !== target) console.warn("[W792] 活动会话拨回失败：" + JSON.stringify(r.body) + " → " + now);
-    else console.log("[W792] 活动会话已拨回：" + now);
-  } catch (err) {
-    console.warn("[W792] 活动会话拨回异常：" + String(err));
-  }
-  // 2) 我建的会话若还在（缺省或归档列表）⇒ 真删掉
-  try {
+    // 1) W839 (R3 B9 / W818-P2-2): this suite ACTIVATES its own sessions, so the
+    // shared active_session must be put back and the restore ASSERTED. The old
+    // afterAll only console.warn'd on failure and swallowed cleanup errors, so a
+    // failed restore looked green while it polluted every other session.
+    const target = capturedActive !== "" ? capturedActive : WANT_ACTIVE;
+    const restored = await post("/api/sessions/" + enc(target) + "/activate", {});
+    expect(restored.status, "active_session restore failed: " + JSON.stringify(restored.body)).toBe(200);
+    expect(await activeOnServer(), "active_session 必须等于测试开始时的值").toBe(target);
+    console.log("[W792] 活动会话已断言拨回：" + target);
+    // 2) 我建的会话若还在（缺省或归档列表）⇒ 真删掉
     for (const id of created) {
       const alive = [...(await listedIds("/api/sessions")), ...(await listedIds("/api/sessions?archived=1"))];
       if (alive.includes(id)) await post("/api/sessions/batch-delete", { ids: [id] });
     }
-  } catch {
-    /* 清理尽力而为 */
-  }
-  // 3) 回收目录里我产生的条目
-  try {
-    for (const name of readdirSync(TRASH)) {
-      if (/^w792-/.test(name)) rmSync(join(TRASH, name), { recursive: true, force: true });
+    // 3) 回收目录里我产生的条目
+    try {
+      for (const name of readdirSync(TRASH)) {
+        if (/^w792-/.test(name)) rmSync(join(TRASH, name), { recursive: true, force: true });
+      }
+    } catch {
+      /* 回收目录可能不存在 */
     }
-  } catch {
-    /* 回收目录可能不存在 */
+  } finally {
+    vi.unstubAllGlobals();
   }
-  vi.unstubAllGlobals();
 });

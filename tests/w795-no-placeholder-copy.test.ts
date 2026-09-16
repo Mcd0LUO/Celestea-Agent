@@ -76,16 +76,22 @@ describe("W795 ① 占位文案已从源码与产物里消失", () => {
     expect(html).not.toContain("加载中");
   });
 
-  it("构建产物（dist，且比源码新 = 确实是当前源码构建出来的）：也不含占位文案", () => {
+  it("构建产物（dist，且比源码新 = 确实是当前源码构建出来的）：也不含占位文案", (ctx) => {
     const distHtml = join(WEB, "dist", "index.html");
-    if (!existsSync(distHtml)) return; // 未构建：源码断言已覆盖，构建后本断言自动生效
+    if (!existsSync(distHtml)) {
+      // W839 (R3 B9 / W818-P2-4): an absent build artifact is a VISIBLE skip,
+      // not a silent return that vitest counted as passed.
+      ctx.skip("dist 未构建：源码断言已覆盖；pnpm --dir apps/web build 后本断言自动生效");
+    }
     const newest = Math.max(
       ...walk(join(WEB, "src"))
         .concat([join(WEB, "index.html"), join(WEB, "app.js")])
         .map((f) => statSync(f).mtimeMs),
     );
-    // 陈旧产物不代表当前源码（可能是上一轮构建）：不该用它判红，构建完再跑即可
-    if (statSync(distHtml).mtimeMs < newest) return;
+    // 陈旧产物不代表当前源码（可能是上一轮构建）：改为显式 skip 并计入 skip 数
+    if (statSync(distHtml).mtimeMs < newest) {
+      ctx.skip("dist 比源码旧（陈旧产物）：构建后本断言自动生效");
+    }
     const files = walk(join(WEB, "dist")).filter((f) => f.endsWith(".html") || f.endsWith(".js"));
     expect(hitsIn(files, false)).toEqual([]); // 产物已剥注释，直接扫全文
   });

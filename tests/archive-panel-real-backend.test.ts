@@ -230,24 +230,30 @@ try {
 } catch {
   LIVE = false;
 }
-if (!LIVE) console.warn("[W792] 真实服务不可达，端到端用例整体跳过：" + BASE);
+// W839 (R3 B9 / W818-P2-5): LIVE=required (or CELESTEA_E2E_REQUIRED=1) turns an
+// unreachable real service into a hard failure; locally it stays a VISIBLE skip
+// (this banner + vitest's skipped count).
+const LIVE_REQUIRED = process.env["LIVE"] === "required" || process.env["CELESTEA_E2E_REQUIRED"] === "1";
+if (!LIVE) {
+  const banner = "[W792] 真实服务不可达，端到端用例整体 SKIPPED（不是通过）：" + BASE;
+  if (LIVE_REQUIRED) throw new Error(banner);
+  console.warn(banner);
+}
 
 /** 本轮创建的会话 id（收尾清理用）。 */
 const created: string[] = [];
-async function createSession(suffix: string): Promise<string> {
+async function createSession(suffix: string, archive = false): Promise<string> {
   const r = await api.createSession({ workspace: WS, title: "w792-e2e-" + suffix + "-" + STAMP });
   const id = String(r.id ?? "");
   expect(id, "建会话失败：" + JSON.stringify(r)).not.toBe("");
   created.push(id);
+  if (archive) await api.archiveSession(id);
   return id;
 }
 const listedIds = async (path: string): Promise<string[]> =>
   (((await req(path)).body?.["sessions"] ?? []) as Row[]).map((r) => String(r.id ?? ""));
 
 const live = LIVE ? describe : describe.skip;
-
-/** 面板用例共用的那条归档会话。 */
-let panelId = "";
 
 afterAll(async () => {
   if (!LIVE) return;
@@ -275,8 +281,7 @@ afterAll(async () => {
 live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
 
   it("真实响应形状：缺省列表不含归档行、连 archived 键都没有；?archived=1 才有", async () => {
-    panelId = await createSession("panel");
-    await api.archiveSession(panelId);
+    const panelId = await createSession("panel", true);
 
     const def = await req("/api/sessions");
     const defRows = (def.body?.["sessions"] ?? []) as Row[];
@@ -299,6 +304,9 @@ live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
   });
 
   it("归档面板：用 ?archived=1 取数并列出真实归档会话（修前这里恒为空）", async () => {
+    // W839 (R3 B9 / W818-P2-6): own the row; before, this case borrowed the
+    // module-level panelId created by case 1 and failed when run alone.
+    const panelId = await createSession("panel-list", true);
     mountDom();
     const box = doc.getElementById("settingsArchive");
     const count = doc.getElementById("settingsArchiveCount");
@@ -313,13 +321,15 @@ live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
     expect(text(box)).not.toContain(rows.archiveEmptyText());
     expect(text(count)).toBe(String(all(box, ".arc-row").length));
     const row = all(box, ".arc-row").find((r) => r.dataset["id"] === panelId);
-    expect(text(row)).toContain("w792-e2e-panel-" + STAMP); // 行文案 = 标题
+    expect(text(row)).toContain("w792-e2e-panel-list-" + STAMP); // 行文案 = 标题
     // 反证：它确实不在缺省列表里 —— 若面板回头改拿缺省列表，上面的断言必然失败
     expect(await listedIds("/api/sessions")).not.toContain(panelId);
     expect(await listedIds("/api/sessions?archived=1")).toContain(panelId);
   });
 
   it("归档面板删除：确认后立即消失（无加载占位），服务端也真的删掉了", async () => {
+    // W839 (R3 B9 / W818-P2-6): own the row instead of borrowing case 1's.
+    const panelId = await createSession("panel-del", true);
     mountDom();
     const box = doc.getElementById("settingsArchive") as El;
     const hint = doc.getElementById("settingsArchiveHint");
@@ -330,7 +340,7 @@ live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
 
     click(all(row as El, ".btn-mini.danger")[0] ?? null); // 「删除」
     await wait(20);
-    expect(text(doc.body.querySelector(".modal-card"))).toContain("w792-e2e-panel-" + STAMP);
+    expect(text(doc.body.querySelector(".modal-card"))).toContain("w792-e2e-panel-del-" + STAMP);
     const beforeCount = Number(text(count)); // 面板计数（别的 worker 也在动归档，别写死数字）
     observedAtRequest = "";
     atRequest = () =>

@@ -70,7 +70,15 @@ try {
 } catch {
   LIVE = false;
 }
-if (!LIVE) console.warn("[W805] 真实服务不可达，端到端用例整体跳过：" + BASE);
+// W839 (R3 B9 / W818-P2-5): LIVE=required (or CELESTEA_E2E_REQUIRED=1) turns an
+// unreachable real service into a hard failure; locally it stays a VISIBLE skip
+// (this banner + vitest's skipped count).
+const LIVE_REQUIRED = process.env["LIVE"] === "required" || process.env["CELESTEA_E2E_REQUIRED"] === "1";
+if (!LIVE) {
+  const banner = "[W805] 真实服务不可达，端到端用例整体 SKIPPED（不是通过）：" + BASE;
+  if (LIVE_REQUIRED) throw new Error(banner);
+  console.warn(banner);
+}
 
 const live = LIVE ? describe : describe.skip;
 const created: string[] = [];
