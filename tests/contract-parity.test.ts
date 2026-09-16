@@ -86,6 +86,11 @@ const MUTATIONS: Array<{ what: string; row: unknown; names: string }> = [
   { what: "tool_result with a boolean error", row: { type: "tool_result", id: "c1", value: null, error: true }, names: "error" },
   { what: "turn_end with an unknown error kind", row: { type: "turn_end", id: "turn-0", outcome: { error: { kind: "timeout", message: "x" } } }, names: "kind" },
   { what: "turn_end with a string outcome typo", row: { type: "turn_end", id: "turn-0", outcome: "failed" }, names: "outcome" },
+  // W834 F07 (R3 batch A): the AttachmentRef shape is now inside the parity guard,
+  // so the codec can no longer accept a bogus reference the frozen schema rejects.
+  { what: "a non-hex attachment_id", row: { type: "user_message", text: "x", attachments: [{ attachment_id: "nothex", media_type: "image/png", width: 1, height: 1 }] }, names: "pattern" },
+  { what: "an attachment width of 0", row: { type: "user_message", text: "x", attachments: [{ attachment_id: "ab".repeat(32), media_type: "image/png", width: 0, height: 1 }] }, names: "minimum" },
+  { what: "a fractional attachment height", row: { type: "user_message", text: "x", attachments: [{ attachment_id: "ab".repeat(32), media_type: "image/png", width: 1, height: 1.5 }] }, names: "integer" },
 ];
 
 describe("W744 · session-event schema EXECUTED against the real event streams", () => {

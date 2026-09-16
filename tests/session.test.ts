@@ -148,3 +148,41 @@ describe("replay analysis", () => {
     expect(frames.map((f) => f.data.seq)).toEqual(frames.map((_f, i) => i));
   });
 });
+
+/**
+ * W834 F07 (R3 batch A): the acceptance probe walks the REAL ingestion path —
+ * `parseSessionJsonl` then `projectMessages`/`deriveMessages` — with the W810
+ * probe reference inside a row. A reference that breaks the frozen AttachmentRef
+ * schema must never become content, let alone a model-visible image block.
+ */
+describe("W834 F07 · a malformed attachment never reaches a projection", () => {
+  const HEX = "ab".repeat(32);
+  // Row 2 carries a valid reference (the control: the fix tightens, never
+  // widens); row 3 is the exact W810 F07 malformed probe.
+  const ATTACH_LOG = [
+    '{"type":"turn_start","id":"turn-0"}',
+    '{"type":"user_message","text":"ok","attachments":[{"attachment_id":"' + HEX + '","media_type":"image/png","width":4,"height":4}]}',
+    '{"type":"user_message","text":"bad","attachments":[{"attachment_id":"nothex","media_type":"image/png","width":-5,"height":0}]}',
+    '{"type":"turn_end","id":"turn-0"}',
+  ].join("\n") + "\n";
+
+  it("stops at the malformed row and carries its reference into no projection", () => {
+    const parsed = parseSessionJsonl(ATTACH_LOG);
+    // The malformed row is a torn tail — never treated as content (api.rs:141-153).
+    expect(parsed.tornTail?.line).toBe(3);
+    expect(parsed.events).toHaveLength(2);
+    const projected = projectMessages(parsed.events);
+    expect(JSON.stringify(projected)).not.toContain("nothex");
+    for (const m of deriveMessages(parsed.events)) {
+      for (const c of m.content) {
+        if (c.type === "image") expect(c.content.attachment_id).not.toBe("nothex");
+      }
+    }
+    // The valid control row still projects its reference byte for byte.
+    expect(projected[0]).toEqual({
+      role: "user",
+      content: "ok",
+      attachments: [{ attachment_id: HEX, media_type: "image/png", width: 4, height: 4 }],
+    });
+  });
+});

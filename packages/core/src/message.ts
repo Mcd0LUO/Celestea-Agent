@@ -234,19 +234,34 @@ export function hasToolCalls(m: Message): boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * The content-addressing id shape frozen by the contract: sha256, lowercase hex.
+ * (contracts/session-event.schema.json $defs.AttachmentRef.attachment_id)
+ */
+const ATTACHMENT_ID_PATTERN = /^[0-9a-f]{64}$/;
+
+/**
  * True when v has the ImageRef shape the event codec and projection accept.
  * name and original are optional and their absence is the normal case.
+ *
+ * W834 F07 (R3 batch A): the checks below mirror the FROZEN AttachmentRef
+ * schema exactly — a 64-lowercase-hex `attachment_id`, and `width`/`height`
+ * that are integers >= 1. The old "string + finite number" test let a
+ * non-hex id or a zero/negative/fractional dimension through the codec, into
+ * the projection and the model-visible history, while the schema rejected it.
  */
 export function isImageRef(v: unknown): v is ImageRef {
   if (typeof v !== "object" || v === null) return false;
   const r = v as Record<string, unknown>;
   return (
     typeof r["attachment_id"] === "string" &&
+    ATTACHMENT_ID_PATTERN.test(r["attachment_id"]) &&
     isImageMediaType(r["media_type"]) &&
     typeof r["width"] === "number" &&
-    Number.isFinite(r["width"]) &&
+    Number.isInteger(r["width"]) &&
+    r["width"] >= 1 &&
     typeof r["height"] === "number" &&
-    Number.isFinite(r["height"]) &&
+    Number.isInteger(r["height"]) &&
+    r["height"] >= 1 &&
     (r["name"] === undefined || typeof r["name"] === "string")
   );
 }

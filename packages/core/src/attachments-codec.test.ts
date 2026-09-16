@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { messageImages, userMessage, type ImageRef } from "./message.js";
+import { isImageRef, messageImages, userMessage, type ImageRef } from "./message.js";
 import { deriveMessagesFrom } from "./projection.js";
 import { parseSessionEvent, serializeSessionEvent } from "./session-event.js";
 import type { SessionEvent } from "./types.js";
@@ -137,5 +137,47 @@ describe("deriveMessagesFrom carries attachments (stage 2, section 4.2A/6.4)", (
     ];
     const tool = deriveMessagesFrom(events).find((m) => m.role === "tool");
     expect(tool?.content.map((c) => c.type)).toEqual(["text"]);
+  });
+});
+
+/**
+ * W834 F07 (R3 batch A): the codec must enforce the FROZEN AttachmentRef schema
+ * (contracts/session-event.schema.json:22-61) — 64 lowercase hex chars and
+ * integer dimensions >= 1 — not merely "string + finite number". The probe is
+ * the codec entry point itself plus the row-level parser that consumes it.
+ */
+describe("AttachmentRef codec matches the frozen schema (W834 F07)", () => {
+  const HEX = "ab".repeat(32);
+  const base = { media_type: "image/png", width: 1, height: 1 };
+
+  it("accepts only 64-lowercase-hex ids and positive integer dimensions", () => {
+    const cases: Array<{ what: string; ref: Record<string, unknown>; ok: boolean }> = [
+      { what: "valid 64-hex id", ref: { ...base, attachment_id: HEX }, ok: true },
+      { what: "non-hex id", ref: { ...base, attachment_id: "nothex" }, ok: false },
+      { what: "uppercase hex id", ref: { ...base, attachment_id: "AB".repeat(32) }, ok: false },
+      { what: "short id", ref: { ...base, attachment_id: "ab".repeat(31) }, ok: false },
+      { what: "zero width", ref: { ...base, attachment_id: HEX, width: 0 }, ok: false },
+      { what: "negative width", ref: { ...base, attachment_id: HEX, width: -5 }, ok: false },
+      { what: "fractional width", ref: { ...base, attachment_id: HEX, width: 1.5 }, ok: false },
+      { what: "zero height", ref: { ...base, attachment_id: HEX, height: 0 }, ok: false },
+      { what: "negative height", ref: { ...base, attachment_id: HEX, height: -1 }, ok: false },
+      { what: "fractional height", ref: { ...base, attachment_id: HEX, height: 2.5 }, ok: false },
+    ];
+    for (const c of cases) expect(isImageRef(c.ref), c.what + ": " + JSON.stringify(c.ref)).toBe(c.ok);
+  });
+
+  it("parseSessionEvent REJECTS a row whose attachment breaks the frozen schema", () => {
+    const malformed = [
+      { attachment_id: "nothex", media_type: "image/png", width: 1, height: 1 },
+      { attachment_id: HEX, media_type: "image/png", width: 0, height: 1 },
+      { attachment_id: HEX, media_type: "image/png", width: 1, height: 1.5 },
+    ];
+    for (const ref of malformed) {
+      const line = JSON.stringify({ type: "user_message", text: "x", attachments: [ref] });
+      expect(parseSessionEvent(line).ok, line).toBe(false);
+    }
+    // ...and a well-formed reference is still accepted (the fix tightens, never widens).
+    const ok = JSON.stringify({ type: "user_message", text: "x", attachments: [{ attachment_id: HEX, media_type: "image/png", width: 2, height: 3 }] });
+    expect(parseSessionEvent(ok).ok).toBe(true);
   });
 });

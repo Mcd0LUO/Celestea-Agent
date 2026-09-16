@@ -189,8 +189,12 @@ export const MAX_ASK_TIMEOUT_MS = 3600000;
 /**
  * Clamp a requested wait into `[1, MAX_ASK_TIMEOUT_MS]`. An absent, non-finite or
  * non-positive request means the default — never "wait forever".
+ *
+ * W834 F06 (R3 batch A): the lower bound is applied AFTER the floor. Flooring
+ * first let a request in (0, 1) — e.g. `timeout_ms: 0.5` — become 0, and
+ * `setTimeout(0)` expired the question before a human could answer it.
  */
 export function askTimeoutMs(requested?: number): number {
   if (requested === undefined || !Number.isFinite(requested) || requested <= 0) return DEFAULT_ASK_TIMEOUT_MS;
-  return Math.min(Math.floor(requested), MAX_ASK_TIMEOUT_MS);
+  return Math.max(1, Math.min(Math.floor(requested), MAX_ASK_TIMEOUT_MS));
 }

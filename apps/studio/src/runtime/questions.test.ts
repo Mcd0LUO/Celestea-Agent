@@ -203,6 +203,23 @@ describe("W783 · the maximum wait (§6)", () => {
     expect(list.questions[0]?.["timeout_ms"]).toBe(1500);
     await waitIdleOf(h, 10_000);
   }, 20_000);
+
+  it("clamps a sub-millisecond timeout_ms to 1ms at the real caller (W834 F06)", async () => {
+    // The acceptance probe for F06: the request goes through the REAL service
+    // (`user-questions.ts:144` calls `askTimeoutMs`), so a 0.5 request must park
+    // with a 1ms resolved wait and a deadline of now+1 — not an immediate 0ms.
+    const registry = createQuestionRegistry();
+    const now = 1_000_000;
+    const service = createUserQuestionService({ registry, bus: createEventBus(), sessionId: "sample-ws/s1", now: () => now });
+    const asked = service.ask({ questions: OPTIONS, timeoutMs: 0.5 });
+    const question = service.pending()[0];
+    expect(question).toBeDefined();
+    expect(question?.timeoutMs).toBe(1);
+    expect(question?.expiresAt).toBe(now + 1);
+    expect(question?.expiresAt).toBeGreaterThanOrEqual(now + 1);
+    question?.answer([{ id: "mode", selected: ["方案 A（推荐）"] }]);
+    await expect(asked).resolves.toEqual({ answers: [{ id: "mode", selected: ["方案 A（推荐）"] }], timed_out: false });
+  });
 });
 
 describe("W783 · validation and the sub-agent guard", () => {
