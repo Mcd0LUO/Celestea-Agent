@@ -115,8 +115,8 @@
     },
     {
       "path": "sessions/scratch-cancel-e2e-1788971355.259970577/derive-messages-expected.json",
-      "bytes": 737,
-      "sha256": "48e7fafd7547fad63f9305d0a87d4782b85190a54878acca6f12575676f2719b"
+      "bytes": 1333,
+      "sha256": "5b7067f9550b0e45ef4a4a601331e560476dfafbad1d16db55a392c46640d6f5"
     },
     {
       "path": "sessions/scratch-cancel-e2e-1788971355.259970577/sse-transcript-derived.jsonl",
@@ -125,8 +125,8 @@
     },
     {
       "path": "sessions/scratch-cancel-e2e-1788971355.259970577/meta.json",
-      "bytes": 1786,
-      "sha256": "362c6b37090d374d2ab0e69ca63394c5b68cbc39e12d489ebee334db7b8aefb4"
+      "bytes": 2783,
+      "sha256": "28689927d9aac4ec3e6525a6285154712e25ebb054daf8c9f82c7cfb64bac21c"
     },
     {
       "path": "sessions/scratch-timeout-1788962615.856629520/cli-main.jsonl",
@@ -140,8 +140,8 @@
     },
     {
       "path": "sessions/scratch-timeout-1788962615.856629520/derive-messages-expected.json",
-      "bytes": 236,
-      "sha256": "391e55a15c2c403e80ac6099dce5294c7ebc0828e6b2025ca6e1e271c5f6752b"
+      "bytes": 674,
+      "sha256": "5c6054aa9f0d57043e51bc3fa9ffab54cdceff1abe1765693a1a152ac8d8f991"
     },
     {
       "path": "sessions/scratch-timeout-1788962615.856629520/sse-transcript-derived.jsonl",
@@ -150,73 +150,73 @@
     },
     {
       "path": "sessions/scratch-timeout-1788962615.856629520/meta.json",
-      "bytes": 1765,
-      "sha256": "8f4f9c2ff431b5408c92d38b038c079dfdd7a00c494b2eded11da03528cb7c28"
+      "bytes": 2761,
+      "sha256": "b6c74520ffb74f5a9b78d4a0fb1d3da8ee73906a0752e7e14e70f9a81a32c277"
     },
     {
       "path": "sessions/test-1788787479.196315272/cli-main.jsonl",
-      "bytes": 20591,
-      "sha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0"
+      "bytes": 20603,
+      "sha256": "deeb95769169e3e5d40a7713162adef504efc485adff1426c43acec11c61a85d"
     },
     {
       "path": "sessions/test-1788787479.196315272/messages-expected.json",
-      "bytes": 24765,
-      "sha256": "423c89813869b8c2acf943cc0298a57fd1b5d6fac88d13e46362c0ab8196a126"
+      "bytes": 24777,
+      "sha256": "489bba7bc24b1862e9db481426bbd37d74bdbea230ff01b4a76aba5eb2e3ee44"
     },
     {
       "path": "sessions/test-1788787479.196315272/derive-messages-expected.json",
-      "bytes": 15914,
-      "sha256": "898979edf22b48924c3721fb663a0e3a1a319d7535ebd63226db8725c0b3f97e"
+      "bytes": 17527,
+      "sha256": "b9b7c8908c91018359c5a5f28746208e84df02f9b3320949b67a680175e3ebe2"
     },
     {
       "path": "sessions/test-1788787479.196315272/sse-transcript-derived.jsonl",
-      "bytes": 17051,
-      "sha256": "a1b4c8b19059ac679c1f0632148d2a6c7ec67f9852e8fcfa561c701bacc08361"
+      "bytes": 17063,
+      "sha256": "ede15529582fcb3ef46f31fe2598fb41683764fcedeefe6a5b49cd78d166cf8e"
     },
     {
       "path": "sessions/test-1788787479.196315272/meta.json",
-      "bytes": 1984,
-      "sha256": "f4a31a70e858a5381ad4c8a16bc626889c0332166389ab0265edaf0a305aa324"
+      "bytes": 2980,
+      "sha256": "831a230281e2ecd70a89c01ecc19502937a476132207ad12ea2f3b241c042cd5"
     },
     {
       "path": "sessions/harness架构哥-1788933931.279221103/cli-main.jsonl",
-      "bytes": 1041745,
-      "sha256": "eff6eab2ea5816beac444f02e9e963acb21fe3ceb1a958ab59a88e0b917067ad"
+      "bytes": 1041973,
+      "sha256": "a5efc7fb7cfcb7ee0e7b053c0980f42855f8815e2126f4ef64da7e400064a666"
     },
     {
       "path": "sessions/harness架构哥-1788933931.279221103/messages-expected.json",
-      "bytes": 1099719,
-      "sha256": "42ab2c1caf72f7f346062210c9caa7899f9775505fe72ca070caad71ef2d28ed"
+      "bytes": 1099947,
+      "sha256": "08889a5fd50745dcb133eb05c1afafa962c1299019bd65fd663dc3ea48acac6c"
     },
     {
       "path": "sessions/harness架构哥-1788933931.279221103/derive-messages-expected.json",
-      "bytes": 684915,
-      "sha256": "68c8bc9210c9e2220775be3fa4198f0546baf672ca64e0b631c0914cb684ad01"
+      "bytes": 711183,
+      "sha256": "97811bf4b4e01c66392d206a83e202a61126f3f7262a816077847ad2282c2980"
     },
     {
       "path": "sessions/harness架构哥-1788933931.279221103/meta.json",
-      "bytes": 2588,
-      "sha256": "738de634fe7d082f89faecc9f65cb14faa8bdb20ebfab4bc51262465a07e0370"
+      "bytes": 3584,
+      "sha256": "86e9c6c53b296933a92c778938094ff4692f8ae9bf4dfe1f802fc480579a66f1"
     },
     {
       "path": "sessions/center-架构师-1788940601.93642104/cli-main.jsonl",
-      "bytes": 1748650,
-      "sha256": "84ab09aa53c2852bbb27396d555590333939871aa6243349a3d0eb9fd4f98966"
+      "bytes": 1748688,
+      "sha256": "4f0bc465ab8dfda076c643062a69604182d91f0b4ce899014c09f02ed20b48a4"
     },
     {
       "path": "sessions/center-架构师-1788940601.93642104/messages-expected.json",
-      "bytes": 1862090,
-      "sha256": "53853edc6ce9dd76d4e5936f066adde65a07d6926f53391a7fb6eb8f066289d4"
+      "bytes": 1862128,
+      "sha256": "084704ea2788509de4b793e4d2675a886c8e4aad750b8360e8a1dcf668bbf2d6"
     },
     {
       "path": "sessions/center-架构师-1788940601.93642104/derive-messages-expected.json",
-      "bytes": 924605,
-      "sha256": "24b8f5fe0603a739ad483752d52b5bf98c48b1431c363cf0d74d29ea090e387b"
+      "bytes": 952191,
+      "sha256": "651c83f54ba9fd698fde777e7b47f4a70c84927ffbfe7dbf9ca81fa720959d48"
     },
     {
       "path": "sessions/center-架构师-1788940601.93642104/meta.json",
-      "bytes": 1793,
-      "sha256": "eb142750d25af8af9f5a81550d3abbe314ba63e6550ee3def1ca6a1b848756ec"
+      "bytes": 2789,
+      "sha256": "e4cca5a2338cceb92474177d4811b12d38749176c10bab192cd8d4f31aea4c91"
     },
     {
       "path": "sse/live-capture.raw.txt",
@@ -225,8 +225,8 @@
     },
     {
       "path": "sse/live-capture.json",
-      "bytes": 651,
-      "sha256": "ea4dfa8abc77459a77cae9f3e2001339cfe98778a0c89b7cbeb3be870f038408"
+      "bytes": 662,
+      "sha256": "714247c8a69fe294695db0577f728114cac6d4f13b676a56b468ec3a187c6470"
     },
     {
       "path": "workers/registry.tsv",
@@ -303,5 +303,21 @@
       "bytes": 626,
       "sha256": "6d1a690397749de2e0a750fec45d3630d9a4bd811bde8d117dd44bcb7e994b9b"
     }
-  ]
+  ],
+  "normalization": {
+    "by": "W797 repo-wide retired-engine vocabulary purge",
+    "sessions": [
+      "center-架构师-1788940601.93642104",
+      "harness架构哥-1788933931.279221103",
+      "scratch-cancel-e2e-1788971355.259970577",
+      "scratch-timeout-1788962615.856629520",
+      "test-1788787479.196315272"
+    ],
+    "sessionsUntouched": [
+      "roles",
+      "events",
+      "turns",
+      "messages"
+    ]
+  }
 }

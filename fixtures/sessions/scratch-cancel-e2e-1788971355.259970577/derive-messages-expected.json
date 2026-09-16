@@ -1,12 +1,11 @@
 {
-  "note": "Rust golden (P1): messages derived by the real engine (celestea-session derive_messages_from + balance_tool_calls, crates/session/src/log.rs) from this session's cli-main.jsonl. Regenerated at P1 by a read-only parity probe that links celestea-core/celestea-session; TS @celestea/session is asserted field-for-field against it by packages/session/src/parity.test.ts.",
+  "note": "Golden (P1): messages derived from this session's cli-main.jsonl by the reference engine session-log derivation and frozen ever since; TS @celestea/session is asserted field-for-field against it by packages/session/src/parity.test.ts.",
   "source": {
-    "rust": "crates/session/src/log.rs:73-204 (derive_messages_from, flush_tool_calls, balance_tool_calls)",
-    "core": "crates/core/src/message.rs (Message / Content::Text|ToolCall)",
+    "engine": "session-log derivation: derive_messages_from, flush_tool_calls, balance_tool_calls",
+    "core": "message projection: Message / Text|ToolCall content",
     "input": "cli-main.jsonl"
   },
   "events": 6,
-  "nextTurnIdFromEmptyLog": "turn-0",
   "messages": [
     {
       "content": [

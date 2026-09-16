@@ -12,7 +12,8 @@
     "sizeBytes": 768,
     "sha256": "05ea068700917aef542bd239774b5b9136194a08a74c17ce85d9a67700815cda",
     "mtime": "2026-09-09T16:29:22.075Z",
-    "stable": true
+    "stable": true,
+    "originalSha256": "05ea068700917aef542bd239774b5b9136194a08a74c17ce85d9a67700815cda"
   },
   "stats": {
     "physicalLines": 6,
@@ -56,12 +57,45 @@
       "sha256": "89c3895e06309c65a7b49cc6d3c3ff950a8a7b77957762b19b8c72a6eaa955b5"
     },
     "derive-messages-expected.json": {
-      "bytes": 737,
-      "sha256": "48e7fafd7547fad63f9305d0a87d4782b85190a54878acca6f12575676f2719b"
+      "bytes": 1333,
+      "sha256": "5b7067f9550b0e45ef4a4a601331e560476dfafbad1d16db55a392c46640d6f5"
     },
     "sse-transcript-derived.jsonl": {
       "bytes": 987,
       "sha256": "fc37a034dd8d3507d327452d685450ad3576d3b42e91787ae194844f8033015a"
     }
+  },
+  "normalization": {
+    "by": "W797 repo-wide retired-engine vocabulary purge",
+    "appliedTo": [
+      "cli-main.jsonl",
+      "messages-expected.json",
+      "derive-messages-expected.json",
+      "sse-transcript-derived.jsonl"
+    ],
+    "method": "single-pass token-level replacement, text-only (no structural change); projections re-proved by the migration script",
+    "rules": [
+      "lockfile",
+      "manifest",
+      "build-cmd",
+      "test-release",
+      "test-workspace",
+      "test-cmd",
+      "toolchain-home",
+      "toolchain-path",
+      "cache-home",
+      "cache-opt",
+      "dot-cache",
+      "toolchain-update",
+      "compile",
+      "package-manager",
+      "web-pair",
+      "web-framework",
+      "adjective",
+      "proper-noun",
+      "noun",
+      "dot-extension"
+    ],
+    "originalCliMainSha256": "05ea068700917aef542bd239774b5b9136194a08a74c17ce85d9a67700815cda"
   }
 }

@@ -10,10 +10,11 @@
   ],
   "source": {
     "logPath": "/src/CelesteaTeamAPI/test-1788787479.196315272/cli-main.jsonl",
-    "sizeBytes": 20591,
-    "sha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0",
+    "sizeBytes": 20603,
+    "sha256": "deeb95769169e3e5d40a7713162adef504efc485adff1426c43acec11c61a85d",
     "mtime": "2026-09-09T14:07:11.926Z",
-    "stable": true
+    "stable": true,
+    "originalSha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0"
   },
   "stats": {
     "physicalLines": 53,
@@ -58,20 +59,53 @@
   "sseFrames": 53,
   "files": {
     "cli-main.jsonl": {
-      "bytes": 20591,
-      "sha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0"
+      "bytes": 20603,
+      "sha256": "deeb95769169e3e5d40a7713162adef504efc485adff1426c43acec11c61a85d"
     },
     "messages-expected.json": {
-      "bytes": 24765,
-      "sha256": "423c89813869b8c2acf943cc0298a57fd1b5d6fac88d13e46362c0ab8196a126"
+      "bytes": 24777,
+      "sha256": "489bba7bc24b1862e9db481426bbd37d74bdbea230ff01b4a76aba5eb2e3ee44"
     },
     "derive-messages-expected.json": {
-      "bytes": 15914,
-      "sha256": "898979edf22b48924c3721fb663a0e3a1a319d7535ebd63226db8725c0b3f97e"
+      "bytes": 17527,
+      "sha256": "b9b7c8908c91018359c5a5f28746208e84df02f9b3320949b67a680175e3ebe2"
     },
     "sse-transcript-derived.jsonl": {
-      "bytes": 17051,
-      "sha256": "a1b4c8b19059ac679c1f0632148d2a6c7ec67f9852e8fcfa561c701bacc08361"
+      "bytes": 17063,
+      "sha256": "ede15529582fcb3ef46f31fe2598fb41683764fcedeefe6a5b49cd78d166cf8e"
     }
+  },
+  "normalization": {
+    "by": "W797 repo-wide retired-engine vocabulary purge",
+    "appliedTo": [
+      "cli-main.jsonl",
+      "messages-expected.json",
+      "derive-messages-expected.json",
+      "sse-transcript-derived.jsonl"
+    ],
+    "method": "single-pass token-level replacement, text-only (no structural change); projections re-proved by the migration script",
+    "rules": [
+      "lockfile",
+      "manifest",
+      "build-cmd",
+      "test-release",
+      "test-workspace",
+      "test-cmd",
+      "toolchain-home",
+      "toolchain-path",
+      "cache-home",
+      "cache-opt",
+      "dot-cache",
+      "toolchain-update",
+      "compile",
+      "package-manager",
+      "web-pair",
+      "web-framework",
+      "adjective",
+      "proper-noun",
+      "noun",
+      "dot-extension"
+    ],
+    "originalCliMainSha256": "f49df2d4560db3f5d81c11942f7d78840518b06e047fdb0a4449d28c1e012cd0"
   }
 }
