@@ -63,7 +63,14 @@ export interface SessionReleaseDeps {
 export async function releaseSessionOf(deps: SessionReleaseDeps, session: string | null): Promise<boolean> {
   if (session === null) return false;
   const entry = deps.registry.peek(session);
-  if (entry === null) return false;
+  if (entry === null) {
+    // W833 (R3 B7 / W816 F2): "no live instance" does NOT mean "no loop". An
+    // idle-evicted session keeps its autowake loop parked against a generation
+    // that can never return; deleting/archiving it must forget the loop here or
+    // it logs "no live generation to bind" and burns a timer forever.
+    await deps.forget(session);
+    return false;
+  }
   if (entry.inFlight) {
     deps.cancel(session);
     await awaitSettled(entry, deps.settleMs);

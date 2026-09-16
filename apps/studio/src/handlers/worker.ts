@@ -9,7 +9,7 @@
 
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
-import { failJson, readJsonBody, strField, type Deps } from "./common.js";
+import { failJson, readJsonBody, strField, storeFail, type Deps } from "./common.js";
 
 function registerSpawn(app: Hono, deps: Deps, table: RouteTable): string {
   const route = table.get("post_worker_spawn");
@@ -25,6 +25,14 @@ function registerSpawn(app: Hono, deps: Deps, table: RouteTable): string {
     for (const f of [wid, brief, title, model, reportTo, session]) if (!f.ok) return f.response;
     if ((wid.ok ? wid.value : undefined) === undefined || (brief.ok ? brief.value : undefined) === undefined) {
       return failJson(c, 422, "fields 'wid' and 'brief' are required");
+    }
+    // W833 (R3 B7 / W816 F3): an explicit session must RESOLVE before a worker
+    // is composed against it. Passing an unknown id used to compose an in-memory
+    // ghost instance (live slot + autowake loop + worker row) whose receipt no
+    // one could ever receive. Omitted/empty session keeps the detached default.
+    if (session.ok && typeof session.value === "string" && session.value !== "") {
+      const resolved = deps.sessions.require(session.value);
+      if (!resolved.ok) return storeFail(c, resolved);
     }
     const out = await deps.runtime.workerSpawn({
       wid: wid.ok ? (wid.value as string) : "",

@@ -85,10 +85,12 @@ describe("W794 releaseSessionOf", () => {
     expect(stuck.calls).toEqual(["cancel", "forget", "release"]);
   });
 
-  it("no instance / the detached default: nothing is cancelled or released", async () => {
+  it("no instance: the autowake loop is still forgotten; the detached default is untouched", async () => {
+    // W833 (R3 B7 / W816 F2): peek()===null means "no live instance", NOT "no
+    // loop" — an idle-evicted session still has an autowake loop to unpark.
     const none = make({ session: null });
     expect(await releaseSessionOf(none.deps, "ws/s1")).toBe(false);
-    expect(none.calls).toEqual([]);
+    expect(none.calls).toEqual(["forget"]);
     const def = make({ session: entry(true) });
     expect(await releaseSessionOf(def.deps, null)).toBe(false);
     expect(def.calls).toEqual([]);

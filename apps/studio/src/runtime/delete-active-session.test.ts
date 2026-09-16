@@ -20,7 +20,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseSessionJsonl } from "@celestea/session";
 import type { SessionEvent, TurnOutcome } from "@celestea/core";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
@@ -263,4 +263,39 @@ describe("W794 归档活动会话", () => {
     sub.close();
     await done;
   });
+});
+
+describe("W833 B7/F2: 删除已被 idle 回收的会话", () => {
+  it("无 live 实例时也 forget autowake 循环（不再出现 no live generation 日志）", async () => {
+    const h = make({ sessions: { s1: turns(1) }, env: { CELESTEA_SESSION_IDLE_TTL_MS: "1" } });
+    await activate(h, S1);
+    expect(engineOf(h).autowakeLoops()).toBe(2); // 默认代 + s1
+
+    // 等真实 reclaimer 把实例回收掉：目录还在，实例没了，循环却还挂着。
+    const deadline = Date.now() + 8_000;
+    while (engineOf(h).liveSessions().includes(S1)) {
+      if (Date.now() > deadline) throw new Error("idle eviction did not happen");
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(engineOf(h).autowakeLoops()).toBe(2); // 缺陷：实例没了循环还在
+
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: unknown): boolean => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      const del = await getJson(h.app, "/api/sessions/batch-delete", jsonRequest("POST", { ids: [S1] }));
+      expect(del.status).toBe(200);
+      expect(del.body).toEqual({ ok: true, deleted: 1, failed: [] });
+      // 修复点：循环被 forget 掉。
+      expect(engineOf(h).autowakeLoops()).toBe(1);
+      await new Promise((r) => setTimeout(r, 600)); // 让在飞的 pass 落定
+      writes.length = 0;
+      await new Promise((r) => setTimeout(r, 700)); // 一个完整的 retry 周期
+    } finally {
+      spy.mockRestore();
+    }
+    expect(writes.filter((line) => line.includes("no live generation to bind"))).toEqual([]);
+  }, 20_000);
 });

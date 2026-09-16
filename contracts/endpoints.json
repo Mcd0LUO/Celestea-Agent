@@ -2495,6 +2495,11 @@
             "name": "report_to",
             "type": "string",
             "required": false
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": false
           }
         ]
       },
@@ -2532,10 +2537,14 @@
         {
           "status": 500,
           "error": "tool returned no value"
+        },
+        {
+          "status": 404,
+          "error": "unknown session '<id>'"
         }
       ],
       "notes": [
-        "Tool-contract failures ({ok:false}) still return 200; only hard failures are 5xx. report_to=cli-main wakes the host autowake loop."
+        "Tool-contract failures ({ok:false}) still return 200; only hard failures are 5xx. report_to=cli-main wakes the host autowake loop. W833: an explicit session must resolve or the spawn is refused with 404 (no ghost instance is composed)."
       ],
       "probe": {
         "checked": false,
