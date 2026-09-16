@@ -103,7 +103,19 @@ export type StreamEvent =
  * loosening core's `ModelRequest`, which `apps/studio` reads as a fully-filled
  * shape) is what makes the shared seam strict and the provider usable.
  */
-export type ModelRequestDraft = Partial<ModelRequest> & { messages: Message[] };
+export type ModelRequestDraft = Partial<ModelRequest> & {
+  messages: Message[];
+  /**
+   * W804: the REQUEST-scoped image resolution table (attachment_id -> data URL)
+   * the host fills before the wire mapper runs. It is not part of core's
+   * `ModelRequest` (the log never carries bytes); the wire layer reads it and
+   * emits an OpenAI content array. Absent = no image table.
+   */
+  images?: ResolvedImages;
+};
+
+/** attachment_id -> data URL, resolved for ONE request. */
+export type ResolvedImages = Readonly<Record<string, string>>;
 
 /** The streamed turn: an async iterable of events. */
 export type LlmStream = AsyncIterable<StreamEvent>;

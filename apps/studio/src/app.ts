@@ -155,6 +155,17 @@ export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
       // execution session in the same process get their own system prompt.
       sessionMode: (id) => sessionMetaAt(stores, id)?.mode ?? null,
       sessionSystemPrompt: (id) => sessionPromptAt(input.host, id),
+      // W804: the OPTIMISTIC per-model modality gate. null = the model is not
+      // configured anywhere => allow image input (the section 7.6 downgrade is
+      // the fallback for a wrong guess); a configured row without "image" is the
+      // only thing that disables the read_image gate.
+      modelInputModalities: (modelId) => {
+        for (const provider of stores.providers.rows()) {
+          const model = provider.models.find((m) => m.id === modelId);
+          if (model !== undefined) return model.input_modalities ?? null;
+        }
+        return null;
+      },
     });
   };
 }

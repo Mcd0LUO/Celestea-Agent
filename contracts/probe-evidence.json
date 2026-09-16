@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-16T04:27:16.371Z",
-  "studio": "http://127.0.0.1:3777",
+  "generatedAt": "2026-09-16T06:20:11.193Z",
+  "studio": "http://127.0.0.1:3799",
   "policy": "read-only: GET probes + error branches proven mutation-free in the retired backend source",
   "counts": {
     "checks": 28,
@@ -9,7 +9,7 @@
     "degraded": 0,
     "endpointsSampled": 22,
     "sseEvents": 9,
-    "tools": 11
+    "tools": 12
   },
   "verdict": "consistent",
   "checks": [
@@ -29,7 +29,7 @@
       "endpoint": "contracts/tools.json",
       "kind": "contract-count",
       "status": "pass",
-      "detail": "11 tool specs (contract declares 11)"
+      "detail": "12 tool specs (contract declares 12)"
     },
     {
       "endpoint": "GET /api/health",
@@ -205,14 +205,14 @@
       "endpoint": "GET /api/tools?session=...(standard)",
       "kind": "tool-set",
       "status": "pass",
-      "detail": "session=server-center/center-架构师-1788940601.93642104 (mode=standard); 11 names match contracts/tools.json exactly (full registry)",
+      "detail": "session=ws/std (mode=standard); 12 names match contracts/tools.json exactly (full registry)",
       "observedStatus": 200
     },
     {
       "endpoint": "GET /api/tools?session=...(execution)",
       "kind": "tool-set",
       "status": "pass",
-      "detail": "session=CelesteaTeamAPI/中转哥-1789192958.416000000 (mode=execution); live=[http_request,process_control,run_code,session_send_message,spawn_worker,worker_status] folded-out=[ask_user_question,list_dir,read_file,run_shell,write_file]; exactly 6: the full registry folded by the four SDK bridge tools + ask_user_question",
+      "detail": "session=ws/exec (mode=execution); live=[http_request,process_control,run_code,session_send_message,spawn_worker,worker_status] folded-out=[ask_user_question,list_dir,read_file,read_image,run_shell,write_file]; exactly 6 kept: the full registry folded out the four SDK bridge tools + ask_user_question + read_image",
       "observedStatus": 200
     }
   ]

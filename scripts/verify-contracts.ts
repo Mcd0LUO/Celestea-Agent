@@ -52,8 +52,9 @@ function degraded(endpoint: string, kind: Check["kind"], detail: string, observe
  * the full registry (11). So name the session explicitly, one probe per face:
  *   - mode=standard  -> MUST equal the full registry exactly (11 names);
  *   - mode=execution -> MUST be the documented fold: exactly 6, a subset of the
- *     registry, folding out the four SDK bridge tools + ask_user_question
- *     (contracts/endpoints.json#get_tools, W791 P1).
+ *     registry, folding out every tool outside EXECUTION_TOOL_NAMES: the four
+ *     SDK bridge tools + ask_user_question + (W804) read_image
+ *     (contracts/endpoints.json#get_tools, W791 P1; W804 added read_image).
  */
 async function probeToolFaces(
   sessions: Array<{ id: string; mode?: string }>,
@@ -62,7 +63,9 @@ async function probeToolFaces(
   const standardSession = sessions.find((s) => s.mode === "standard");
   const executionSession = sessions.find((s) => s.mode === "execution");
   const contractSet = new Set(contractNames);
-  const EXPECTED_FOLDED = ["ask_user_question", "list_dir", "read_file", "run_shell", "write_file"].sort();
+  // W804: read_image is mounted (the session has an attachment store) but is NOT
+  // in EXECUTION_TOOL_NAMES, so execution mode folds it out too.
+  const EXPECTED_FOLDED = ["ask_user_question", "list_dir", "read_file", "read_image", "run_shell", "write_file"].sort();
 
   async function toolNamesFor(sessionId: string): Promise<{ names: string[]; status: number }> {
     const res = await probe(STUDIO, "/api/tools?session=" + encodeURIComponent(sessionId), { timeoutMs: TIMEOUT });
@@ -111,7 +114,7 @@ async function probeToolFaces(
     if (!sameNames(folded, EXPECTED_FOLDED)) problems.push("folded-out=[" + folded.join(",") + "] expected=[" + EXPECTED_FOLDED.join(",") + "]");
     const base = "session=" + executionSession.id + " (mode=execution); live=[" + r.names.join(",") + "] folded-out=[" + folded.join(",") + "]";
     if (problems.length === 0) {
-      pass(EXECUTION_LABEL, "tool-set", base + "; exactly 6: the full registry folded by the four SDK bridge tools + ask_user_question", r.status);
+      pass(EXECUTION_LABEL, "tool-set", base + "; exactly 6 kept: the full registry folded out the four SDK bridge tools + ask_user_question + read_image", r.status);
     } else {
       fail(EXECUTION_LABEL, "tool-set", base + "; " + problems.join("; "), r.status);
     }

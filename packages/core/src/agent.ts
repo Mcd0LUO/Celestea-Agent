@@ -7,6 +7,7 @@
  */
 
 import type { Context } from "./context.js";
+import type { ImageRef } from "./message.js";
 import type { ModelRequest } from "./stream.js";
 
 export interface AgentConfig {
@@ -43,8 +44,14 @@ export class AgentError extends Error {
 }
 
 export interface AgentLoop {
-  /** Drive one user turn; rejects with [AgentError] on a terminal failure. */
-  runTurn(ctx: Context, userInput: string): Promise<void>;
+  /**
+   * Drive one user turn; rejects with [AgentError] on a terminal failure.
+   *
+   * W804: `attachments` are content-addressed image references for THIS
+   * turn's user message. The loop writes them onto the `user_message` row; the
+   * bytes never enter the log. Omitted/empty => the pre-W804 row byte for byte.
+   */
+  runTurn(ctx: Context, userInput: string, attachments?: readonly ImageRef[]): Promise<void>;
 }
 
 /**

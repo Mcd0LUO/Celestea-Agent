@@ -56,7 +56,9 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       // mode is OBSERVABLE in the tool face (`GET /api/tools?session=`) and that
       // the mode switch endpoint exists — a legacy-backend client that sees only
       // `session_mode` must not call `POST /api/sessions/{id}/mode` (TS-only).
-      capabilities: { grants: true, context: true, session_mode: true, session_mode_tools: true },
+      // W804 (multimodal P0 section 7.1): PURE ADDITION — a client that does not
+      // see exactly true degrades to "no attachment entry points".
+      capabilities: { grants: true, context: true, session_mode: true, session_mode_tools: true, multimodal: true },
     }),
   );
 

@@ -33,7 +33,7 @@
  * `createStudioApp({ runtime })` — no handler changes, no route changes.
  */
 
-import type { AskUserQuestionAnswerItem, AskUserQuestionItem, InjectionPlacement, Statusline } from "@celestea/core";
+import type { AskUserQuestionAnswerItem, AskUserQuestionItem, ImageRef, InjectionPlacement, Statusline } from "@celestea/core";
 /**
  * W737: the busy-slot error is part of the ENGINE contract, so it has exactly
  * one definition — `packages/runtime/src/errors.ts`. It is imported (never
@@ -152,6 +152,11 @@ export interface TurnRequest {
   input: string;
   /** Active session id, or null when nothing is activated. */
   session: string | null;
+  /**
+   * W804: content-addressed image references for THIS turn's user message
+   * (already stored by the host). Omitted = the pre-W804 request byte for byte.
+   */
+  attachments?: readonly ImageRef[];
 }
 
 export interface TurnStart {

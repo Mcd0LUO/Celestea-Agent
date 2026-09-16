@@ -49,7 +49,7 @@ describe("apps/studio contract surface", () => {
     // `session_mode_tools` (P1) additionally promises the mode is observable in
     // the tool face and that the TS-only switch endpoint is there.
     expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "capabilities", "model", "name", "ok"]);
-    expect(health["capabilities"]).toEqual({ grants: true, context: true, session_mode: true, session_mode_tools: true });
+    expect(health["capabilities"]).toEqual({ grants: true, context: true, session_mode: true, session_mode_tools: true, multimodal: true });
     const status = (await (await app.request("/api/status")).json()) as Record<string, unknown>;
     // W785: capability 4 always adds `effective_model` + `fallback`; capability
     // 3's `cost` key only exists when the adapter HAS a ledger (this harness runs
@@ -74,8 +74,8 @@ describe("apps/studio contract surface", () => {
     expect(status["mode"]).toBe("standard");
     const tools = (await (await app.request("/api/tools")).json()) as { tools: unknown[] };
     expect(Array.isArray(tools.tools)).toBe(true);
-    // W783: 10 -> 11 (`ask_user_question`).
-    expect(loadTools().tools).toHaveLength(11);
+    // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`).
+    expect(loadTools().tools).toHaveLength(12);
   });
 
   it("404s unknown /api/* paths with the JSON envelope (never the SPA)", async () => {

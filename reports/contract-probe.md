@@ -1,7 +1,7 @@
 # Contract probe evidence (live :3777, read-only)
 
-- generated: 2026-09-16T04:27:16.371Z
-- target: http://127.0.0.1:3777
+- generated: 2026-09-16T06:20:11.193Z
+- target: http://127.0.0.1:3799
 - policy: read-only: GET probes + error branches proven mutation-free in the retired backend source
 
 ## Verdict
@@ -14,7 +14,7 @@
 | degraded | 0 |
 | **endpoints sampled** | **22** |
 | SSE event names frozen | 9 |
-| tool specs | 11 |
+| tool specs | 12 |
 | verdict | consistent |
 
 ## Checks
@@ -23,7 +23,7 @@
 |---|---|---|---|---|
 | contracts/endpoints.json | contract-count | pass | - | 51 endpoints (contract declares 51) |
 | contracts/sse-events.json | contract-count | pass | - | 9 SSE events (contract declares 9) |
-| contracts/tools.json | contract-count | pass | - | 11 tool specs (contract declares 11) |
+| contracts/tools.json | contract-count | pass | - | 12 tool specs (contract declares 12) |
 | GET /api/health | response-shape | pass | 200 | HTTP 200; 6 key(s) |
 | GET /api/status | response-shape | pass | 200 | HTTP 200; 14 key(s); additive (not in contract doc): busy, effective_model, fallback, grants_active |
 | GET /api/tools | response-shape | pass | 200 | HTTP 200; 1 key(s) |
@@ -47,8 +47,8 @@
 | GET /api/fs/browse?path=relative-not-absolute | error-branch | pass | 400 | HTTP 400 + "must be absolute" |
 | GET /api/worker/status?wid=__p0_probe_missing__ | error-branch | pass | 200 | HTTP 200 + "no worker" |
 | GET /api/events | sse-transport | pass | 200 | content-type=text/event-stream; envelope + 9 event names frozen from source (passive connect, no turn running) |
-| GET /api/tools?session=...(standard) | tool-set | pass | 200 | session=server-center/center-架构师-1788940601.93642104 (mode=standard); 11 names match contracts/tools.json exactly (full registry) |
-| GET /api/tools?session=...(execution) | tool-set | pass | 200 | session=CelesteaTeamAPI/中转哥-1789192958.416000000 (mode=execution); live=[http_request,process_control,run_code,session_send_message,spawn_worker,worker_status] folded-out=[ask_user_question,list_dir,read_file,run_shell,write_file]; exactly 6: the full registry folded by the four SDK bridge tools + ask_user_question |
+| GET /api/tools?session=...(standard) | tool-set | pass | 200 | session=ws/std (mode=standard); 12 names match contracts/tools.json exactly (full registry) |
+| GET /api/tools?session=...(execution) | tool-set | pass | 200 | session=ws/exec (mode=execution); live=[http_request,process_control,run_code,session_send_message,spawn_worker,worker_status] folded-out=[ask_user_question,list_dir,read_file,read_image,run_shell,write_file]; exactly 6 kept: the full registry folded out the four SDK bridge tools + ask_user_question + read_image |
 
 ## Mutation safety of the error-branch probes
 

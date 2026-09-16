@@ -31,7 +31,20 @@ export interface ContextFallback {
 
 /** One message's content blocks as a single display string. */
 export function renderContent(content: readonly Content[]): string {
-  return content.map((block) => (block.type === "text" ? block.content : callText(block.content))).join("\n");
+  return content
+    .map((block) => {
+      // W804: an image block is NOT a tool call; render it as a byte-free label.
+      if (block.type === "text") return block.content;
+      if (block.type === "image") return imageText(block.content);
+      return callText(block.content);
+    })
+    .join("\n");
+}
+
+/** W804: e.g. `[image] logo.png image/png 512x512 (attachment <sha>)`. */
+export function imageText(ref: { attachment_id: string; media_type: string; width: number; height: number; name?: string }): string {
+  const label = ref.name === undefined ? "" : ` ${ref.name}`;
+  return `[image]${label} ${ref.media_type} ${ref.width}x${ref.height} (attachment ${ref.attachment_id})`;
 }
 
 /** `Message[]` -> one view row each, resolving tool names in message order. */

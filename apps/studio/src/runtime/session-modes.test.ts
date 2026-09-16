@@ -122,8 +122,10 @@ describe("W729 per-session mode prompts (real engine, one process)", () => {
     await activate(h, "sample-ws/std");
     await activate(h, "sample-ws/exec");
     const faceOf = (id: string): string[] => h.runtime.sessionContext(id).tools.map((t) => t.name).sort();
-    // W783: 10 -> 11 (ask_user_question); W791: execution = the 6 kept names.
-    expect(faceOf("sample-ws/std")).toEqual(["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"]);
+    // W783: 10 -> 11 (ask_user_question); W804: 11 -> 12 (read_image, mounted
+    // because the session has an attachment store); W791: execution = the 6 kept
+    // names (read_image is folded there, like every non-keep tool).
+    expect(faceOf("sample-ws/std")).toEqual(["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "read_image", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"]);
     expect(faceOf("sample-ws/exec")).toEqual(["http_request", "process_control", "run_code", "session_send_message", "spawn_worker", "worker_status"]);
   });
 

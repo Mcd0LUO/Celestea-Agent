@@ -26,7 +26,7 @@ import { activate, makeEngineHarness, waitIdle } from "./runtime/test-util.js";
 import type { OfflineStep } from "./runtime/offline-llm.js";
 
 const EXECUTION_FACE = ["http_request", "process_control", "run_code", "session_send_message", "spawn_worker", "worker_status"];
-const STANDARD_FACE = ["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"];
+const STANDARD_FACE = ["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "read_image", "run_code", "run_shell", "session_send_message", "spawn_worker", "worker_status", "write_file"];
 const EXECUTION_MARK = "Execution mode — prefer one program over many round trips";
 
 const harnesses: StudioHarness[] = [];
@@ -102,7 +102,7 @@ describe("W791 P1 mode tool face (real engine)", () => {
     const h = engine();
     await activate(h, "sample-ws/plain");
     await activate(h, "sample-ws/std");
-    expect((await getJson(h.app, "/api/tools?session=sample-ws%2Fplain")).body["tools"]).toHaveLength(11);
+    expect((await getJson(h.app, "/api/tools?session=sample-ws%2Fplain")).body["tools"]).toHaveLength(12);
 
     const res = await getJson(h.app, "/api/sessions/sample-ws%2Fplain/mode", jsonRequest("POST", { mode: "execution" }));
     expect(res.status).toBe(200);

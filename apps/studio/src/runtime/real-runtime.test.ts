@@ -278,8 +278,11 @@ describe("GET /api/sessions/{id}/context over the real engine", () => {
     // two-field {name, description} view and never carried `parameters`.)
     // W783: 10 -> 11 — the real engine mounts the user-question service, so
     // `ask_user_question` is part of the face the model is offered.
-    expect(toolViews).toHaveLength(11);
+    // W804: 11 -> 12 — the session has an attachment store, so read_image is
+    // mounted too (it is not offered to a store-less embedding).
+    expect(toolViews).toHaveLength(12);
     expect(tools).toContain("ask_user_question");
+    expect(tools).toContain("read_image");
     for (const view of toolViews) {
       const desc = (view.parameters["properties"] as Record<string, unknown>)["desc"] as { type?: string };
       expect(desc?.type, view.name).toBe("string");

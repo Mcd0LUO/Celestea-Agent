@@ -55,6 +55,7 @@ import {
   ProcessRegistry,
   sandboxConfigFromEnv,
   sessionSandboxConfig,
+  type AttachmentStore,
   type SessionFsScope,
   selectSandboxDetailed,
   type HostProbe,
@@ -69,6 +70,17 @@ import { DEFAULT_SESSION_MODE, type SessionMode } from "../store/mode.js";
 export interface EnginePluginInput {
   profile: Profile;
   llm: Llm;
+  /**
+   * W804: the session's content-addressed attachment store. Present = the tool
+   * face also offers `read_image` (and the wire can resolve bytes); absent = no
+   * attachment capability at all.
+   */
+  attachments?: AttachmentStore | null;
+  /**
+   * W804: false ONLY when the target model's input_modalities was EXPLICITLY
+   * configured without "image". Absent/true = the optimistic default.
+   */
+  imageInputAllowed?: boolean;
   /**
    * W791 (P1, §5.2 #2): the session's working mode. `execution` folds the SDK
    * tools out of the DIRECT face (the inner registry keeps them, so `run_code`
@@ -174,7 +186,15 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
   const busHolder: BusHolder = { current: null };
   const questions = opts.questions === undefined || opts.questions === null ? null : userQuestionsOf(opts.questions, busHolder);
   const tools: Tool[] = [
-    ...builtinTools({ sandbox, processes, http, ...(questions === null ? {} : { questions }) }),
+    ...builtinTools({
+      sandbox,
+      processes,
+      http,
+      ...(questions === null ? {} : { questions }),
+      ...(opts.attachments === undefined ? {} : { attachments: opts.attachments }),
+      ...(opts.imageInputAllowed === undefined ? {} : { imageInputAllowed: opts.imageInputAllowed }),
+      model: opts.profile.model,
+    }),
     ...(opts.tools ?? []),
   ];
   if (opts.workers !== null) tools.push(...workerTools(opts.workers));

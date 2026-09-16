@@ -38,6 +38,7 @@ import {
   type LoopEvent,
   type LlmStream,
   type ModelRequest,
+  type ImageRef,
   type ToolCall,
   type ToolOutput,
   type ToolRegistry,
@@ -92,8 +93,8 @@ export class DefaultAgentLoop implements AgentLoop {
   }
 
   /** AgentLoop seam: drive one turn; rejects only on a broken Context wiring. */
-  async runTurn(ctx: Context, userInput: string): Promise<void> {
-    await this.runTurnOutcome(ctx, userInput);
+  async runTurn(ctx: Context, userInput: string, attachments?: readonly ImageRef[]): Promise<void> {
+    await this.runTurnOutcome(ctx, userInput, attachments);
   }
 
   /**
@@ -110,13 +111,19 @@ export class DefaultAgentLoop implements AgentLoop {
   }
 
   /** Same turn, handing the terminal state back to the caller (hosts / tests). */
-  async runTurnOutcome(ctx: Context, userInput: string): Promise<TurnOutcome> {
+  async runTurnOutcome(ctx: Context, userInput: string, attachments?: readonly ImageRef[]): Promise<TurnOutcome> {
     const seams = resolveSeams(ctx);
     // The LOG owns the monotonic turn id counter, so ids stay unique across
     // loop instances and process restarts.
     const turnId = seams.session.nextTurnId();
     seams.session.append({ type: "turn_start", id: turnId });
-    seams.session.append({ type: "user_message", text: userInput });
+    // W804: the turn's own input carries this turn's attachments. The condition
+    // keeps the no-attachment row byte-identical to the pre-W804 shape.
+    seams.session.append(
+      attachments !== undefined && attachments.length > 0
+        ? { type: "user_message", text: userInput, attachments: [...attachments] }
+        : { type: "user_message", text: userInput },
+    );
 
     const outcome = await this.driveSteps(seams);
 

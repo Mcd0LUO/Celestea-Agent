@@ -76,7 +76,8 @@ function lastUserText(req: ModelRequest): string {
   for (let i = req.messages.length - 1; i >= 0; i--) {
     const m = req.messages[i];
     if (m === undefined || m.role !== "user") continue;
-    return m.content.map((c) => (c.type === "text" ? c.content : "")).join("");
+    // W804: an image-only message still echoes something (never an empty string).
+    return m.content.map((c) => (c.type === "text" ? c.content : c.type === "image" ? `[图片:${c.content.media_type}]` : "")).join("");
   }
   return "";
 }
@@ -84,7 +85,13 @@ function lastUserText(req: ModelRequest): string {
 /** Deterministic usage so `cache_hit_ratio` / `context_usage` are assertable. */
 export function offlineUsage(req: ModelRequest, answer: string): Usage {
   let chars = req.system?.length ?? 0;
-  for (const m of req.messages) for (const c of m.content) chars += c.type === "text" ? c.content.length : 0;
+  for (const m of req.messages) {
+    for (const c of m.content) {
+      // W804: an image block must not estimate as 0 chars (context view accuracy).
+      if (c.type === "text") chars += c.content.length;
+      else if (c.type === "image") chars += 300;
+    }
+  }
   const prompt = Math.ceil(chars / 4);
   const completion = Math.max(1, Math.ceil(answer.length / 4));
   return { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion, cache_read: Math.floor(prompt / 2), reasoning_tokens: 0 };

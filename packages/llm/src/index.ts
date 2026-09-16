@@ -14,11 +14,14 @@
 // `StreamEvent.failed.kindOf` — see seam.ts §StreamEvent.
 export type {
   Content,
+  ImageContent,
+  ImageRef,
   Llm,
   LlmStream,
   Message,
   ModelRequest,
   ModelRequestDraft,
+  ResolvedImages,
   Role,
   StreamEvent,
   TextContent,
@@ -168,7 +171,7 @@ export {
 
 
 // W804 (multimodal P0): the image-aware wire helpers + the one-shot downgrade.
-export type { ResolvedImages, WireContentPart, WireImagePart, WireTextPart } from "./wire.js";
+export type { WireContentPart, WireImagePart, WireTextPart } from "./wire.js";
 export {
   collectMessageParts,
   dataUrlFor,

@@ -23,6 +23,7 @@ import {
   type AgentConfig,
   type AgentLoop,
   type Context,
+  type ImageRef,
   type InjectionSource,
   type PendingInjection,
   type LoopEvent,
@@ -45,6 +46,11 @@ export interface TurnOptions {
   signal?: AbortSignal;
   /** Frame consumer for this turn; absent = frames are dropped. */
   sink?: FrameSink;
+  /**
+   * W804: content-addressed image references for THIS turn's user message. The
+   * loop writes them onto the `user_message` row; bytes never enter the log.
+   */
+  attachments?: readonly ImageRef[];
 }
 
 /** Collaborators handed to a per-turn loop instance (`with_bindings`). */
@@ -158,7 +164,7 @@ export class TurnRunner {
     this.deps.ledger?.beginTurn(log);
     let failure: unknown = null;
     try {
-      await loop.runTurn(scope, input);
+      await loop.runTurn(scope, input, opts.attachments);
     } catch (error) {
       failure = error;
     }

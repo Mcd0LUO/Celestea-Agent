@@ -17,9 +17,12 @@
  * frame (with the session and the dropped count) and keeps consuming.
  */
 
+import { join } from "node:path";
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { TurnBusyError } from "@celestea/runtime";
+import { ATTACHMENTS_DIRNAME, createAttachmentStore } from "@celestea/tools";
+import type { ImageRef } from "@celestea/core";
 import { CapacityError } from "../runtime-adapter.js";
 import type { RouteTable } from "../routes.js";
 import type { StoreResult } from "../store/result.js";
@@ -56,6 +59,50 @@ function turnTarget(c: Parameters<typeof failJson>[0], deps: Deps, asked: string
   return { ok: true, value: required.value.id };
 }
 
+/** W804: the inline attachments one POST /api/turn may carry (section 7.4 P0). */
+const MAX_TURN_ATTACHMENTS = 20;
+
+/**
+ * Decode the optional inline base64 `attachments` and store them under
+ * `<session-dir>/attachments/`. P0 adds NO upload endpoint: the bytes ride the
+ * turn body and the session log only ever sees the returned references.
+ */
+async function storeTurnAttachments(
+  c: Parameters<typeof failJson>[0],
+  deps: Deps,
+  session: string | null,
+  raw: unknown,
+): Promise<{ ok: true; refs: ImageRef[] } | { ok: false; response: Response }> {
+  if (raw === undefined || raw === null) return { ok: true, refs: [] };
+  if (!Array.isArray(raw)) return { ok: false, response: errorOnly(c, 400, "attachments must be an array") };
+  if (raw.length === 0) return { ok: true, refs: [] };
+  if (raw.length > MAX_TURN_ATTACHMENTS) {
+    return { ok: false, response: errorOnly(c, 400, `too many attachments (max ${MAX_TURN_ATTACHMENTS})`) };
+  }
+  const resolved = session === null ? null : deps.sessions.resolve(session);
+  const dir = resolved !== null && resolved.ok ? resolved.value.dir : null;
+  if (dir === null) return { ok: false, response: errorOnly(c, 400, "attachments require a resolvable session directory") };
+  const store = createAttachmentStore(join(dir, ATTACHMENTS_DIRNAME));
+  const refs: ImageRef[] = [];
+  for (const item of raw) {
+    const rec = (typeof item === "object" && item !== null ? item : {}) as Record<string, unknown>;
+    const data = rec["data"];
+    const name = typeof rec["name"] === "string" ? rec["name"] : undefined;
+    if (typeof data !== "string" || data.trim() === "") {
+      return { ok: false, response: errorOnly(c, 400, "each attachment needs a non-empty base64 data string") };
+    }
+    const bytes = Buffer.from(data, "base64");
+    if (bytes.length === 0) return { ok: false, response: errorOnly(c, 400, "attachment data decoded to zero bytes") };
+    try {
+      refs.push(await store.put({ bytes, ...(name === undefined ? {} : { name }) }));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false, response: errorOnly(c, 400, `attachment rejected: ${message}`) };
+    }
+  }
+  return { ok: true, refs };
+}
+
 function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
   const turn = table.get("post_turn");
   app.on(turn.method, turn.honoPath, async (c) => {
@@ -65,23 +112,46 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
     const asked = strField(c, read.body, "session");
     for (const field of [input, asked]) if (!field.ok) return field.response;
     const text = (input.ok ? (input.value ?? "") : "").trim();
-    if (text === "") return errorOnly(c, 400, "input must not be empty");
     const target = turnTarget(c, deps, asked.ok ? asked.value : undefined);
     if (!target.ok) return storeFail(c, target);
     const session = target.value;
-    if (deps.runtime.isBusy(session)) return injectInto(c, deps, text, session);
+    // W804: decode + store the optional inline image attachments BEFORE the
+    // empty-input check — a turn may legitimately carry images and no text.
+    const stored = await storeTurnAttachments(c, deps, session, read.body["attachments"]);
+    if (!stored.ok) return stored.response;
+    const attachments = stored.refs;
+    if (text === "" && attachments.length === 0) return errorOnly(c, 400, "input must not be empty");
+    if (deps.runtime.isBusy(session)) {
+      // W513 steering lanes carry TEXT only: an image must never be silently
+      // dropped, so a busy session refuses rather than pretends.
+      if (attachments.length > 0) return busyAttachmentError(c);
+      return injectInto(c, deps, text, session);
+    }
     try {
-      const started = await deps.runtime.startTurn({ input: text, session });
+      const started = await deps.runtime.startTurn({
+        input: text,
+        session,
+        ...(attachments.length === 0 ? {} : { attachments }),
+      });
       // W515 §2: the turn's own input IS the context the model sees first.
       return c.json({ turn: started.turn, status: "started", placement: started.placement ?? "context" }, 202);
     } catch (e) {
-      if (e instanceof TurnBusyError) return injectInto(c, deps, text, session);
+      if (e instanceof TurnBusyError) {
+        if (attachments.length > 0) return busyAttachmentError(c);
+        return injectInto(c, deps, text, session);
+      }
       if (e instanceof CapacityError) return capacityJson(c, e);
       return failJson(c, 500, e instanceof Error ? e.message : String(e));
     }
   });
   return turn.id;
 }
+
+/** W804: the running-turn refusal (steering cannot carry an image). */
+function busyAttachmentError(c: Parameters<typeof failJson>[0]): Response {
+  return failJson(c, 409, "attachments cannot be injected into a running turn; send them when the turn finishes");
+}
+
 
 /** W513: the session is busy -> the input joins the RUNNING turn (steering). */
 function injectInto(c: Parameters<typeof failJson>[0], deps: Deps, text: string, session: string | null): Response {

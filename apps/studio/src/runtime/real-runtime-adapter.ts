@@ -41,7 +41,7 @@
  * (`llm-assembly.ts`), i.e. production is a real model.
  */
 
-import type { AskUserQuestionAnswerItem, InjectionPlacement, InjectionLane, PendingInjection, SseEventName, Statusline, TurnOutcome } from "@celestea/core";
+import type { AskUserQuestionAnswerItem, ImageRef, InjectionPlacement, InjectionLane, PendingInjection, SseEventName, Statusline, TurnOutcome } from "@celestea/core";
 import type { Watchdog, WorkerRecoveryReport, WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
 import {
@@ -86,6 +86,7 @@ import type {
 } from "../runtime-adapter.js";
 import { QuestionHost } from "./question-host.js";
 import { AdapterFallback, type FallbackStatusView } from "./fallback-host.js";
+import { reportImageDowngrade } from "./image-downgrade.js";
 import type { StudioBus } from "../sse.js";
 import { contextViewOf } from "./context-snapshot.js";
 import { applyProfilePatch, defaultEngineProfile, engineProfileOf, profileFromEngine } from "./engine-profile.js";
@@ -231,6 +232,10 @@ class RealEngine implements RealRuntimeAdapter {
       // parked request on the bus as a `question` frame.
       questionRegistry: this.questions.table(),
       publishQuestion: (sessionId, question) => this.questions.publish(sessionId, question),
+      // W804 section 7.6: the downgrade visibility is the HOST's job. The default
+      // emits a status frame (statusline + info block) and an audit line; a host
+      // may override it.
+      onModelDowngrade: opts.onModelDowngrade ?? ((sessionId, info) => reportImageDowngrade(this.bus, sessionId, info)),
     });
     this.registry = new SessionRuntimeRegistry({
       build: (sessionId, dir) => {
@@ -314,7 +319,7 @@ class RealEngine implements RealRuntimeAdapter {
     const entry = this.registry.peek(session);
     if (entry === null || entry.inFlight) return false;
     try {
-      const turn = this.launch(entry, input, "autowake");
+      const turn = this.launch(entry, input, undefined, "autowake");
       autowakeLog(session, `woke the host: turn ${turn}`);
       return true;
     } catch (error) {
@@ -413,7 +418,7 @@ class RealEngine implements RealRuntimeAdapter {
     const entry = this.entryFor(req.session);
     if (entry.inFlight) throw new TurnBusyError("turn");
     // W515 §2: this input IS the turn, so it is already in the context.
-    return { turn: this.launch(entry, req.input), placement: "context" };
+    return { turn: this.launch(entry, req.input, req.attachments), placement: "context" };
   }
 
   /**
@@ -421,11 +426,11 @@ class RealEngine implements RealRuntimeAdapter {
    * W769 auto-wake take, so SSE frames, statusline phases, the turn number and
    * the busy guard cannot differ between them.
    */
-  private launch(entry: SessionRuntime, input: string, source?: "autowake"): number {
+  private launch(entry: SessionRuntime, input: string, attachments?: readonly ImageRef[], source?: "autowake"): number {
     const controller = new AbortController();
     const turn = this.beginTurn(entry, controller);
     this.emitStatus(entry, turn, "start", source === null ? {} : { source });
-    void this.drive(entry, input, turn, controller);
+    void this.drive(entry, input, turn, controller, attachments);
     return turn;
   }
 
@@ -470,11 +475,18 @@ class RealEngine implements RealRuntimeAdapter {
    * subscriber's stream (and off the released runtime's statusline, which would
    * throw). The turn's own log write is unaffected: it already happened.
    */
-  private async drive(entry: SessionRuntime, input: string, turn: number, controller: AbortController): Promise<void> {
+  private async drive(
+    entry: SessionRuntime,
+    input: string,
+    turn: number,
+    controller: AbortController,
+    attachments?: readonly ImageRef[],
+  ): Promise<void> {
     try {
       const outcome = await entry.runtime.runTurn(input, {
         signal: controller.signal,
         sink: (frame) => this.emitFrame(entry, frame.event, turn, frame.payload),
+        ...(attachments === undefined ? {} : { attachments }),
       });
       this.registry.endTurn(entry, outcome);
       this.emitStatus(entry, turn, outcomePhaseOf(outcome));

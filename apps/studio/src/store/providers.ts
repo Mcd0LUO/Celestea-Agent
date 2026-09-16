@@ -29,6 +29,14 @@ export interface ProviderModel {
   reasoning_efforts: string[];
   context_window: number | null;
   max_output_tokens: number | null;
+  /**
+   * W804: per-model capability bits. ABSENT = the optimistic default
+   * (input ["text","image"], output ["text"]); configuring input ["text"] is the
+   * only way to disable the image entry points. Kept optional so re-writing an
+   * existing providers.json stays byte-identical until an operator sets them.
+   */
+  input_modalities?: string[];
+  output_modalities?: string[];
 }
 
 /** Internal row: the ONLY place an api_key may live. */
@@ -83,13 +91,26 @@ function parseModel(raw: unknown): ProviderModel | null {
   const id = asString(rec["id"]);
   if (id === "") return null;
   const efforts = Array.isArray(rec["reasoning_efforts"]) ? rec["reasoning_efforts"].filter((x): x is string => typeof x === "string") : [];
-  return {
+  const model: ProviderModel = {
     id,
     name: asString(rec["name"], id) || id,
     reasoning_efforts: efforts,
     context_window: nullableInt(rec["context_window"]),
     max_output_tokens: nullableInt(rec["max_output_tokens"]),
   };
+  // W804: preserved only when present, so a legacy row is re-serialized verbatim.
+  const input = modalityList(rec["input_modalities"]);
+  if (input !== undefined) model.input_modalities = input;
+  const output = modalityList(rec["output_modalities"]);
+  if (output !== undefined) model.output_modalities = output;
+  return model;
+}
+
+/** W804: a non-empty array of modality strings, else undefined (absent). */
+function modalityList(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === "string" && x !== "");
+  return out.length === 0 ? undefined : out;
 }
 
 function parseRow(raw: unknown, file: string): ProviderRow {

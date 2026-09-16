@@ -79,7 +79,7 @@ describe("health / status / tools / config", () => {
       // W516/W725/W729/W791: the capability bits the frontend gates the
       // permission panel, the context viewer and the mode selector on
       // (`session_mode_tools` = the P1 mode face + switch endpoint exist).
-      capabilities: { grants: true, context: true, session_mode: true, session_mode_tools: true },
+      capabilities: { grants: true, context: true, session_mode: true, session_mode_tools: true, multimodal: true },
     });
   });
 

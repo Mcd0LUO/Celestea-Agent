@@ -36,6 +36,7 @@ import {
   type WatchdogMountSettings,
   type WorkerWiring,
 } from "@celestea/runtime";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapacityError } from "../runtime-adapter.js";
 import { bindingFor, closeLog, workerSessionPrefix, type CheckpointWiring, type SessionTarget } from "./engine-session.js";
@@ -50,6 +51,9 @@ import type { FallbackWiring } from "./fallback-host.js";
 import { workerTablePath } from "./worker-table.js";
 import type { RecoveryAuditWriter } from "./recovery-audit.js";
 import type { SessionGrantsReader } from "./session-grants.js";
+import { ATTACHMENTS_DIRNAME, createAttachmentStore, type AttachmentStore } from "@celestea/tools";
+import { createImageDowngradeLlm, type ImageDowngradeInfo, type Llm as ProviderLlm } from "@celestea/llm";
+import { withAttachments } from "./attachments-llm.js";
 
 /** W510 resource caps (overridable through the adapter options or the env). */
 export const MAX_LIVE_SESSIONS = 4;
@@ -167,6 +171,17 @@ export interface SessionComposerOptions {
    * frame is not emitted, which no production host wants.
    */
   publishQuestion?: (sessionId: string | null, question: PendingQuestion) => void;
+  /**
+   * W804: the configured input_modalities of one model id, or null when the
+   * model is unknown/unconfigured (=> optimistic default: image input allowed).
+   */
+  modelInputModalities?: (modelId: string) => readonly string[] | null;
+  /**
+   * W804 (section 7.6): a model rejected image input and the turn was downgraded
+   * to text + placeholders. The host turns this into the three visible channels
+   * (info block / statusline / audit).
+   */
+  onModelDowngrade?: (sessionId: string | null, info: ImageDowngradeInfo) => void;
 }
 
 /** Non-negative integer from the environment, else the frozen default. */
@@ -200,6 +215,19 @@ export class SessionComposer {
   /** Compose one session generation (the registry's build factory). */
   compose(sessionId: string | null, dir: string | null): Runtime {
     const profile = this.profileFor(sessionId);
+    // W804 (multimodal P0 section 5): the session's attachment store. It lives
+    // INSIDE the session directory, so trash/archive/delete carry it along. The
+    // DETACHED generation (dir === null, the face /api/tools and the default
+    // prompt read) gets a host-level store so read_image is part of the SAME face
+    // every session's prompt advertises; a session-less turn is the only caller
+    // that could ever write there.
+    const attachments = createAttachmentStore(
+      dir === null ? join(tmpdir(), "celestea-detached-attachments") : join(dir, ATTACHMENTS_DIRNAME),
+    );
+    // Optimistic default (section 7.1): only an EXPLICIT input_modalities without
+    // "image" disables the read_image gate; an unknown model stays optimistic.
+    const modalities = this.opts.modelInputModalities?.(profile.model) ?? null;
+    const imageInputAllowed = modalities === null ? true : modalities.includes("image");
     // W768: the session's OWN workspace, taken from the same resolution the
     // system prompt renders (the host's `resolveSession` hook). A session with no
     // resolvable workspace keeps the process env posture — never a failure.
@@ -223,7 +251,9 @@ export class SessionComposer {
       mode: sessionId === null ? DEFAULT_SESSION_MODE : effectiveMode(this.opts.sessionMode?.(sessionId) ?? null),
       workspace: workspace === null ? null : { workspace: workspace.path },
       ...(questions === null ? {} : { questions }),
-      llm: this.engineLlm(sessionId, profile, ledger),
+      attachments,
+      imageInputAllowed,
+      llm: this.engineLlm(sessionId, profile, ledger, attachments),
       workers: null, // the workers plugin registers the three tools, in compose order
       ...(this.opts.tools === undefined ? {} : { tools: this.opts.tools }),
       ...(this.opts.sandbox === undefined ? {} : { sandbox: this.opts.sandbox }),
@@ -307,7 +337,7 @@ export class SessionComposer {
    * around the raw seam). Fallback ON = the decorator, which books one ledger
    * row per ATTEMPT and hands the switch to the next target.
    */
-  private engineLlm(sessionId: string | null, profile: Profile, ledger: UsageLedger | null): Llm {
+  private engineLlm(sessionId: string | null, profile: Profile, ledger: UsageLedger | null, attachments: AttachmentStore | null): Llm {
     const inner = this.llmFactory()(profile);
     const wrapped =
       this.opts.fallback?.wrap({
@@ -317,7 +347,16 @@ export class SessionComposer {
         steps: ledger,
         provider: this.opts.providerLabel ?? null,
       }) ?? null;
-    return wrapped ?? this.stepObservedLlm(inner, profile, ledger);
+    const observed = wrapped ?? this.stepObservedLlm(inner, profile, ledger);
+    // W804: resolve image references to a REQUEST-scoped data-URL table (inner),
+    // then downgrade once on an "image unsupported" 400 (outer). The downgrade
+    // decorator is provider-seam typed; it only forwards streams, so the cast is
+    // a type-level bridge (same pattern as fallback-host.ts).
+    const resolved = withAttachments(observed, attachments);
+    return createImageDowngradeLlm({
+      inner: resolved as unknown as ProviderLlm,
+      onDowngrade: (info) => this.opts.onModelDowngrade?.(sessionId, info),
+    }) as unknown as Llm;
   }
 
   /**
