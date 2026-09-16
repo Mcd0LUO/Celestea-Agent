@@ -143,7 +143,22 @@ export function httpStatusLabel(status: number, statusText: string | undefined):
   return statusText === undefined || statusText === "" ? String(status) : `${status} ${statusText}`;
 }
 
-/** Belt-and-braces: never let a credential-shaped token ride out in an error. */
-export function redact(text: string): string {
-  return text.replace(/\b(sk|Bearer)[-_A-Za-z0-9]{8,}/g, "<redacted>");
+/**
+ * Belt-and-braces: never let a credential-shaped token ride out in an error.
+ *
+ * W824 (W811 P0-1 + N2): the shape rule tolerates whitespace after "Bearer"
+ * (the standard "Bearer <token>" form) and is case-insensitive. knownSecrets
+ * are the client's OWN keys and are replaced literally, because an arbitrary
+ * provider key echoed as "invalid api key: 9f8e..." has no recognizable shape;
+ * this mirrors core's registered-secret pass.
+ */
+export function redact(text: string, knownSecrets: readonly string[] = []): string {
+  let out = text;
+  const keys = [...new Set(knownSecrets.filter((s) => typeof s === "string" && s.length >= 8))].sort(
+    (a, b) => b.length - a.length,
+  );
+  for (const key of keys) {
+    if (out.includes(key)) out = out.split(key).join("<redacted>");
+  }
+  return out.replace(/\b(?:sk|bearer)\s*[-_A-Za-z0-9._~+/=]{8,}/gi, "<redacted>");
 }

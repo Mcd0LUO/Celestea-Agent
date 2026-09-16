@@ -147,7 +147,7 @@ export class OpenAiCompatClient implements Llm {
       connectMs: this.#connectMs,
       responseMs: this.#responseMs,
     });
-    await assertSuccess(response);
+    await assertSuccess(response, this.#apiKey);
     return streamEvents(response, this.#idleMs);
   }
 
@@ -172,7 +172,7 @@ export class OpenAiCompatClient implements Llm {
 }
 
 /** Reject with a status-bearing error when the response is not 2xx. */
-async function assertSuccess(response: http.IncomingMessage): Promise<void> {
+async function assertSuccess(response: http.IncomingMessage, apiKey: string): Promise<void> {
   const status = response.statusCode ?? 0;
   if (status >= 200 && status < 300) return;
   const text = await readBodySnippet(response);
@@ -180,7 +180,9 @@ async function assertSuccess(response: http.IncomingMessage): Promise<void> {
   const label = httpStatusLabel(status, response.statusMessage);
   // W804 section 7.6: a 4xx whose body names the image modality is classified
   // BEFORE the generic status error, so the downgrade decorator can react.
-  const body = redact(text);
+  // W824 N2: also replace this client's own key literally - an upstream may
+  // echo an arbitrary provider key that matches no token shape.
+  const body = redact(text, [apiKey]);
   const error =
     status >= 400 && status < 500 && isImageUnsupportedBody(text)
       ? new ImageUnsupportedError(status, label, body)

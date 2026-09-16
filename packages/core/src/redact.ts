@@ -34,6 +34,13 @@ export const DEFAULT_RULES: RedactionRule[] = [
   { id: "github-token", re: /(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, replace: PLACEHOLDER },
   { id: "bearer", re: /(Bearer)\s+[A-Za-z0-9._~+/=-]{16,}/g, replace: "$1 " + PLACEHOLDER },
   { id: "authorization-header", re: /("(?:authorization|x-api-key|api[_-]?key)"\s*:\s*")([^"\\]{8,})(")/gi, replace: "$1" + PLACEHOLDER + "$3" },
+  // W824 F01: JSON-quoted credential values. The key CLOSING quote sits between
+  // the credential word and the colon, so credential-assignment (name\s*[=:]\s*value)
+  // can never match a form like "token":"...". Match the quoted key form explicitly;
+  // the name set is the credential suffixes only (the authorization-header rule above
+  // owns authorization/api[_-]key, and dropping the broad "auth" fragment here keeps a
+  // JSON field such as "author":"..." intact).
+  { id: "json-credential", re: /("(?:[A-Za-z0-9_]*(?:token|secret|passwd|password|apikey|api_key)[A-Za-z0-9_]*)"\s*:\s*")((?:[^"\\]|\\.){12,})(")/gi, replace: "$1" + PLACEHOLDER + "$3" },
   { id: "env-assignment", re: /([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*\s*=\s*)("?)([^\s"'\\]{8,})\2/g, replace: "$1$2" + PLACEHOLDER + "$2" },
   { id: "aws-key", re: /AKIA[0-9A-Z]{16}/g, replace: PLACEHOLDER },
   // Cookie / Set-Cookie header values (a live session cookie is a credential).
