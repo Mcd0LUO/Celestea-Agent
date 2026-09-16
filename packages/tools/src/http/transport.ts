@@ -17,7 +17,7 @@
  */
 
 import { request as httpRequest } from "node:http";
-import type { IncomingMessage, RequestOptions } from "node:http";
+import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { LookupFunction } from "node:net";
 import { isIP } from "node:net";
@@ -58,9 +58,15 @@ export async function requestOnce(req: TransportRequest): Promise<TransportResul
   return new Promise<TransportResult>((resolve, reject) => {
     let settled = false;
     let timedOut = false;
+    // W824 (W812 P0-3): declared with let (not a TDZ const) and dereferenced
+    // with optional chaining, because the timeout callback may fire after a
+    // SYNCHRONOUS send() failure. Every settling path (finish/fail) - including
+    // the synchronous throw below - clears the timer, so a rejected request can
+    // no longer leave an armed, process-killing timer behind.
+    let request: ClientRequest | undefined;
     const timer = setTimeout(() => {
       timedOut = true;
-      request.destroy(new Error(`request timed out after ${req.timeoutMs}ms`));
+      request?.destroy(new Error(`request timed out after ${req.timeoutMs}ms`));
     }, req.timeoutMs);
     const finish: Finish = (value) => {
       if (settled) return;
@@ -74,12 +80,17 @@ export async function requestOnce(req: TransportRequest): Promise<TransportResul
       clearTimeout(timer);
       reject(new TransportError(error, timedOut));
     };
-    const request = send(req.url, requestOptions(req), (response) =>
-      collectBody(response, req.maxBodyBytes, finish, fail),
-    );
-    request.on("error", fail);
-    if (req.body !== null && req.body !== "") request.write(req.body);
-    request.end();
+    try {
+      request = send(req.url, requestOptions(req), (response) =>
+        collectBody(response, req.maxBodyBytes, finish, fail),
+      );
+    } catch (error) {
+      fail(error);
+      return;
+    }
+    request?.on("error", fail);
+    if (req.body !== null && req.body !== "") request?.write(req.body);
+    request?.end();
   });
 }
 

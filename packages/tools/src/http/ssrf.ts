@@ -58,11 +58,34 @@ export function parseIpRange(entry: string): IpRange {
 /** Containment test on the masked network prefix. */
 export function ipInRange(range: IpRange, ip: string): boolean {
   const family = isIP(ip);
-  if (family !== range.family) return false;
-  const value = ipToBigInt(ip, family);
-  const hostBits = BigInt((family === 4 ? 32 : 128) - range.prefix);
-  const mask = ((1n << BigInt(family === 4 ? 32 : 128)) - 1n) ^ ((1n << hostBits) - 1n);
+  if (family !== 4 && family !== 6) return false;
+  // W824 (W812 P0-4 / W822 A1): an IPv4-mapped IPv6 address (::ffff:a.b.c.d)
+  // IS the IPv4 address the socket actually reaches on Linux. Normalize both
+  // sides into the RANGE's family before masking, so a v4 deny range catches
+  // the mapped form and a mapped v6 range catches the plain v4 form.
+  let value: bigint;
+  let bits: number;
+  if (family === range.family) {
+    value = ipToBigInt(ip, family);
+    bits = family === 4 ? 32 : 128;
+  } else if (family === 6) {
+    const v4 = mappedV4(ipToBigInt(ip, 6));
+    if (v4 === null) return false;
+    value = v4;
+    bits = 32;
+  } else {
+    value = (0xffffn << 32n) | ipToBigInt(ip, 4);
+    bits = 128;
+  }
+  const hostBits = BigInt(bits - range.prefix);
+  if (hostBits < 0n) return false;
+  const mask = ((1n << BigInt(bits)) - 1n) ^ ((1n << hostBits) - 1n);
   return (value & mask) === (range.base & mask);
+}
+
+/** The IPv4 value inside ::ffff:0:0/96, or null when not an IPv4-mapped v6. */
+function mappedV4(value: bigint): bigint | null {
+  return value >> 32n === 0xffffn ? value & 0xffffffffn : null;
 }
 
 function ipToBigInt(ip: string, family: number): bigint {
@@ -70,10 +93,23 @@ function ipToBigInt(ip: string, family: number): bigint {
   return expandV6(ip).reduce((acc, part) => (acc << 16n) | BigInt(parseInt(part, 16)), 0n);
 }
 
+/** 169.254.169.254 -> ["a9fe", "a9fe"] (two 16-bit groups). */
+function v4Groups(quad: string): string[] {
+  const [a = 0, b = 0, c = 0, d = 0] = quad.split(".").map((part) => Number(part));
+  return [(((a << 8) | b).toString(16)), (((c << 8) | d).toString(16))];
+}
+
 function expandV6(ip: string): string[] {
-  const [head = "", tail = ""] = ip.split("::");
+  // W822 A1: an embedded dotted quad (::ffff:169.254.169.254) must be split
+  // into two 16-bit groups; parseInt("169.254.169.254", 16) used to truncate it
+  // to 0x00a9 and corrupt the base.
+  const embedded = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(ip);
+  const prefix = embedded === null ? "" : (embedded[1] ?? "");
+  const quad = embedded === null ? "" : (embedded[2] ?? "");
+  const text = embedded === null ? ip : `${prefix}${v4Groups(quad).join(":")}`;
+  const [head = "", tail = ""] = text.split("::");
   const headParts = head === "" ? [] : head.split(":");
-  if (!ip.includes("::")) return padV6(headParts);
+  if (!text.includes("::")) return padV6(headParts);
   const tailParts = tail === "" ? [] : tail.split(":");
   const gap = 8 - headParts.length - tailParts.length;
   return [...headParts, ...Array.from({ length: Math.max(gap, 0) }, () => "0"), ...tailParts];
