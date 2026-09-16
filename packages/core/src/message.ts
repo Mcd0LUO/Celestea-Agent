@@ -42,7 +42,54 @@ export interface ToolCallContent {
   content: ToolCall;
 }
 
-export type Content = TextContent | ToolCallContent;
+/** The four media types the attachment pipeline accepts (section 5.4 magic-byte whitelist). */
+export const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
+
+/** True for one of the four accepted normalized media types. */
+export function isImageMediaType(v: unknown): v is ImageMediaType {
+  return typeof v === "string" && (IMAGE_MEDIA_TYPES as readonly string[]).includes(v);
+}
+
+/**
+ * W804 (multimodal P0 4.1): a content-addressed REFERENCE to an attachment
+ * object, never the bytes. The object itself lives at
+ * <session-dir>/attachments/<attachment_id>.<ext> (section 5); the session log
+ * and every projected event carry only this shape — base64 in the log is a red line.
+ *
+ * original records the pre-normalization dimensions of an image that was
+ * re-encoded/downscaled (DSH originalDimensions semantics); P0 never writes it
+ * (no re-encode), but the type is frozen here so P1 is purely additive.
+ */
+export interface ImageRef {
+  /** Content-addressing id: sha256(original bytes) in lowercase hex. */
+  attachment_id: string;
+  /** Normalized media type (magic-byte sniffed, never trusted from a name). */
+  media_type: ImageMediaType;
+  /** Normalized pixel width. */
+  width: number;
+  /** Normalized pixel height. */
+  height: number;
+  /** Original upload/file name, for the UI and model-readable labels only. */
+  name?: string;
+  /** Set when the stored bytes are a downscaled/re-encoded variant. */
+  original?: { width: number; height: number; bytes: number; media_type: string };
+}
+
+/**
+ * W804: the log/event spelling of ImageRef (section 4.3). Structurally identical —
+ * the alias exists so the event codec and the content model can each use the
+ * vocabulary of their own layer without drifting apart.
+ */
+export type AttachmentRef = ImageRef;
+
+/** Content::Image — {"type":"image","content":{...ImageRef}} (section 4.1). */
+export interface ImageContent {
+  type: "image";
+  content: ImageRef;
+}
+
+export type Content = TextContent | ToolCallContent | ImageContent;
 
 /**
  * `Message` — one entry of the model-visible history.
@@ -84,6 +131,30 @@ export function toolResultMessage(id: string, text: string): Message {
   return { role: "tool", content: [{ type: "text", content: text }], tool_call_id: id };
 }
 
+/**
+ * W804: a user message that carries text plus image references. The text block
+ * stays FIRST and the images follow (section 3.5 ordering rule); no-image callers
+ * keep using userMessage so the wire shape is byte-identical when there is
+ * nothing to attach.
+ */
+export function userMessageWithImages(text: string, images: readonly ImageRef[]): Message {
+  const content: Content[] = [{ type: "text", content: text }];
+  for (const ref of images) content.push(imageContent(ref));
+  return { role: "user", content, tool_call_id: null };
+}
+
+/**
+ * W804: a tool result that carries the canonical JSON text plus image
+ * references (the read_image case, section 6.3). The TEXT remains the value's
+ * serde JSON — the model must still see path/dimensions — and the images are
+ * separate content blocks.
+ */
+export function toolResultWithImages(id: string, text: string, images: readonly ImageRef[]): Message {
+  const content: Content[] = [{ type: "text", content: text }];
+  for (const ref of images) content.push(imageContent(ref));
+  return { role: "tool", content, tool_call_id: id };
+}
+
 /** Static namespace facade: `Message::user(…)` → `Message.user(…)`. */
 export const Message = {
   user: userMessage,
@@ -91,6 +162,8 @@ export const Message = {
   assistantText,
   assistantToolCall,
   toolResult: toolResultMessage,
+  userWithImages: userMessageWithImages,
+  toolResultWithImages,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -105,6 +178,22 @@ export function isToolCallContent(c: Content): c is ToolCallContent {
   return c.type === "tool_call";
 }
 
+export function isImageContent(c: Content): c is ImageContent {
+  return c.type === "image";
+}
+
+/** Wrap one already-content-addressed reference as a model-visible image block. */
+export function imageContent(ref: ImageRef): ImageContent {
+  return { type: "image", content: ref };
+}
+
+/** The image blocks of a message, in order (references only, never bytes). */
+export function messageImages(m: Message): ImageRef[] {
+  const out: ImageRef[] = [];
+  for (const c of m.content) if (isImageContent(c)) out.push(c.content);
+  return out;
+}
+
 /** The tool calls carried by a message (empty for a text-only message). */
 export function messageToolCalls(m: Message): ToolCall[] {
   const out: ToolCall[] = [];
@@ -117,7 +206,11 @@ export function toolCallIds(m: Message): string[] {
   return messageToolCalls(m).map((tc) => tc.id);
 }
 
-/** The text blocks of a message, in order. */
+/**
+ * The text blocks of a message, in order. W804: image blocks are deliberately
+ * NOT text — they are never concatenated here (and never stringified into a
+ * prompt); a consumer that needs the images reads messageImages.
+ */
 export function messageTexts(m: Message): string[] {
   const out: string[] = [];
   for (const c of m.content) if (isTextContent(c)) out.push(c.content);
