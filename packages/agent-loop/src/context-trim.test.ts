@@ -130,9 +130,31 @@ describe("trimContext", () => {
     const result = trimContext(messages, 0, 300, 0.8, 10);
 
     expect(result.outcome.trimmed).toBe(true);
-    expect(result.outcome.removedMessages).toBe(2);
+    // W813 P2-trimContext: keep_recent is "at most 10" and the whole history is
+    // 10 messages, so only the budget decides the cut. The trim marker now counts
+    // against that budget, so the most that fits is 6 recent messages — this used
+    // to keep 8 and hand back a request ~32 tokens OVER 0.8 * 300.
+    expect(result.outcome.removedMessages).toBe(4);
     expect(result.messages.length).toBeGreaterThanOrEqual(2);
     expect(result.messages.length).toBeLessThan(11);
+    // The assembled request, marker included, fits the budget.
+    expect(estimateMessagesTokens(result.messages)).toBeLessThanOrEqual(240);
+  });
+
+  it("counts always-kept history system messages in the budget (W813 P2)", () => {
+    // A history system row is never trimmed and is always prepended, so it is
+    // not optional budget. The marker-blind predicate ignored it and could hand
+    // back a request over the budget even when a smaller suffix did fit.
+    const messages: Message[] = [systemMessage(rep("s", 2000))];
+    for (let i = 0; i < 20; i++) messages.push(userMessage(rep("u", 100)));
+
+    const result = trimContext(messages, 0, 1000, 0.8, 10);
+
+    expect(result.outcome.trimmed).toBe(true);
+    expect(result.messages[0]?.role).toBe("system");
+    expect(result.messages[1]?.role).toBe("system"); // the trim marker
+    // 0.8 * 1000 = 800: fixed system + marker + kept suffix all fit.
+    expect(estimateMessagesTokens(result.messages)).toBeLessThanOrEqual(800);
   });
 
   it("keeps everything when no safe cut boundary exists", () => {
@@ -173,7 +195,16 @@ function trimContextReference(
   }
   if (cuts.length === 0) return { messages: [...systems, ...rest], outcome: none };
   const keep = Math.max(1, keepRecent);
-  const fits = (candidate: number): boolean => systemTokens + estimateMessagesTokens(rest.slice(candidate)) <= budget;
+  // W813 P2-trimContext: score the LIST the cut produces, not only its suffix.
+  // The history system messages are always kept and prepended, and a marker is
+  // always inserted when anything is cut, so the budget check is
+  //   fixed(system + history systems) + marker + kept suffix.
+  const fixedTokens = systemTokens + estimateMessagesTokens(systems);
+  const fits = (candidate: number): boolean => {
+    const removedTokens = estimateMessagesTokens(rest.slice(0, candidate));
+    const markerTokens = estimateMessageTokens(trimmedMarkerMessage(candidate, removedTokens));
+    return fixedTokens + markerTokens + estimateMessagesTokens(rest.slice(candidate)) <= budget;
+  };
   const withinKeep = cuts.find((c) => c >= Math.max(0, rest.length - keep));
   const fitsBudget = cuts.find((c) => fits(c));
   let cut: number;

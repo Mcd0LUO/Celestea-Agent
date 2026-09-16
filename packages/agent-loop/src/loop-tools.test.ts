@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { assistantText, userMessage, type Message, type StreamEvent } from "@celestea/core";
+import { assistantText, systemMessage, userMessage, type Message, type StreamEvent } from "@celestea/core";
 import {
   eventsOfType,
   harness,
@@ -15,6 +15,7 @@ import {
   ThrowingToolRegistry,
   toolCallMessage,
 } from "./fakes.test-util.js";
+import { estimateMessagesTokens, estimateTokens } from "./context-trim.js";
 import { createUsageTracker } from "./usage.js";
 
 /** `StreamEvent::Done(message)`. */
@@ -110,6 +111,28 @@ describe("request history trimming", () => {
     expect(JSON.stringify(sent[0]?.content[0])).toContain("context-trimmed");
     expect(JSON.stringify(sent[1]?.content[0])).toContain("message 26");
     expect(JSON.stringify(sent[4]?.content[0])).toContain("message 29");
+  });
+
+  it("keeps the REAL request in budget with the marker and a history system (W813 P2)", async () => {
+    const llm = new ScriptLlm([done(assistantText("ok"))]);
+    const h = harness({
+      llm,
+      config: { context_window_tokens: 1000, context_trim_threshold: 0.8, context_keep_recent: 10 },
+    });
+    const derived: Message[] = [systemMessage("s".repeat(2000))]; // history system: always kept
+    for (let i = 0; i < 20; i++) derived.push(userMessage("u".repeat(100)));
+    h.session.setDerived(derived);
+
+    await h.run();
+
+    // Real path: runTurnOutcome -> driveSteps -> runStep -> buildRequest ->
+    // Llm.generate. This is the exact request the model would receive.
+    const request = llm.requests[0]!;
+    expect(request.messages[0]?.role).toBe("system");
+    expect(request.messages[1]?.role).toBe("system"); // the trim marker
+    expect(JSON.stringify(request.messages[1]?.content)).toContain("context-trimmed");
+    // Outside system prompt + the assembled messages fit 0.8 * 1000 = 800.
+    expect(estimateTokens(request.system ?? "") + estimateMessagesTokens(request.messages)).toBeLessThanOrEqual(800);
   });
 
   it("does not trim a small history under the default window", async () => {

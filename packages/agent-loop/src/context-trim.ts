@@ -182,8 +182,18 @@ export function trimContext(
   // W762: one O(n) pass, then every `fits(candidate)` is an O(1) array read.
   const suffix = suffixTokenSums(split.restTokens);
   const keep = Math.max(1, keepRecent);
+  // W813 P2-trimContext: the predicate must score the request the cut ACTUALLY
+  // produces, not just its non-system suffix. Two parts always travel next to
+  // that suffix and both used to be dropped from the budget:
+  //   - every history system message: kept and prepended unconditionally;
+  //   - the one trim marker: inserted unconditionally whenever anything is cut.
+  // The marker carries this candidate's own removed message/token counts, so it
+  // is scored exactly (a few characters, still O(1)); the suffix stays a read.
+  const fixedTokens = systemTokens + estimateMessagesTokens(systems);
   const cut = pickCut(cuts, Math.max(0, rest.length - keep), (candidate) => {
-    return systemTokens + (suffix[candidate] ?? 0) <= budget;
+    const candidateRemovedTokens = (suffix[0] ?? 0) - (suffix[candidate] ?? 0);
+    const markerTokens = estimateMessageTokens(trimmedMarkerMessage(candidate, candidateRemovedTokens));
+    return fixedTokens + markerTokens + (suffix[candidate] ?? 0) <= budget;
   });
 
   // `suffix[0] - suffix[cut]` IS `estimateMessagesTokens(rest.slice(0, cut))`:

@@ -19,6 +19,7 @@ import {
   eventsOfType,
   FailingLlm,
   FakeSessionLog,
+  FakeToolRegistry,
   harness,
   HangingLlm,
   lastOutcome,
@@ -36,6 +37,13 @@ import { createUsageTracker } from "./usage.js";
 /** `StreamEvent::Done(message)`. */
 function done(message: Message): StreamEvent {
   return { kind: "done", message };
+}
+
+/** A registry whose spec read throws: a seam-contract violation (W813 P2). */
+class ThrowingSchemasRegistry extends FakeToolRegistry {
+  override schemas(): never {
+    throw new Error("registry.schemas exploded");
+  }
 }
 
 /** One harness per terminal state, all reaching the same single exit point. */
@@ -284,6 +292,25 @@ describe("DefaultAgentLoop — bookkeeping", () => {
       expect(h.sink.events.filter((e) => e.kind === "turn_end"), scenario.name).toHaveLength(1);
       expect(h.sink.events.at(-1)?.kind, scenario.name).toBe("turn_end");
     }
+  });
+
+  it("writes exactly one TurnEnd even when a seam throws before the step returns (W813 P2)", async () => {
+    const h = harness({ llm: new ScriptLlm([]), registry: new ThrowingSchemasRegistry() });
+
+    await expect(h.run()).rejects.toThrow("registry.schemas exploded");
+
+    // The turn_start this throw used to strand is closed by exactly one turn_end
+    // carrying the captured error, so the log the watchdog reads stays
+    // consistent (turn_start count === turn_end count, no dangling turn).
+    const starts = eventsOfType(h.session, "turn_start");
+    const ends = eventsOfType(h.session, "turn_end");
+    expect(starts).toHaveLength(1);
+    expect(ends).toHaveLength(1);
+    expect(ends[0]?.id).toBe(starts[0]?.id);
+    expect(ends[0]?.outcome).toEqual({ error: { kind: "generate", message: "registry.schemas exploded" } });
+    // The terminal frame is also the LAST event on the sink (single exit point).
+    expect(h.sink.events.filter((e) => e.kind === "turn_end")).toHaveLength(1);
+    expect(h.sink.events.at(-1)?.kind).toBe("turn_end");
   });
 
   it("rejects with AgentError when the Context is missing a driver seam", async () => {

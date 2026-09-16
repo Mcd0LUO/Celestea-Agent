@@ -125,12 +125,27 @@ export class DefaultAgentLoop implements AgentLoop {
         : { type: "user_message", text: userInput },
     );
 
-    const outcome = await this.driveSteps(seams);
+    let outcome: TurnOutcome = "interrupted";
+    let failure: unknown;
+    let failed = false;
+    try {
+      outcome = await this.driveSteps(seams);
+    } catch (error) {
+      // W813 P2-runTurnOutcome: a seam throw while deriving the request / driving
+      // a step used to escape BEFORE the single TurnEnd write, leaving turn_start
+      // dangling (the watchdog then keeps the worker RUNNING forever). Capture it
+      // as this turn's terminal state, write the pair below, then rethrow so the
+      // broken seam is still visible to the caller.
+      failed = true;
+      failure = error;
+      outcome = { error: { kind: "generate", message: errorMessage(error) } };
+    }
 
-    // P0-A: exactly one TurnEnd per turn, log and event stream written as a
-    // pair from this single exit point.
+    // P0-A: exactly one TurnEnd per turn, log and event stream written as a pair
+    // from this single exit point — reached on the throw path too.
     seams.session.append({ type: "turn_end", id: turnId, outcome });
     this.emit(turnEndEvent(outcome));
+    if (failed) throw failure;
     return outcome;
   }
 
