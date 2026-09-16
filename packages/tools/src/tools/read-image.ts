@@ -15,15 +15,15 @@
  * upstream rejects is handled by the section 7.6 downgrade, not here.
  */
 
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { basename } from "node:path";
 
 import type { Tool, ToolExecOutcome, ToolSpec } from "@celestea/core";
 
 import { optionalStringArg } from "../args.js";
 import { descParam } from "../desc.js";
-import { contractFailure } from "../errors.js";
-import { AttachmentError, type AttachmentStore } from "../attachments/store.js";
+import { contractFailure, isToolFailure } from "../errors.js";
+import { ATTACHMENT_MAX_BYTES, AttachmentError, type AttachmentStore } from "../attachments/store.js";
 
 /** The frozen contract description; mirrored by contracts/tools.json. */
 export const READ_IMAGE_DESCRIPTION =
@@ -83,11 +83,7 @@ async function run(args: unknown, options: ReadImageToolOptions): Promise<ToolEx
   let name: string | undefined;
   let sourcePath: string | null = null;
   if (path !== undefined) {
-    try {
-      bytes = await readFile(path);
-    } catch (e) {
-      throw contractFailure("read_image", "io", `cannot read '${path}': ${e instanceof Error ? e.message : String(e)}`);
-    }
+    bytes = await readBoundedImage(path);
     name = basename(path);
     sourcePath = path;
   } else {
@@ -120,6 +116,46 @@ async function run(args: unknown, options: ReadImageToolOptions): Promise<ToolEx
   };
   const render = `read image ${ref.media_type} ${ref.width}x${ref.height} (${bytes.length} bytes)`;
   return { value, render };
+}
+
+/**
+ * B2 / W812 P1-3 (R3): read the image with a HARD byte ceiling. The attachment
+ * store already rejects >4 MiB, but only AFTER the whole file was buffered, so a
+ * huge path would spike RSS (or OOM) before that check ran. Open + stat + read
+ * at most the cap, so the oversize case never allocates the file at all.
+ */
+async function readBoundedImage(path: string): Promise<Buffer> {
+  let handle;
+  try {
+    handle = await open(path, "r");
+  } catch (e) {
+    throw contractFailure("read_image", "io", `cannot read '${path}': ${e instanceof Error ? e.message : String(e)}`);
+  }
+  try {
+    const info = await handle.stat();
+    if (info.isDirectory()) throw contractFailure("read_image", "io", `'${path}' is a directory, not a file`);
+    if (info.size > ATTACHMENT_MAX_BYTES) {
+      throw contractFailure(
+        "read_image",
+        "too_large",
+        `image is ${info.size} bytes, over the ${ATTACHMENT_MAX_BYTES}-byte limit`,
+      );
+    }
+    const size = Number(info.size);
+    const buffer = Buffer.allocUnsafe(size);
+    let offset = 0;
+    while (offset < size) {
+      const { bytesRead } = await handle.read(buffer, offset, size - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    return buffer.subarray(0, offset);
+  } catch (e) {
+    if (isToolFailure(e)) throw e;
+    throw contractFailure("read_image", "io", `cannot read '${path}': ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
 export function readImageTool(options: ReadImageToolOptions): Tool {
