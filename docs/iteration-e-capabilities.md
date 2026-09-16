@@ -24,7 +24,7 @@
 | # | 能力 | 现状一句话 | P0（一句话） | P1 | P2 |
 |---|---|---|---|---|---|
 | 1 | 断点恢复 | 事件日志与 turn 计数器**已持久**（重放+截断 torn tail），但运行态全在内存，崩溃留下的悬空 `turn_start` 无人闭合 | 落 `checkpoint.json` sidecar + boot 时幂等合成 `turn_end: interrupted` + `turnNo` 从日志恢复 | inbox/回执排队持久化 + 恢复观测面（`/api/status.recovery`） | 真·续跑（step 级重放 + 工具副作用分类） |
-| 2 | 可恢复多 agent | `WorkerRegistry` 有 TSV 原子写能力，但 studio 侧 `tsvPath: null`（纯内存）；回执幂等键是内存序号 | worker 表落盘（含 `host=/attempt=/lease=` token）+ boot **只观测**的恢复器 | 回执 attempt 化 + 跨进程幂等键 + 报告文件名 attempt 化 | 自动收养/重派（默认关）+ 与 celes-worker-spawn 的单一事实源裁决 |
+| 2 | 可恢复多 agent | `WorkerRegistry` 有 TSV 原子写能力，但 studio 侧 worker 表默认落盘 `<data dir>/worker-registry.tsv`（`workerRegistryPath()` 可配；`null` 才是纯内存）；回执幂等键是内存序号 | worker 表落盘（含 `host=/attempt=/lease=` token）+ boot **只观测**的恢复器 | 回执 attempt 化 + 跨进程幂等键 + 报告文件名 attempt 化 | 自动收养/重派（默认关）+ 与 celes-worker-spawn 的单一事实源裁决 |
 | 3 | 成本与用量账本 | `Usage` 只有 5 个计数器，活在内存 tracker，无价格、无轮次/模型归属、无失败记账 | append-only `usage-ledger.jsonl`（step 粒度）+ `pricing.json` + `unpriced` 显式标记 | `GET /api/usage/ledger` 聚合 + `/api/status.cost` | 三方对账器 + 预算与止损 + 轮转 |
 | 4 | 模型降级回退 | 单 client 单模型、零重试；失败原因只有文案没有结构化 `httpStatus` | `LlmError.httpStatus/retryable`（纯可观测，零行为变更） | `FallbackLlm` 装饰器 + 触发规则表 + 账本/审计/SSE 显式可见 | 冷却持久化 + 上下文超长特例 + 与预算联动 |
 
@@ -61,7 +61,7 @@
 | 会话实例状态 | `turnNo/profileEpoch/lastOutcome/inFlight/lastActiveAt` 全在内存；`rebuild()` 把 `turnNo` 归零 | `packages/runtime/src/session-registry.ts:41-51,273-281` |
 | 配置世代 | `RealEngine.baseEpoch` 从 0 起（进程级），实例 epoch 落后即重建 | `apps/studio/src/runtime/real-runtime-adapter.ts:126,384-387` |
 | 注入排队 | 两 lane（`next-turn`/`next-step`）内存队列，同 id 去重；**不落盘** | `packages/runtime/src/inbox.ts:1-60` |
-| worker 表 | 有 TSV 解析/序列化/原子写 + `proc=` 归属；**studio 侧显式 `tsvPath: null`（纯内存）** | `packages/workers/src/registry.ts:89-100,118-121,289-300`；`apps/studio/src/runtime/session-compose.ts:173-184` |
+| worker 表 | 有 TSV 解析/序列化/原子写 + `proc=` 归属；**studio 侧默认落盘 `<data dir>/worker-registry.tsv`（`workerRegistryPath()`；`null` 才是纯内存）** | `packages/workers/src/registry.ts:89-100,118-121,289-300`；`apps/studio/src/runtime/session-compose.ts:173-184` |
 | worker 驱动 | `brief turn` → 回执（每轮 loop 结束**执行一次**）→ mailbox 轮询；`driveIfPossible` 只在 spawn 时调用 | `packages/workers/src/driver.ts:69-102`；`registry.ts:223-242` |
 | 回执协议 | 写 `results/<wid>-<short>.md`（同名覆盖）+ 投递一行 `WORKER_<wid>_DONE|FAILED`；**幂等键 = mailbox 内存序号** | `packages/workers/src/receipt.ts:70-89`；`mailbox.ts:26-27`；`packages/runtime/src/worker-wiring.ts:110-123` |
 | 用量 | 5 计数器；每个 `usage` 帧 `record()` 累加；`total` 跨 turn 累计、`latest` = 最后一次响应 | `packages/llm/src/usage.ts:11-46`；`packages/agent-loop/src/loop.ts:229-230`；`packages/runtime/src/usage.ts:34-56` |
@@ -266,7 +266,7 @@
 
 | ID | 缺口 | 后果 |
 |---|---|---|
-| G2-1 | studio 侧 `tsvPath: null`（`session-compose.ts:176`） | 重启后 worker 表**全空**：`GET /api/worker/status`、`GET /api/sessions` 的 worker 行消失；进行中的 worker 失去宿主登记 |
+| G2-1 |（W787 已修）studio 侧 worker 表默认落盘 `<data dir>/worker-registry.tsv`（`workerRegistryPath()` 决定；`null` 才是内存） | 仅显式 `tsvPath: null` 时才是纯内存表 |
 | G2-2 | 回执幂等键是**内存** mailbox 序号（`mailbox.ts:26-27` → `worker-wiring.ts:119` 的 `mailbox:<id>`） | 重启后序号归零：同一回执二次注入（重复）或 key 冲突（错配） |
 | G2-3 | 回执文本不含 attempt（`receipt.ts:85-87` 只有 wid/status/路径/答复），报告文件名 `results/<wid>-<short>.md` **同名覆盖** | 重派后新旧 attempt 的回执**无法区分**：丢回执（被覆盖）与重复回执（两条同文本）两种故障都不设防 |
 | G2-4 | 重启后 driver 不恢复（`driveIfPossible` 只在 spawn 时调用一次） | 落盘的 `RUNNING` 行成为"registered but not driven"的僵尸行 |

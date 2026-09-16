@@ -422,9 +422,11 @@ export class SessionComposer {
   /**
    * Worker wiring: ONE registry per session instance (W513, design D7), so a
    * receipt returns to the session that spawned the worker and `worker:<sid>`
-   * ids stay unique through the session-derived prefix. The table stays IN
-   * MEMORY (`tsvPath: null`): the host never rewrites the shared
-   * `/tmp/registry.tsv` of the running fleet.
+   * ids stay unique through the session-derived prefix. W787: the table is
+   * PERSISTED by default at `workerRegistryPath()` (`<data dir>/
+   * worker-registry.tsv`; `CELESTEA_WORKER_REGISTRY` overrides). Only an
+   * explicit `tsvPath: null` is an in-memory table, so the default no
+   * longer collides the host with the fleet's shared `/tmp/registry.tsv`.
    */
   private workerWiring(sessionId: string | null, profile: Profile): WorkerWiring | false {
     if (this.opts.workers === false) return false;

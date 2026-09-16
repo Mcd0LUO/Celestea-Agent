@@ -32,7 +32,8 @@ import { truncateChars } from "./types.js";
 export interface ReceiptRequest {
   wid: string;
   /**
-   * E §2.2.2: which try this receipt closes (first spawn = 1, re-dispatch +1).
+   * E §2.2.2: which try this receipt closes (first spawn = 0, re-dispatch +1;
+   * authoritative: contracts/data-files/registry-tsv.schema.json).
    * Required, not optional: a caller that does not know the attempt cannot name
    * a collision-free report, and silently falling back to the old name is
    * exactly the bug this field exists to remove.

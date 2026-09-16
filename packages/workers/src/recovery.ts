@@ -35,7 +35,10 @@ export type WorkerRecoveryAction = "close_done" | "respawn" | "fail" | "observe"
 export interface WorkerRecoveryCandidate {
   wid: string;
   status: string;
-  /** Which try this row is (`attempt=`; 1 when the token is absent). */
+  /**
+   * Which try this row is (`attempt=`; 0 when the token is absent — see
+   * contracts/data-files/registry-tsv.schema.json).
+   */
   attempt: number;
   /** The host session that dispatched it (`host=`; null on a legacy row). */
   host_session: string | null;
