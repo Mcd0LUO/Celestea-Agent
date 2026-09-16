@@ -20,10 +20,10 @@
 // ============================================================================
 import { readFileSync } from 'node:fs';
 import hljs from 'highlight.js/lib/core';
-import rust from 'highlight.js/lib/languages/rust';
+import typescriptLang from 'highlight.js/lib/languages/typescript';
 import { MarkdownStream, renderMarkdown } from '../src/utils/markdown.ts';
 
-hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('typescript', typescriptLang);
 
 const pkg = (name) => JSON.parse(readFileSync(new URL(`../node_modules/${name}/package.json`, import.meta.url), 'utf8')).version;
 const VERIFY = process.argv.includes('--verify');
@@ -50,40 +50,41 @@ const ms = (v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2));
 
 // ---- 样本文本构造 -------------------------------------------------------------
 
-/** 一段 rust 代码（≈1.1K 字符）。 */
-function rustSnippet(i) {
+/** 一段 TypeScript 代码（≈1.1K 字符）。 */
+function tsSnippet(i) {
   const out = [
-    `fn handler_${i}(input: &str) -> Result<String, Box<dyn std::error::Error>> {`,
-    `    let mut acc = String::with_capacity(input.len());`,
-    `    let mut count = 0usize;`,
+    `export function handler_${i}(input: string): { acc: string; count: number } {`,
+    `    let acc = '';`,
+    `    let count = 0;`,
   ];
   for (let k = 0; k < 5; k += 1) {
-    out.push(`    for (idx, line) in input.lines().enumerate().skip(${k * 7}) {`);
-    out.push(`        acc.push_str(&format!("{}:{}:{}", ${k}, idx, line.trim()));`);
-    out.push(`        count += line.matches("abcdefgh").count();`);
+    out.push(`    for (const [idx, line] of input.split('\\n').entries()) {`);
+    out.push(`        if (idx < ${k * 7}) continue;`);
+    out.push(`        acc += \`\${k}:\${idx}:\${line.trim()}\`;`);
+    out.push(`        count += (line.match(/abcdefgh/g) ?? []).length;`);
     out.push(`    }`);
   }
-  out.push(`    Ok(format!("{}:{}", acc.len(), count))`);
+  out.push(`    return { acc: \`\${acc.length}:\${count}\`, count };`);
   out.push('}');
   return out.join('\n') + '\n';
 }
 
-/** 每 ~1500 字符一个 rust 代码块的自然语言 + 代码混排文本。 */
+/** 每 ~1500 字符一个 TS 代码块的自然语言 + 代码混排文本。 */
 function buildText(target) {
   const parts = [];
   let n = 0;
   let i = 0;
   while (n < target) {
     i += 1;
-    // 自然语言段落（≈350 字符）+ rust 代码块（≈1.1K 字符）→ 平均每 ~1500 字符一块
+    // 自然语言段落（≈350 字符）+ TS 代码块（≈1.1K 字符）→ 平均每 ~1500 字符一块
     const prose =
       `## 小节 ${i}\n\n` +
       `这是第 ${i} 段说明文字，用于模拟真实回答里的自然语言段落：含行内 \`code\`、` +
       `**强调**、[链接](https://example.com) 以及一段中文描述，长度与常见模型输出接近。\n\n` +
       `补充说明第 ${i} 点：这段文字继续拉长以匹配真实回答的段落密度，并保持每约 ` +
-      `1500 字符插入一个 rust 代码块的结构；再加一句用于凑足长度的普通中文描述，` +
+      `1500 字符插入一个 TS 代码块的结构；再加一句用于凑足长度的普通中文描述，` +
       `使样本密度与真实长回答（含多个代码块）一致。\n\n`;
-    const code = '```rust\n' + rustSnippet(i) + '```\n\n';
+    const code = '```ts\n' + tsSnippet(i) + '```\n\n';
     parts.push(prose, code);
     n += prose.length + code.length;
   }
@@ -132,10 +133,10 @@ function slices(text, delta) {
 // ---- 边界用例（增量正确性校验） -----------------------------------------------
 
 const EDGE_CASES = [
-  ['未闭合围栏 ```', '先说明一下这个函数的用途。\n\n```rust\nfn main() {\n    let a = 1;\n'],
+  ['未闭合围栏 ```', '先说明一下这个函数的用途。\n\n```ts\nexport function main() {\n    const a = 1;\n'],
   ['未闭合列表', '要点如下：\n\n- 第一条要点\n- 第二条要点\n'],
   ['行内 ** 未闭合', '这里是一段 **加粗未闭合的文字\n\n下一段普通文本。\n'],
-  ['已闭合围栏（可固化）', '说明：\n\n```rust\nfn a() {}\n```\n\n后续段落。\n'],
+  ['已闭合围栏（可固化）', '说明：\n\n```ts\nexport function a() {}\n```\n\n后续段落。\n'],
   ['引用式链接 + 文末定义', '见 [文档][1] 的说明。\n\n[1]: https://example.com\n'],
   ['表格行（可能成为表头）', '| 列 A | 列 B |\n| --- | --- |\n| 1 | 2 |\n\n后续段落。\n'],
   ['缩进续行（跨空行）', '- 列表项\n\n  续行内容\n\n后续段落。\n'],
@@ -233,7 +234,7 @@ for (const r of rows) {
 }
 console.log('');
 console.log(
-  `样本：平均每 ${Math.round(perBlockChars / rows.length)} 字符一个 rust 代码块；` +
+  `样本：平均每 ${Math.round(perBlockChars / rows.length)} 字符一个 TS 代码块；` +
     '增量末次 = 全文到位那一 tick 的耗时，增量峰值 = 整个流式过程中最慢的一 tick。',
 );
 
@@ -328,7 +329,7 @@ if (FUZZ) {
   console.log('-'.repeat(56));
   const TOK = [
     'a', 'b', '中', ' ', '  ', '\t', '\n', '\n\n', '\r\n', '#', '##', '-', '*', '+', '_', '>',
-    '`', '``', '```', '```rust', '~~~', '~~~rust', '|', '[', ']', '(', ')', '!', '1', '2', '.', '\\',
+    '`', '``', '```', '```ts', '~~~', '~~~ts', '|', '[', ']', '(', ')', '!', '1', '2', '.', '\\',
     '<', '>', '</', 'pre>', 'div>', '<!--', '-->', '~~', '**', '---', '===', '    ', 'x', 'y',
     '[1]:', 'http://x', '<?', '?>', '<![CDATA[', ']]>', '<!X', '1.', '2)', 'kbd>', 'script>',
   ];
