@@ -64,6 +64,10 @@ export {
   setRetryAfterMs,
   connectTimeoutError,
   errorKind,
+  ImageUnsupportedError,
+  IMAGE_UNSUPPORTED_MARKERS,
+  isImageUnsupportedBody,
+  isImageUnsupportedError,
   isRetryableStatus,
   isTimeoutError,
   LlmError,
@@ -161,3 +165,17 @@ export {
   DEEPSEEK_PROVIDER_NAME,
   LlmRegistry,
 } from "./provider.js";
+
+
+// W804 (multimodal P0): the image-aware wire helpers + the one-shot downgrade.
+export type { ResolvedImages, WireContentPart, WireImagePart, WireTextPart } from "./wire.js";
+export {
+  collectMessageParts,
+  dataUrlFor,
+  messageImageRefs,
+  messagesHaveImages,
+  resolvedImagesOf,
+  wireMessagesFor,
+} from "./wire.js";
+export type { ImageDowngradeInfo, ImageDowngradeLlmOptions } from "./image-fallback.js";
+export { createImageDowngradeLlm, imagePlaceholderText, withImagePlaceholders } from "./image-fallback.js";

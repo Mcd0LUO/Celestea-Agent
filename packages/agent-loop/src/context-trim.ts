@@ -28,6 +28,7 @@
  */
 
 import {
+  isImageContent,
   isTextContent,
   isToolCallContent,
   serdeJsonString,
@@ -40,6 +41,10 @@ import {
 const MESSAGE_OVERHEAD_TOKENS = 4;
 /** Per-tool-call structural overhead in the estimate. */
 const TOOL_CALL_OVERHEAD_TOKENS = 10;
+/** W804: fixed overhead of one image block in the estimate. */
+export const IMAGE_BASE_TOKENS = 85;
+/** W804: coarse area divisor used to estimate an image block's token cost. */
+export const IMAGE_PIXEL_DIVISOR = 750;
 /** Marker text prefix (contract: consumers key off `[context-trimmed]`). */
 export const TRIMMED_MARKER_PREFIX = "[context-trimmed]";
 
@@ -57,12 +62,28 @@ export function estimateMessageTokens(msg: Message): number {
     else if (isToolCallContent(content)) {
       const call = content.content;
       total += TOOL_CALL_OVERHEAD_TOKENS + estimateTokens(call.name) + estimateTokens(serdeJsonString(call.args));
+    } else if (isImageContent(content)) {
+      // W804 (R8): an image block MUST contribute tokens, otherwise the trim
+      // systematically under-counts and can send an over-window request. P0 has
+      // no decoder here, so the estimate is fixed overhead + a coarse area term.
+      total += estimateImageTokens(content.content.width, content.content.height);
     }
   }
   if (msg.tool_call_id !== null) total += estimateTokens(msg.tool_call_id);
   return total;
 }
 
+
+/**
+ * W804: coarse token estimate of one image block (fixed overhead + area term).
+ * It is deliberately approximate, exactly like [estimateTokens]: it decides WHEN
+ * to trim, never what the provider bills.
+ */
+export function estimateImageTokens(width: number, height: number): number {
+  const w = Number.isFinite(width) && width > 0 ? width : 0;
+  const h = Number.isFinite(height) && height > 0 ? height : 0;
+  return IMAGE_BASE_TOKENS + Math.ceil((w * h) / IMAGE_PIXEL_DIVISOR);
+}
 /** Estimate the total token count of a message list. */
 export function estimateMessagesTokens(messages: readonly Message[]): number {
   let total = 0;

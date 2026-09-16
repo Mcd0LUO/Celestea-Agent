@@ -11,7 +11,7 @@
  * otherwise be cut mid-code-point and the summary request would be invalid UTF-8.
  */
 
-import { serdeJsonString, type SessionEvent } from "@celestea/core";
+import { serdeJsonString, type ImageRef, type SessionEvent } from "@celestea/core";
 
 /** Per-event clip inside the transcript (tool results / texts). */
 export const TRANSCRIPT_EVENT_MAX_CHARS = 4_000;
@@ -57,7 +57,8 @@ export function transcriptLine(ev: SessionEvent): string {
     case "turn_end":
       return "";
     case "user_message":
-      return `【用户】${clip(ev.text, TRANSCRIPT_EVENT_MAX_CHARS)}\n`;
+      // W804: attachments enter the summary as placeholders, NEVER as bytes.
+      return `【用户】${clip(ev.text, TRANSCRIPT_EVENT_MAX_CHARS)}${attachmentNote(ev.attachments)}\n`;
     case "assistant_message":
       return `【助手】${clip(ev.text, TRANSCRIPT_EVENT_MAX_CHARS)}\n`;
     case "thinking_delta":
@@ -78,6 +79,12 @@ export function transcriptLine(ev: SessionEvent): string {
   }
 }
 
+
+/** W804: a byte-free placeholder for each attachment (summary input only). */
+export function attachmentNote(refs: readonly ImageRef[] | undefined): string {
+  if (refs === undefined || refs.length === 0) return "";
+  return refs.map((ref) => `【图：${ref.media_type} ${ref.width}x${ref.height}】`).join("");
+}
 /** The whole summary input: every event line, then one tail clip. */
 export function renderTranscript(events: readonly SessionEvent[], max = SUMMARY_INPUT_MAX_CHARS): string {
   let out = "";

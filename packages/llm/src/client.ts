@@ -21,7 +21,13 @@
 
 import type http from "node:http";
 
-import { parseRetryAfterHeader, setRetryAfterMs, statusError } from "./errors.js";
+import {
+  ImageUnsupportedError,
+  isImageUnsupportedBody,
+  parseRetryAfterHeader,
+  setRetryAfterMs,
+  statusError,
+} from "./errors.js";
 import {
   resolveClientConfig,
   validateModel,
@@ -172,7 +178,13 @@ async function assertSuccess(response: http.IncomingMessage): Promise<void> {
   const text = await readBodySnippet(response);
   response.destroy();
   const label = httpStatusLabel(status, response.statusMessage);
-  const error = statusError(status, label, redact(text));
+  // W804 section 7.6: a 4xx whose body names the image modality is classified
+  // BEFORE the generic status error, so the downgrade decorator can react.
+  const body = redact(text);
+  const error =
+    status >= 400 && status < 500 && isImageUnsupportedBody(text)
+      ? new ImageUnsupportedError(status, label, body)
+      : statusError(status, label, body);
   // E §4.2.2 P1: the header is captured here, where the response is still in
   // hand; the P0 error object and its message stay byte-for-byte unchanged.
   setRetryAfterMs(error, parseRetryAfterHeader(response.headers["retry-after"]));

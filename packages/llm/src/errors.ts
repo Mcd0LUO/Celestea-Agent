@@ -57,6 +57,43 @@ export function statusError(status: number, label: string, bodySnippet = ""): Ll
   });
 }
 
+/**
+ * W804 (section 7.6): the upstream report patterns that mean "this model cannot
+ * take an image". ONLY known patterns are classified; anything else stays an
+ * ordinary status error (we never guess).
+ */
+export const IMAGE_UNSUPPORTED_MARKERS: readonly string[] = [
+  "multimodal input is not supported",
+  "model only supports text input",
+  "unsupported content type 'image_url'",
+  "unsupported content type image_url",
+];
+
+/** True when an upstream error body carries a known image-unsupported marker. */
+export function isImageUnsupportedBody(body: string): boolean {
+  const text = body.toLowerCase();
+  return IMAGE_UNSUPPORTED_MARKERS.some((marker) => text.includes(marker));
+}
+
+/**
+ * A 4xx whose body proves the model rejected image input (section 7.6). It is an
+ * LlmError (kind "generate", httpStatus set, NOT retryable to another target)
+ * and carries `imageUnsupported = true` so the downgrade decorator recognises it.
+ */
+export class ImageUnsupportedError extends LlmError {
+  readonly imageUnsupported = true;
+  constructor(status: number, label: string, bodySnippet: string) {
+    super(`stream request failed: ${label}: ${bodySnippet}`, "generate", { httpStatus: status, retryable: false });
+    this.name = "ImageUnsupportedError";
+  }
+}
+
+/** Recognise an [ImageUnsupportedError] across a structural (re-boxed) boundary. */
+export function isImageUnsupportedError(e: unknown): e is ImageUnsupportedError {
+  if (e instanceof ImageUnsupportedError) return true;
+  return typeof e === "object" && e !== null && (e as Record<string, unknown>)["imageUnsupported"] === true;
+}
+
 /** Transport failure before any response (DNS/TCP/TLS/socket): retryable. */
 export function networkError(message: string): LlmError {
   return new LlmError(message, "generate", { retryable: true });
