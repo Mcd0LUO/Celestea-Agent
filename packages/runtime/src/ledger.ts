@@ -10,7 +10,8 @@
  *   - append-only: a line is written once and never edited (no rewrite, no
  *     compaction). Rotation (§3.3 P1 ④, W785) rolls the WHOLE file to
  *     `<path>.1` once it passes [USAGE_LEDGER_MAX_BYTES]: the current file is
- *     still only ever appended to, and `read()` reads the current file only;
+ *     still only ever appended to, and `read()` reads the current file only
+ *     (the CUMULATIVE views call `readAll()`, which prefixes the rolled `.1`);
  *   - one `writeSync` on an `O_APPEND` fd per record, mode 0600, so concurrent
  *     writers cannot interleave a line;
  *   - idempotent: the key is `(session, turn_id, step, attempt)`; a key already
@@ -34,7 +35,7 @@
  * `latest`/`total` views are derived from the FILE, so they survive a restart.
  */
 
-import { closeSync, openSync, readFileSync, renameSync, statSync, writeSync } from "node:fs";
+import { closeSync, openSync, renameSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { usageAdd, zeroUsage, type SessionEvent, type SessionLog, type TurnOutcome, type Usage } from "@celestea/core";
 import {
@@ -50,6 +51,7 @@ import {
   type PricingTable,
 } from "./pricing.js";
 import type { UsageAccounting } from "./usage.js";
+import { LedgerKeySet, readLedgerRecords } from "./ledger-io.js";
 
 /** `<data dir>/usage-ledger.jsonl` (§3.2.1). */
 export const USAGE_LEDGER_FILE = "usage-ledger.jsonl";
@@ -67,6 +69,14 @@ export const LEDGER_VERSION = 1;
  * row it had.
  */
 export const USAGE_LEDGER_MAX_BYTES = 16 * 1024 * 1024;
+/**
+ * Bound of the in-process idempotency-key set (P2-5, W836): a long-lived engine
+ * books one key per model step, so the set is trimmed once it exceeds this many
+ * entries (oldest first). Per-turn keys are evicted wholesale when their turn
+ * ends ([UsageLedgerFile.evictTurn]); this cap is only the backstop for keys
+ * whose turn never closed (torn process, out-of-turn row).
+ */
+export const USAGE_LEDGER_MAX_KEYS = 100_000;
 
 export type LedgerStepKind = "ok" | "error";
 export type PricedBy = "table" | "record" | "unpriced";
@@ -181,7 +191,7 @@ export function ledgerKey(record: Pick<UsageStepRecord, "session" | "turn_id" | 
 /** Append-only writer of one ledger file, shared by every session (§3.6). */
 export class UsageLedgerFile {
   private fd: number | null = null;
-  private readonly keys = new Set<string>();
+  private readonly keys = new LedgerKeySet(USAGE_LEDGER_MAX_KEYS);
   private readonly target: string;
   private readonly clock: () => number;
   private readonly maxBytes: number;
@@ -210,36 +220,44 @@ export class UsageLedgerFile {
    */
   append(record: UsageLedgerRecord, key: string | null = null): boolean {
     if (key !== null && this.keys.has(key)) return false;
-    if (key !== null) this.keys.add(key);
     try {
       this.rotateIfLarge();
       writeSync(this.ensureFd(), `${JSON.stringify(record)}\n`);
-      return true;
     } catch (e) {
+      // P1-3 (W836): the key is committed ONLY after the row reached the file.
+      // Committing it first poisoned the rest of the turn: the failed step kept
+      // its number, recomputed the same key, and every later step was dropped as
+      // a duplicate. A failed write must leave no trace beyond the warning.
       warn(`ledger write failed (${errorText(e)})`);
       return false;
     }
+    if (key !== null) this.keys.add(key);
+    return true;
   }
 
-  /** Every readable record, in file order (an unparsable line is skipped). */
+  /** The CURRENT file records only, in file order (audit detail, P2-2). */
   read(): UsageLedgerRecord[] {
-    let raw: string;
-    try {
-      raw = readFileSync(this.target, "utf8");
-    } catch {
-      return [];
-    }
-    const out: UsageLedgerRecord[] = [];
-    for (const line of raw.split("\n")) {
-      if (line.trim() === "") continue;
-      try {
-        const parsed: unknown = JSON.parse(line);
-        if (typeof parsed === "object" && parsed !== null) out.push(parsed as UsageLedgerRecord);
-      } catch {
-        // A torn/foreign line never hides the rows around it.
-      }
-    }
-    return out;
+    return readLedgerRecords<UsageLedgerRecord>(this.target);
+  }
+
+  /**
+   * The CUMULATIVE records: the rolled `.1` segment first, then the current
+   * file, so a rotation does not hide history from total()/latest() or the host
+   * cost views (P2-2, W836). `read()` stays current-only so an audit detail view
+   * cannot double-count rows that are also reachable under `.1`.
+   */
+  readAll(): UsageLedgerRecord[] {
+    return [...readLedgerRecords<UsageLedgerRecord>(`${this.target}.1`), ...this.read()];
+  }
+
+  /** How many idempotency keys are remembered (bounded-memory diagnostics). */
+  get keyCount(): number {
+    return this.keys.size;
+  }
+
+  /** Drop the keys of ONE closed turn (see [LedgerKeySet.evictTurn]). */
+  evictTurn(session: string, turnId: string | null): void {
+    this.keys.evictTurn(session, turnId);
   }
 
   /** Close the descriptor (idempotent; the file itself is never truncated). */
@@ -288,6 +306,8 @@ export class UsageLedgerFile {
 interface TurnAcc {
   turnId: string | null;
   turn: number | null;
+  /** Independent monotonic step counter (P1-3): consumed per booking attempt. */
+  nextStep: number;
   steps: number;
   attempts: number;
   usage: Usage;
@@ -331,6 +351,7 @@ export class UsageLedger implements UsageAccounting, LedgerStepSink, TurnLedgerH
   endTurn(outcome: TurnOutcome): void {
     const acc = this.acc;
     this.acc = null;
+    if (acc !== null) this.file.evictTurn(this.session, acc.turnId);
     if (acc === null || acc.steps === 0) return;
     const complete = acc.unpriced.size === 0 && acc.billedUnknown === 0;
     this.file.append({
@@ -390,7 +411,7 @@ export class UsageLedger implements UsageAccounting, LedgerStepSink, TurnLedgerH
   /** This session's step rows, newest first (`turn_total` rows excluded). */
   private rows(): UsageStepRecord[] {
     return this.file
-      .read()
+      .readAll()
       .filter((r): r is UsageStepRecord => r.kind !== "turn_total" && r.session === this.session)
       .reverse();
   }
@@ -415,6 +436,12 @@ export class UsageLedger implements UsageAccounting, LedgerStepSink, TurnLedgerH
   /** Build the row of one closed step and append it (idempotent by key). */
   private book(ref: StepRef, outcome: LedgerStepOutcome, usage: Usage | null): void {
     const acc = this.accumulator(ref.turnId, ref.turn);
+    // P1-3 (W836): an INDEPENDENT step number, consumed even when the write
+    // fails. Reusing `acc.steps` (which only counts rows that reached the file)
+    // would hand the same number to the next step, so a later successful row
+    // could collide with a key the failed write had left behind.
+    const step = acc.nextStep + 1;
+    acc.nextStep = step;
     const price = usage === null ? null : priceFor(this.file.pricing, ref.info.model);
     const cost = usage !== null && price !== null ? costOf(usage, price) : null;
     const record: UsageStepRecord = {
@@ -424,7 +451,7 @@ export class UsageLedger implements UsageAccounting, LedgerStepSink, TurnLedgerH
       session: this.session,
       turn: ref.turn,
       turn_id: ref.turnId,
-      step: acc.steps + 1,
+      step,
       attempt: ref.info.attempt,
       provider: ref.info.provider,
       model: ref.info.model,
@@ -458,6 +485,7 @@ export class UsageLedger implements UsageAccounting, LedgerStepSink, TurnLedgerH
     this.acc = {
       turnId,
       turn,
+      nextStep: 0,
       steps: 0,
       attempts: 0,
       usage: zeroUsage(),

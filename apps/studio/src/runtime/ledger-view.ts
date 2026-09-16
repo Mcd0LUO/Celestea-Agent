@@ -14,9 +14,10 @@
  *     for a named session (`sessionIdOfDir`, the SAME label `session-compose.ts`
  *     uses), `sessionId ?? "cli-main"` for the detached generation.
  *
- * Both readers call `file.read()` on every request: the ledger is the single
- * source of truth, so nothing is cached and a row booked a millisecond ago is
- * visible to the next poll (no invalidation logic to get wrong).
+ * Both readers call `file.readAll()` on every request — the current file plus
+ * the rolled `.1` segment (P2-2), so a rotation cannot zero the cumulative
+ * view. The ledger stays the single source of truth, so nothing is cached and
+ * a row booked a millisecond ago is visible to the next poll.
  */
 
 import {
@@ -40,7 +41,7 @@ export function usageLedgerView(
 ): LedgerQueryResult | LedgerUnavailable {
   if (file === null) return { ok: false, error: "usage ledger disabled" };
   try {
-    return queryLedger(file.read(), q);
+    return queryLedger(file.readAll(), q);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -54,7 +55,7 @@ export function costBlockView(
 ): LedgerCostBlock | null {
   if (file === null) return null;
   try {
-    return ledgerCostBlock(file.read(), ledgerLabel(session, dir));
+    return ledgerCostBlock(file.readAll(), ledgerLabel(session, dir));
   } catch {
     // Cost is a view: a broken ledger must not fail a status poll.
     return null;

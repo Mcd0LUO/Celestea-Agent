@@ -17,9 +17,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
+import { USAGE_LEDGER_FILE, UsageLedgerFile, type UsageStepRecord } from "@celestea/runtime";
 import { createStudioApp, type StudioApp } from "../app.js";
 import { loadStudioConfig } from "../config.js";
 import { jsonRequest } from "../harness.test-util.js";
+import { costBlockView, usageLedgerView } from "./ledger-view.js";
 import { DONE_FRAME, startMockProvider, textDelta, usageChunk } from "./mock-provider.test-util.js";
 
 const MODEL = "mock-v4-flash";
@@ -353,5 +355,46 @@ describe("aggregate view over the ledger file (W785 P1 ①/②)", () => {
     } finally {
       await upstream.close();
     }
+  });
+});
+
+/**
+ * W836 R3 batch F (P2-2): the two host views the adapter wires
+ * (`real-runtime-adapter.ts:593/598`) must count a rolled `.1` segment, so a
+ * rotation cannot zero `/api/status.cost`. The probe drives those real view
+ * functions over a `UsageLedgerFile` with a tiny threshold.
+ */
+function appendLedgerStep(file: UsageLedgerFile, step: number, prompt: number, completion: number): void {
+  const record: UsageStepRecord = {
+    v: 1, ts: 1, kind: "ok", session: "ws/s1", turn: 0, turn_id: "turn-0",
+    step, attempt: 0, provider: "mock", model: "deepseek-chat", base_url_host: null,
+    usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion, cache_read: 0, reasoning_tokens: 0 },
+    billed_unknown: false, error_kind: null, http_status: null, retryable: null,
+    price: null, cost: null, priced_by: "unpriced", fallback_from: null,
+  };
+  file.append(record);
+}
+
+describe("W836 P2-2: the host ledger views survive a rotation", () => {
+  it("counts current + `.1` in /api/status.cost and /api/usage/ledger", () => {
+    const root = mkdtempSync(join(tmpdir(), "ledger-view-r3-"));
+    roots.push(root);
+    const path = join(root, USAGE_LEDGER_FILE);
+    const file = new UsageLedgerFile({ path, maxBytes: 1 });
+    appendLedgerStep(file, 1, 100, 10);
+    appendLedgerStep(file, 2, 200, 20);
+    expect(existsSync(`${path}.1`)).toBe(true);
+
+    const block = costBlockView(file, "ws/s1", null);
+    expect(block?.records).toBe(2);
+    expect(block?.session_total).toBeNull();
+    expect(block?.priced_by).toBe("unpriced");
+    expect(block?.unpriced_models).toEqual(["deepseek-chat"]);
+
+    const view = usageLedgerView(file, { session: "ws/s1" });
+    if (!view.ok) throw new Error("ledger view unavailable");
+    expect(view.totals.records).toBe(2);
+    expect(view.totals.tokens.prompt_tokens).toBe(300);
+    expect(view.totals.tokens.completion_tokens).toBe(30);
   });
 });
