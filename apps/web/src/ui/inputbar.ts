@@ -12,7 +12,18 @@
 //   - Ctrl/Cmd+Enter = 另一条车道（queue=排队，next-turn 本轮结束后独立投递）；
 //   - 输入栏右侧「插话/排队」小切换：只用鼠标也能选车道，文案与占位符随之变化。
 // ============================================================================
-import { need } from '../utils/dom';
+import { el, need } from '../utils/dom';
+import {
+  addFiles,
+  attachmentsEnabled,
+  ATTACHMENT_ACCEPT,
+  clearPending,
+  imageEntryDisabledReason,
+  loadAttachmentCapabilities,
+  pendingList,
+  removePending,
+  renderTray,
+} from './attachments';
 
 /**
  * 提交车道：
@@ -125,6 +136,7 @@ export function initInputBar(h: InputBarHandlers): void {
     h.send(input.value, lane);
   });
   input.addEventListener('input', autoGrow);
+  initAttachmentEntries(input, bar);
   renderSubmitUi();
   window.setTimeout(autoGrow, 0);
 }
@@ -183,4 +195,149 @@ export function setInputMode(mode: InputMode): void {
     input.readOnly = false; // 只读视图仍允许打字（草稿保留），发送被禁用
   }
   renderSubmitUi();
+}
+
+// ---- W805：图片附件三入口（粘贴 / 拖拽 / 文件选择） --------------------------
+
+let trayEl: HTMLElement | null = null;
+let noteEl: HTMLElement | null = null;
+let attachBtn: HTMLButtonElement | null = null;
+let fileInput: HTMLInputElement | null = null;
+
+function barEl(): HTMLElement | null {
+  return bar ?? document.getElementById('inputbar');
+}
+
+/** 重建待发缩略图条（选择/粘贴/拖入、发送清空、失败回滚后都要调）。 */
+export function refreshAttachmentTray(): void {
+  if (!trayEl) return;
+  renderTray(trayEl, pendingList(), (item) => {
+    removePending(item);
+    refreshAttachmentTray();
+  });
+}
+
+/** 附件入口显隐/禁用文案（能力位就绪、切会话、切模型后重绘）。 */
+export function refreshAttachmentEntry(): void {
+  const allowed = attachmentsEnabled();
+  const reason = imageEntryDisabledReason();
+  if (attachBtn) {
+    attachBtn.classList.toggle('hidden', !allowed);
+    attachBtn.disabled = !allowed || reason !== '';
+    attachBtn.title = reason === '' ? '添加图片（可粘贴 / 拖拽 / 选择）' : reason;
+  }
+  if (!allowed) clearPending();
+  refreshAttachmentTray();
+}
+
+function noteAttachment(text: string): void {
+  if (!noteEl) return;
+  noteEl.textContent = text;
+  noteEl.classList.toggle('hidden', text === '');
+}
+
+function acceptFiles(files: ArrayLike<File>): void {
+  const reason = imageEntryDisabledReason();
+  if (reason !== '') {
+    noteAttachment(reason);
+    return;
+  }
+  const rejected = addFiles(files);
+  refreshAttachmentTray();
+  if (rejected > 0) noteAttachment('有 ' + rejected + ' 个文件不符合要求，已在待发区标红');
+}
+
+function clipboardImages(e: Event): File[] {
+  const cd = (e as unknown as { clipboardData?: DataTransfer | null }).clipboardData;
+  if (!cd) return [];
+  const out: File[] = [];
+  const items = cd.items;
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it && it.kind === 'file' && it.type.indexOf('image/') === 0) {
+        const f = it.getAsFile();
+        if (f) out.push(f);
+      }
+    }
+  }
+  if (out.length === 0 && cd.files) {
+    for (let i = 0; i < cd.files.length; i++) {
+      const f = cd.files[i];
+      if (f && f.type.indexOf('image/') === 0) out.push(f);
+    }
+  }
+  return out;
+}
+
+function dragHasFiles(e: DragEvent): boolean {
+  const dt = e.dataTransfer;
+  if (!dt) return false;
+  if (dt.types && Array.prototype.indexOf.call(dt.types, 'Files') >= 0) return true;
+  return !!dt.files && dt.files.length > 0;
+}
+
+function acceptFileDialog(): void {
+  const reason = imageEntryDisabledReason();
+  if (reason !== '') {
+    noteAttachment(reason);
+    return;
+  }
+  fileInput?.click();
+}
+
+function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): void {
+  trayEl = el('div', 'attach-tray hidden');
+  noteEl = el('div', 'attach-note hidden');
+  const side = host.querySelector<HTMLElement>('.input-side');
+  attachBtn = document.createElement('button');
+  attachBtn.id = 'btnAttach';
+  attachBtn.type = 'button';
+  attachBtn.className = 'btn btn-soft btn-icon';
+  attachBtn.textContent = '图片';
+  attachBtn.title = '添加图片（可粘贴 / 拖拽 / 选择）';
+  attachBtn.addEventListener('click', () => acceptFileDialog());
+  if (side && side.firstChild) side.insertBefore(attachBtn, side.firstChild);
+  else (side ?? host).appendChild(attachBtn);
+
+  fileInput = document.createElement('input');
+  fileInput.id = 'attachInput';
+  fileInput.type = 'file';
+  fileInput.accept = ATTACHMENT_ACCEPT;
+  fileInput.multiple = true;
+  fileInput.className = 'attach-file hidden';
+  fileInput.addEventListener('change', () => {
+    if (fileInput && fileInput.files && fileInput.files.length > 0) acceptFiles(fileInput.files);
+    if (fileInput) fileInput.value = '';
+  });
+
+  host.insertBefore(trayEl, host.firstChild);
+  host.insertBefore(noteEl, trayEl.nextSibling);
+  host.appendChild(fileInput);
+
+  // 粘贴：有图片就收；**不** preventDefault —— 同一次粘贴里的文字照常落进输入框。
+  input.addEventListener('paste', (e) => {
+    const files = clipboardImages(e);
+    if (files.length > 0) acceptFiles(files);
+  });
+
+  document.addEventListener('dragover', (e) => {
+    if (!dragHasFiles(e) || imageEntryDisabledReason() !== '') return;
+    e.preventDefault();
+    barEl()?.classList.add('drop-active');
+  });
+  document.addEventListener('dragleave', (e) => {
+    if (dragHasFiles(e)) barEl()?.classList.remove('drop-active');
+  });
+  document.addEventListener('drop', (e) => {
+    barEl()?.classList.remove('drop-active');
+    const dt = e.dataTransfer;
+    if (!dt || imageEntryDisabledReason() !== '') return;
+    if (!dt.files || dt.files.length === 0) return;
+    e.preventDefault();
+    acceptFiles(dt.files);
+  });
+
+  refreshAttachmentEntry();
+  void loadAttachmentCapabilities().then(refreshAttachmentEntry);
 }

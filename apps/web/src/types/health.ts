@@ -25,6 +25,11 @@ export interface HealthCapabilities {
    * 暴露面差异是否已落地。缺省（老服务）→ 切换入口只读降级，不报错（W788）。
    */
   session_mode_tools?: boolean;
+  /**
+   * W805：多模态附件入口能力位（设计 §7.1）。只有显式 true 才显示
+   * 粘贴/拖拽/选择图片入口；缺省（老服务）→ 入口隐藏，不当成故障。
+   */
+  multimodal?: boolean;
   /** 其它能力位（未知键原样保留，本层不解释）。 */
   [key: string]: unknown;
 }

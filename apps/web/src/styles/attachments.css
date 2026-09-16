@@ -1,0 +1,90 @@
+/* ============================================================================
+   W805 多模态附件（P0 前端半边）：待发缩略图条 / 气泡内网格 / 拖拽高亮 / 放大浮层。
+   ============================================================================ */
+
+.attach-file { display: none; }
+
+.attach-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+}
+.attach-tray.hidden { display: none; }
+
+.attach-note { font-size: 12px; color: var(--c-warn); padding: 2px 4px; }
+.attach-note.hidden { display: none; }
+
+.attach-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+
+.attach-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--radius);
+  background: var(--c-surface-raised);
+}
+.attach-item.err { border-color: var(--c-err); }
+
+.attach-thumb {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--c-layer-2);
+  cursor: zoom-in;
+}
+.attach-thumb-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--c-text-3);
+  cursor: default;
+}
+
+.attach-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.attach-name {
+  font-size: 12px;
+  color: var(--c-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-sub { font-size: 11px; color: var(--c-text-3); }
+.attach-item.err .attach-sub { color: var(--c-err); }
+
+.attach-remove {
+  border: none;
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.attach-remove:hover { color: var(--c-err); }
+
+.attach-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-overlay);
+  cursor: zoom-out;
+}
+.attach-lightbox-img { max-width: 90vw; max-height: 90vh; object-fit: contain; }
+
+#inputbar.drop-active { outline: 1px dashed var(--c-accent); outline-offset: -3px; }
+
+.btn-icon { min-width: 32px; }

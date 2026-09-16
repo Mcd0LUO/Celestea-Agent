@@ -8,6 +8,7 @@ import { el, fmtNow } from '../../utils/dom';
 import type { SessionPane } from '../viewctx';
 import { railAdd, railSync } from '../rail';
 import { autoscroll, hideEmptyHint } from './scroll';
+import { renderAttachmentGrid, type AttachmentView } from '../attachments';
 
 // ---- message builders ----------------------------------------------------------
 
@@ -33,7 +34,7 @@ const USER_CAPTION: Record<MsgKind, string> = {
 export function addUserMessage(
   ctx: SessionPane,
   text: string,
-  opts?: { kind?: MsgKind; into?: HTMLElement },
+  opts?: { kind?: MsgKind; into?: HTMLElement; attachments?: AttachmentView[] },
 ): HTMLElement {
   const kind: MsgKind = opts?.kind ?? 'user';
   const target = opts?.into ?? ctx.el;
@@ -50,6 +51,9 @@ export function addUserMessage(
   body.textContent = text;
   body.style.whiteSpace = 'pre-wrap';
   bubble.appendChild(body);
+  // W805：文本下方渲染附件网格（live 有缩略图；历史只有元数据，见设计 §7.4）。
+  const atts = opts?.attachments ?? [];
+  if (atts.length > 0) bubble.appendChild(renderAttachmentGrid(atts));
   msg.appendChild(bubble);
   col.appendChild(msg);
   target.appendChild(col);

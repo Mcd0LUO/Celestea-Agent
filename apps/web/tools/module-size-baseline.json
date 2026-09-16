@@ -1,11 +1,11 @@
 {
   "kind": "frontend-module-size-baseline",
-  "note": "W758 建立：暂未拆分的超大文件按登记时真实行数设上限（棘轮：只许降不许升）。拆分落地后请把该行收紧或删除条目；条目行数已 ≤400 或文件不存在即为陈旧项（check-module-size 会报警）。W760：grants 权限面板（原 ui/grants/panel.ts）已拆到 ui/grants/panel/（本体只剩兼容再导出），条目按规矩删除，回到默认上限 400。 W784：提问卡片前端 —— types.ts 644（657→644，把 W726 上下文快照类型整段搬到 ./types/context 后由 types.ts 再导出，本文件净减 13 行）；chat.ts 559（622→559，把 W259 /compact 流程整段搬到 ui/compact.ts，本文件净减 63 行）。两条都是**棘轮向下**收紧，按 check-module-size 的提示改到真实行数。 W788：双模式 P1 前端 —— 为腾出 types.ts 的棘轮行数（新增 mode 字段与两个能力位），把只读自省端点族（HealthCapabilities/HealthInfo/ToolInfo/ToolsResp）整族搬到 src/types/health.ts，types.ts 644→626（**棘轮向下**收紧到真实行数），按 check-module-size 的提示改。 W790：悬浮提示插件化（item 4）—— rail.ts 的自制预览卡（卡片 DOM / 150ms 定时器 / 落位 / 撤卡）整段搬进 ui/hint/（注册缝 + 引擎 + 内置提供者），rail.ts 550→540（**棘轮向下**收紧到真实行数）。 W792：归档面板取数修复 —— 为批量端点响应（含 failed[]）新建建模，按先例把 OkResp/ClearResp/CancelResp/BatchIdsReq/BatchNamesReq 与本轮新增的 BatchFailedItem/BatchOpResp 整族搬到 src/types/batch.ts（types.ts 原样再导出，调用方零改动），types.ts 626→614（**棘轮向下**收紧到真实行数），按 check-module-size 的提示改。",
-  "capturedAt": "2026-09-15T20:52+08:00",
+  "note": "W758 建立：暂未拆分的超大文件按登记时真实行数设上限（棘轮：只许降不许升）。拆分落地后请把该行收紧或删除条目；条目行数已 ≤400 或文件不存在即为陈旧项（check-module-size 会报警）。W760：grants 权限面板（原 ui/grants/panel.ts）已拆到 ui/grants/panel/（本体只剩兼容再导出），条目按规矩删除，回到默认上限 400。 W784：提问卡片前端 —— types.ts 644（657→644，把 W726 上下文快照类型整段搬到 ./types/context 后由 types.ts 再导出，本文件净减 13 行）；chat.ts 559（622→559，把 W259 /compact 流程整段搬到 ui/compact.ts，本文件净减 63 行）。两条都是**棘轮向下**收紧，按 check-module-size 的提示改到真实行数。 W788：双模式 P1 前端 —— 为腾出 types.ts 的棘轮行数（新增 mode 字段与两个能力位），把只读自省端点族（HealthCapabilities/HealthInfo/ToolInfo/ToolsResp）整族搬到 src/types/health.ts，types.ts 644→626（**棘轮向下**收紧到真实行数），按 check-module-size 的提示改。 W790：悬浮提示插件化（item 4）—— rail.ts 的自制预览卡（卡片 DOM / 150ms 定时器 / 落位 / 撤卡）整段搬进 ui/hint/（注册缝 + 引擎 + 内置提供者），rail.ts 550→540（**棘轮向下**收紧到真实行数）。 W792：归档面板取数修复 —— 为批量端点响应（含 failed[]）新建建模，按先例把 OkResp/ClearResp/CancelResp/BatchIdsReq/BatchNamesReq 与本轮新增的 BatchFailedItem/BatchOpResp 整族搬到 src/types/batch.ts（types.ts 原样再导出，调用方零改动），types.ts 626→614（**棘轮向下**收紧到真实行数），按 check-module-size 的提示改。 W805：多模态附件 P0 前端半边 —— 把 chat.ts 的发送编排（dispatchSend/startTurn/injectInput/restoreDraft）整段拆到 ui/send.ts、旧后端流归属拆到 ui/legacy-owner.ts，chat.ts 559→411；把会话历史契约族（HistoryRole/HistoryMsg/MessagesResp）整段拆到 src/types/history.ts 并新增可选 attachments（无附件时省略，既有 golden 逐字节不变），types.ts 614→582。两条都是**棘轮向下**收紧到真实行数（check-module-size 提示的 N）。",
+  "capturedAt": "2026-09-16T14:51+08:00",
   "defaultLimit": 400,
   "limits": {
-    "src/chat.ts": 559,
-    "src/types.ts": 614,
+    "src/chat.ts": 411,
+    "src/types.ts": 582,
     "src/ui/rail.ts": 540,
     "src/ui/viewctx.ts": 406,
     "src/utils/markdown.ts": 509

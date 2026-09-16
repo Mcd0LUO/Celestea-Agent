@@ -2,9 +2,8 @@
 // chat.ts — turn 生命周期 + SSE 接线（编排层，W514 多会话版）：
 //   收到 SSE 事件 → 按 session 路由到对应「会话视图容器」→ 更新该容器
 //   （流/思考/工具卡）与（仅当它是当前聚焦容器时）statusline / 状态栏 / 输入栏。
-//   发送：聚焦容器运行中 → 插话（POST /api/turn 带 session，注入该轮）；
-//         空闲 → 现行开新轮路径；worker 容器 → 只读，不发。
-//   旧后端（无 session 字段）→ 全部回落单会话行为（legacyOwner 记录归属）。
+//   发送编排（含附件乐观路径与回滚）已拆到 ui/send.ts —— 本文件只留 SSE 与 chrome 同步。
+//   旧后端（无 session 字段）→ 全部回落单会话行为（legacyOwner 记录归属，见 ui/legacy-owner）。
 // ============================================================================
 import { api } from './api';
 import { SseClient } from './sse';
@@ -20,7 +19,6 @@ import type {
 } from './types';
 import { S } from './state';
 import {
-  addUserMessage,
   appendText,
   appendThinking,
   applyFinalText,
@@ -33,27 +31,27 @@ import {
   removeAssistant,
   renderInboxMessage,
   renderInfoBlock,
-  renderInterjectNote,
-  laneLabel,
 } from './ui/messages';
 import { applyToolResult, getToolStep, pushToolCard, resetTurnStep } from './ui/toolcards';
 // W784：模型向用户提问（提问卡片 + 断线重连的未决列表重建）接线
 import { registerQuestionSse } from './ui/question';
-import { onCompact, runCompact } from './ui/compact';
+import { onCompact } from './ui/compact';
 import { msgOf, sid } from './ui/session-util';
 import {
-  clearInput,
   initInputBar,
+  refreshAttachmentEntry,
+  refreshAttachmentTray,
   setBusy,
   setInputMode,
-  setInputValue,
-  type SubmitMode,
 } from './ui/inputbar';
+import { dispatchSend } from './ui/send';
+import { getLegacyOwner, setLegacyOwner } from './ui/legacy-owner';
+import { isImageDowngrade } from './ui/attachments';
+import { renderImageDowngrade } from './ui/downgrade';
 import { feedAssistantDelta, finalAssistantDedup } from './ui/restore';
 import {
   cancelStatusFlash,
   finishElapsedTimer,
-  flashStatus,
   setStatus,
   setStatusStep,
   setStatusTurn,
@@ -83,16 +81,9 @@ const PHASE_LABELS: Record<string, string> = {
 
 // ---- 会话路由 ------------------------------------------------------------------
 
-/**
- * 旧后端（SSE 无 session 字段）的流归属：本客户端最近一次发起 turn 的容器。
- * 有该记录时，未携带 session 的帧路由到它 —— 切到别的会话也能各自看到实时流；
- * 新后端每帧都带 session，此记录不参与路由。
- */
-let legacyOwner: SessionPane | null = null;
-
 function ctxFor(p: { session?: string | null }): SessionPane {
   const id = typeof p.session === 'string' && p.session !== '' ? p.session : null;
-  if (id === null) return legacyOwner ?? activePane() ?? ensurePane(LOCAL_ID);
+  if (id === null) return getLegacyOwner() ?? activePane() ?? ensurePane(LOCAL_ID);
   const adopted = adoptLocalIfUnbound(id);
   if (adopted) return adopted;
   return paneOf(id) ?? ensurePane(id);
@@ -154,7 +145,7 @@ function finalizeTurn(ctx: SessionPane, phase: string): void {
     else removeAssistant(ctx, a); // 空占位气泡（无正文/思考/工具内容）：不渲染空块
   }
   ctx.assistant = null;
-  if (legacyOwner === ctx) legacyOwner = null;
+  if (getLegacyOwner() === ctx) setLegacyOwner(null);
   if (isActivePane(ctx)) {
     S.turn = null;
     S.assistant = null;
@@ -167,6 +158,12 @@ function finalizeTurn(ctx: SessionPane, phase: string): void {
 }
 
 function onStatus(ctx: SessionPane, p: StatusPayload): void {
+  // W805（设计 §7.6）：上游「图像不支持」降级帧的 phase 也是 'error'，但它不是
+  // 轮次结束（envelope.turn=0，是进程级提示）—— 先拦下，只做可见提示。
+  if (isImageDowngrade(p)) {
+    renderImageDowngrade(ctx, p);
+    return;
+  }
   if (p.phase === 'start') {
     // 思考阶段绝不创建 assistant 气泡——只在首个 text delta 或工具卡需要时才创建
     if (isActivePane(ctx)) cancelStatusFlash();
@@ -354,7 +351,7 @@ export function connectSse(): SseClient {
   return sse;
 }
 
-// ---- send / cancel -------------------------------------------------------------
+// ---- cancel -------------------------------------------------------------------
 
 /**
  * 取消当前聚焦容器的轮次（单一取消入口）：#btnCancel 与 statusline 的 #slStop 共用。
@@ -379,153 +376,6 @@ function onInbox(ctx: SessionPane, p: InboxPayload): void {
   renderInboxMessage(ctx, text, { source: p.source, target: p.target });
 }
 
-/** 发送入口：命令 → 只读拦截 → 运行中插话/排队 → 空闲开新轮。 */
-function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
-  const t = text.trim();
-  const ctx = activePane();
-  if (!ctx || t === '') return;
-  if (t === '/compact') {
-    // W259：/compact 是命令而非消息——走压缩流程，不进普通发送路径
-    void runCompact(ctx);
-    return;
-  }
-  if (ctx.kind === 'worker') {
-    flashStatus('Worker 会话为只读视图，未发送', 'err', 5_000);
-    return;
-  }
-  ctx.draft = '';
-  if (ctx.streaming) {
-    void injectInput(ctx, t, mode);
-    return;
-  }
-  startTurn(ctx, t);
-}
-
-/** 空闲路径：开新轮（现行行为，带 session 以便后端定位目标会话）。 */
-function startTurn(ctx: SessionPane, t: string): void {
-  addUserMessage(ctx, t);
-  clearInput();
-  legacyOwner = ctx;
-  setPaneStreaming(ctx, true);
-  ctx.turn = null;
-  ctx.t0 = Date.now();
-  ctx.phase = '启动中…';
-  resetTurnStep(ctx); // W263：发送即清零当前轮步数（SSE start 到达前也正确）
-  if (isActivePane(ctx)) {
-    S.t0 = ctx.t0;
-    setBusy(true);
-    setStatus('启动中…', 'busy');
-    setStatusStep(null);
-    startElapsedTimer();
-  }
-  updateSessionBar();
-  void api
-    .turn(t, sid(ctx))
-    .then((r) => {
-      if (r.session) adoptLocalIfUnbound(r.session);
-      if (ctx.turn === null && r.turn !== undefined) ctx.turn = r.turn;
-      ctx.phase = '运行中…';
-      if (isActivePane(ctx)) {
-        setStatusTurn(ctx.turn !== null ? ctx.turn : (r.turn ?? 0));
-        setStatus('运行中…', 'busy');
-      }
-    })
-    .catch((err: unknown) => {
-      // 403/409/…：直接展示；容器回到空闲态并保留已渲染的用户消息
-      setPaneStreaming(ctx, false);
-      ctx.phase = '发送失败';
-      if (legacyOwner === ctx) legacyOwner = null;
-      if (isActivePane(ctx)) {
-        setBusy(false);
-        stopElapsedTimer();
-        setStatus('发送失败：' + msgOf(err), 'err');
-      }
-      renderInfoBlock(ctx, '发送失败：' + msgOf(err), 'err');
-      updateSessionBar();
-    });
-}
-
-/**
- * 运行中提交（W514 插话 + W515 两车道）：
- *   mode='steer'（默认）—— POST /api/turn {input, session, mode:'steer'}
- *     = 插话：注入该轮最近 step 边界（DSH inbox next-step），不新开轮；
- *   mode='queue' —— {mode:'queue'} = 排队：本轮结束后作为下一回合独立投递
- *     （DSH inbox next-turn）。
- *   1) 先按对应样式渲染（插话 / 排队），并给轻提示「等待送达…」；
- *   2) 成功后改写为「将在下一步送达」/「本轮结束后送达」；
- *   3) 后端把它当成新轮（injected=false，本地运行态过期）→ 按新轮记账；
- *   4) 失败（409/404/405：契约未就绪的旧后端 / 目标会话已结束）：
- *      queue 先回退为 steer 再试一次（旧后端同样 409 时一并失败），
- *      最终撤销乐观渲染、文本还原输入框，只在状态栏/信息块给出错误 —— 不丢字。
- */
-async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promise<void> {
-  const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'steering' });
-  clearInput();
-  ctx.draft = '';
-  const waitText = mode === 'queue' ? '已排队 · 等待本轮结束…' : '已插话 · 等待送达…';
-  const doneText =
-    mode === 'queue' ? '已排队 · 本轮结束后送达' : '已插话 · 将在下一步送达';
-  const note = renderInterjectNote(ctx, waitText, undefined, col);
-  legacyOwner = ctx;
-  if (isActivePane(ctx)) {
-    flashStatus(mode === 'queue' ? '已排队，将在本轮结束后送达' : '已插话，将在下一步送达', 'busy', 4_000);
-  }
-  const ok = (text: string): void => {
-    note.textContent = text;
-    note.className = 'interject-note ok';
-  };
-  try {
-    const r = await api.turn(t, sid(ctx), mode);
-    if (r.injected === true) {
-      // 后端按插话接收（含 queue 回退到 steer 的情况）
-      ok('已插话 · 将在下一步送达');
-      return;
-    }
-    if (r.queued === true || mode === 'queue') {
-      ok(doneText);
-      return;
-    }
-    // 后端按新一轮接收（本地运行态已过期）：按开新轮记账
-    ctx.turn = r.turn ?? ctx.turn;
-    setPaneStreaming(ctx, true);
-    ctx.phase = '运行中…';
-    ok('已作为新一轮发送');
-    updateSessionBar();
-  } catch (err: unknown) {
-    if (mode === 'queue') {
-      // 排队不被支持（旧后端一律 409）：回退为插话再试一次，并如实提示
-      try {
-        const r2 = await api.turn(t, sid(ctx), 'steer');
-        if (r2.injected !== false) {
-          const lane = laneLabel(r2.inbox_target ?? 'next-step');
-          ok('当前版本不支持排队 → 已按插话送达' + (lane ? '（' + lane + '）' : ''));
-          return;
-        }
-      } catch {
-        /* 两条车道都不可用：走统一失败路径 */
-      }
-    }
-    col.remove();
-    note.parentElement?.remove();
-    ctx.interjectNote = null;
-    restoreDraft(ctx, t);
-    const hint = (mode === 'queue' ? '排队未送达（' : '插话未送达（') + msgOf(err) + '）：已将内容还原到输入框';
-    if (isActivePane(ctx)) {
-      setStatus(hint, 'err');
-      window.setTimeout(() => flashStatus(hint, 'err', 6_000), 0);
-    }
-    renderInfoBlock(ctx, hint, 'warn');
-  }
-}
-
-/** 插话失败时把文本还原回输入框（仅当用户没在输入框里新打字）。 */
-function restoreDraft(ctx: SessionPane, text: string): void {
-  ctx.draft = text;
-  if (!isActivePane(ctx)) return;
-  const el = document.querySelector<HTMLTextAreaElement>('#input');
-  if (el && el.value.trim() === '') setInputValue(text);
-}
-
 // ---- 装配 ----------------------------------------------------------------------
 
 export function initChat(): void {
@@ -538,12 +388,14 @@ export function initChat(): void {
     cancel: requestCancel,
   });
 
-  // 会话切换：rail 换轨 + chrome（statusline/状态栏/输入栏/会话条）同步。
+  // 会话切换：rail 换轨 + chrome（statusline/状态栏/输入栏/会话条/待发附件）同步。
   // 只做 class/文本/节点搬家 —— 背景视图零重渲染（铁律 5）。
   onPaneChange((pane) => {
     railActivate(pane);
     railRebind(pane);
     syncChrome(pane);
+    refreshAttachmentTray();
+    refreshAttachmentEntry();
   });
 
   // 任一会话运行态变化 → 会话条 + 侧栏运行态点（订阅方各自局部更新）；

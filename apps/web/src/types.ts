@@ -118,6 +118,14 @@ export interface StatusPayload extends StatusSnapshot {
    * ({"phase":"progress","statusline":{...}}); flat fields stay supported.
    */
   statusline?: StatusSnapshot;
+  /**
+   * W805（设计 §7.6）：上游 400 归类为「图像不支持」时的降级状态帧字段。
+   * 该帧的 envelope.turn=0（进程级提示），前端不得据此结束当前轮次。
+   */
+  reason?: string;
+  message?: string;
+  placeholder?: string;
+  http_status?: number;
 }
 
 export interface TextPayload extends SseMeta {
@@ -218,52 +226,7 @@ export interface SessionsResp {
   error?: string;
 }
 
-// ---- 会话历史（GET /api/sessions/{id}/messages，回放/恢复用） --------------------
-
-export type HistoryRole = 'user' | 'assistant' | 'tool' | 'thinking' | 'inbox' | 'question';
-
-/**
- * 消息契约（W252 结构化，无兼容层）：
- *   user/assistant/thinking → content 文本；
- *   tool → kind='call'（tool_call_id/tool_name/tool_args）
- *          或 kind='result'（tool_call_id/tool_value/tool_error）。
- */
-export interface HistoryMsg {
-  role: HistoryRole;
-  /** 普通消息文本（tool 消息无此字段）。 */
-  content?: string;
-  /**
-   * tool 消息：'call' | 'result'；
-   * user 消息（W515）：'steering'（插话）/ 'queued'（排队）；
-   * 'inbox'（worker 回执 / 系统注入）；
-   * W784 提问行：'question'（模型问了）/ 'answer'（作答或超时结算）。
-   */
-  kind?: 'call' | 'result' | 'steering' | 'queued' | 'inbox' | 'question' | 'answer';
-  /**
-   * W784：提问/回答两行的请求 id（靠它配对；设计 §7.2 的「有问无答」判定）。
-   * 注：这两行的 `content` 承载**数组**（问题 / 答案），而 content 字段是文本口径
-   * —— 读取收口在 ui/question/format.ts 的 payloadOf()。
-   */
-  question_id?: string;
-  /** W784：'question' 行的绝对时限。 */
-  question_expires_at?: number;
-  /** W784：'answer' 行是否因时限到期而结算。 */
-  question_timed_out?: boolean;
-  /** W515：inbox 条目的来源标记（worker id 等）。 */
-  source?: string;
-  tool_call_id?: string;
-  tool_name?: string;
-  tool_args?: unknown;
-  tool_value?: unknown;
-  tool_error?: string | null;
-}
-
-export interface MessagesResp {
-  ok?: boolean;
-  session?: string;
-  messages?: HistoryMsg[];
-  error?: string;
-}
+// ---- 会话历史（GET /api/sessions/{id}/messages）见 ./types/history（W805 拆出）
 
 // ---- 工作区 / 会话管理（W236） ------------------------------------------------
 
@@ -333,6 +296,9 @@ export interface ProviderModelSpec {
   reasoning_efforts?: string[];
   context_window?: number | null;
   max_output_tokens?: number | null;
+  /** W804/W805：逐模型能力位（缺省 = 乐观支持图像输入，配置是唯一权威）。 */
+  input_modalities?: string[];
+  output_modalities?: string[];
 }
 
 export interface ProviderInfo {
@@ -610,5 +576,7 @@ export type {
 } from './types/context';
 
 export type { HealthCapabilities, HealthInfo, ToolInfo, ToolsResp } from './types/health';
+export type { AttachmentRef, ImageMediaType, TurnAttachmentInput } from './types/attachment';
+export type { HistoryMsg, HistoryRole, MessagesResp } from './types/history';
 
 export type { SessionMode, SessionModeResp } from './types/mode';

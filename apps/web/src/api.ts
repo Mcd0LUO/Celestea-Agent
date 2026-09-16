@@ -38,6 +38,7 @@ import type {
   SessionsResp,
   StatusSnapshot,
   ToolsResp,
+  TurnAttachmentInput,
   TurnResp,
   WorkspacesResp,
 } from './types';
@@ -177,10 +178,18 @@ export const api = {
    * 旧后端忽略多余字段（serde 默认），仍按现状返回 409/新轮 →
    * 前端按「插话/排队失败」提示并还原输入，不丢字。
    */
-  turn: (input: string, session?: string, mode?: 'steer' | 'queue') => {
+  turn: (
+    input: string,
+    session?: string,
+    mode?: 'steer' | 'queue',
+    attachments?: TurnAttachmentInput[],
+  ) => {
     const body: Record<string, unknown> = { input };
     if (session) body.session = session;
     if (mode) body.mode = mode;
+    // W805（设计 §7.4）：P0 内联 base64 附件，零新端点；无附件时不写该键，
+    // 请求体与既有行为逐字节一致。
+    if (attachments && attachments.length > 0) body.attachments = attachments;
     return postJson<TurnResp>('/api/turn', body);
   },
   /** 取消当前聚焦会话的轮次（W514：带 session，旧后端忽略）。 */

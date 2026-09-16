@@ -1,0 +1,209 @@
+// ============================================================================
+// ui/send.ts — W805：发送编排（从 chat.ts 拆出，让附件乐观路径有清晰落点）。
+//   空闲 → 开新轮（带图片附件）；运行中 → 插话/排队（只支持文字，附件需等空闲）；
+//   失败 → 带附件时**完整回滚**（气泡/输入框/待发附件），不带附件时保持原行为。
+// ============================================================================
+import { api } from '../api';
+import { S } from '../state';
+import { addUserMessage, laneLabel, renderInfoBlock, renderInterjectNote } from './messages';
+import {
+  pendingCount,
+  pendingViews,
+  restorePending,
+  takePending,
+  toWire,
+  type PendingAttachment,
+} from './attachments';
+import {
+  clearInput,
+  refreshAttachmentTray,
+  setBusy,
+  setInputValue,
+  type SubmitMode,
+} from './inputbar';
+import { runCompact } from './compact';
+import { getLegacyOwner, setLegacyOwner } from './legacy-owner';
+import { msgOf, sid } from './session-util';
+import { note } from './sessiontree/live';
+import { resetTurnStep } from './toolcards';
+import { updateSessionBar } from './sessionbar';
+import {
+  flashStatus,
+  setStatus,
+  setStatusStep,
+  setStatusTurn,
+  startElapsedTimer,
+  stopElapsedTimer,
+} from './statusbar';
+import {
+  activePane,
+  adoptLocalIfUnbound,
+  isActivePane,
+  setPaneStreaming,
+  type SessionPane,
+} from './viewctx';
+
+/** 发送入口：命令 → 只读拦截 → 运行中（附件拒绝/插话/排队）→ 空闲开新轮。 */
+export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
+  const t = text.trim();
+  const ctx = activePane();
+  if (!ctx) return;
+  const pending = pendingCount();
+  if (t === '' && pending === 0) return;
+  if (t === '/compact') {
+    void runCompact(ctx);
+    return;
+  }
+  if (ctx.kind === 'worker') {
+    flashStatus('Worker 会话为只读视图，未发送', 'err', 5_000);
+    return;
+  }
+  if (ctx.streaming && pending > 0) {
+    // 后端在运行中拒绝带附件的请求（插话只支持文字）—— 前端先拦，不制造必然 409。
+    const hint = '本轮还没结束：图片附件需等本轮结束后发送（插话只支持文字）';
+    flashStatus(hint, 'err', 6_000);
+    note(hint);
+    return;
+  }
+  ctx.draft = '';
+  if (ctx.streaming) {
+    void injectInput(ctx, t, mode);
+    return;
+  }
+  startTurn(ctx, t);
+}
+
+/** 空闲路径：开新轮；用户气泡（文本 + 附件缩略图）当帧入场，请求在后台跑。 */
+function startTurn(ctx: SessionPane, t: string): void {
+  const items = takePending();
+  const views = pendingViews(items);
+  const col = addUserMessage(ctx, t, views.length > 0 ? { attachments: views } : undefined);
+  clearInput();
+  refreshAttachmentTray();
+  setLegacyOwner(ctx);
+  setPaneStreaming(ctx, true);
+  ctx.turn = null;
+  ctx.t0 = Date.now();
+  ctx.phase = '启动中…';
+  resetTurnStep(ctx);
+  if (isActivePane(ctx)) {
+    S.t0 = ctx.t0;
+    setBusy(true);
+    setStatus('启动中…', 'busy');
+    setStatusStep(null);
+    startElapsedTimer();
+  }
+  updateSessionBar();
+  void toWire(items)
+    .then((wire) => api.turn(t, sid(ctx), undefined, wire))
+    .then((r) => {
+      if (r.session) adoptLocalIfUnbound(r.session);
+      if (ctx.turn === null && r.turn !== undefined) ctx.turn = r.turn;
+      ctx.phase = '运行中…';
+      if (isActivePane(ctx)) {
+        setStatusTurn(ctx.turn !== null ? ctx.turn : (r.turn ?? 0));
+        setStatus('运行中…', 'busy');
+      }
+    })
+    .catch((err: unknown) => failTurn(ctx, col, t, items, err));
+}
+
+/** 发送失败：带附件时完整回滚（不保留「看起来发出去了」的假气泡）。 */
+function failTurn(
+  ctx: SessionPane,
+  col: HTMLElement,
+  text: string,
+  items: PendingAttachment[],
+  err: unknown,
+): void {
+  setPaneStreaming(ctx, false);
+  ctx.phase = '发送失败';
+  if (getLegacyOwner() === ctx) setLegacyOwner(null);
+  const withAttachments = items.length > 0;
+  if (withAttachments) {
+    col.remove();
+    restorePending(items);
+    restoreDraft(ctx, text);
+    refreshAttachmentTray();
+  }
+  const hint =
+    '发送失败：' + msgOf(err) + (withAttachments ? '；图片已放回待发区，可重试' : '');
+  if (isActivePane(ctx)) {
+    setBusy(false);
+    stopElapsedTimer();
+    setStatus(hint, 'err');
+    window.setTimeout(() => flashStatus(hint, 'err', 6_000), 0);
+  }
+  renderInfoBlock(ctx, hint, withAttachments ? 'warn' : 'err');
+  if (withAttachments) note(hint);
+  updateSessionBar();
+}
+
+/**
+ * 运行中提交（W514 插话 + W515 两车道）：成功就地改写提示；两条车道都失败则
+ * 撤销乐观渲染并把文本还原输入框 —— 不丢字。
+ */
+async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promise<void> {
+  const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'steering' });
+  clearInput();
+  refreshAttachmentTray();
+  ctx.draft = '';
+  const waitText = mode === 'queue' ? '已排队 · 等待本轮结束…' : '已插话 · 等待送达…';
+  const doneText = mode === 'queue' ? '已排队 · 本轮结束后送达' : '已插话 · 将在下一步送达';
+  const noteEl = renderInterjectNote(ctx, waitText, undefined, col);
+  setLegacyOwner(ctx);
+  if (isActivePane(ctx)) {
+    flashStatus(mode === 'queue' ? '已排队，将在本轮结束后送达' : '已插话，将在下一步送达', 'busy', 4_000);
+  }
+  const ok = (text: string): void => {
+    noteEl.textContent = text;
+    noteEl.className = 'interject-note ok';
+  };
+  try {
+    const r = await api.turn(t, sid(ctx), mode);
+    if (r.injected === true) {
+      ok('已插话 · 将在下一步送达');
+      return;
+    }
+    if (r.queued === true || mode === 'queue') {
+      ok(doneText);
+      return;
+    }
+    ctx.turn = r.turn ?? ctx.turn;
+    setPaneStreaming(ctx, true);
+    ctx.phase = '运行中…';
+    ok('已作为新一轮发送');
+    updateSessionBar();
+  } catch (err: unknown) {
+    if (mode === 'queue') {
+      try {
+        const r2 = await api.turn(t, sid(ctx), 'steer');
+        if (r2.injected !== false) {
+          const lane = laneLabel(r2.inbox_target ?? 'next-step');
+          ok('当前版本不支持排队 → 已按插话送达' + (lane ? '（' + lane + '）' : ''));
+          return;
+        }
+      } catch {
+        /* 两条车道都不可用：走统一失败路径 */
+      }
+    }
+    col.remove();
+    noteEl.parentElement?.remove();
+    ctx.interjectNote = null;
+    restoreDraft(ctx, t);
+    const hint = (mode === 'queue' ? '排队未送达（' : '插话未送达（') + msgOf(err) + '）：已将内容还原到输入框';
+    if (isActivePane(ctx)) {
+      setStatus(hint, 'err');
+      window.setTimeout(() => flashStatus(hint, 'err', 6_000), 0);
+    }
+    renderInfoBlock(ctx, hint, 'warn');
+  }
+}
+
+/** 插话失败时把文本还原回输入框（仅当用户没在输入框里新打字）。 */
+function restoreDraft(ctx: SessionPane, text: string): void {
+  ctx.draft = text;
+  if (!isActivePane(ctx)) return;
+  const input = document.querySelector<HTMLTextAreaElement>('#input');
+  if (input && input.value.trim() === '') setInputValue(text);
+}

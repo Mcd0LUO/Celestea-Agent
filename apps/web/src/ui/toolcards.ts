@@ -11,6 +11,7 @@
 //         （后端契约 ≤80 字符，前端折叠空白后截断到 60）。
 // ============================================================================
 import { el } from '../utils/dom';
+import { attachmentViewsOf, refsOfValue, renderAttachmentGrid } from './attachments';
 import { autoscroll } from './messages';
 import type { SessionPane } from './viewctx';
 import type { ToolCardRef } from './view';
@@ -191,7 +192,7 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
  * W778：预览行随参数预览一起在 .toolcard-body 内（折叠态不显示），
  * 结果到达照样不改 open、不动 chevron 方向。
  */
-export function setToolResult(ref: ToolCardRef, resultText: string, failed: boolean): void {
+export function setToolResult(ref: ToolCardRef, resultText: string, failed: boolean, value?: unknown): void {
   ref.card.classList.remove('running');
   ref.card.classList.add(failed ? 'err' : 'ok');
   ref.label.textContent = failed ? '失败' : '完成';
@@ -200,6 +201,11 @@ export function setToolResult(ref: ToolCardRef, resultText: string, failed: bool
   if (r) ref.resultPv.classList.add('has');
   if (!ref.body.querySelector('.tool-out')) {
     ref.body.appendChild(el('pre', 'tool-out' + (failed ? ' err-c' : ''), resultText));
+  }
+  // W805（设计 §6.3）：read_image 的 tool_result.value.attachments → 图片缩略图。
+  const refs = refsOfValue(value);
+  if (refs.length > 0 && !ref.body.querySelector('.attach-grid')) {
+    ref.body.appendChild(renderAttachmentGrid(attachmentViewsOf(refs)));
   }
 }
 

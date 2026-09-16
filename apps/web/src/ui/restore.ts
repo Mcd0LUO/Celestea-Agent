@@ -9,6 +9,7 @@
 //         离屏双缓冲 + 单次替换（铁律 1）保持不变 → 切换/恢复无空白帧。
 // ============================================================================
 import { api } from '../api';
+import { attachmentViewsOf } from './attachments';
 import { el } from '../utils/dom';
 import type { HistoryMsg } from '../types';
 import {
@@ -135,7 +136,7 @@ function renderToolMessage(ctx: SessionPane, m: HistoryMsg, container: HTMLEleme
   const ref = ctx.restoreOps.get(id);
   if (ref) {
     const failed = !!m.tool_error && m.tool_error !== '';
-    setToolResult(ref, failed ? String(m.tool_error) : toJsonText(m.tool_value), failed);
+    setToolResult(ref, failed ? String(m.tool_error) : toJsonText(m.tool_value), failed, m.tool_value);
     ctx.restoreOps.delete(id);
     return;
   }
@@ -180,7 +181,7 @@ function renderOne(
     return;
   }
   if (m.role === 'user') {
-    addUserMessage(ctx, content, { kind: userKindOf(m), into: container });
+    addUserMessage(ctx, content, { kind: userKindOf(m), attachments: attachmentViewsOf(m.attachments), into: container });
     return;
   }
   if (m.role === 'assistant') {
