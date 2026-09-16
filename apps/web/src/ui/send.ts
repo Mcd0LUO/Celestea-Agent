@@ -75,7 +75,8 @@ export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
 
 /** 空闲路径：开新轮；用户气泡（文本 + 附件缩略图）当帧入场，请求在后台跑。 */
 function startTurn(ctx: SessionPane, t: string): void {
-  const items = takePending();
+  const key = ctx.id; // R3 W838-F3：发送时记住原会话 key，失败回滚按它归位
+  const items = takePending(key);
   const views = pendingViews(items);
   const col = addUserMessage(ctx, t, views.length > 0 ? { attachments: views } : undefined);
   clearInput();
@@ -105,12 +106,13 @@ function startTurn(ctx: SessionPane, t: string): void {
         setStatus('运行中…', 'busy');
       }
     })
-    .catch((err: unknown) => failTurn(ctx, col, t, items, err));
+    .catch((err: unknown) => failTurn(ctx, key, col, t, items, err));
 }
 
 /** 发送失败：带附件时完整回滚（不保留「看起来发出去了」的假气泡）。 */
 function failTurn(
   ctx: SessionPane,
+  key: string,
   col: HTMLElement,
   text: string,
   items: PendingAttachment[],
@@ -122,7 +124,7 @@ function failTurn(
   const withAttachments = items.length > 0;
   if (withAttachments) {
     col.remove();
-    restorePending(items);
+    restorePending(key, items); // R3 W838-F3：放回**原会话**，不放到 await 期间切到的会话
     restoreDraft(ctx, text);
     refreshAttachmentTray();
   }

@@ -5,7 +5,7 @@
 //   渲染零件（气泡网格 / 待发条 / 放大浮层）见 ./attachment-view。
 // ============================================================================
 import { api } from '../api';
-import { activePane } from './viewctx';
+import { activePane, onPaneChange } from './viewctx';
 import { fmtBytes, type AttachmentView } from './attachment-view';
 import type { AttachmentRef, ImageMediaType, TurnAttachmentInput } from '../types/attachment';
 
@@ -39,6 +39,12 @@ let allModels: string[] = [];
 const modalities = new Map<string, string[]>();
 let capsLoaded = false;
 let inflight: Promise<void> | null = null;
+
+/** R3 W838-F4：配置/模型已变 → 作废缓存，让下一次 loadAttachmentCapabilities 真重拉。 */
+export function invalidateAttachmentCapabilities(): void {
+  capsLoaded = false;
+  inflight = null;
+}
 
 /** 拉一次能力位（health / config / providers）；失败一律按「不可用 + 乐观放行」降级。 */
 export function loadAttachmentCapabilities(): Promise<void> {
@@ -127,11 +133,60 @@ export function downgradeNotice(p: { message?: unknown; hint?: unknown }): strin
 
 const drafts = new Map<string, PendingAttachment[]>();
 /** 本会话内 attachment_id → objectURL（刷新后丢失 = P0 已知限制）。 */
-const previews = new Map<string, string>();
+interface PreviewEntry {
+  url: string;
+  /** 登记时的会话：切走该会话即回收（R3 W838-F1）。 */
+  session: string;
+}
+const previews = new Map<string, PreviewEntry>();
+/** 预览 URL 的硬上限：超出即回收最旧的一条，长会话不再只增不减（R3 W838-F1）。 */
+const MAX_PREVIEWS = 64;
 
 function sessionKey(): string {
   return activePane()?.id ?? '';
 }
+
+function revokeUrl(url: string): void {
+  try {
+    if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
+  } catch {
+    /* 旧环境没有 revokeObjectURL：忽略 */
+  }
+}
+
+function releasePreview(id: string): void {
+  const e = previews.get(id);
+  if (!e) return;
+  previews.delete(id);
+  revokeUrl(e.url);
+}
+
+/** 仅当登记的 URL 就是这一条待发项的 URL 时才回收（同 id 不同 URL 的边界）。 */
+function releasePreviewIf(id: string, url: string): void {
+  const e = previews.get(id);
+  if (e && e.url === url) releasePreview(id);
+}
+
+function rememberPreview(id: string, url: string, session: string): void {
+  if (id === '' || url === '') return;
+  previews.delete(id); // 重新插入：刷新回收顺序
+  previews.set(id, { url, session });
+  while (previews.size > MAX_PREVIEWS) {
+    const oldest = previews.keys().next().value;
+    if (oldest === undefined) break;
+    releasePreview(oldest);
+  }
+}
+
+/** 切走某会话 → 回收它的全部预览 URL（R3 W838-F1）。 */
+function releasePreviewsOf(session: string): void {
+  for (const [id, e] of Array.from(previews)) if (e.session === session) releasePreview(id);
+}
+
+// 会话切换即回收上一会话的预览（不用等 GC，也不把 blob 留在长会话里）。
+onPaneChange((pane, prev) => {
+  if (prev && prev.id !== pane.id) releasePreviewsOf(prev.id);
+});
 
 function objectUrl(file: File): string {
   try {
@@ -154,14 +209,14 @@ function rejectReason(file: File, validCount: number, batch: number): string {
   return '';
 }
 
-async function attachId(item: PendingAttachment): Promise<void> {
+async function attachId(item: PendingAttachment, session: string): Promise<void> {
   try {
     const subtle = globalThis.crypto ? globalThis.crypto.subtle : undefined;
     if (!subtle) return;
     const digest = await subtle.digest('SHA-256', await item.file.arrayBuffer());
     item.id = hex(new Uint8Array(digest));
     // 登记本会话预览：历史恢复（同一次会话内）据此显示缩略图而非仅元数据。
-    if (item.url !== '') previews.set(item.id, item.url);
+    rememberPreview(item.id, item.url, session);
   } catch {
     /* id 缺失只影响本会话历史缩略图，不影响发送 */
   }
@@ -171,16 +226,18 @@ async function attachId(item: PendingAttachment): Promise<void> {
 export function addFiles(files: ArrayLike<File>): number {
   const key = sessionKey();
   const list = drafts.get(key) ?? [];
-  const valid = list.filter((p) => p.error === '').length;
+  let accepted = list.filter((p) => p.error === '').length;
   const batch = files.length;
   let rejected = 0;
   for (let i = 0; i < batch; i++) {
     const file = files[i];
     if (!file) continue;
-    const error = rejectReason(file, valid, batch);
+    // R3 W838-F8：按**已接受数**逐条递推，超上限的溢出项才拒（不再整批全拒）。
+    const error = rejectReason(file, accepted, 1);
     if (error !== '') rejected += 1;
+    else accepted += 1;
     list.push({ file, name: file.name || '图片', url: objectUrl(file), bytes: file.size, id: '', error });
-    void attachId(list[list.length - 1] as PendingAttachment);
+    void attachId(list[list.length - 1] as PendingAttachment, key);
   }
   drafts.set(key, list);
   return rejected;
@@ -199,37 +256,58 @@ export function removePending(item: PendingAttachment): void {
   const key = sessionKey();
   const list = drafts.get(key) ?? [];
   const i = list.indexOf(item);
-  if (i >= 0) list.splice(i, 1);
+  if (i >= 0) {
+    list.splice(i, 1);
+    revokeUrl(item.url); // R3 W838-F1：移除即吊销，不等 GC
+    releasePreviewIf(item.id, item.url);
+  }
   drafts.set(key, list);
 }
 
 /** 发送时取走本会话全部待发项（被拒项一并清掉），并登记本会话内预览。 */
-export function takePending(): PendingAttachment[] {
-  const key = sessionKey();
+export function takePending(key: string = sessionKey()): PendingAttachment[] {
   const list = drafts.get(key) ?? [];
   const sendable = list.filter((p) => p.error === '');
   drafts.set(key, []);
-  for (const p of sendable) if (p.id !== '') previews.set(p.id, p.url);
+  for (const p of sendable) rememberPreview(p.id, p.url, key);
   return sendable;
 }
 
 /** 发送失败：把附件放回待发区（不丢文件，可直接重试）。 */
-export function restorePending(items: readonly PendingAttachment[]): void {
-  const key = sessionKey();
+export function restorePending(key: string, items: readonly PendingAttachment[]): void {
   drafts.set(key, items.concat(drafts.get(key) ?? []));
 }
 
 export function clearPending(): void {
-  drafts.set(sessionKey(), []);
+  const key = sessionKey();
+  for (const p of drafts.get(key) ?? []) {
+    revokeUrl(p.url); // R3 W838-F1：清空即吊销
+    releasePreviewIf(p.id, p.url);
+  }
+  drafts.set(key, []);
+  releasePreviewsOf(key);
+}
+
+/** R3 W838-F2：有附件根本没读出来 —— 抛错中止发送，绝不发一个缺图的请求。 */
+export class AttachmentReadError extends Error {
+  readonly names: readonly string[];
+  constructor(names: readonly string[]) {
+    super('图片读取失败（' + (names.join('、') || '未知文件') + '），已中止本轮发送');
+    this.name = 'AttachmentReadError';
+    this.names = names;
+  }
 }
 
 /** 待发 → 连线格式（内联 base64；与 POST /api/turn 的 attachments 同形）。 */
 export async function toWire(items: readonly PendingAttachment[]): Promise<TurnAttachmentInput[]> {
   const out: TurnAttachmentInput[] = [];
+  const failed: string[] = [];
   for (const item of items) {
     const data = await readBase64(item.file);
-    if (data !== '') out.push({ data, name: item.name });
+    if (data === '') failed.push(item.name);
+    else out.push({ data, name: item.name });
   }
+  if (failed.length > 0) throw new AttachmentReadError(failed);
   return out;
 }
 
@@ -258,7 +336,7 @@ export function pendingViews(items: readonly PendingAttachment[]): AttachmentVie
 
 export function attachmentViewsOf(refs: readonly AttachmentRef[] | undefined): AttachmentView[] {
   if (!refs) return [];
-  return refs.map((ref) => ({ ref, name: ref.name, url: previews.get(ref.attachment_id) }));
+  return refs.map((ref) => ({ ref, name: ref.name, url: previews.get(ref.attachment_id)?.url }));
 }
 
 /** 工具结果 value 里的 attachments（read_image 的图片通道，设计 §6.3）。 */

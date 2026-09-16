@@ -19,6 +19,7 @@ import {
   ATTACHMENT_ACCEPT,
   clearPending,
   imageEntryDisabledReason,
+  invalidateAttachmentCapabilities,
   loadAttachmentCapabilities,
   pendingList,
   removePending,
@@ -229,6 +230,13 @@ export function refreshAttachmentEntry(): void {
   if (!allowed) clearPending();
   refreshAttachmentTray();
 }
+
+// R3 W838-F4：保存配置 / 切换模型后能力位可能已变（input_modalities 改动、换模型）——
+// 作废缓存并真重拉，再按新模型重绘入口按钮的禁用态与文案。事件由 statusline/config 派发。
+window.addEventListener('studio:config-saved', () => {
+  invalidateAttachmentCapabilities();
+  void loadAttachmentCapabilities().then(refreshAttachmentEntry);
+});
 
 function noteAttachment(text: string): void {
   if (!noteEl) return;
