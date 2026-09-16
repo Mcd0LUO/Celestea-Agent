@@ -14,12 +14,20 @@
  * The HTTP client is injected so the contract is testable without network.
  */
 
+import { HttpTargetPolicy, requestOnce } from "@celestea/tools";
+
 import { normalizeBaseUrl } from "./providers.js";
 import { errText } from "./result.js";
 import type { RequestFormat } from "./providers.js";
 
 export const UNSUPPORTED_FORMAT = "该请求格式暂不支持自动测试";
 export const NO_API_KEY = "该提供商未配置 api_key";
+/**
+ * W815-13 (= W819-6): the target was refused by the deployment SSRF policy.
+ * Deliberately generic - the resolver reason names the resolved IP, and that
+ * internal address must not travel back to the caller.
+ */
+export const TARGET_FORBIDDEN = "该提供商地址被站点的 SSRF 策略拒绝（CELESTEA_HTTP_ALLOW / CELESTEA_HTTP_DENY）";
 
 export interface ProbeResponse {
   status: number;
@@ -48,6 +56,14 @@ export interface ProbeOptions {
   engineBaseUrl: string;
   engineKey: string | null;
   timeoutMs?: number;
+  /**
+   * W815-13: the deployment SSRF target policy. Default:
+   * HttpTargetPolicy.fromEnv(env ?? process.env) - exactly the policy
+   * http_request mounts, so a denied target is never dialed.
+   */
+  policy?: HttpTargetPolicy;
+  /** Env for the default policy (tests / injected deployments). */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface ProbeOutcome {
@@ -57,6 +73,30 @@ export interface ProbeOutcome {
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+/** Probe bodies are model lists; 1 MiB is far beyond any real answer. */
+export const PROBE_MAX_BODY_BYTES = 1024 * 1024;
+
+/**
+ * The production transport of a probe: one policy-approved, PINNED hop over
+ * the same requestOnce http_request uses. pinnedIps makes the socket connect
+ * to the exact address resolveChecked authorized, so a DNS rebind between
+ * check and connect cannot carry the borrowed key to an internal address
+ * (W738 check-then-use).
+ */
+function pinnedProbeFetch(pinnedIps: readonly string[], timeoutMs: number): ProbeFetch {
+  return async (url, init) => {
+    const result = await requestOnce({
+      url: new URL(url),
+      method: init.method,
+      headers: Object.entries(init.headers),
+      body: null,
+      timeoutMs,
+      maxBodyBytes: PROBE_MAX_BODY_BYTES,
+      pinnedIps,
+    });
+    return { status: result.status, text: () => Promise.resolve(result.body) };
+  };
+}
 
 function head(text: string, n: number): string {
   return text.length <= n ? text : text.slice(0, n);
@@ -94,14 +134,39 @@ export async function probeModels(candidate: ProbeCandidate, opts: ProbeOptions)
   if ((candidate.base_url ?? "").trim() === "") return { ok: false, error: "base_url is required" };
   const { key } = resolveProbeKey(candidate, opts);
   if (key === null) return { ok: false, error: NO_API_KEY };
-  const doFetch = opts.fetch ?? (globalThis.fetch as unknown as ProbeFetch);
   const url = `${candidate.base_url.replace(/\/+$/, "")}/models`;
+  // W815-13: authorize the target with the SAME policy http_request uses
+  // before a single byte leaves the process. An inactive policy (both env vars
+  // unset) allows everything, so it neither resolves nor pins and the historical
+  // host-fetch path is unchanged.
+  const policy = opts.policy ?? HttpTargetPolicy.fromEnv(opts.env ?? process.env);
+  let pinned: readonly string[] | null = null;
+  try {
+    if (policy.active) {
+      const checked = await policy.resolveChecked(url);
+      if (checked.reason !== null) return { ok: false, error: TARGET_FORBIDDEN };
+      pinned = checked.ips;
+    }
+  } catch (e) {
+    return { ok: false, error: errText(e) };
+  }
+  const doFetch =
+    opts.fetch ??
+    (pinned === null
+      ? (globalThis.fetch as unknown as ProbeFetch)
+      : pinnedProbeFetch(pinned, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+  // The pinned transport owns its own deadline; only the injected / host-fetch
+  // paths keep the AbortSignal timeout (no dangling timer on the pinned path).
+  const signal =
+    opts.fetch === undefined && pinned !== null
+      ? undefined
+      : AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   let res: ProbeResponse;
   try {
     res = await doFetch(url, {
       method: "GET",
       headers: { authorization: `Bearer ${key}`, accept: "application/json" },
-      signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      ...(signal === undefined ? {} : { signal }),
     });
   } catch (e) {
     return { ok: false, error: errText(e) };
