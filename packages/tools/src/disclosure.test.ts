@@ -184,7 +184,7 @@ afterAll(async () => {
 
 describe("run_code escape hatch (W806 P0 / C3)", () => {
   it("a dynamically withheld tool is reachable from a program's sub-call", async () => {
-    if (!h.pythonReady) return; // the broker matrix skips without an interpreter
+    if (!h.nodeReady) return; // W833 (R3 B3 / W812 P2-4): the DEFAULT TypeScript matrix
     const ran: string[] = [];
     const recorder = fnTool(
       {
@@ -218,11 +218,13 @@ describe("run_code escape hatch (W806 P0 / C3)", () => {
     expect(ran).toEqual([]);
 
     const runCode = assembly.registry.get("run_code");
+    // W833 (R3 B3 / W812 P2-4): assert the escape hatch on the DEFAULT
+    // TypeScript matrix; a host without python3 can no longer skip it silently.
     const code = `
-async def main():
-    return tools.read_file(path="/tmp/inner.txt")
+  const r = tools.read_file({ path: "/tmp/inner.txt" });
+  return r;
 `;
-    const out = (await h.run(runCode as Parameters<BrokerHarness["run"]>[0], "rc-w806", { code, language: "python" })) as ToolExecOutcome;
+    const out = (await h.run(runCode as Parameters<BrokerHarness["run"]>[0], "rc-w806", { code })) as ToolExecOutcome;
     expect(out.value).toEqual({ echo: "read_file", args: { path: "/tmp/inner.txt" } });
     expect(ran).toEqual(["/tmp/inner.txt"]);
   });

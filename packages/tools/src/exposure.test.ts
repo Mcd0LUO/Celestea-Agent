@@ -98,7 +98,7 @@ describe("exposedRegistry (W791 P1)", () => {
   });
 
   it("M8 (second assertion): the assembled run_code reaches the folded tool from inside a program", async () => {
-    if (!h.pythonReady) return; // the broker matrix skips without an interpreter
+    if (!h.nodeReady) return; // W833 (R3 B3 / W812 P2-4): the DEFAULT TypeScript matrix
     const ran: string[] = [];
     const recorder = fnTool(
       { name: "read_file", description: "recording read_file", parameters: { type: "object", properties: { path: { type: "string" }, command: { type: "string" }, content: { type: "string" }, workdir: { type: "string" }, timeout_ms: { type: "integer" } }, additionalProperties: false } },
@@ -120,11 +120,13 @@ describe("exposedRegistry (W791 P1)", () => {
     expect(direct.error).toContain(TOOL_UNAVAILABLE_CODE);
     expect(ran).toEqual([]);
 
+    // W833 (R3 B3 / W812 P2-4): assert the escape hatch on the DEFAULT
+    // TypeScript matrix; a host without python3 can no longer skip it silently.
     const code = `
-async def main():
-    return tools.read_file(path="/tmp/inner.txt")
+  const r = tools.read_file({ path: "/tmp/inner.txt" });
+  return r;
 `;
-    const out = (await h.run(runCode as Parameters<BrokerHarness["run"]>[0], "rc-m8", { code, language: "python" })) as ToolExecOutcome;
+    const out = (await h.run(runCode as Parameters<BrokerHarness["run"]>[0], "rc-m8", { code })) as ToolExecOutcome;
     expect(out.value).toEqual({ echo: "read_file", args: { path: "/tmp/inner.txt" } });
     expect(out.render).toBeNull();
     expect(ran).toEqual(["/tmp/inner.txt"]);

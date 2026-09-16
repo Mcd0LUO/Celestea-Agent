@@ -3,6 +3,10 @@
  * file exists: a static 512 is a time bomb on a busy UID).
  */
 
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isSandboxError } from "@celestea/core";
 
@@ -134,7 +138,41 @@ describe("applyLimits", () => {
 describe("ulimitScript", () => {
   it("expresses every limit as a shell builtin call", () => {
     expect(ulimitScript(LIMITS)).toBe(
-      "ulimit -t 20; ulimit -v 2097152; ulimit -u 1024; ulimit -f 262144; ulimit -n 256; ulimit -c 0",
+      "ulimit -t 20; ulimit -v 2097152; ulimit -u 1024; ulimit -f 524288; ulimit -n 256; ulimit -c 0",
     );
   });
+});
+
+describe("B3 / W812 P2-3: ulimit -f is 512-byte blocks", () => {
+  it("converts the byte limit to 512-byte blocks (matching prlimit --fsize)", () => {
+    expect(ulimitScript({ ...LIMITS, fsizeBytes: 64 * 1024 })).toContain("ulimit -f 128");
+    expect(ulimitScript({ ...LIMITS, fsizeBytes: 64 * 1024 + 1 })).toContain("ulimit -f 129");
+  });
+
+  it("a real shell-ulimit spawn cuts at the configured bytes, not half", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "w833-ulimit-"));
+    const out = join(dir, "out.bin");
+    const limits: SandboxLimits = { ...LIMITS, fsizeBytes: 64 * 1024 };
+    // prlimitPath:null selects the shell-ulimit fallback deterministically
+    // (no PATH surgery needed: this is the exact branch production takes).
+    const plan = applyLimits(
+      "/bin/sh",
+      ["-c", "dd if=/dev/zero of=" + out + " bs=1024 count=100 2>/dev/null"],
+      limits,
+      probeWith({ prlimitPath: null }),
+    );
+    expect(plan.via).toBe("shell-ulimit");
+    const result = await new Promise<{ code: number | null; signal: string | null }>((resolve, reject) => {
+      const child = spawn(plan.program, plan.args, { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    const size = statSync(out).size;
+    rmSync(dir, { recursive: true, force: true });
+    // <= 64KiB (SIGXFSZ stops the write) and clearly above the 32KiB the old
+    // (/1024) conversion produced.
+    expect(size).toBeLessThanOrEqual(64 * 1024);
+    expect(size).toBeGreaterThan(32 * 1024);
+    expect(result.code === 0 && result.signal === null).toBe(false);
+  }, 20_000);
 });

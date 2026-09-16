@@ -141,7 +141,9 @@ export async function readCapped(stream: Readable | null, cap: number): Promise<
     for await (const chunk of stream) {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
       const room = cap - size;
-      if (buffer.length < room) {
+      // B3 / W812 P2-1: exactly `cap` bytes is COMPLETE, not truncated; only a
+      // byte beyond the remaining capacity (or an already-full buffer) is.
+      if (buffer.length <= room) {
         chunks.push(buffer);
         size += buffer.length;
         continue;

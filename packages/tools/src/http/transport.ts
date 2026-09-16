@@ -142,7 +142,9 @@ function collectBody(response: IncomingMessage, cap: number, finish: Finish, fai
   let size = 0;
   response.on("data", (chunk: Buffer) => {
     const room = cap - size;
-    if (chunk.length < room) {
+    // B3 / W812 P2-1: a body that is exactly `cap` bytes is complete; only a
+    // byte beyond the remaining capacity trips the truncated path.
+    if (chunk.length <= room) {
       chunks.push(chunk);
       size += chunk.length;
       return;

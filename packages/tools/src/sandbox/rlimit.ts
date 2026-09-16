@@ -63,12 +63,14 @@ function prlimitArgs(limits: SandboxLimits): string[] {
 }
 
 /** dash/bash `ulimit` form of the same six limits. */
+// B3 / W812 P2-3: POSIX/dash ulimit -f counts 512-byte blocks while prlimit's
+// --fsize is bytes; dividing by 1024 halved the effective limit.
 export function ulimitScript(limits: SandboxLimits): string {
   return [
     `ulimit -t ${limits.cpuSec}`,
     `ulimit -v ${limits.memMb * 1024}`,
     `ulimit -u ${limits.nproc}`,
-    `ulimit -f ${Math.floor(limits.fsizeBytes / 1024)}`,
+    `ulimit -f ${Math.ceil(limits.fsizeBytes / 512)}`,
     `ulimit -n ${limits.nofile}`,
     `ulimit -c ${limits.core ? 0 : "unlimited"}`,
   ].join("; ");
