@@ -98,7 +98,17 @@ function requestHeaders(options: SendOptions): Record<string, string> {
 
 /** POST the request; resolve once the response HEADERS are in. */
 export async function sendChatRequest(options: SendOptions): Promise<http.IncomingMessage> {
-  const parsed = new URL(options.url);
+  let parsed: URL;
+  try {
+    parsed = new URL(options.url);
+  } catch {
+    // W835 (R3 batch E / P2-4): a bad base_url is a pre-stream config failure
+    // and MUST reject as an LlmError (the client.ts contract), not a bare
+    // TypeError. It stays retryable so a fallback chain can hand over to a
+    // healthy target; the url is redacted so a credential inside it never
+    // reaches the message.
+    throw networkError("invalid base_url for llm request: " + redact(options.url));
+  }
   const transport = parsed.protocol === "https:" ? https : http;
 
   return await new Promise<http.IncomingMessage>((resolve, reject) => {

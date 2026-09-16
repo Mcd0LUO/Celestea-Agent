@@ -187,6 +187,12 @@ export function wireMessagesFor(msg: Message, images: ResolvedImages = {}): Wire
     case "assistant":
       assertNoImages(msg);
       return [assistantWire(msg)];
+    default: {
+      // W835 (R3 batch E / P2-3): a role outside the union must be a structured
+      // LlmError, never the `...undefined` spread that panicked the turn.
+      const role = (msg as { role?: unknown }).role;
+      throw new LlmError("unsupported message role '" + String(role) + "'", "generate", { retryable: false });
+    }
   }
 }
 

@@ -11,6 +11,25 @@
  * (the byte-level driver feeds it decoded text via a StringDecoder).
  */
 
+/**
+ * Hard cap on the decoded, not-yet-framed buffer (W835 R3 batch E / P2-5).
+ *
+ * A stream that never emits a newline would otherwise grow the buffer without
+ * bound (the idle guard only fires when NO bytes arrive). 4 MiB is ~8x the
+ * largest plausible single frame: providers chunk output deltas, and even a
+ * full 128k-token answer delivered as one frame stays below ~0.5 MiB.
+ * Exceeding it is a terminal failed{kindOf:"stream"} on the stream path.
+ */
+export const MAX_SSE_BUFFER_BYTES = 4 * 1024 * 1024;
+
+/** The decoder's newline-less buffer exceeded [MAX_SSE_BUFFER_BYTES]. */
+export class SseBufferOverflowError extends Error {
+  constructor(readonly limit: number) {
+    super("SSE decoder buffer exceeded " + limit + " bytes without a frame boundary");
+    this.name = "SseBufferOverflowError";
+  }
+}
+
 /** One fully decoded SSE frame (blank-line terminated). */
 export interface SseFrame {
   /** Event name; "message" when the frame carried no `event:` field. */
@@ -23,17 +42,24 @@ export class SseDecoder {
   #buffer = "";
   #event = "";
   #data: string[] = [];
+  #bytes = 0;
 
   /** Feed decoded text; returns the frames that completed on this input. */
   push(text: string): SseFrame[] {
     this.#buffer += text;
-    return this.#drain(false);
+    this.#bytes += Buffer.byteLength(text, "utf8");
+    const frames = this.#drain(false);
+    // Check AFTER draining: a big batch of COMPLETE frames is fine; only a
+    // buffer that cannot be framed within the cap is a runaway (P2-5).
+    if (this.#bytes > MAX_SSE_BUFFER_BYTES) throw new SseBufferOverflowError(MAX_SSE_BUFFER_BYTES);
+    return frames;
   }
 
   /** End of input: flush complete lines, drop the torn remainder. */
   flush(): SseFrame[] {
     const frames = this.#drain(true);
     this.#buffer = "";
+    this.#bytes = 0;
     return frames;
   }
 
@@ -71,7 +97,9 @@ export class SseDecoder {
       return null;
     }
     const line = buf.slice(0, at);
+    const consumed = buf.slice(0, at + len);
     this.#buffer = buf.slice(at + len);
+    this.#bytes -= Buffer.byteLength(consumed, "utf8");
     return line;
   }
 
