@@ -369,3 +369,32 @@ describe("E §2.3 P0/P1 (W787): persisted table, attempt tokens, boot observatio
     expect(s2.getEntry("W1")?.status).toBe("RUNNING");
   });
 });
+
+describe("W825 P0: the shared table is read-modify-write, never a stale-snapshot merge", () => {
+  /**
+   * Acceptance probe derived from /tmp/w822-reg.mts (W822 R2 adversarial
+   * verification): session A spawns W1, session B — the SAME process and the
+   * SAME table, at the SAME pid, which is the W787 architecture — reloads W1, A
+   * finalizes W1 DONE, then B's unrelated upsert must not put B's stale RUNNING
+   * copy back.
+   */
+  it("never rolls a sibling's terminal row back to its stale snapshot", () => {
+    const path = tmpTsv();
+    const A = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 4242, resultsDir: "results", hostSessionId: "ws/A" });
+    A.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=a host=ws/A attempt=0" });
+    // Session B activates later and reloads W1 into its (then-current) snapshot.
+    const B = new WorkerRegistry({ tsvPath: path, logFactory: recordingSessionLog, now: () => FIXED_NOW, pid: 4242, resultsDir: "results", hostSessionId: "ws/B" });
+    expect(B.getEntry("W1")?.status).toBe("RUNNING");
+
+    expect(A.finalize("W1", { ok: true })?.status).toBe("DONE");
+    expect(parseRegistryTsv(readFileSync(path, "utf8")).entries[0]?.status).toBe("DONE");
+
+    // B's own worker write is the trigger; A's terminal row must survive.
+    B.upsert({ wid: "W2", started_at: "t", status: "RUNNING", extra: "sess=b host=ws/B attempt=0" });
+    const rows = parseRegistryTsv(readFileSync(path, "utf8")).entries;
+    const w1 = rows.find((r) => r.wid === "W1");
+    expect(w1?.status).toBe("DONE");
+    expect(getExtra(w1!, "ended_at")).not.toBeNull();
+    expect(rows.find((r) => r.wid === "W2")?.status).toBe("RUNNING");
+  });
+});

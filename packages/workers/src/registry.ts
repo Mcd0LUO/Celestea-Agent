@@ -487,12 +487,21 @@ export class WorkerRegistry {
    * B1(c)). W787: the write MERGES with the rows other session registries of this
    * process already put in the shared table, then refreshes the in-memory view
    * from the merge — writing `entries()` alone would drop a sibling's worker.
+   *
+   * W825 P0 (registry.tsv stale-snapshot rollback): the merge base is the table
+   * as it is ON DISK right now (read-modify-write), and only THIS registry's own
+   * rows may win over it. The in-memory view also holds a copy of every FOREIGN
+   * row it loaded at construction, and that copy can be stale: session B reloads
+   * W1(RUNNING), session A finalizes W1(DONE), and B's next write would then put
+   * its old RUNNING copy back. `ownEntries()` — not `entries()` — is the
+   * authoritative side of the merge, so a sibling's terminal row is never rolled
+   * back (T-3: /tmp/w822-reg.mts, W822 R2 verification).
    */
   private persist(): string | null {
     if (this.path === null) return null;
     try {
       mkdirSync(dirname(this.path), { recursive: true });
-      const merged = mergeTableRows(readTableRows(this.path), this.entries());
+      const merged = mergeTableRows(readTableRows(this.path), this.ownEntries());
       this.rows.clear();
       for (const row of merged) this.rows.set(row.wid, row);
       const tmp = `${this.path}.tmp-${this.ownPid}-${this.now()}`;
