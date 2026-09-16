@@ -16,7 +16,7 @@
  *          restored session's row is byte-identical to the one it had before.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getJson, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
@@ -170,10 +170,14 @@ describe("W791 listArchived (B1, store level)", () => {
     const store = h.studio.services.sessions;
     const decoy = join(h.workspace, ARCHIVE, ".hidden");
     const empty = join(h.workspace, ARCHIVE, "no-log");
+    // W839 (R3 B8 / W818-P1-4): actually CREATE the decoys. Before this the two
+    // paths were only joined then voided, so the claimed rule ("hidden dirs and
+    // dirs without a log are not sessions") asserted nothing - the dirs did not
+    // exist. Now listArchived() must still return exactly the one real row.
+    mkdirSync(decoy, { recursive: true });
+    writeFileSync(join(decoy, "cli-main.jsonl"), "", "utf8"); // hidden dir WITH a log
+    mkdirSync(empty, { recursive: true }); // visible dir WITHOUT a log
     expect(readFileSync(join(h.workspace, ARCHIVE, `one-${STAMP}`, "session.json"), "utf8")).toContain('"mode": "execution"');
-    void decoy;
-    void empty;
-
     const rows = store.listArchived();
     expect(rows.map((r) => r["id"])).toEqual([sid]);
     expect(rows[0]).toMatchObject({ archived: true, active: false, kind: "session", workspace: "sample-ws", title: "one", mode: "execution" });

@@ -96,16 +96,24 @@ describe("legacy rows (purely additive fields)", () => {
   it("treats missing value/error as None (serde Option fields)", () => {
     const r = parseSessionEvent('{"type":"tool_result","id":"c1"}');
     expect(r.ok).toBe(true);
-    if (r.ok && r.event.type === "tool_result") {
-      expect(r.event.value).toBeUndefined();
-      expect(r.event.error).toBeNull();
+    // W839 (R3 B8 / W818-P1-2): assert the discriminant BEFORE narrowing. The old
+    // "if (r.ok && r.event.type === ...)" ran no assertion at all when the type
+    // guard failed, so a wrong type stayed green; this throw makes it RED.
+    if (!r.ok || r.event.type !== "tool_result") {
+      throw new Error("expected a parsed tool_result event, got " + JSON.stringify(r.ok ? r.event : r.errors));
     }
+    expect(r.event.value).toBeUndefined();
+    expect(r.event.error).toBeNull();
   });
 
   it("treats a JSON null parent_id as absent", () => {
     const r = parseSessionEvent('{"type":"tool_call","id":"c1","name":"f","args":{},"parent_id":null}');
     expect(r.ok).toBe(true);
-    if (r.ok && r.event.type === "tool_call") expect(r.event.parent_id).toBeUndefined();
+    // W839 (R3 B8 / W818-P1-2): same fake-green shape - a wrong type asserted nothing.
+    if (!r.ok || r.event.type !== "tool_call") {
+      throw new Error("expected a parsed tool_call event, got " + JSON.stringify(r.ok ? r.event : r.errors));
+    }
+    expect(r.event.parent_id).toBeUndefined();
   });
 
   it("ignores unknown fields (serde default tolerance)", () => {

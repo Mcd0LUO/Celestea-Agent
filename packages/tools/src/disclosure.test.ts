@@ -16,7 +16,7 @@
  *                DSH `restrict()`, design §2.5/§4).
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import type { ToolExecOutcome, ToolRegistry } from "@celestea/core";
 
 import { DisclosurePolicy, disclosureExposure } from "./disclosure.js";
@@ -25,6 +25,15 @@ import { fnTool } from "./fn-tool.js";
 import { assembleTools } from "./plugin.js";
 import { ToolRegistryImpl } from "./registry.js";
 import { startBrokerHarness, type BrokerHarness } from "./run-code/broker.test-util.js";
+
+// W839 (R3 B8 / W818-P1-1): the harness is probed at COLLECTION time so the
+// broker-backed case gates with a real it.skipIf. The old "if (!h.nodeReady)
+// return" reported "no node here" as PASSED; vitest now counts it SKIPPED.
+const h: BrokerHarness = await startBrokerHarness();
+
+afterAll(async () => {
+  await h.cleanup();
+});
 
 /** A registry holding [names] as inert recording doubles. */
 function registryOf(names: readonly string[], ran: string[] = []): ToolRegistryImpl {
@@ -171,20 +180,10 @@ describe("disclosureExposure over exposedRegistry (W806 P0 / C2)", () => {
   });
 });
 
-// --- C3: a withheld tool still runs from inside a real program ---------------
-let h: BrokerHarness;
-
-beforeAll(async () => {
-  h = await startBrokerHarness();
-});
-
-afterAll(async () => {
-  if (h !== undefined) await h.cleanup();
-});
+// --- C3: a withheld tool still runs from inside a real program (see top) ------
 
 describe("run_code escape hatch (W806 P0 / C3)", () => {
-  it("a dynamically withheld tool is reachable from a program's sub-call", async () => {
-    if (!h.nodeReady) return; // W833 (R3 B3 / W812 P2-4): the DEFAULT TypeScript matrix
+  it.skipIf(!h.nodeReady)("a dynamically withheld tool is reachable from a program's sub-call", async () => {
     const ran: string[] = [];
     const recorder = fnTool(
       {

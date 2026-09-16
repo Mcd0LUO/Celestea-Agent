@@ -32,6 +32,8 @@ export interface BrokerHarness {
   pythonReady: boolean;
   /** The TypeScript runtime answered inside the sandbox (the TS matrix's switch). */
   nodeReady: boolean;
+  /** Why a matrix is not runnable here (empty when both interpreters answered). */
+  skipReasons: string[];
   /** Register `run_code`, then bind its handle to that same registry. */
   mount(registry: ToolRegistryImpl, options?: { events?: (event: SessionEvent) => void }): Tool;
   run(tool: Tool, callId: string, args: unknown): Promise<unknown> & { value?: unknown };
@@ -98,20 +100,49 @@ export async function startBrokerHarness(options: BrokerHarnessOptions = {}): Pr
       maxTimeoutMs: 120_000,
       maxOutputBytes: 64 * 1024,
     });
-  const probe = await sandbox.run({ command: "python3 -c 'print(1)'" });
-  const pythonReady = probe.exit_code === 0 && probe.stdout === "1\n";
-  if (!pythonReady) console.warn("[run_code] skip: python3 unavailable in the sandbox right now");
-  // W774: the TypeScript path needs the same Node the broker uses, reachable from
-  // inside the sandbox (bwrap mounts the host root read-only).
-  const node = await sandbox.run({ command: "/usr/bin/node --version" });
-  const nodeReady = node.exit_code === 0 && node.stdout.startsWith("v");
-  if (!nodeReady) console.warn("[run_code] skip: /usr/bin/node unavailable in the sandbox right now");
+  // W839 (R3 B8 / W818-P1-1): "the interpreter is missing" is a RECORDED skip
+  // reason, never a silent pass. The matrices gate on these flags with
+  // describe.skipIf / it.skipIf, so vitest reports (and counts) a skipped case
+  // instead of the old "if (!ready) return", which counted it as passed. Set
+  // CELESTEA_REQUIRE_BROKER_RUNTIME=1 (CI) to make a missing interpreter a
+  // collection-time failure instead.
+  const skipReasons: string[] = [];
+  const probePython = async (): Promise<boolean> => {
+    try {
+      const r = await sandbox.run({ command: "python3 -c 'print(1)'" });
+      if (r.exit_code === 0 && r.stdout === "1\n") return true;
+      skipReasons.push("python3 did not answer inside the sandbox");
+    } catch (error) {
+      skipReasons.push("python3 probe threw: " + String(error));
+    }
+    return false;
+  };
+  const probeNode = async (): Promise<boolean> => {
+    try {
+      // W774: the TypeScript path needs the same Node the broker uses, reachable
+      // from inside the sandbox (bwrap mounts the host root read-only).
+      const r = await sandbox.run({ command: "/usr/bin/node --version" });
+      if (r.exit_code === 0 && r.stdout.startsWith("v")) return true;
+      skipReasons.push("/usr/bin/node did not answer inside the sandbox");
+    } catch (error) {
+      skipReasons.push("/usr/bin/node probe threw: " + String(error));
+    }
+    return false;
+  };
+  const pythonReady = await probePython();
+  const nodeReady = await probeNode();
+  if (skipReasons.length > 0) {
+    const line = "[run_code] matrices skipped here: " + skipReasons.join("; ");
+    if (process.env["CELESTEA_REQUIRE_BROKER_RUNTIME"] === "1") throw new Error(line);
+    console.warn(line);
+  }
 
   return {
     dir,
     sandbox,
     pythonReady,
     nodeReady,
+    skipReasons,
     mount(registry: ToolRegistryImpl, options: { events?: (event: SessionEvent) => void } = {}): Tool {
       const { tool, handle } = runCodeToolWithHandle({
         sandbox,

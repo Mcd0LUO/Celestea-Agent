@@ -93,10 +93,22 @@ describe.skipIf(!hasFixtures)("golden fixtures", () => {
     expect(serializeRegistryTsv(parseRegistryTsv(raw).entries)).toBe(raw);
   });
 
+  // W839 (R3 B8 / W818-P2-11): an explicit on-demand allowlist, not a blanket
+  // skip. The old form skipped ANY missing derived transcript, so the case could
+  // pass while covering nothing. Only the two large sessions (regenerated on
+  // demand) may be absent; any other declared slug missing its transcript fails.
+  const ON_DEMAND_TRANSCRIPTS = new Set([
+    "center-架构师-1788940601.93642104",
+    "harness架构哥-1788933931.279221103",
+  ]);
+
   it("derived SSE transcripts only use contract event names", () => {
     for (const s of manifest!.sessions) {
       const p = fixturePath("sessions", s.slug, "sse-transcript-derived.jsonl");
-      if (!existsSync(p)) continue; // large session: regenerated on demand
+      if (!existsSync(p)) {
+        if (ON_DEMAND_TRANSCRIPTS.has(s.slug)) continue;
+        throw new Error("fixture " + s.slug + " is missing " + p + "; run pnpm golden:export");
+      }
       const lines = readFileSync(p, "utf8").split("\n").filter((l) => l.trim() !== "");
       for (const line of lines) {
         const frame = JSON.parse(line) as { event: string; data: { turn: number; seq: number; payload: unknown } };

@@ -52,13 +52,13 @@ const run = (tool: Tool, callId: string, args: unknown): Promise<ToolExecOutcome
   h!.run(tool, callId, args) as Promise<ToolExecOutcome>;
 
 describe("run_code under the seccomp whitelist (W775)", () => {
-  it("proves the filter is on before asserting anything else", () => {
-    if (provider !== BWRAP_PROVIDER) return; // no bwrap here: the whole file is skipped
+  it("proves the filter is on before asserting anything else", (ctx) => {
+    if (provider !== BWRAP_PROVIDER) ctx.skip("bwrap is not the selected sandbox provider here");
     expect(seccompActive).toBe(true);
   });
 
-  it("round-trips the four bridges with TypeScript (default language)", async () => {
-    if (skip() || !h!.nodeReady) return;
+  it("round-trips the four bridges with TypeScript (default language)", async (ctx) => {
+    if (skip() || !h!.nodeReady) ctx.skip("seccomp filter or /usr/bin/node unavailable here");
     const tool = mount(h!.echoRegistry());
     const code = `
       const file = await tools.read_file({ path: "/tmp/seccomp.txt" });
@@ -75,8 +75,8 @@ describe("run_code under the seccomp whitelist (W775)", () => {
     expect(String((out.value as { node: string }).node)).toMatch(/^v\d+\./);
   });
 
-  it("keeps the Python lane alive (asyncio self-pipe needs socketpair)", async () => {
-    if (skip() || !h!.pythonReady) return;
+  it("keeps the Python lane alive (asyncio self-pipe needs socketpair)", async (ctx) => {
+    if (skip() || !h!.pythonReady) ctx.skip("seccomp filter or python3 unavailable here");
     const tool = mount(h!.echoRegistry());
     const code = `
     import asyncio
@@ -88,8 +88,8 @@ describe("run_code under the seccomp whitelist (W775)", () => {
     expect(out.value).toEqual({ echo: "read_file", loop: "_UnixSelectorEventLoop" });
   });
 
-  it("leaves no run_code_* script behind under the whitelist", async () => {
-    if (skip() || !h!.nodeReady) return;
+  it("leaves no run_code_* script behind under the whitelist", async (ctx) => {
+    if (skip() || !h!.nodeReady) ctx.skip("seccomp filter or /usr/bin/node unavailable here");
     const tool = mount(h!.echoRegistry());
     await run(tool, "rc-seccomp-clean", { code: "  return 1 + 1;", description: "cleanup under seccomp" });
     expect(await h!.leftoverScripts()).toEqual([]);

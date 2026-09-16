@@ -202,13 +202,33 @@ describe("weak-reference release", () => {
     expect(await call(tools, "spawn_worker", { wid: "W1", brief: "b" })).toMatchObject({ step: "registry" });
   });
 
-  it("keeps collecting the registry alive through the tools (no strong cycle)", () => {
-    const { registry, tools } = harness();
-    const weak = new WeakRef(registry);
-    expect(weak.deref()).toBe(registry);
-    void tools;
-    expect(registry.isReleased).toBe(false);
-  });
+  it.skipIf(typeof (globalThis as unknown as { gc?: unknown }).gc !== "function")(
+    "lets the registry be collected once the tools are gone (no strong cycle)",
+    async () => {
+      // W839 (R3 B8 / W818-P2-1): the old case kept registry + tools in local
+      // strong references and never collected, so WeakRef.deref() was trivially
+      // still the registry - it observed nothing. Drop every local reference,
+      // force a real collection (vitest forks run with --expose-gc), then require
+      // the WeakRef to go empty; anything pinning the registry keeps it alive.
+      const weak = ((): WeakRef<WorkerRegistry> => {
+        const { registry, tools } = harness();
+        const ref = new WeakRef(registry);
+        expect(ref.deref()).toBe(registry);
+        void tools;
+        return ref;
+      })();
+      const forceGc = (globalThis as unknown as { gc?: () => void }).gc;
+      // NB: do NOT call weak.deref() inside the loop: the temporary strong
+      // reference from deref() would keep the target alive across every gc round
+      // (verified: a control object survives exactly that shape). Collect first,
+      // then observe once.
+      for (let i = 0; i < 25; i++) {
+        forceGc?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(weak.deref()).toBeUndefined();
+    },
+  );
 
   it("tolerates non-object args", async () => {
     const { tools } = harness();

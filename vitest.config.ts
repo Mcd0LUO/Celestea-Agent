@@ -20,5 +20,11 @@ export default defineConfig({
     // W781：apps/web（前端）有独立构建与门禁，不进后端 vitest。
     include: ["packages/**/*.test.ts", "apps/studio/**/*.test.ts", "tests/**/*.test.ts"],
     testTimeout: 30_000,
+    // W839 (R3 B8 / W818-P2-1): the weak-reference release case must be able to
+    // force a collection. The fork pool inherits this flag, so globalThis.gc
+    // exists there and the case observes real collection instead of skipping.
+    poolOptions: {
+      forks: { execArgv: ["--expose-gc"] },
+    },
   },
 });

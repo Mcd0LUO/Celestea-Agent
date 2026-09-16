@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Sandbox, SessionEvent, Tool, ToolGuard, ToolExecOutcome } from "@celestea/core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { fnTool } from "../fn-tool.js";
 import { PathGuard } from "../guard/path-guard.js";
@@ -21,22 +21,16 @@ import { RegistryHandle, runCodeTool } from "../tools/run-code.js";
 import { MAX_SUB_OUTPUT_BYTES } from "./limits.js";
 import { echoSpec, startBrokerHarness, type BrokerHarness } from "./broker.test-util.js";
 
-let h: BrokerHarness;
-let sandbox: Sandbox;
-let dir = "";
-
-beforeAll(async () => {
-  h = await startBrokerHarness();
-  sandbox = h.sandbox;
-  dir = h.dir;
-});
+// W839 (R3 B8 / W818-P1-1): probe at COLLECTION time so the runtime gate is a
+// real describe.skipIf / it.skipIf. The old "if (!h.pythonReady) return"
+// reported "no python3 here" as PASSED; vitest now counts it SKIPPED.
+const h: BrokerHarness = await startBrokerHarness();
+const sandbox: Sandbox = h.sandbox;
+const dir = h.dir;
 
 afterAll(async () => {
-  if (h !== undefined) await h.cleanup();
+  await h.cleanup();
 });
-
-/** The Python regression matrix skips when `python3` is unavailable. */
-const skip = (): boolean => !h.pythonReady;
 /** W774: `language` is explicit here — TypeScript is the tool's default now. */
 const pythonRun = (tool: Tool, callId: string, args: Record<string, unknown>): Promise<ToolExecOutcome> =>
   run(tool, callId, { ...args, language: "python" });
@@ -49,9 +43,8 @@ const shellRegistry = (): ToolRegistryImpl => h.shellRegistry();
 
 // ---- the P0 matrix -----------------------------------------------------------
 
-describe("run_code parent broker", () => {
+describe.skipIf(!h.pythonReady)("run_code parent broker", () => {
   it("round-trips four sub-calls (kwargs, positional dict, await) and logs nested events", async () => {
-    if (skip()) return;
     const events: SessionEvent[] = [];
     const tool = mount(echoRegistry(), { events: (event) => events.push(event) });
     const code = `
@@ -87,7 +80,6 @@ async def main():
   });
 
   it("flows a guard denial back as a catchable ToolCallError and still logs the row", async () => {
-    if (skip()) return;
     const events: SessionEvent[] = [];
     const registry = echoRegistry();
     const denySubCalls: ToolGuard = {
@@ -112,7 +104,6 @@ async def main():
   });
 
   it("refuses the 21st sub-call without dispatching or logging it", async () => {
-    if (skip()) return;
     const events: SessionEvent[] = [];
     const tool = mount(echoRegistry(), { events: (event) => events.push(event) });
     const code = `
@@ -134,7 +125,6 @@ async def main():
   });
 
   it("truncates an oversized sub-call result with a warning in the render", async () => {
-    if (skip()) return;
     const registry = new ToolRegistryImpl();
     registry.register(fnTool(echoSpec("read_file"), async () => "x".repeat(300_000)));
     const tool = mount(registry);
@@ -152,9 +142,8 @@ async def main():
 
 });
 
-describe("run_code broker limits and failures", () => {
+describe.skipIf(!h.pythonReady)("run_code broker limits and failures", () => {
   it("caps program stdout logs at 64KiB without touching the final value", async () => {
-    if (skip()) return;
     const tool = mount(echoRegistry());
     const code = `
 async def main():
@@ -169,7 +158,6 @@ async def main():
   });
 
   it("keeps s.stdout == s['stdout'] before and after await", async () => {
-    if (skip()) return;
     const tool = mount(shellRegistry());
     const code = `
 async def main():
@@ -194,7 +182,6 @@ async def main():
   });
 
   it("kills the program on the wall clock and reports a structured timeout", async () => {
-    if (skip()) return;
     const tool = mount(echoRegistry());
     await expect(run(tool, "rc-timeout", { code: "while True:\n    pass\n", language: "python", timeout_ms: 800 })).rejects.toThrow(
       /^run_code: code=timeout .*800ms/,
@@ -202,7 +189,6 @@ async def main():
   });
 
   it("refuses non-whitelisted tools at the parent (defense in depth)", async () => {
-    if (skip()) return;
     const tool = mount(echoRegistry());
     const code = `
 import json, sys
@@ -228,7 +214,6 @@ async def main():
   });
 
   it("turns an uncaught program exception into the error plus a bounded log tail", async () => {
-    if (skip()) return;
     const tool = mount(echoRegistry());
     const code = `
 async def main():
@@ -244,7 +229,6 @@ async def main():
   });
 
   it("cleans the temporary program file from the session workdir (also on timeout)", async () => {
-    if (skip()) return;
     const tool = mount(echoRegistry());
     await run(tool, "rc-clean", { code: "async def main():\n    return 1\n", language: "python" });
     expect(await leftoverScripts()).toEqual([]);
@@ -255,7 +239,6 @@ async def main():
   });
 
   it("reports a non-JSON return value as a program error", async () => {
-    if (skip()) return;
     const tool = mount(echoRegistry());
     await expect(run(tool, "rc-nonjson", { code: "async def main():\n    return object()\n", language: "python" })).rejects.toThrow(
       /not JSON serializable/,
@@ -289,8 +272,7 @@ describe("run_code argument + wiring contracts", () => {
     expect(off.runCode).toBeNull();
   });
 
-  it("reads a real file through the real guard inside an assembled pipeline", async () => {
-    if (skip()) return;
+  it.skipIf(!h.pythonReady)("reads a real file through the real guard inside an assembled pipeline", async () => {
     const path = join(dir, "notes.txt");
     await writeFile(path, "first line\nsecond line\n", "utf8");
     const registry = assembleTools({ sandbox, guard: null, tools: [readFileTool()], runCode: {} });

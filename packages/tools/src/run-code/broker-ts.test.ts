@@ -7,31 +7,27 @@
  */
 
 import type { SessionEvent, Tool, ToolDecision, ToolExecOutcome, ToolInput } from "@celestea/core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { fnTool } from "../fn-tool.js";
 import type { ToolRegistryImpl } from "../registry.js";
 import { startBrokerHarness, type BrokerHarness } from "./broker.test-util.js";
 
-let h: BrokerHarness;
-
-beforeAll(async () => {
-  h = await startBrokerHarness();
-});
+// W839 (R3 B8 / W818-P1-1): probe at COLLECTION time so the runtime gate is a
+// real describe.skipIf / it.skipIf. The old "if (!h.nodeReady) return"
+// reported "no interpreter here" as PASSED; vitest now counts it SKIPPED.
+const h: BrokerHarness = await startBrokerHarness();
 
 afterAll(async () => {
-  if (h !== undefined) await h.cleanup();
+  await h.cleanup();
 });
-
-const skipTs = (): boolean => !h.nodeReady;
 const mount = (registry: ToolRegistryImpl, options: Parameters<BrokerHarness["mount"]>[1] = {}): Tool => h.mount(registry, options);
 const run = (tool: Tool, callId: string, args: unknown): Promise<ToolExecOutcome> =>
   h.run(tool, callId, args) as Promise<ToolExecOutcome>;
 const echoRegistry = (): ToolRegistryImpl => h.echoRegistry();
 const leftoverScripts = (): Promise<string[]> => h.leftoverScripts();
-describe("run_code TypeScript (W774, default language)", () => {
+describe.skipIf(!h.nodeReady)("run_code TypeScript (W774, default language)", () => {
   it("defaults to TypeScript and round-trips the four bridges", async () => {
-    if (skipTs()) return;
     const events: SessionEvent[] = [];
     const tool = mount(echoRegistry(), { events: (event) => events.push(event) });
     const code = `
@@ -60,7 +56,6 @@ describe("run_code TypeScript (W774, default language)", () => {
   });
 
   it("flows a guard denial back as a catchable ToolCallError", async () => {
-    if (skipTs()) return;
     const registry = echoRegistry();
     const tool = mount(registry);
     registry.addGuard({
@@ -81,7 +76,6 @@ describe("run_code TypeScript (W774, default language)", () => {
   });
 
   it("refuses the 21st sub-call without dispatching it", async () => {
-    if (skipTs()) return;
     const events: SessionEvent[] = [];
     const tool = mount(echoRegistry(), { events: (event) => events.push(event) });
     const code = `
@@ -99,7 +93,6 @@ describe("run_code TypeScript (W774, default language)", () => {
   });
 
   it("kills the program on the wall clock", async () => {
-    if (skipTs()) return;
     const tool = mount(echoRegistry());
     await expect(run(tool, "rc-ts-timeout", { code: "while (true) {}\n", timeout_ms: 800 })).rejects.toThrow(
       /^run_code: code=timeout .*800ms/,
@@ -107,7 +100,6 @@ describe("run_code TypeScript (W774, default language)", () => {
   });
 
   it("turns an uncaught exception into {__error__} with a stack and the log tail", async () => {
-    if (skipTs()) return;
     const tool = mount(echoRegistry());
     const code = `
       console.log("before boom");
@@ -122,7 +114,6 @@ describe("run_code TypeScript (W774, default language)", () => {
   });
 
   it("reports a non-serializable return value as a program error", async () => {
-    if (skipTs()) return;
     const tool = mount(echoRegistry());
     await expect(run(tool, "rc-ts-nonjson", { code: "function main() { return 10n; }\n" })).rejects.toThrow(
       /BigInt/,
@@ -130,13 +121,11 @@ describe("run_code TypeScript (W774, default language)", () => {
   });
 
   it("reports a main-less program with a clear message", async () => {
-    if (skipTs()) return;
     const tool = mount(echoRegistry());
     await expect(run(tool, "rc-ts-nomain", { code: "const x = 1;\n" })).rejects.toThrow(/no 'main' defined/);
   });
 
   it("cleans the temporary .ts program file from the session workdir", async () => {
-    if (skipTs()) return;
     const tool = mount(echoRegistry());
     await run(tool, "rc-ts-clean", { code: "function main() { return 1; }\n" });
     expect(await leftoverScripts()).toEqual([]);
@@ -151,8 +140,7 @@ describe("run_code TypeScript (W774, default language)", () => {
     );
   });
 
-  it("still runs Python when language is explicit (regression)", async () => {
-    if (!h.pythonReady) return;
+  it.skipIf(!h.pythonReady)("still runs Python when language is explicit (regression)", async () => {
     const tool = mount(echoRegistry());
     const out = await run(tool, "rc-py-explicit", {
       code: 'async def main():\n    return tools.read_file(path="/tmp/x")["echo"]\n',

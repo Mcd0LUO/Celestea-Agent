@@ -107,10 +107,25 @@ describe("projections", () => {
     const msgs = projectMessages(events);
     expect(msgs).toHaveLength(8);
     expect(msgs[1]).toEqual({ role: "thinking", content: "hmm" });
+    // W839 (R3 B8 / W818-P2-9): find(...) + toBeDefined() left a wrong
+    // attribution green, and msgs[2].content === undefined was a vacuous check on
+    // an unrelated row. Pin the sub-call's identity/parent and the parent row.
     const sub = msgs.find((m) => "tool_parent_id" in m && m.tool_parent_id === "c1");
-    expect(sub).toBeDefined();
-    const call = msgs[2] as unknown as Record<string, unknown>;
-    expect(call["content"]).toBeUndefined();
+    expect(sub).toEqual({
+      role: "tool",
+      kind: "call",
+      tool_call_id: "c1:c1",
+      tool_name: "read_file",
+      tool_args: { path: "/x" },
+      tool_parent_id: "c1",
+    });
+    expect(msgs[2]).toEqual({
+      role: "tool",
+      kind: "call",
+      tool_call_id: "c1",
+      tool_name: "run_code",
+      tool_args: { code: "x" },
+    });
   });
 
   it("engine projection drops thinking, turn markers and sub-calls", () => {

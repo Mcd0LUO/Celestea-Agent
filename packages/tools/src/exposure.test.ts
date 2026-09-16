@@ -17,13 +17,22 @@
  */
 
 import type { ToolExecOutcome } from "@celestea/core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { EXECUTION_TOOL_NAMES, executionExposure, exposedRegistry, TOOL_UNAVAILABLE_CODE, unavailableError } from "./exposure.js";
 import { fnTool } from "./fn-tool.js";
 import { assembleTools } from "./plugin.js";
 import { ToolRegistryImpl } from "./registry.js";
 import { startBrokerHarness, type BrokerHarness } from "./run-code/broker.test-util.js";
+
+// W839 (R3 B8 / W818-P1-1): the harness is probed at COLLECTION time so the
+// broker-backed case gates with a real it.skipIf. The old "if (!h.nodeReady)
+// return" reported "no node here" as PASSED; vitest now counts it SKIPPED.
+const h: BrokerHarness = await startBrokerHarness();
+
+afterAll(async () => {
+  await h.cleanup();
+});
 
 /** The production name set (contracts/tools.json, W783: 11 names). */
 const PRODUCTION_NAMES: readonly string[] = [
@@ -97,8 +106,7 @@ describe("exposedRegistry (W791 P1)", () => {
     expect(kept.decision?.kind).toBe("allow");
   });
 
-  it("M8 (second assertion): the assembled run_code reaches the folded tool from inside a program", async () => {
-    if (!h.nodeReady) return; // W833 (R3 B3 / W812 P2-4): the DEFAULT TypeScript matrix
+  it.skipIf(!h.nodeReady)("M8 (second assertion): the assembled run_code reaches the folded tool from inside a program", async () => {
     const ran: string[] = [];
     const recorder = fnTool(
       { name: "read_file", description: "recording read_file", parameters: { type: "object", properties: { path: { type: "string" }, command: { type: "string" }, content: { type: "string" }, workdir: { type: "string" }, timeout_ms: { type: "integer" } }, additionalProperties: false } },
@@ -148,13 +156,4 @@ describe("exposedRegistry (W791 P1)", () => {
   });
 });
 
-// --- the broker harness (M8's second assertion runs a real program) -----------
-let h: BrokerHarness;
-
-beforeAll(async () => {
-  h = await startBrokerHarness();
-});
-
-afterAll(async () => {
-  if (h !== undefined) await h.cleanup();
-});
+// --- the broker harness (see the top of the file) ----------------------------
