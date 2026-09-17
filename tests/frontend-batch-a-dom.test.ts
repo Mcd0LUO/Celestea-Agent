@@ -93,6 +93,7 @@ const HTML =
   '<button class="sl-effort" id="slEffort">—</button><span class="sl-sep">·</span>' +
   '<button class="sl-mode hidden" id="slMode"></button><span class="sl-spacer"></span>' +
   '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-badge" id="slGrantBadge"></span><span class="sl-grant-dot" id="slGrantDot"></span></button>' +
+  '<button id="btnMode" class="sl-mode-btn hidden" type="button">插话</button>' +
   '<button id="slStop" class="sl-stop hidden"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9"></rect></svg></button>' +
   '<span class="sl-hint" id="slHint"></span></div>' +
   '<div class="sl-row sl-row-sub"><div id="sessionBar" class="session-bar"></div>' +
@@ -100,9 +101,10 @@ const HTML =
   '<span class="sl-cache" id="slCache">缓存 —</span><span class="sl-sep">·</span><span class="sl-steps" id="slSteps">— 步</span></div></div>' +
   '<footer id="statusbar"><span class="dot" id="statusDot"></span><span id="statusText"></span>' +
   '<span id="statusTurn"></span><span id="statusStep"></span><span id="statusTime"></span></footer>' +
+  // W846：运行态不再向 .input-side 追加按钮 —— #btnMode 已移入 .sl-row-main，
+  // 取消由 #slStop 单点承担（输入栏恒为 [图片][发送]，两态宽度逐像素一致）。
   '<div id="inputbar"><textarea id="input" rows="2"></textarea>' +
-  '<div class="input-side"><button id="btnMode" class="btn btn-soft btn-mini hidden">插话</button>' +
-  '<button id="btnCancel" class="btn btn-soft hidden">取消</button>' +
+  '<div class="input-side">' +
   '<button id="btnSend" class="btn btn-accent">发送</button></div></div></main></div></div>';
 
 /** className 取值：SVG 元素的 className 是 SVGAnimatedString（不是字符串）。 */
@@ -155,9 +157,13 @@ describe("W789 · CSS 真源（标签左对齐 / 运行态不换行 / 按钮横�
     expect(rule(resp, ".sl-hint")).not.toContain("100%");
   });
 
-  it("8) 输入栏按钮列改横排（空闲 1 个按钮与运行 3 个按钮高度相同）", () => {
+  it("8) 输入栏按钮列改横排（高度不变）；W846：运行态不再追加按钮（宽度也不变）", () => {
     expect(rule(css("layout.css"), ".input-side")).toContain("flex-direction: row");
     expect(rule(css("layout.css"), ".input-side")).not.toContain("flex-direction: column");
+    // W846：运行态按钮不再进 .input-side（#btnMode 在 statusline、取消由 #slStop），
+    // 空闲/运行两态 .input-side 的内容相同 ⇒ 不抢 #input 宽度。
+    expect(rule(css("layout.css"), ".input-side")).not.toContain("#btnMode");
+    expect(rule(css("statusline.css"), ".sl-mode-btn")).toContain("flex: 0 0 auto");
   });
 
   it("2) 面板高度只由外层 max-height 约束，内部滚动层是 .sl-popup-body", () => {
@@ -256,14 +262,14 @@ describe("W789 · 运行态 composer 结构不变量（8）", () => {
     const sl = doc.getElementById("statusline") as ElLike;
     const ib = doc.getElementById("inputbar") as ElLike;
     const before = { sl: skeleton(sl), ib: skeleton(ib), slKids: sl.childElementCount, ibKids: ib.childElementCount };
-    const hiddenBefore = ["btnCancel", "slStop", "btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
-    expect(hiddenBefore).toEqual([true, true, true]); // 空闲：三个按钮都隐藏了
+    const hiddenBefore = ["slStop", "btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
+    expect(hiddenBefore).toEqual([true, true]); // 空闲：停止键与车道键都隐藏
 
     bar.setBusy(true);
     bar.setInputMode("interject");
 
-    const hiddenAfter = ["btnCancel", "slStop", "btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
-    expect(hiddenAfter).toEqual([false, false, false]); // 运行：三个按钮出现
+    const hiddenAfter = ["slStop", "btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
+    expect(hiddenAfter).toEqual([false, false]); // 运行：停止键与车道键出现（都不在 .input-side）
     // 出现按钮 ≠ 改动结构：DOM 骨架与子节点数完全一致（几何恒定的必要条件）
     expect(skeleton(sl)).toBe(before.sl);
     expect(skeleton(ib)).toBe(before.ib);
@@ -271,12 +277,16 @@ describe("W789 · 运行态 composer 结构不变量（8）", () => {
     expect(ib.childElementCount).toBe(before.ibKids);
     // 第 1 行仍只有一个：运行态绝不新增 .sl-row（换行/加行都会改高 composer）
     expect(Array.from(sl.children).filter((c) => clsOf(c).includes("sl-row-main")).length).toBe(1);
-    // 按钮仍在同一个 .input-side 里（横排由 CSS 保证同一行高）；
+    // W846：运行态按钮**不在** .input-side 里（否则会抢 #input 宽度）。
     // W805 在行首新增图片入口 #btnAttach（能力位就绪前保持 .hidden）。
     const side = ib.querySelector(".input-side") as ElLike;
-    expect(["btnAttach", "btnMode", "btnCancel", "btnSend"]).toEqual(
+    expect(["btnAttach", "btnSend"]).toEqual(
       Array.from(side.children).map((c) => c.id),
     );
+    // 运行态出现的两个控制都在 statusline 第 1 行：车道键 + 停止键
+    const main = sl.querySelector(".sl-row-main") as ElLike;
+    expect(main.querySelector("#btnMode")).not.toBeNull();
+    expect(main.querySelector("#slStop")).not.toBeNull();
     bar.setBusy(false);
     bar.setInputMode("idle");
   });

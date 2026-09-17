@@ -186,7 +186,11 @@ describe("W790 · item 3 行为：一键切换到任一运行中会话（W514 �
     const bar = doc.getElementById("sessionBar") as ElLike;
     expect(bar.closest(".sl-row-sub")).not.toBeNull();
     expect(bar.querySelector(".sess-bar-name")?.textContent).toBe("甲会话");
-    expect(bar.querySelector(".sess-bar-state")?.textContent).toBe("运行中");
+    // W846：聚焦会话「运行中」的**文字**由 #statusText 单点表达（避免同一状态出现两次）；
+    // 会话条只留状态点（.busy → ::before 绿点 + 呼吸，W790 语义不变）。
+    const state = bar.querySelector(".sess-bar-state") as ElLike;
+    expect(state.textContent).toBe("");
+    expect(state.classList.contains("busy")).toBe(true);
     expect(bar.querySelector(".sess-bar-kind")?.classList.contains("hidden")).toBe(true);
 
     const chips = Array.from(bar.querySelectorAll(".sess-bar-chip"));

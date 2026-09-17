@@ -354,7 +354,7 @@ export function connectSse(): SseClient {
 // ---- cancel -------------------------------------------------------------------
 
 /**
- * 取消当前聚焦容器的轮次（单一取消入口）：#btnCancel 与 statusline 的 #slStop 共用。
+ * 取消当前聚焦容器的轮次（单一取消入口）：statusline 的 #slStop（W846 起输入栏不再有 #btnCancel）。
  * 失败只提示错误，本地状态交由 SSE 的 status:cancelled 收尾（finalizeTurn）。
  */
 export function requestCancel(): void {

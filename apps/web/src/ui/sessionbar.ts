@@ -49,7 +49,10 @@ export function updateSessionBar(): void {
   nameEl.textContent = labelOf(pane);
   nameEl.title = pane.id || '（未解析）';
   kindEl.classList.toggle('hidden', pane.kind !== 'worker');
-  stateEl.textContent = busy ? (pane.streaming ? '运行中' : '运行中 · 后台') : '空闲';
+  // W846：聚焦会话「运行中」的**文字**由 statusbar 的 #statusText 单点表达；
+  // 本行只留状态点（.busy → ::before 绿点 + 呼吸，W790 语义不变），
+  // 避免同一状态在状态区出现两次。非本地的「后台运行」另给文字以与纯运行区分。
+  stateEl.textContent = busy ? (pane.streaming ? '' : '后台运行') : '空闲';
   stateEl.className = 'sess-bar-state' + (busy ? ' busy' : '');
 
   const others = allPanes().filter((p) => p !== pane && (p.streaming || paneBusy(p.id)));

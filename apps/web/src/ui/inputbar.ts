@@ -43,14 +43,17 @@ export type InputMode = 'idle' | 'interject' | 'readonly';
 
 const MAX_HEIGHT = 240;
 const PLACEHOLDER_IDLE = '输入消息，Enter 发送，Shift+Enter 换行';
-const PLACEHOLDER_STEER = '运行中 · Enter 插话（下一步送达）· Ctrl/Cmd+Enter 排队（下一回合送达）';
-const PLACEHOLDER_QUEUE = '运行中 · Enter 排队（本轮结束后送达）· Ctrl/Cmd+Enter 插话（下一步送达）';
+// W846：运行态「文案只出现一处」——「运行中…」由 statusbar 的 #statusText 单点表达，
+// 占位符只说明输入行为（车道），不再重复状态词。
+const PLACEHOLDER_STEER = 'Enter 插话（下一步送达）· Ctrl/Cmd+Enter 排队（下一回合送达）';
+const PLACEHOLDER_QUEUE = 'Enter 排队（本轮结束后送达）· Ctrl/Cmd+Enter 插话（下一步送达）';
 const PLACEHOLDER_READONLY = 'Worker 会话 · 只读查看';
 
 let bar: HTMLElement | null = null;
 let inputEl: HTMLTextAreaElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
-let cancelBtn: HTMLButtonElement | null = null;
+// W846：输入栏不再有独立的「取消」按钮 —— 取消由 statusline 的 #slStop 单点承担
+//（两者本就共用 chat.ts requestCancel），输入栏因此恒为 [图片][发送]，运行态几何不变。
 let stopBtn: HTMLButtonElement | null = null;
 let modeBtn: HTMLButtonElement | null = null;
 
@@ -106,8 +109,7 @@ export function initInputBar(h: InputBarHandlers): void {
   inputEl = input;
   bar = need<HTMLElement>('#inputbar');
   sendBtn = need<HTMLButtonElement>('#btnSend');
-  cancelBtn = need<HTMLButtonElement>('#btnCancel');
-  // W302：statusline 上的「停止」方形按钮（与 #btnCancel 共用同一个取消回调）
+  // W302：statusline 上的「停止」方形按钮（= 唯一取消入口；W846 起不再有 #btnCancel）
   const stopEl = need<HTMLButtonElement>('#slStop');
   stopBtn = stopEl;
   modeBtn = document.getElementById('btnMode') as HTMLButtonElement | null;
@@ -118,7 +120,6 @@ export function initInputBar(h: InputBarHandlers): void {
   };
 
   sendBtn.addEventListener('click', () => h.send(input.value, submitMode));
-  cancelBtn.addEventListener('click', () => h.cancel());
   modeBtn?.addEventListener('click', () => toggleSubmitMode());
   stopEl.addEventListener('click', () => {
     if (stopEl.disabled) return;
@@ -164,11 +165,11 @@ export function setInputValue(v: string): void {
 }
 
 /**
- * 切换 取消/停止 按钮状态（= 当前聚焦会话是否运行中）。
+ * 切换「停止」按钮状态（= 当前聚焦会话是否运行中）。
  * W514：**发送按钮不随 busy 禁用**（运行中发送走插话/排队路径）。
+ * W846：取消按钮只剩 statusline 的 #slStop（#btnCancel 已移除）。
  */
 export function setBusy(busy: boolean): void {
-  if (cancelBtn) cancelBtn.classList.toggle('hidden', !busy);
   if (stopBtn) {
     stopBtn.classList.toggle('hidden', !busy);
     stopBtn.disabled = !busy;

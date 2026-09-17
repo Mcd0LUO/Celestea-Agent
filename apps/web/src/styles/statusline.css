@@ -30,7 +30,9 @@
 .sl-sep { color: var(--c-text-3); opacity: .6; }
 .sl-spacer { flex: 1 1 auto; }
 
-.sl-ctx { font-variant-numeric: tabular-nums; color: var(--c-text-1); }
+.sl-ctx { font-variant-numeric: tabular-nums; color: var(--c-text-1); white-space: nowrap; }
+/* W846：运行态第 1 行右端多了车道切换键，可用宽度变窄 —— 用量格不再换行，
+   空间由 .sl-model / .sl-hint 的 ellipsis 吸收（两者 overflow:hidden，min-width auto = 0）。 */
 .sl-model {
   color: var(--c-text-1);
   max-width: 46ch;
@@ -297,9 +299,34 @@
 .sl-popup-input { flex: 1; min-width: 0; }
 
 /* ============================================================================
+ * W846：statusline 第 1 行右端的「提交车道」切换键（插话 / 排队）。
+ *   从输入栏移来：运行态不再向 .input-side 追加按钮 → #input 宽度逐像素不变。
+ *   几何与 .sl-stop 同族：桌面 16px 高（≤ .sl-row-main 实测 ~20px，不撑行高），
+ *   ≤1024 触控档由 responsive.css 抬到 --tap-min（与 .sl-stop 同高，不新增行高）。
+ * ============================================================================ */
+.sl-mode-btn {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center;
+  height: 16px; padding: 0 6px;
+  font-family: var(--mono); font-size: 10.5px; line-height: 15px;
+  background: transparent; border: 1px solid var(--c-border-subtle); border-radius: 4px;
+  color: var(--c-text-2); cursor: pointer;
+}
+.sl-mode-btn:hover {
+  background: var(--c-accent-soft);
+  color: var(--c-text-1);
+  border-color: var(--c-accent-ring);
+}
+.sl-mode-btn:focus-visible {
+  outline: 1px solid var(--c-accent-ring);
+  outline-offset: 1px;
+}
+.sl-mode-btn.hidden { display: none; }
+
+/* ============================================================================
  * W302：statusline 第 1 行右端的「停止」方形按钮
  *   仅运行中可见（.hidden 全局隐藏类，由 ui/inputbar.setBusy 同步），
- *   点击 = 同一个取消入口 chat.ts requestCancel（#btnCancel 共用）。
+ *   点击 = 唯一取消入口 chat.ts requestCancel（W846 起输入栏的 #btnCancel 已移除）。
  *   显隐只切 class，不触碰消息区 / 背景视图（FRONTEND-RULES 铁律 5）。
  * ============================================================================ */
 .sl-stop {

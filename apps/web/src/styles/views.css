@@ -200,12 +200,11 @@
   white-space: pre-wrap;
 }
 
-/* ---- 提交两态切换（#btnMode：插话 / 排队） ---- */
+/* ---- 提交两态切换（#btnMode：插话 / 排队；W846 起落在 statusline 第 1 行右端） ---- */
 #btnMode.queue {
   background: var(--c-bg);
   border-style: dotted;
 }
-#inputbar.interject #btnMode { display: inline-flex; align-items: center; }
 
 /* ---- W515 谱系缩进（父会话 → worker 子行） ---- */
 .ws-worker-parent {

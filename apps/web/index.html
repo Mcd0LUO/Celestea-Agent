@@ -79,6 +79,10 @@
               <span class="sl-grant-badge" id="slGrantBadge"></span>
               <span class="sl-grant-dot" aria-hidden="true"></span>
             </button>
+            <!-- W846：运行态的提交车道切换（插话/排队）从输入栏移到本行右端，与停止键同组。
+                 移出输入栏后 .input-side 在空闲/运行两态宽度一致，#input 不再被运行态
+                 多出的按钮挤窄（移动端 ≤640px 尤甚）。显隐真源仍是 ui/inputbar.setInputMode。 -->
+            <button id="btnMode" class="sl-mode-btn hidden" type="button" title="提交车道：插话 / 排队">插话</button>
             <!-- W302：运行中显示的正方形停止按钮（取消当前轮次；显隐真源 = ui/inputbar.setBusy） -->
             <button id="slStop" class="sl-stop hidden" type="button" title="停止本轮生成" aria-label="停止本轮生成">
               <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="currentColor"></rect></svg>
@@ -115,10 +119,10 @@
 
         <div id="inputbar">
           <textarea id="input" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
+          <!-- W846：运行态不再向输入栏追加按钮 —— 车道切换（#btnMode）已移到 statusline，
+               取消由 statusline 的 #slStop 单点承担（两者本就共用 chat.ts requestCancel）。
+               因此空闲/运行两态 .input-side 恒为 [图片][发送]，#input 宽度逐像素不变。 -->
           <div class="input-side">
-            <!-- W515：提交两态切换（运行中显示）：插话（下一步送达）/ 排队（本轮结束后送达） -->
-            <button id="btnMode" class="btn btn-soft btn-mini hidden" type="button" title="提交车道：插话 / 排队">插话</button>
-            <button id="btnCancel" class="btn btn-soft hidden">取消</button>
             <button id="btnSend" class="btn btn-accent">发送</button>
           </div>
         </div>

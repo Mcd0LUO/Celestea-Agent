@@ -57,8 +57,7 @@ button,
   #topbar .btn,
   #statusbar .btn,
   .side-sec .btn-mini,
-  #btnSend,
-  #btnCancel { min-height: var(--tap-min); }
+  #btnSend { min-height: var(--tap-min); }
   #input { min-height: var(--tap-min); }
 
   /* statusline：环/模型/档位/盾牌/停止全是可点目标；环保持 14px 视觉、命中区 44px */
@@ -68,7 +67,8 @@ button,
   }
   .sl-model,
   .sl-effort,
-  .sl-mode {
+  .sl-mode,
+  #btnMode {
     display: inline-flex; align-items: center;
     min-height: var(--tap-min); min-width: var(--tap-min);
   }
@@ -169,8 +169,8 @@ button,
   /* ---- 2.4 输入区：占满宽度 + 底部安全区 + 16px 字号（iOS 聚焦不放大） ---- */
   #inputbar { padding: 8px 10px calc(8px + var(--safe-b)); gap: 8px; }
   #input { font-size: 16px; max-height: 32dvh; }
-  #btnSend, #btnCancel { min-width: 72px; padding: 0 12px; }
-  #btnMode { min-height: 34px; padding: 0 8px; } /* W789：与发送/取消同行，别抢输入框宽度 */
+  #btnSend { min-width: 72px; padding: 0 12px; }
+  #btnMode { padding: 0 8px; } /* W846：车道切换键已移入 statusline，触控高度由 ≤1024 档统一给 */
   .input-side { gap: 6px; }
 
   /* ---- 2.5 消息 / 工具卡：占满宽度、长内容自己滚、长路径省略 ---- */
