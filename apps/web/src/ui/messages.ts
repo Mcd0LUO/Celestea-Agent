@@ -152,6 +152,23 @@ export function endTurn(ctx: SessionPane): void {
 }
 
 /**
+ * W847：**一步结束**的思考段收尾 —— 把当前段折回终态并解除归属（对 null 幂等），
+ * 但**不**清 lastTextCol、也不结束整轮（endTurn 仍负责跨轮清理）。
+ *
+ * 为什么需要它：落盘的 ThinkingBuffer（packages/agent-loop/src/thinking.ts:26-31）
+ * 在 text/done/terminal 处把一段连续推理 flush 成**一条** thinking_delta 行，所以
+ * 历史重放天然是 thinking → tool → thinking → tool … 交替；而 live 侧 ctx.thinkSeg
+ * 原先只在 endTurn 清空，整轮所有 reasoning 会累进同一个段，实时与刷新后的分段
+ * 不一致。调用点见 chat.ts 的 onDone（须在 assistant 早退之前）与 onTool（done
+ * 帧被总线丢弃时的兜底）。
+ */
+export function flushThinkSegment(ctx: SessionPane): void {
+  if (!ctx.thinkSeg) return; // 幂等：本步没有开着的思考段
+  foldThinkSeg(ctx); // W752 语义：撤流式信号 + 尊重用户手动折叠意图的自动折叠
+  ctx.thinkSeg = null;
+}
+
+/**
  * Append a thinking delta（弱化块：左侧色条 + 浅色底 + 小字；独立成段）。
  * 重排规则：思考块的目标位置 = 同轮最近文本块的正上方（紧贴）；已在目标
  * 之前则不动。跨轮：endTurn() 清 thinkSeg/lastTextCol，绝不串位。

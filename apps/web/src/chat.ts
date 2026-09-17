@@ -28,6 +28,7 @@ import {
   ensureAssistant,
   finalizeAssistant,
   flushTextSegment,
+  flushThinkSegment,
   removeAssistant,
   renderInboxMessage,
   renderInfoBlock,
@@ -226,6 +227,9 @@ function onThinking(ctx: SessionPane, p: ThinkingPayload): void {
 function onTool(ctx: SessionPane, p: ToolPayload): void {
   if (ctx.turn === null) ctx.turn = p.turn ?? null;
   if (p.turn !== undefined && ctx.turn !== null && p.turn !== ctx.turn) return;
+  // W847：一步结束（工具帧是 done 帧被总线丢弃时的兜底）→ 思考段先收尾，
+  // 否则整轮的 reasoning 会累进同一个段，实时与刷新后的分段不一致。
+  flushThinkSegment(ctx);
   // 连续流：文本段先收尾，工具卡按事件顺序排在文本段之后
   flushTextSegment(ctx);
   pushToolCard(ctx, p); // 消息流级条目：按事件时间内联在消息流中
@@ -244,6 +248,9 @@ function onToolResult(ctx: SessionPane, p: ToolResultPayload): void {
 function onDone(ctx: SessionPane, p: DonePayload): void {
   if (ctx.turn === null) ctx.turn = p.turn ?? null;
   if (p.turn !== undefined && ctx.turn !== null && p.turn !== ctx.turn) return;
+  // W847：一步结束 → 思考段收尾。必须在下面 assistant 早退之前（无文本的 step
+  // 没有 assistant，早退会让本步的思考段漏收尾、与落盘分段口径错位）。
+  flushThinkSegment(ctx);
   const a = ctx.assistant;
   if (!a) return;
   if (finalAssistantDedup(ctx, p.text)) {
