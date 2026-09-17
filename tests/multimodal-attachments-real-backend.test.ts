@@ -10,7 +10,19 @@
  *   ③ 无视觉模型 deepseek-v4-flash-0731 → 捕获 IMAGE_UNSUPPORTED 状态帧，
  *      断言 placeholder / message / hint（可执行建议）齐备，不是静默失败。
  *
- * 自建会话一律 w805- 前缀（celestea_harness 工作区），收尾连回收目录条目一并清理。
+ * W855 · 确定性编排（只改测试，不改产品）：
+ *   旧版两个用例共用一条**全局** /api/events，且第一个用例发完图不等自己的回合
+ *   结束就放行；第二个用例于是可能读到别的会话/回合的帧，或在共享运行时/上游上撞到
+ *   前一个在飞回合。现在：
+ *     · 每个用例用 ?session=<id> **会话锚定**的 SSE，并按帧信封的 session 复核，
+ *       别的会话（以及 session=null 的进程级帧）一律丢弃；
+ *     · 每个用例先建好自己的流再发 turn，结束时等本会话的 turn_end（turn 锚定），
+ *       并在 finally 里取消 + 等 busy=false 收敛，绝不把在飞回合漏给下一个用例；
+ *     · 两个用例串行、各自等自己的回合收敛，不依赖共享全局流的“首个匹配”。
+ *   断言一条不删、不放宽。
+ *
+ * 自建会话一律 w805- 前缀（celestea_harness 工作区），收尾连回收目录条目一并清理，
+ * 并把被本套件 activate 过的共享 active_session 拨回进入时的值（失败即断言）。
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -27,6 +39,10 @@ const PNG = Buffer.from(
   "base64",
 );
 const SHA = createHash("sha256").update(PNG).digest("hex");
+
+/** SSE 换行符（避免在生成源码里写反斜杠转义）。 */
+const LF = String.fromCharCode(10);
+const CRLF = String.fromCharCode(13, 10);
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..", "apps", "web");
 const at = (rel: string): string => pathToFileURL(join(WEB, "src", rel)).href;
@@ -50,9 +66,12 @@ interface UserRow {
 interface ApiMod {
   health(): Promise<{ ok?: boolean }>;
   workspaces(): Promise<{ workspaces?: Array<{ name: string; path: string }> }>;
+  sessions(opts?: { archived?: boolean }): Promise<{ sessions?: UserRow[]; active_session?: string | null }>;
   createSession(r: unknown): Promise<{ id?: string }>;
   activateSession(id: string): Promise<unknown>;
   messages(id: string): Promise<{ messages?: UserRow[] }>;
+  status(session?: string): Promise<{ busy?: boolean; session?: string | null }>;
+  cancel(session?: string): Promise<unknown>;
   turn(
     input: string,
     session?: string,
@@ -83,6 +102,8 @@ if (!LIVE) {
 const live = LIVE ? describe : describe.skip;
 const created: string[] = [];
 let WS_PATH = "";
+/** 进入本套件时的共享 active_session（收尾拨回；W792 同款纪律）。 */
+let activeBefore = "";
 
 async function createSession(model: string, title: string): Promise<string> {
   const r = await api.createSession({ workspace: WS, title: "w805-" + title + "-" + STAMP, model });
@@ -105,52 +126,182 @@ async function waitAttachment(id: string, timeoutMs: number): Promise<UserRow | 
   }
 }
 
-/** 边发 turn 边读 SSE，直到出现 IMAGE_UNSUPPORTED 或超时；返回原始帧文本。 */
-async function watchSse(action: () => Promise<unknown>, timeoutMs: number): Promise<string> {
-  const ctrl = new AbortController();
-  const res = await realFetch(BASE + "/api/events", { signal: ctrl.signal, headers: { accept: "text/event-stream" } });
-  const reader = res.body?.getReader();
-  if (!reader) return "";
-  const dec = new TextDecoder();
-  let buf = "";
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  await action();
-  try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      buf += dec.decode(chunk.value, { stream: true });
-      if (buf.includes("IMAGE_UNSUPPORTED")) break;
-    }
-  } catch {
-    /* aborted / stream closed */
+/**
+ * 轮询 GET /api/status?session=<id> 直到该会话的回合槽空闲 —— 「回合终态」的服务端
+ * 权威观测（busy 由运行时注册表的 inFlight 位驱动）。
+ */
+async function waitSettled(id: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const snap = await api.status(id);
+    if (snap.busy !== true) return;
+    if (Date.now() > deadline) throw new Error("会话回合未在 " + timeoutMs + "ms 内收敛：" + id);
+    await new Promise((res) => setTimeout(res, 500));
   }
-  clearTimeout(timer);
-  ctrl.abort();
-  return buf;
 }
 
-function parseDowngrade(buf: string): Record<string, unknown> | null {
-  for (const line of buf.split(String.fromCharCode(10))) {
-    const t = line.trim();
-    if (!t.startsWith("data:")) continue;
-    try {
-      const payload = JSON.parse(t.slice(5).trim()) as { payload?: Record<string, unknown> };
-      if (payload.payload && payload.payload["reason"] === "IMAGE_UNSUPPORTED") return payload.payload;
-    } catch {
-      /* 非 JSON 行（事件名等）：跳过 */
+/** 用例收尾：取消自己的回合并等槽位真正释放（失败也不外抛，finally 用）。 */
+async function settleAndCancel(id: string): Promise<void> {
+  try {
+    await api.cancel(id);
+  } catch {
+    /* 回合已结束 / 不可取消 */
+  }
+  try {
+    await waitSettled(id, 30000);
+  } catch {
+    /* 尽力而为：取消后仍未收敛也不静默，交给用例断言 */
+  }
+}
+
+/** GET /api/events 的一帧：事件名 + W513 信封（v/session/turn/seq/payload）。 */
+interface SseFrame {
+  event: string;
+  session: string | null;
+  turn: number;
+  payload: Record<string, unknown>;
+}
+
+/** 单个 SSE 块（以空行分隔）→ 帧；非 data 块或坏 JSON 返回 null。 */
+function parseFrame(block: string): SseFrame | null {
+  let event = "message";
+  const data: string[] = [];
+  for (const line of block.split(LF)) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) {
+      const raw = line.slice(5);
+      data.push(raw.startsWith(" ") ? raw.slice(1) : raw);
     }
   }
-  return null;
+  if (data.length === 0) return null;
+  try {
+    const env = JSON.parse(data.join(LF)) as {
+      session?: string | null;
+      turn?: number;
+      payload?: unknown;
+    };
+    const payload =
+      env.payload !== null && typeof env.payload === "object"
+        ? (env.payload as Record<string, unknown>)
+        : {};
+    return { event, session: env.session ?? null, turn: env.turn ?? 0, payload };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * **会话锚定**的 SSE 读取器：服务端用 ?session=<id> 收窄，这里再按帧信封的 session
+ * 复核，别的会话与进程级帧一律丢弃。先建流、后发 turn，因此不会漏帧。
+ */
+function openSessionStream(session: string): {
+  frames: SseFrame[];
+  waitFor(pred: (f: SseFrame) => boolean, timeoutMs: number): Promise<SseFrame | null>;
+  close(): void;
+} {
+  const ctrl = new AbortController();
+  const frames: SseFrame[] = [];
+  interface Waiter {
+    pred: (f: SseFrame) => boolean;
+    resolve: (f: SseFrame | null) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }
+  const waiters: Waiter[] = [];
+  let closed = false;
+
+  /** 会话锚定 + 广播给等待者（从读循环里抽出，避免超深嵌套）。 */
+  const deliver = (frame: SseFrame): void => {
+    if (frame.session !== session) return;
+    frames.push(frame);
+    for (const w of [...waiters]) {
+      if (!w.pred(frame)) continue;
+      clearTimeout(w.timer);
+      waiters.splice(waiters.indexOf(w), 1);
+      w.resolve(frame);
+    }
+  };
+
+  const pump = (async () => {
+    try {
+      const res = await realFetch(BASE + "/api/events?session=" + encodeURIComponent(session), {
+        signal: ctrl.signal,
+        headers: { accept: "text/event-stream" },
+      });
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("SSE 无响应体");
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buf += dec.decode(chunk.value, { stream: true });
+        buf = buf.split(CRLF).join(LF);
+        for (;;) {
+          const idx = buf.indexOf(LF + LF);
+          if (idx < 0) break;
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          const frame = parseFrame(block);
+          if (frame) deliver(frame);
+        }
+      }
+    } catch {
+      /* aborted / stream closed */
+    } finally {
+      for (const w of waiters.splice(0)) {
+        clearTimeout(w.timer);
+        w.resolve(null);
+      }
+      closed = true;
+    }
+  })();
+
+  return {
+    frames,
+    async waitFor(pred, timeoutMs) {
+      const hit = frames.find(pred);
+      if (hit) return hit;
+      if (closed) return null;
+      return await new Promise<SseFrame | null>((resolve) => {
+        const timer = setTimeout(() => {
+          const i = waiters.findIndex((w) => w.resolve === resolve);
+          if (i >= 0) waiters.splice(i, 1);
+          resolve(null);
+        }, timeoutMs);
+        waiters.push({ pred, resolve, timer });
+      });
+    },
+    close() {
+      ctrl.abort();
+      void pump.catch(() => undefined);
+    },
+  };
 }
 
 live("W805 · 多模态附件对真实 3777 的端到端", () => {
   beforeAll(async () => {
     const list = (await api.workspaces()).workspaces ?? [];
     WS_PATH = list.find((w) => w.name === WS)?.path ?? "";
+    try {
+      activeBefore = String((await api.sessions()).active_session ?? "");
+    } catch {
+      activeBefore = "";
+    }
   });
 
   afterAll(async () => {
+    // 本套件会 activate 自己建的会话，收尾必须把共享 active 拨回进入时的值并断言
+    // （W792 同款纪律：失败的拨回不许装绿）。
+    if (LIVE && activeBefore !== "") {
+      try {
+        await api.activateSession(activeBefore);
+        const restored = String((await api.sessions()).active_session ?? "");
+        expect(restored, "active_session 必须拨回测试开始时的值").toBe(activeBefore);
+        console.log("[W805] 活动会话已断言拨回：" + activeBefore);
+      } catch (e) {
+        console.warn("[W805] active_session 拨回失败：" + (e instanceof Error ? e.message : String(e)));
+      }
+    }
     try {
       if (created.length > 0) await api.batchDeleteSessions(created);
     } catch {
@@ -164,44 +315,74 @@ live("W805 · 多模态附件对真实 3777 的端到端", () => {
     }
   });
 
-  it("真发小图（走前端 api.turn）：请求被接受、消息里出现附件、日志只存引用", { timeout: 90000 }, async () => {
+  it("真发小图（走前端 api.turn）：请求被接受、消息里出现附件、日志只存引用", { timeout: 180000 }, async () => {
     const id = await createSession("glm-5.3-flash", "vision");
-    const res = await api.turn("看这张图", id, undefined, [{ data: PNG.toString("base64"), name: "w805.png" }]);
-    expect(res.turn).toBe(1);
-    expect(seen).toContain("/api/turn"); // 确实是前端 api 层发的
-    const row = await waitAttachment(id, 60000);
-    expect(row, "消息里必须出现附件引用").not.toBeNull();
-    expect(row?.content).toBe("看这张图");
-    expect(row?.attachments?.[0]).toMatchObject({
-      attachment_id: SHA,
-      media_type: "image/png",
-      width: 32,
-      height: 32,
-      name: "w805.png",
-    });
-    // 红线（机械断言）：会话日志里没有 base64 / data:，只有引用。
-    const dir = join(WS_PATH, id.slice(id.indexOf("/") + 1));
-    const log = readFileSync(join(dir, "cli-main.jsonl"), "utf8");
-    expect(log).not.toContain("base64");
-    expect(log).not.toContain("data:");
-    expect(log).not.toContain(PNG.toString("base64"));
-    expect(log).toContain(SHA);
-    // 字节真的落在会话目录的 attachments/（内容寻址），且与上传逐字节一致。
-    const bytes = readFileSync(join(dir, "attachments", SHA + ".png"));
-    expect(createHash("sha256").update(bytes).digest("hex")).toBe(SHA);
+    // 先建流、后发 turn：本会话自己的帧一帧不漏，且不会被别的会话污染。
+    const stream = openSessionStream(id);
+    try {
+      const res = await api.turn("看这张图", id, undefined, [{ data: PNG.toString("base64"), name: "w805.png" }]);
+      expect(res.turn).toBe(1);
+      expect(seen).toContain("/api/turn"); // 确实是前端 api 层发的
+      const row = await waitAttachment(id, 60000);
+      expect(row, "消息里必须出现附件引用").not.toBeNull();
+      expect(row?.content).toBe("看这张图");
+      expect(row?.attachments?.[0]).toMatchObject({
+        attachment_id: SHA,
+        media_type: "image/png",
+        width: 32,
+        height: 32,
+        name: "w805.png",
+      });
+      // 本用例的回合必须真正结束，绝不把在飞回合留给下一个用例（turn 锚定）。
+      const end = await stream.waitFor((f) => f.event === "turn_end" && f.turn === res.turn, 120000);
+      expect(end, "视觉回合必须自行结束（turn_end，会话 " + id + "）").not.toBeNull();
+      await waitSettled(id, 30000);
+      // 红线（机械断言）：会话日志里没有 base64 / data:，只有引用。
+      const dir = join(WS_PATH, id.slice(id.indexOf("/") + 1));
+      const log = readFileSync(join(dir, "cli-main.jsonl"), "utf8");
+      expect(log).not.toContain("base64");
+      expect(log).not.toContain("data:");
+      expect(log).not.toContain(PNG.toString("base64"));
+      expect(log).toContain(SHA);
+      // 字节真的落在会话目录的 attachments/（内容寻址），且与上传逐字节一致。
+      const bytes = readFileSync(join(dir, "attachments", SHA + ".png"));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(SHA);
+    } finally {
+      stream.close();
+      await settleAndCancel(id);
+    }
   });
 
-  it("无视觉模型：降级为占位 + 可执行建议（IMAGE_UNSUPPORTED 状态帧）", { timeout: 90000 }, async () => {
+  it("无视觉模型：降级为占位 + 可执行建议（IMAGE_UNSUPPORTED 状态帧）", { timeout: 240000 }, async () => {
     const id = await createSession("deepseek-v4-flash-0731", "downgrade");
-    const buf = await watchSse(
-      () => api.turn("看这张图", id, undefined, [{ data: PNG.toString("base64"), name: "w805.png" }]),
-      60000,
-    );
-    const payload = parseDowngrade(buf);
-    expect(payload, "必须收到 IMAGE_UNSUPPORTED 状态帧（SSE 长度 " + buf.length + "）").not.toBeNull();
-    expect(payload?.["reason"]).toBe("IMAGE_UNSUPPORTED");
-    expect(String(payload?.["message"] ?? "")).toContain("拒绝了图像输入");
-    expect(String(payload?.["hint"] ?? "")).toContain("input_modalities");
-    expect(String(payload?.["placeholder"] ?? "")).toContain("图片已省略");
+    const stream = openSessionStream(id);
+    try {
+      const res = await api.turn("看这张图", id, undefined, [{ data: PNG.toString("base64"), name: "w805.png" }]);
+      expect(res.turn).toBe(1);
+      // 只认**本会话**的降级帧；本回合的终态也一并盯着：若回合以别的结果先结束，
+      // 立刻带着真实终态失败，而不是空等到超时。
+      const isDowngrade = (f: SseFrame): boolean =>
+        f.event === "status" && f.payload["reason"] === "IMAGE_UNSUPPORTED";
+      const terminal = await stream.waitFor(
+        (f) => isDowngrade(f) || (f.event === "turn_end" && f.turn === res.turn),
+        180000,
+      );
+      const payload = terminal !== null && isDowngrade(terminal) ? terminal.payload : null;
+      const detail =
+        terminal === null
+          ? "180s 内既无降级帧也无本回合终态"
+          : JSON.stringify({ event: terminal.event, turn: terminal.turn, payload: terminal.payload }).slice(0, 700);
+      expect(
+        payload,
+        "必须收到 IMAGE_UNSUPPORTED 状态帧（会话 " + id + "，已收 " + stream.frames.length + " 帧；本回合终态：" + detail + "）",
+      ).not.toBeNull();
+      expect(payload?.["reason"]).toBe("IMAGE_UNSUPPORTED");
+      expect(String(payload?.["message"] ?? "")).toContain("拒绝了图像输入");
+      expect(String(payload?.["hint"] ?? "")).toContain("input_modalities");
+      expect(String(payload?.["placeholder"] ?? "")).toContain("图片已省略");
+    } finally {
+      stream.close();
+      await settleAndCancel(id);
+    }
   });
 });
