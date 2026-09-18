@@ -20,13 +20,25 @@ const BT = String.fromCharCode(96);
 const NL = String.fromCharCode(10);
 const BS = String.fromCharCode(92);
 
+// 根 tsconfig 的 lib 不含 DOM，测试里的 document / ParentNode 必须本地声明
+// （沿用 tests/w846-composer-invariant-dom.test.ts 的范式；不改根 tsconfig）。
+interface ElLike {
+  innerHTML: string;
+  textContent: string | null;
+  querySelector(sel: string): ElLike | null;
+}
+interface DocLike {
+  createElement(tag: string): ElLike;
+}
+const doc = (globalThis as unknown as { document: DocLike }).document;
+
 const mdMod = (await import(at('utils/markdown.ts'))) as {
   renderMarkdown(text: string): string;
   MarkdownStream: new () => { update(text: string): string; reset(): void };
 };
 const sanMod = (await import(at('utils/sanitize.ts'))) as { sanitizeHtml(html: string): string };
 const msgMd = (await import(at('ui/messages/markdown.ts'))) as { md(text: string): string };
-const mathMod = (await import(at('ui/messages/math.ts'))) as { upgradeMath(root: ParentNode): void };
+const mathMod = (await import(at('ui/messages/math.ts'))) as { upgradeMath(root: ElLike): void };
 
 function waitFor(pred: () => boolean, ms = 5000): Promise<boolean> {
   return new Promise((resolve) => {
@@ -190,7 +202,7 @@ describe('W846 · 懒加载升级（占位 -> MathML，过 sanitize）', () => {
     const html = msgMd.md('a $x^2$ b');
     expect(html).toContain('class="math-inline"');
     expect(html).not.toContain('<math');
-    const host = document.createElement('div');
+    const host = doc.createElement('div');
     host.innerHTML = html;
     expect(host.querySelector('math')).toBeNull();
     mathMod.upgradeMath(host);
@@ -204,7 +216,7 @@ describe('W846 · 懒加载升级（占位 -> MathML，过 sanitize）', () => {
 
   it('块级分式升级出 mfrac，且 display=block 占位保留', async () => {
     const frac = BS + 'frac{a}{b}';
-    const host = document.createElement('div');
+    const host = doc.createElement('div');
     host.innerHTML = msgMd.md('$$' + frac + '$$');
     expect(host.querySelector('math')).toBeNull();
     mathMod.upgradeMath(host);
