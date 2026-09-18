@@ -32,6 +32,7 @@
  *   celestea-sources.ts project/global source layers (W882)
  *   skills.ts        skill discovery + frontmatter contract (W882)
  *   skill-catalog.ts skill catalog text for the per-turn injection (W884)
+ *   memory.ts        workspace MEMORY.md turn-context injection (F3)
  *   errors.ts        shared error types
  *   contracts/       contract-file loaders (frozen data in contracts/)
  */
@@ -62,4 +63,5 @@ export * from "./celestea-home.js";
 export * from "./celestea-sources.js";
 export * from "./skills.js";
 export * from "./skill-catalog.js";
+export * from "./memory.js";
 export * from "./contracts/index.js";

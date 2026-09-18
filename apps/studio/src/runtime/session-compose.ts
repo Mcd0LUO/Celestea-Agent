@@ -13,7 +13,7 @@
  */
 
 import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
-import { listSkills, readLayers, renderSkillCatalog, type Llm, type PendingInjection, type Sandbox, type SessionLog, type Tool, type ToolGuard } from "@celestea/core";
+import { listSkills, memoryContextOf, readLayers, renderSkillCatalog, type Llm, type PendingInjection, type Sandbox, type SessionLog, type Tool, type ToolGuard } from "@celestea/core";
 import { createSessionInbox, type SessionInbox } from "@celestea/runtime";
 import {
   createLedgerLlm,
@@ -239,17 +239,22 @@ export class SessionComposer {
     // system prompt renders (the host's `resolveSession` hook). A session with no
     // resolvable workspace keeps the process env posture — never a failure.
     const workspace = sessionId === null ? null : (this.opts.resolveSession?.(sessionId)?.workspace ?? null);
-    // W884: the resident half of skill progressive disclosure. The catalog (name
-    // + description ONLY) is re-read at EVERY turn start from the SAME workspace
-    // the sandbox/guard use (W768) and injected as durable user-role history; a
-    // workspace with no skill produces NO rows at all (zero cost). A detached
-    // generation (no workspace) never injects.
-    const skillContext =
+    // W884 + F3: the engine-owned TURN CONTEXT. The skill catalog (name +
+    // description ONLY) and the workspace MEMORY.md are re-read at EVERY turn
+    // start from the SAME workspace the sandbox/guard use (W768) and injected
+    // as durable user-role history. Neither is ever put in the system prompt.
+    // A workspace with neither produces NO rows at all (zero cost), and a
+    // detached generation (no workspace) never attaches the provider at all.
+    const turnContext =
       workspace === null
         ? undefined
         : (): readonly string[] => {
+            const rows: string[] = [];
             const catalog = renderSkillCatalog(listSkills(readLayers(workspace.path, { env: this.opts.env })));
-            return catalog === null ? [] : [catalog];
+            if (catalog !== null) rows.push(catalog);
+            const memory = memoryContextOf(workspace.path, { env: this.opts.env });
+            if (memory !== null) rows.push(memory);
+            return rows;
           };
     const reader = this.opts.grants;
     const read = reader?.read(sessionId, dir) ?? { grants: EMPTY_GRANTS, warnings: [] };
@@ -299,7 +304,7 @@ export class SessionComposer {
       ...(ledger === null ? {} : { ledger }),
       inbox: hooks.inbox ?? createSessionInbox(),
       ...(hooks.onInjected === undefined ? {} : { onInjected: hooks.onInjected }),
-      ...(skillContext === undefined ? {} : { turnContext: skillContext }),
+      ...(turnContext === undefined ? {} : { turnContext }),
       loopFactory: (bindings) => {
         // W806: the turn boundary is the ONLY place the disclosed set may move.
         engine.tools.disclosure.beginTurn();
