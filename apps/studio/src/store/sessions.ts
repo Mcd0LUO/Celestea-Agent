@@ -22,7 +22,7 @@ import { isDirectory, isFile, listEntries, statOf, writeFileRaw, removeDir, ensu
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { DEFAULT_SESSION_MODE, parseMode, validateMode, type SessionMode } from "./mode.js";
 import { readSessionMeta, writeSessionMeta, type SessionMeta } from "./session-meta.js";
-import { ARCHIVED_DIR, sessionDirName, sanitizeComponent, stripCreationSuffix, workspaceBasename } from "./session-id.js";
+import { ARCHIVED_DIR, liveDirCandidates, sessionDirName, sanitizeComponent, sessionsRoot, stripCreationSuffix, workspaceBasename } from "./session-id.js";
 import { validateModelName, validatePromptId } from "./validate.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
 
@@ -110,14 +110,35 @@ export interface SessionCreateRequest {
 export class SessionsStore {
   constructor(private readonly ws: WorkspacesStore, private readonly now: () => number = Date.now) {}
 
-  /** Every filesystem session plus the engine rows handed in by the caller. */
+  /**
+   * Every filesystem session plus the engine rows handed in by the caller.
+   *
+   * W877 (slice A): sessions are scanned in BOTH layouts — the new
+   * `<ws>/.celestea/sessions/` root first, then the legacy workspace root. A
+   * directory name present in both is emitted ONCE and the new-layout row wins.
+   * Dot-directories stay invisible in either root (that is what keeps
+   * `.celestea`, `.celestea-archived` and `.celestea-trash` out of the
+   * default listing).
+   */
   list(extra: readonly SessionRow[] = []): SessionRow[] {
     const active = this.ws.activeSession();
     const rows: SessionRow[] = [];
     for (const w of this.ws.registry().workspaces) {
       const name = workspaceBasename(w.path) ?? w.path;
-      for (const e of listEntries(w.path)) {
+      const seen = new Set<string>();
+      const newRoot = sessionsRoot(w.path);
+      for (const e of listEntries(newRoot)) {
         if (!e.isDir || e.name.startsWith(".")) continue;
+        const log = `${newRoot}/${e.name}/${SESSION_FILE}`;
+        if (!isFile(log)) continue;
+        // Only a REAL new-layout session shadows a legacy one: a stray empty dir
+        // must not hide a live legacy session behind it.
+        seen.add(e.name);
+        const row = this.rowOf(name, e.name, readSessionMeta(`${newRoot}/${e.name}`), statOf(log));
+        rows.push({ ...row, active: active === row.id });
+      }
+      for (const e of listEntries(w.path)) {
+        if (!e.isDir || e.name.startsWith(".") || seen.has(e.name)) continue;
         const log = `${w.path}/${e.name}/${SESSION_FILE}`;
         if (!isFile(log)) continue;
         const row = this.rowOf(name, e.name, readSessionMeta(`${w.path}/${e.name}`), statOf(log));
@@ -175,7 +196,13 @@ export class SessionsStore {
     };
   }
 
-  /** Registry lookup + sanitization, no existence check. */
+  /**
+   * Registry lookup + sanitization. The physical dir is probed in BOTH layouts
+   * (W877 slice A): the new `<ws>/.celestea/sessions/<session>` wins when it
+   * exists, the legacy `<ws>/<session>` is the fallback, and when NEITHER exists
+   * the new layout is returned so every write path stays consistent with
+   * `create()`. No registry entry is created here.
+   */
   resolve(id: string): StoreResult<ResolvedSession> {
     const slash = id.trim().indexOf("/");
     if (slash <= 0) return badRequest(`invalid session id '${id}': expected '<workspace>/<session>'`);
@@ -186,9 +213,14 @@ export class SessionsStore {
     if (session === "" || session === "." || session === ".." || session.startsWith(".")) {
       return badRequest(`invalid session id '${id}'`);
     }
-    const dir = `${wsPath}/${session}`;
+    const dir = liveDirCandidates(wsPath, session).find((c) => this.isSessionDir(c)) ?? `${sessionsRoot(wsPath)}/${session}`;
     if (!dir.startsWith(`${wsPath}/`)) return badRequest(`invalid session id '${id}'`);
     return ok({ workspace: wsName, session, id: `${wsName}/${session}`, wsPath, dir });
+  }
+
+  /** A real live session dir: a directory holding the session log. */
+  private isSessionDir(dir: string): boolean {
+    return isDirectory(dir) && isFile(`${dir}/${SESSION_FILE}`);
   }
 
   /** Resolve + require the session directory to hold a log file. */
@@ -237,7 +269,9 @@ export class SessionsStore {
       const bad = validateMode(mode);
       if (bad !== null) return badRequest(bad);
     }
-    const dir = this.uniqueDir(wsPath, sessionDirName(req.title, this.now()));
+    // W877 (slice A): NEW sessions land in <ws>/.celestea/sessions/ (ensureDir
+    // below creates the container recursively); the id stays <wsName>/<dirName>.
+    const dir = this.uniqueDir(wsPath, sessionDirName(req.title, this.now()), sessionsRoot(wsPath));
     try {
       ensureDir(dir);
       writeFileRaw(`${dir}/${SESSION_FILE}`, "");
@@ -260,16 +294,29 @@ export class SessionsStore {
     return ok(`${wsName}/${dir.slice(dir.lastIndexOf("/") + 1)}`);
   }
 
-  /** `<base>`, then `<base>-1`, `<base>-2`, … until the name is free. */
-  uniqueDir(wsPath: string, base: string): string {
-    let candidate = `${wsPath}/${base}`;
+  /**
+   * `<base>`, then `<base>-1`, `<base>-2`, … until the name is free, returned
+   * inside `root`.
+   *
+   * W877 (slice A): `root` defaults to the LEGACY layer (`wsPath` itself), which
+   * is what `rename`/`branch` pass — they keep moving a session within the layer
+   * it already lives in. `create()` passes the NEW-layout root explicitly.
+   *
+   * Collision detection spans BOTH layers: a name already taken by a legacy
+   * session must not be minted again under `.celestea/sessions` (and vice versa),
+   * because `list()` and `resolve()` would then have two different physical dirs
+   * for one id.
+   */
+  uniqueDir(wsPath: string, base: string, root: string = wsPath): string {
+    const other = root === wsPath ? sessionsRoot(wsPath) : wsPath;
+    let name = base;
     let n = 1;
-    while (isFile(`${candidate}/${SESSION_FILE}`) || isDirectory(candidate)) {
-      candidate = `${wsPath}/${base}-${n}`;
+    while (isFile(`${root}/${name}/${SESSION_FILE}`) || isDirectory(`${root}/${name}`) || isFile(`${other}/${name}/${SESSION_FILE}`) || isDirectory(`${other}/${name}`)) {
+      name = `${base}-${n}`;
       n += 1;
       if (n > 1000) break;
     }
-    return candidate;
+    return `${root}/${name}`;
   }
 
   /** Transcript projection: torn tail dropped, no pairing logic. */

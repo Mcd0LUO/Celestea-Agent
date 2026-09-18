@@ -16,7 +16,7 @@ import { renameSync } from "node:fs";
 import { resolve } from "node:path";
 import { writeJsonAtomic, isDirectory, isFile, listEntries, readJsonIfExists } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, serverError, type StoreResult } from "./result.js";
-import { workspaceBasename } from "./session-id.js";
+import { sessionsRoot, workspaceBasename } from "./session-id.js";
 
 export const SESSION_FILE = "cli-main.jsonl";
 
@@ -125,12 +125,21 @@ export class WorkspacesStore {
     return this.persist();
   }
 
-  /** Count session dirs directly under a workspace path (live only). */
+  /**
+   * Count LIVE session dirs of a workspace in BOTH layouts (W877 slice A): the
+   * new `<ws>/.celestea/sessions/` root plus the legacy workspace root. Missing
+   * either one is how the GUI's workspace session count silently drops to 0.
+   */
   countSessions(path: string): number {
     let n = 0;
     for (const e of listEntries(path)) {
       if (!e.isDir || e.name.startsWith(".")) continue;
       if (isFile(`${path}/${e.name}/${SESSION_FILE}`)) n += 1;
+    }
+    const newRoot = sessionsRoot(path);
+    for (const e of listEntries(newRoot)) {
+      if (!e.isDir || e.name.startsWith(".")) continue;
+      if (isFile(`${newRoot}/${e.name}/${SESSION_FILE}`)) n += 1;
     }
     return n;
   }

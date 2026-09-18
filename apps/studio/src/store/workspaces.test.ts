@@ -86,6 +86,22 @@ describe("workspaces.json v2 registry", () => {
     expect(store.view().workspaces[0]?.sessions).toBe(2);
   });
 
+  it("W877: counts sessions in BOTH the new .celestea/sessions layout and the legacy root", () => {
+    const ws = join(root, "alpha");
+    mkdirSync(ws);
+    plantSession(ws, "legacy"); // <ws>/legacy
+    const newRoot = join(ws, ".celestea", "sessions");
+    mkdirSync(join(newRoot, "fresh"), { recursive: true });
+    writeFileSync(join(newRoot, "fresh", "cli-main.jsonl"), "");
+    // A hidden dir inside the new root, and a dir without a log, are not sessions.
+    mkdirSync(join(newRoot, ".hidden"), { recursive: true });
+    writeFileSync(join(newRoot, ".hidden", "cli-main.jsonl"), "");
+    mkdirSync(join(newRoot, "no-log"), { recursive: true });
+    const store = new WorkspacesStore(file);
+    store.register(ws);
+    expect(store.view().workspaces[0]?.sessions).toBe(2);
+  });
+
   it("deregisters without touching the folder and clears its active_session", () => {
     const ws = join(root, "alpha");
     mkdirSync(ws);

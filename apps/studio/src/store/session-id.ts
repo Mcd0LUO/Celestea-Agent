@@ -96,6 +96,38 @@ export function workspaceBasename(path: string): string | null {
 export const ARCHIVED_DIR = ".celestea-archived";
 export const TRASH_DIR = ".celestea-trash";
 
+/**
+ * W877 (slice A) — the workspace-level container for NEW-layout session dirs.
+ *
+ * Live sessions used to sit directly in the workspace root
+ * (`<ws>/<sanitized-title>-<secs>.<nanos>[-N>/`); new ones go into
+ * `<ws>/.celestea/sessions/<dir>/` instead. The session ID does NOT change: it is
+ * still `<workspace-basename>/<dir>`. Legacy sessions keep being recognized at
+ * the old path (dual read), so both layouts must be probed on every path.
+ *
+ * The archive/trash vocabulary (`ARCHIVED_DIR`/`TRASH_DIR`) is deliberately left
+ * untouched by this slice: archiving and trashing still live in the legacy hidden
+ * siblings.
+ */
+export const CELESTEA_DIR = ".celestea";
+export const SESSIONS_SUBDIR = "sessions";
+
+/** The NEW-layout live-session root: `<ws>/.celestea/sessions`. */
+export function sessionsRoot(wsPath: string): string {
+  return `${wsPath}/${CELESTEA_DIR}/${SESSIONS_SUBDIR}`;
+}
+
+/**
+ * The physical directories a live session may occupy, NEW layout FIRST.
+ *
+ * `resolve()` uses the first existing candidate and falls back to the new layout
+ * when neither exists (so the write side stays consistent); `list()` scans both.
+ * Pure — the caller owns the filesystem side.
+ */
+export function liveDirCandidates(wsPath: string, dir: string): string[] {
+  return [`${sessionsRoot(wsPath)}/${dir}`, `${wsPath}/${dir}`];
+}
+
 /** A hidden name can never become a visible session/workspace directory. */
 export function isHiddenName(name: string): boolean {
   return name === "" || name === "." || name === ".." || name.startsWith(".");
