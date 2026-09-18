@@ -152,10 +152,19 @@ export function exposedSpecs(specs: readonly ToolSpec[], options: ExposureOption
  * mode's disclosable universe, never the per-turn disclosed subset. System text
  * is serialized BEFORE tools, so making it follow disclosure would invalidate
  * the whole request prefix from token 0 (design §3.4/P4).
+ *
+ * W857 adds the optional [blocked] list: the permission baseline's `toolDeny`
+ * (W9). It is an INTERSECTION applied AFTER the fold — never a union — so a name
+ * the mode already folded cannot be restored and a name outside the folded face
+ * simply has no effect. Callers that read the same face as a composed instance
+ * (`RealRuntimeAdapter.sessionTools` vs `engineTools`' `DisclosurePolicy`)
+ * pass the same list through here so the two paths cannot drift (W791 §10.5 #2).
  */
-export function faceForMode(specs: readonly ToolSpec[], mode: string): ToolSpec[] {
-  if (mode !== "execution") return [...specs];
-  return exposedSpecs(specs, executionExposure(specs.map((spec) => spec.name)));
+export function faceForMode(specs: readonly ToolSpec[], mode: string, blocked: readonly string[] = []): ToolSpec[] {
+  const face = mode !== "execution" ? [...specs] : exposedSpecs(specs, executionExposure(specs.map((spec) => spec.name)));
+  if (blocked.length === 0) return face;
+  const denied = new Set(blocked);
+  return face.filter((spec) => !denied.has(spec.name));
 }
 
 /** A call the decorator REFUSED: a `deny`, with the refusal text as the error. */

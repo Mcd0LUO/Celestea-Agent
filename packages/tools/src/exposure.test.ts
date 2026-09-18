@@ -19,7 +19,7 @@
 import type { ToolExecOutcome } from "@celestea/core";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { EXECUTION_TOOL_NAMES, executionExposure, exposedRegistry, TOOL_UNAVAILABLE_CODE, unavailableError } from "./exposure.js";
+import { EXECUTION_TOOL_NAMES, executionExposure, exposedRegistry, faceForMode, TOOL_UNAVAILABLE_CODE, unavailableError } from "./exposure.js";
 import { fnTool } from "./fn-tool.js";
 import { assembleTools } from "./plugin.js";
 import { ToolRegistryImpl } from "./registry.js";
@@ -154,6 +154,35 @@ describe("exposedRegistry (W791 P1)", () => {
     const opts = executionExposure(["run_code", "read_file", "ask_user_question"]);
     expect(opts.hidden).toEqual(["read_file", "ask_user_question"]);
     expect(executionExposure([...EXECUTION_TOOL_NAMES]).hidden).toEqual([]);
+  });
+});
+
+describe("faceForMode with a permission deny list (W857)", () => {
+  it("subtracts the denied names ON TOP of the mode fold and never restores a folded one", () => {
+    const specs = productionFace().schemas();
+    const standard = faceForMode(specs, "standard");
+    expect(standard.map((s) => s.name).sort()).toEqual([...PRODUCTION_NAMES].sort());
+    // An empty deny is the pre-W857 face byte for byte.
+    expect(faceForMode(specs, "standard", [])).toEqual(standard);
+    // standard (the whole registry) minus exactly the denied name.
+    expect(
+      faceForMode(specs, "standard", ["write_file"])
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual(PRODUCTION_NAMES.filter((name) => name !== "write_file").sort());
+    // execution already folds read_file/write_file: denying them changes nothing,
+    // i.e. the deny is an INTERSECTION and cannot add a folded name back.
+    expect(
+      faceForMode(specs, "execution", ["read_file", "write_file"])
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual([...EXECUTION_TOOL_NAMES].sort());
+    // ...and denying a KEPT name removes exactly that one.
+    expect(
+      faceForMode(specs, "execution", ["run_code"])
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual([...EXECUTION_TOOL_NAMES].filter((name) => name !== "run_code").sort());
   });
 });
 

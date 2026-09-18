@@ -348,11 +348,16 @@ class RealEngine implements RealRuntimeAdapter {
    * on a first compose, the detached default's 11 names into an execution
    * session's prompt). `faceForMode` applies exactly the rule the composed
    * instance's `exposedRegistry` will apply, so prompt and tool array agree.
+   * W857: the rule also includes the session's PERMISSION baseline (W9
+   * `toolDeny`), read through the composer's OWN reader so the reported face
+   * cannot disagree with the instance the session dispatches through; an
+   * absent reader / empty deny = the pre-W857 bytes.
    */
   sessionTools(session: string | null): ToolInfo[] {
     const specs = this.registry.peek(null)?.runtime.tools?.schemas() ?? [];
     const mode = session === null ? DEFAULT_SESSION_MODE : effectiveMode(this.opts.sessionMode?.(session) ?? null);
-    return faceForMode(specs, mode).map(toolSpecView);
+    // W857: the deny is read through the composer's own reader, same session dir.
+    return faceForMode(specs, mode, this.opts.grants?.read(session, session === null ? null : (this.opts.resolveSession?.(session)?.dir ?? null)).grants.toolDeny ?? []).map(toolSpecView);
   }
 
   /**
