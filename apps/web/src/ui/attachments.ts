@@ -121,10 +121,12 @@ export function isImageDowngrade(p: { reason?: unknown; message?: unknown }): bo
 }
 
 /** 信息块文案：服务端定稿 message + hint，再补一条可切换模型清单。 */
-export function downgradeNotice(p: { message?: unknown; hint?: unknown }): string {
+export function downgradeNotice(p: { message?: unknown; hint?: unknown; model?: unknown }): string {
   const msg = typeof p.message === 'string' && p.message !== '' ? p.message : '模型拒绝了图像输入，本轮已自动降级为仅文本继续，图片未送达模型。';
   const hint = typeof p.hint === 'string' ? p.hint : '';
-  const models = imageCapableModels();
+  // D2：排除本次肇事模型 —— 能力位是乐观默认，刚被上游 400 拒绝的模型本会出现在清单里。
+  const debris = typeof p.model === 'string' ? p.model : '';
+  const models = imageCapableModels().filter((id) => id !== debris);
   const suggest = models.length > 0 ? '可切换到：' + models.join('、') : '';
   return [msg, hint, suggest].filter((s) => s !== '').join('\n');
 }

@@ -81,6 +81,7 @@ const at = (rel: string): string => pathToFileURL(join(WEB, "src", rel)).href;
 
 const HTML =
   '<div id="app"><div id="layout"><main id="main"><div id="messages"></div>' +
+  '<div id="sideFoot">—</div>' +
   '<div id="statusline" class="statusline"><div class="sl-row sl-row-main">' +
   '<span class="sl-ring" id="slRing"></span><span class="sl-ctx" id="slCtx">—/—</span>' +
   '<button class="sl-model" id="slModel">—</button><button class="sl-effort" id="slEffort">—</button>' +
@@ -176,6 +177,16 @@ function select(files: unknown[]): void {
   input.dispatchEvent(new Ev("change"));
 }
 const trayItems = (): number => Array.from(doc.querySelectorAll(".attach-tray .attach-item")).length;
+
+/** W805 真实降级帧形状（真机端到端见 real-backend 用例；此处供 DOM 断言复用）。 */
+const REAL_DOWNGRADE = {
+  phase: "error",
+  reason: "IMAGE_UNSUPPORTED",
+  model: "deepseek-v4-flash-0731",
+  message:
+    '模型 "deepseek-v4-flash-0731" 拒绝了图像输入（上游 400），本轮已自动降级为「仅文本 + 图片占位」继续，图片内容未送达模型。',
+  hint: '下一步：切换到支持图像输入的模型，或确认该模型 input_modalities 含 "image"。',
+};
 
 describe("W805 · 三入口 + 当帧渲染（不发请求）", () => {
   beforeEach(() => {
@@ -306,13 +317,7 @@ describe("W805 · 发送失败完整回滚 + 历史元数据渲染 + 降级可�
       isImageDowngrade(p: Record<string, unknown>): boolean;
       downgradeNotice(p: Record<string, unknown>): string;
     };
-    const real = {
-      phase: "error",
-      reason: "IMAGE_UNSUPPORTED",
-      model: "deepseek-v4-flash-0731",
-      message: "模型 \"deepseek-v4-flash-0731\" 拒绝了图像输入（上游 400），本轮已自动降级为「仅文本 + 图片占位」继续，图片内容未送达模型。",
-      hint: '下一步：切换到支持图像输入的模型，或确认该模型 input_modalities 含 "image"。',
-    };
+    const real = REAL_DOWNGRADE;
     expect(att.isImageDowngrade(real)).toBe(true);
     expect(att.isImageDowngrade({ phase: "error", error: "其它错误" })).toBe(false);
     const text = att.downgradeNotice(real);
@@ -328,7 +333,28 @@ describe("W805 · 发送失败完整回滚 + 历史元数据渲染 + 降级可�
       renderImageDowngrade(ctx: unknown, p: Record<string, unknown>): void;
     };
     dg.renderImageDowngrade(pane.activePane(), real);
+    // D1：全局侧栏脚注零污染（旧实现 note(headline) 会写 #sideFoot）
+    expect((doc.getElementById("sideFoot") as ElLike).textContent).toBe("—");
     const info = doc.querySelector(".msg.info .info-content");
     expect(info?.textContent ?? "").toContain("拒绝了图像输入");
+  });
+
+  it("可切换清单排除本次肇事模型（乐观默认下它本会出现在清单里）", async () => {
+    net.providers = {
+      ok: true,
+      providers: [{ id: "p", models: [{ id: "deepseek-v4-flash-0731" }, { id: "glm-5.3-flash" }] }],
+    };
+    const att = (await import(/* @vite-ignore */ at("ui/attachments.ts"))) as {
+      loadAttachmentCapabilities(): Promise<void>;
+      downgradeNotice(p: Record<string, unknown>): string;
+    };
+    await att.loadAttachmentCapabilities();
+    const text = att.downgradeNotice(REAL_DOWNGRADE);
+    // 正文按服务端定稿 message 仍含肇事模型名，所以只对「可切换到：」那一行断言。
+    const suggest = text.split("\n").find((l) => l.startsWith("可切换到：")) ?? "";
+    expect(suggest).not.toBe("");
+    expect(suggest).toContain("glm-5.3-flash");
+    expect(suggest).not.toContain("deepseek-v4-flash-0731");
+    expect(text).toContain("deepseek-v4-flash-0731");
   });
 });
