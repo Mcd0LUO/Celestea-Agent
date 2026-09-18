@@ -23,6 +23,19 @@ import { toolResultText, type ToolOutput } from "@celestea/core";
 /** Context service token: the retention policy of THIS session. */
 export const RETENTION_SERVICE = "celestea.agent-loop.ToolResultRetention";
 
+/**
+ * Tools whose results are NEVER rewritten by retention (W855 #8b).
+ *
+ * `read_file` is how the model retrieves a spilled locator; rewriting a read
+ * result into another "read_file <locator>" notice would invite a
+ * read -> spill -> read loop (`dsh-spill-policy` skips the same tool). The
+ * skipped result does NOT debit the step budget: those bytes are outside the
+ * retention budget by policy. Tradeoff: `read_file` has no pagination yet (a
+ * single read is capped at 256 KiB by the tool), so a read stays inline up to
+ * that cap instead of spilling.
+ */
+export const RETENTION_SKIP_TOOLS: ReadonlySet<string> = new Set(["read_file"]);
+
 /** A persisted full-text tool result. */
 export interface SpillRef {
   /** Where the full text lives (a path the model can read back). */
@@ -155,9 +168,14 @@ export async function retainToolOutput(
   output: ToolOutput,
   policy: ToolResultRetention,
   step: StepRetention,
+  toolName: string | null = null,
 ): Promise<ToolOutput> {
   const text = retentionText(output);
   const bytes = Buffer.byteLength(text, "utf8");
+  // W855 #8b: a read tool's result IS the retrieval path, not a payload to
+  // spill; skipping it prevents read -> spill -> read (and does not debit the
+  // step budget — see RETENTION_SKIP_TOOLS).
+  if (toolName !== null && RETENTION_SKIP_TOOLS.has(toolName)) return output;
   // W855 decision (architect, 2026-09-18): ONLY a successful STRING result is
   // rewritten. An object result's value shape is part of the tool contract
   // (consumers branch on typeof value === "object"), so this layer NEVER

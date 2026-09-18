@@ -11,6 +11,7 @@
  * tool call is never turned into an error by a failed spill.
  */
 
+import { readdirSync, statSync, unlinkSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -31,6 +32,10 @@ export const STEP_RESULT_ENV = "CELESTEA_STEP_TOOL_RESULT_MAX_BYTES";
 export const PREVIEW_HEAD_ENV = "CELESTEA_TOOL_RESULT_PREVIEW_HEAD_BYTES";
 /** Inline tail window override (bytes). */
 export const PREVIEW_TAIL_ENV = "CELESTEA_TOOL_RESULT_PREVIEW_TAIL_BYTES";
+/** Spill age override (ms); 0 disables the startup sweep entirely. */
+export const SPILL_TTL_ENV = "CELESTEA_SPILL_TTL_MS";
+/** Default spill age: `<session>/spills/*.txt` older than this are reaped at compose. */
+export const DEFAULT_SPILL_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface RetentionSettings {
   /** Session directory; null = nothing can be spilled (retention is inert). */
@@ -39,6 +44,8 @@ export interface RetentionSettings {
   stepResultBytes: number;
   previewHeadBytes: number;
   previewTailBytes: number;
+  /** Age after which a spilled file is reaped at writer creation (0 = never). */
+  spillTtlMs: number;
 }
 
 /** Non-negative integer from the environment, else the frozen default. */
@@ -57,11 +64,48 @@ export function retentionSettingsFromEnv(dir: string | null, env: NodeJS.Process
     stepResultBytes: envBytes(env, STEP_RESULT_ENV, DEFAULT_STEP_RESULT_BYTES),
     previewHeadBytes: envBytes(env, PREVIEW_HEAD_ENV, DEFAULT_PREVIEW_HEAD_BYTES),
     previewTailBytes: envBytes(env, PREVIEW_TAIL_ENV, DEFAULT_PREVIEW_TAIL_BYTES),
+    spillTtlMs: envBytes(env, SPILL_TTL_ENV, DEFAULT_SPILL_TTL_MS),
   };
+}
+
+/**
+ * Reap spilled files older than `ttlMs` from `<dir>/spills` (W855 #8a).
+ *
+ * Policy: an AGE threshold, not "delete everything" — a fresh spill is the
+ * model's retrieval target and must survive a same-day recompose; only files a
+ * full TTL old are removed, so the directory cannot grow without bound across
+ * restarts. Synchronous and fail-soft: a missing/unreadable directory or one
+ * failed unlink never fails a compose. Returns the number of files removed.
+ */
+export function sweepSpills(dir: string | null, ttlMs: number, now: number = Date.now()): number {
+  if (dir === null || dir === "" || ttlMs <= 0) return 0;
+  const spills = join(dir, "spills");
+  let names: string[];
+  try {
+    names = readdirSync(spills);
+  } catch {
+    return 0; // ENOENT (nothing spilled yet) or unreadable: nothing to do.
+  }
+  let removed = 0;
+  for (const name of names) {
+    if (!name.endsWith(".txt")) continue;
+    const full = join(spills, name);
+    try {
+      if (now - statSync(full).mtimeMs > ttlMs) {
+        unlinkSync(full);
+        removed += 1;
+      }
+    } catch {
+      // A file that vanished or cannot be stat'ed/unlinked is left alone.
+    }
+  }
+  return removed;
 }
 
 /** Build the session-scoped spill writer. */
 export function createToolResultRetention(settings: RetentionSettings): ToolResultRetention {
+  // W855 #8a: reap stale spills once per session generation (startup sweep).
+  sweepSpills(settings.dir, settings.spillTtlMs);
   let seq = 0;
   return {
     singleResultBytes: settings.singleResultBytes,

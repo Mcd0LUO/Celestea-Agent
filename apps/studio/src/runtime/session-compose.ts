@@ -280,6 +280,10 @@ export class SessionComposer {
       profile,
       plugins: engine.plugins,
       sessionBinding: this.bindingTo(sessionId, dir),
+      // W855 #1: reap detached `run_shell background:true` children on shutdown.
+      // The composer holds the registry from `engine.tools`; runtime is L2 and
+      // may not import @celestea/tools, so the hook is wired HERE (host side).
+      shutdownHooks: [() => engine.tools.processes.dispose()],
       usage,
       ...(ledger === null ? {} : { ledger }),
       inbox: hooks.inbox ?? createSessionInbox(),

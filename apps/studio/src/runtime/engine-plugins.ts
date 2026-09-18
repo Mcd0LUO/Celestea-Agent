@@ -186,6 +186,12 @@ export interface EngineTools {
   registry: ToolRegistry;
   /** The sandbox actually mounted (W741: annotated with the policy decision). */
   sandbox: Sandbox;
+  /**
+   * W855: the session's background-process registry. The HOST keeps this handle
+   * so `Runtime.shutdown` can reap detached children via a shutdown hook —
+   * `ProcessRegistry.dispose()` had no caller before this.
+   */
+  processes: ProcessRegistry;
   /** Why that sandbox was chosen — auditable, never inferred by a caller. */
   decision: SandboxDecision;
   /**
@@ -262,7 +268,7 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
       ctx.provide(USER_QUESTION_SERVICE, questions);
     }
   });
-  return { plugin, registry: exposed, sandbox, decision: choice.decision, disclosure };
+  return { plugin, registry: exposed, sandbox, processes, decision: choice.decision, disclosure };
 }
 
 // --- the provider policy, decided out loud (W516 grants, W741 fail semantics) --

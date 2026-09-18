@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { assistantText, toolResultText, type ToolInput, type ToolOutput, type ToolRegistry } from "@celestea/core";
+import { assistantText, toolResultText, type Message, type ToolInput, type ToolOutput, type ToolRegistry } from "@celestea/core";
 import {
   FakeToolRegistry,
   eventsOfType,
@@ -164,6 +164,29 @@ describe("W855 retainToolOutput", () => {
     expect(out).toBe(failed);
     expect(out.error).toBe("E".repeat(500));
   });
+
+  it("W855 #8b: skips a read tool's result entirely (no spill, no step debit)", async () => {
+    const big = "READ".repeat(100); // 400 bytes > the 100-byte threshold
+    let spills = 0;
+    const p = policy(async () => {
+      spills += 1;
+      return ref();
+    });
+    const step = newStepRetention();
+    const original = output(big);
+    const out = await retainToolOutput(original, p, step, "read_file");
+    expect(out).toBe(original);
+    expect(out.value).toBe(big);
+    expect(spills).toBe(0);
+    expect(step.consumedBytes).toBe(0);
+  });
+
+  it("W855 #8b: the SAME result from a non-read tool is still retained (the contrast)", async () => {
+    const big = "READ".repeat(100);
+    const out = await retainToolOutput(output(big), policy(), newStepRetention(), "run_shell");
+    expect(String(out.value)).toContain("[omitted]");
+    expect(String(out.value)).toContain("/tmp/spill-1.txt");
+  });
 });
 
 /** A registry whose per-call value is set by the test. */
@@ -221,5 +244,30 @@ describe("W855 loop integration", () => {
     await h.run("go");
     const rows = eventsOfType(h.session, "tool_result");
     expect(JSON.stringify(rows[0]?.value)).toContain("TOPSECRET");
+  });
+
+  it("W855 #8b: a read_file result stays full inline while a run_shell result is retained", async () => {
+    const big = "TOPSECRET".repeat(200); // 1800 bytes
+    const registry = new ValuesRegistry();
+    registry.values.set("c1", big);
+    registry.values.set("c2", big);
+    const message: Message = {
+      role: "assistant",
+      content: [
+        { type: "tool_call", content: { id: "c1", name: "read_file", args: {} } },
+        { type: "tool_call", content: { id: "c2", name: "run_shell", args: {} } },
+      ],
+      tool_call_id: null,
+    };
+    const h = harness({
+      llm: new ScriptedLlm([[{ kind: "done", message }], [{ kind: "done", message: assistantText("done") }]]),
+      registry: registry as FakeToolRegistry,
+    });
+    h.ctx.provide(RETENTION_SERVICE, policy());
+    expect(await h.run("go")).toBe("completed");
+    const rows = eventsOfType(h.session, "tool_result");
+    expect(rows[0]?.id).toBe("c1");
+    expect(rows[0]?.value).toBe(big); // read_file: untouched
+    expect(String(rows[1]?.value)).toContain("[omitted]"); // run_shell: retained
   });
 });

@@ -318,6 +318,9 @@ export class DefaultAgentLoop implements AgentLoop {
       this.emit(toolCallEvent(call));
     }
     const answered = new Set<string>();
+    // W855 #8b: retention is skipped for read tools, so the post-execute path
+    // must know which tool produced each output (the model's call order).
+    const names = new Map(calls.map((call) => [call.id, call.name] as const));
     const limit = Math.max(1, this.config.max_parallel_tool_calls);
     // W855: ONE cumulative budget per step, debited in model order.
     const step = newStepRetention();
@@ -331,7 +334,8 @@ export class DefaultAgentLoop implements AgentLoop {
         cancelled = true;
         break;
       }
-      for (const output of raced.value) await this.recordToolResult(seams, output, answered, step);
+      for (const output of raced.value)
+        await this.recordToolResult(seams, output, answered, step, names.get(output.call_id) ?? null);
     }
     if (cancelled) this.synthesizeCancelledResults(seams, calls, answered);
     return cancelled;
@@ -347,11 +351,13 @@ export class DefaultAgentLoop implements AgentLoop {
     output: ToolOutput,
     answered: Set<string>,
     step: StepRetention,
+    toolName: string | null,
   ): Promise<void> {
     // W855: retention rewrites the MODEL-VISIBLE value (large results spill to
     // a retrievable locator). A failed spill leaves the output untouched.
+    // W855 #8b: `toolName` lets the policy exempt read tools (no read loop).
     const recorded =
-      this.retention === null ? output : await retainToolOutput(output, this.retention, step);
+      this.retention === null ? output : await retainToolOutput(output, this.retention, step, toolName);
     this.emit(toolResultEvent(recorded));
     answered.add(recorded.call_id);
     seams.session.append({ type: "tool_result", id: recorded.call_id, value: recorded.value, error: recorded.error });
