@@ -24,7 +24,7 @@
 import type { ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 
-import type { Sandbox, SandboxConfig, SandboxRunRequest, SandboxRunResult, SandboxSpawnRequest, SandboxSpawned } from "@celestea/core";
+import type { Sandbox, SandboxConfig, SandboxRunRequest, SandboxRunResult, SandboxShellLookup, SandboxSpawnRequest, SandboxSpawned } from "@celestea/core";
 import { SandboxError } from "@celestea/core";
 
 import { wrapChild } from "./child.js";
@@ -71,6 +71,8 @@ export interface BwrapSandboxOptions {
   rlimits?: boolean;
   /** Directory for the generated seccomp blob (tests pin it). */
   seccompDir?: string;
+  /** W885: the platform/shell view commands run under (defaults to the host). */
+  shell?: SandboxShellLookup;
 }
 
 export class BwrapSandbox implements Sandbox {
@@ -78,6 +80,8 @@ export class BwrapSandbox implements Sandbox {
   readonly probe: HostProbe;
   readonly limits: SandboxLimits;
   readonly options: BwrapOptions;
+  /** W885: injected platform view; `undefined` = the host's own defaults. */
+  readonly shell: SandboxShellLookup | undefined;
 
   private readonly rlimits: boolean;
   private readonly seccompDir: string | undefined;
@@ -89,6 +93,7 @@ export class BwrapSandbox implements Sandbox {
     this.options = { ...DEFAULT_BWRAP_OPTIONS, ...(options.run ?? {}) };
     this.rlimits = options.rlimits ?? true;
     this.seccompDir = options.seccompDir;
+    this.shell = options.shell;
   }
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): BwrapSandbox {

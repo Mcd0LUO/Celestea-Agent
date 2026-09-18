@@ -20,6 +20,9 @@ import {
 import { checkpointedLog, checkpointStoreOf, markCleanShutdown, writeErrorCountOf } from "./checkpoint-log.js";
 import { PersistentSessionLog } from "./log/persistent.js";
 
+/** W885: mode bits mean nothing on Windows (W883 E10). */
+const fileModesMeaningful = process.platform !== "win32";
+
 const SESSION = "ws/s1";
 const IDENTITY = { boot_id: "b-feedface", pid: 777 };
 const roots: string[] = [];
@@ -60,7 +63,7 @@ describe("checkpointed read/write (data-file contract)", () => {
     store.turnStarted("turn-7");
 
     const path = checkpointPathFor(dir);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (fileModesMeaningful) expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(readFileSync(path, "utf8").endsWith("\n")).toBe(true);
     const read = readCheckpointFile(path, SESSION);
     expect(read.kind).toBe("ok");

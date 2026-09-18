@@ -224,3 +224,6 @@ export async function getJson(app: Hono, path: string, init?: RequestInit): Prom
   }
   return { status: res.status, body };
 }
+
+/** W885: file permission bits are meaningful (false on Windows; W883 E10). */
+export const FILE_MODES_MEANINGFUL: boolean = process.platform !== "win32";

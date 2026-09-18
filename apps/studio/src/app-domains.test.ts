@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakeRuntimeAdapter } from "./fake-runtime-adapter.js";
-import { busyRuntime, getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
+import { busyRuntime, FILE_MODES_MEANINGFUL, getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
 import { workspaceHome } from "./store/celestea-home.js";
 
 const harnesses: StudioHarness[] = [];
@@ -205,7 +205,7 @@ describe("session grants endpoints", () => {
 
     // §5.4 field whitelist + 0600: a model-shaped extra field never lands.
     const stored = JSON.parse(readFileSync(join(h.workspace, "s1", "grants.json"), "utf8")) as { grants: Array<Record<string, unknown>> };
-    expect(statSync(join(h.workspace, "s1", "grants.json")).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(join(h.workspace, "s1", "grants.json")).mode & 0o777).toBe(0o600);
     expect(Object.keys(stored.grants[0]!).sort()).toEqual(["cap", "expires_at", "granted_at", "granted_by", "id", "note", "scope", "uses_left"]);
 
     expect((await getJson(h.app, `/api/status?session=${S1}`)).body["grants_active"]).toEqual(["network", "write_roots"]); // W9
@@ -346,7 +346,7 @@ describe("providers endpoints", () => {
     expect(text).not.toContain("sk-SECRET");
     expect(text).not.toContain("api_key");
     expect(upsert.body).toMatchObject({ id: "celestea", has_key: true, is_default: false });
-    expect(statSync(join(h.root, "providers.json")).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(join(h.root, "providers.json")).mode & 0o777).toBe(0o600);
 
     const def = await getJson(h.app, "/api/providers/default", jsonRequest("POST", { model: "m-1" }));
     expect(def.status).toBe(200);

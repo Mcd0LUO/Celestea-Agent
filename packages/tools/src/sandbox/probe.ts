@@ -13,8 +13,8 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 
+import { whichInPath } from "../platform/exec.js";
 import { buildBwrapArgv, DEFAULT_BWRAP_OPTIONS } from "./bwrap-argv.js";
 import { countUidThreads } from "./limits.js";
 
@@ -111,15 +111,16 @@ function resolveBwrapPath(env: NodeJS.ProcessEnv): string | null {
   return whichSync("bwrap", env);
 }
 
-/** PATH lookup that honours an explicitly passed env (no global mutation). */
-export function whichSync(bin: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  if (bin.includes("/")) return existsSync(bin) ? bin : null;
-  for (const dir of (env["PATH"] ?? "/usr/bin:/bin").split(":")) {
-    if (dir === "") continue;
-    const candidate = join(dir, bin);
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+/**
+ * PATH lookup that honours an explicitly passed env (no global mutation).
+ *
+ * W885: split per PLATFORM delimiter and, on Windows, with `PATHEXT`
+ * suffixes — a Windows `PATH` is `;`-separated and its entries carry drive
+ * letters, so the old `split(":")` produced meaningless results there
+ * (W883 B13). `platform` is injectable so the win32 rule is testable on Linux.
+ */
+export function whichSync(bin: string, env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string | null {
+  return whichInPath(bin, platform, env);
 }
 
 interface RunResult {

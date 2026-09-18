@@ -26,7 +26,7 @@ import { isDirectory, isFile, listEntries, statOf, writeFileRaw, removeDir, ensu
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { DEFAULT_SESSION_MODE, parseMode, validateMode, type SessionMode } from "./mode.js";
 import { readSessionMeta, writeSessionMeta, type SessionMeta } from "./session-meta.js";
-import { archiveRoots, liveDirCandidates, sessionDirName, sanitizeComponent, sessionRoots, sessionsRoot, stripCreationSuffix, workspaceBasename } from "./session-id.js";
+import { archiveRoots, baseName, liveDirCandidates, sessionDirName, sanitizeComponent, sessionRoots, sessionsRoot, stripCreationSuffix, workspaceBasename } from "./session-id.js";
 import { validateModelName, validatePromptId } from "./validate.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
 
@@ -299,7 +299,10 @@ export class SessionsStore {
       removeDir(dir);
       return fail(500, `meta write failed: ${errText(e)}`);
     }
-    return ok(`${wsName}/${dir.slice(dir.lastIndexOf("/") + 1)}`);
+    // W885: the directory's own basename, per the platform (a win32 realpath
+    // returns backslashes, so `lastIndexOf("/")` produced the whole path —
+    // W883 E2).
+    return ok(`${wsName}/${baseName(dir)}`);
   }
 
   /**

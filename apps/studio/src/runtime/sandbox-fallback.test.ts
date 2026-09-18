@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ToolOutput } from "@celestea/core";
 import type { Profile } from "@celestea/runtime";
-import { userspaceSandboxWith, type HostProbe } from "@celestea/tools";
+import { POSIX_SHELL, userspaceSandboxWith, type HostProbe } from "@celestea/tools";
 import { EMPTY_GRANTS, type EffectiveGrants, type EngineGrantEvent } from "./engine-grants.js";
 import { engineTools, type EngineTools } from "./engine-plugins.js";
 import { createOfflineLlm } from "./offline-llm.js";
@@ -137,7 +137,9 @@ function shellValue(out: ToolOutput): { stdout: string; exit_code: number | null
   return out.value as { stdout: string; exit_code: number | null; sandbox: Record<string, unknown> };
 }
 
-describe("W741 §1 — the production composition prefers bwrap by policy", () => {
+// W885: the stand-in bwrap is a `#!/bin/sh` script and the commands are POSIX
+// (`printf`), so this suite is a visible skip on Windows (W883 §7 / B17).
+describe.skipIf(!POSIX_SHELL)("W741 §1 — the production composition prefers bwrap by policy", () => {
   it("runs on bwrap when the host can give it, with no grants at all", async () => {
     const dir = tempDir("bwrap");
     const tools = compose(dir, { probe: { bwrapPath: fakeBwrap(dir) } });
@@ -222,7 +224,7 @@ describe("W741 §2 — CELESTEA_SANDBOX_FALLBACK=fail refuses instead of degradi
   });
 });
 
-describe("W741 §3 — degradation happens only when the policy says so, and is observable", () => {
+describe.skipIf(!POSIX_SHELL)("W741 §3 — degradation happens only when the policy says so, and is observable", () => {
   it("degrades to userspace under the default mode, and reports it in the ToolOutput", async () => {
     const dir = tempDir("degrade");
     const tools = compose(dir, { probe: NO_BWRAP });

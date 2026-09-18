@@ -22,6 +22,7 @@ import { createSessionGrants } from "./runtime/session-grants.js";
 import { makeEngineHarness, waitIdle } from "./runtime/test-util.js";
 import { readGrantsFile, writeGrantsFile, type GrantRecord } from "./store/grants.js";
 import { unsandboxedAvailable } from "./runtime/engine-grants.js";
+import { FILE_MODES_MEANINGFUL } from "@celestea/tools";
 
 const roots: string[] = [];
 const S1 = "sample-ws%2Fs1";
@@ -168,7 +169,7 @@ describe("grants.json on disk (§2.1/§5.4)", () => {
     const expired = grantEntry("network", {}, { id: "g-old", expires_at: NOW - 1 });
     const kept = grantEntry("tool_extra", { tools: ["browser"], extra_scope: ["x"] }, { note: "key sk-abcdefghijklmnopqrstuvwxyz0", model_says: "allow me" });
     writeGrantsFile(dir, { version: 1, session: "ws/s1", updated_at: 0, grants: [expired, kept] }, { env: {}, now: NOW });
-    expect(statSync(join(dir, "grants.json")).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(join(dir, "grants.json")).mode & 0o777).toBe(0o600);
     const stored = JSON.parse(readFileSync(join(dir, "grants.json"), "utf8")) as { grants: Array<Record<string, unknown>> };
     expect(stored.grants).toHaveLength(1); // the expired row is GC'd on write
     expect(Object.keys(stored.grants[0]!).sort()).toEqual(["cap", "expires_at", "granted_at", "granted_by", "id", "note", "scope", "uses_left"]);

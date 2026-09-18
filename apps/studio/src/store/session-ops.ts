@@ -26,9 +26,10 @@
  */
 
 import { copyFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { isDirectory, isFile, removeDir } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, type StoreResult } from "./result.js";
-import { archiveDirCandidates, archiveRoots, sanitizeComponent, timestampSuffix, trashRoots } from "./session-id.js";
+import { archiveDirCandidates, archiveRoots, baseName, parentDir, sanitizeComponent, timestampSuffix, trashRoots } from "./session-id.js";
 import { readSessionMeta, writeSessionMeta } from "./session-meta.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
 import { displayTitle, type ResolvedSession, type SessionsStore } from "./sessions.js";
@@ -38,13 +39,14 @@ export interface BatchOutcome {
   failed: Array<{ id: string; error: string }>;
 }
 
+/** W885: platform-aware parent (the pre-W885 hardcoded `/` broke on win32). */
 function parentOf(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i <= 0 ? "/" : path.slice(0, i);
+  return parentDir(path);
 }
 
+/** W885: platform-aware basename (`dir.slice(lastIndexOf("/") + 1)` before). */
 function baseOf(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
+  return baseName(path);
 }
 
 export class SessionOps {
@@ -159,7 +161,7 @@ export class SessionOps {
     if (!resolved.ok) return resolved;
     const res = resolved.value;
     if (!isDirectory(res.dir) || !isFile(`${res.dir}/${SESSION_FILE}`)) return notFound(`unknown session '${id}'`);
-    const dst = `${archiveRoots(res.wsPath)[0]}/${res.session}`;
+    const dst = join(archiveRoots(res.wsPath)[0] ?? res.wsPath, res.session);
     if (archiveDirCandidates(res.wsPath, res.session).some((c) => existsSync(c))) {
       return conflict(`session '${id}' is already archived`);
     }
@@ -230,7 +232,7 @@ export class SessionOps {
     const res = resolved.value;
     const from = this.locate(res);
     if (from === null) return notFound(`unknown session '${id}'`);
-    const dst = `${trashRoots(res.wsPath)[0]}/${res.session}-${timestampSuffix(this.now())}`;
+    const dst = join(trashRoots(res.wsPath)[0] ?? res.wsPath, `${res.session}-${timestampSuffix(this.now())}`);
     const moved = this.move(res, from, dst);
     if (!moved.ok) return moved;
     return this.clearActiveIf(id);

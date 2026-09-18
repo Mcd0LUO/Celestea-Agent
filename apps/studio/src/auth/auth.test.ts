@@ -25,6 +25,7 @@ import {
   verifyPassword,
   verifyToken,
 } from "./index.js";
+import { FILE_MODES_MEANINGFUL } from "@celestea/tools";
 
 const roots: string[] = [];
 const SECRET = randomBytes(AUTH_SECRET_BYTES);
@@ -97,7 +98,7 @@ describe("secret file", () => {
     const path = join(tmp(), "studio-auth.secret");
     const first = loadAuthSecret(path);
     expect(first).toHaveLength(AUTH_SECRET_BYTES);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(path).mode & 0o777).toBe(0o600);
     // A restart must NOT log everyone out: the file is the identity of the key.
     expect(loadAuthSecret(path).equals(first)).toBe(true);
   });
@@ -109,7 +110,7 @@ describe("secret file", () => {
     const secret = loadAuthSecret(path);
     expect(secret.length).toBeGreaterThanOrEqual(AUTH_SECRET_BYTES);
     expect(readFileSync(path, "utf8").trim()).toBe(secret.toString("base64url"));
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 });
 
