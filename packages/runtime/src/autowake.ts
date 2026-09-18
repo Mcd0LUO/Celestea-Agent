@@ -78,11 +78,22 @@ export interface AutowakeHooks {
   /** Is the host currently running a turn? */
   isBusy: () => boolean;
   /**
+   * W855 (C8): messages the USER parked on the `next-turn` lane, read fresh on
+   * every pass. The loop only OBSERVES this count: it must never drain the lane
+   * (the turn-start `drainPending` is its single consumer), which is what makes
+   * double delivery structurally impossible. Absent/0 = the pre-C8 mailbox-only
+   * trigger.
+   */
+  userPending?: () => number;
+  /**
    * Claim the slot and run ONE ordinary turn with `input`. Return `false` when
    * the slot was taken in the window (the loop re-queues and retries); throwing
    * is a hard error and is logged.
+   *
+   * W855 (C8): `null` means "wake for the user lane only" — the turn has no
+   * input of its own and the turn-start drain supplies the content.
    */
-  wake: (input: string) => boolean;
+  wake: (input: string | null) => boolean;
   /** Diagnostics sink (default: silent). */
   log?: (line: string) => void;
 }
@@ -179,26 +190,35 @@ export class AutowakeLoop {
         await this.pause(this.errorBackoffMs);
         continue;
       }
-      if (mailbox.pending(this.hooks.queueKey) === 0 && !this.notified) {
+      const userPending = this.hooks.userPending?.() ?? 0;
+      if (mailbox.pending(this.hooks.queueKey) === 0 && userPending === 0 && !this.notified) {
         await this.waitForWork();
         continue;
       }
       this.notified = false;
       if (this.hooks.isBusy()) {
-        // Leave the message QUEUED (do not drain) and retry on the legacy cadence.
+        // Leave BOTH sources queued (the lane is not ours to drain) and retry.
         await this.pause(this.busyRetryMs);
         continue;
       }
       const drained = mailbox.poll(this.hooks.queueKey);
-      if (drained.length === 0) continue;
+      if (drained.length === 0 && userPending === 0) continue;
+      // W855 (C8): the user lane is NEVER drained here — `drainPending` does it
+      // inside the turn. When only the lane has work the wake carries `null`
+      // ("no own input") and the drained lane message is the turn content.
+      const input = drained.length === 0 ? null : autowakeInput(drained);
       let started = false;
       try {
-        started = this.hooks.wake(autowakeInput(drained));
+        started = this.hooks.wake(input);
       } catch (error) {
+        // W855 (C8): a synchronous throw happens before the turn slot is
+        // claimed, so the drained messages were NOT consumed — hand them back
+        // instead of losing them (the old comment claimed the opposite).
         this.stalled += 1;
-        this.report(`turn error: ${error instanceof Error ? error.message : String(error)}`);
+        this.report(`turn error: ${error instanceof Error ? error.message : String(error)}; ${drained.length} message(s) re-queued`);
+        this.requeue(drained);
         await this.pause(this.errorBackoffMs);
-        continue; // hard error: the turn consumed the messages (legacy behaviour)
+        continue;
       }
       if (started) {
         this.stalled = 0;

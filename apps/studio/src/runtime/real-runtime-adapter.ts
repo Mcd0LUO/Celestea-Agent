@@ -62,7 +62,7 @@ import {
 import { costBlockView, usageLedgerView } from "./ledger-view.js";
 import { join } from "node:path";
 import { CapacityError, EngineError, toolSpecView, type PendingQuestionView, type QuestionAnswerOutcome } from "../runtime-adapter.js";
-import { HostAutowake, autowakeLog } from "./host-autowake.js";
+import { HostAutowake, autowakeLog, autowakeStateOf } from "./host-autowake.js";
 import { injectionHooksOf, type SessionInjectionHooks } from "./session-publisher.js";
 import { sessionContextOf } from "./context-snapshot.js";
 import { mergedWorkerRows, sendWorkerThrough, spawnWorkerThrough, workerMessagesAcross } from "./worker-bridge.js";
@@ -206,10 +206,7 @@ class RealEngine implements RealRuntimeAdapter {
     this.env = opts.env ?? process.env;
     this.autowake = new HostAutowake({
       enabled: autowakeEnabled(this.env),
-      lookup: (session) => {
-        const entry = this.registry.peek(session);
-        return entry === null ? null : { mailbox: entry.runtime.workers?.mailbox ?? null, busy: entry.inFlight };
-      },
+      lookup: (session) => autowakeStateOf(this.registry.peek(session)),
       wake: (session, input) => this.startAutowakeTurn(session, input),
     });
     this.profileValue = profileFromEngine(opts.profile ?? defaultEngineProfile(this.env, "CELESTEA_API_KEY"));
@@ -317,18 +314,20 @@ class RealEngine implements RealRuntimeAdapter {
    * (busy): the loop then re-queues the messages into the CURRENT generation and
    * retries, so nothing is lost and nothing is consumed twice.
    */
-  private startAutowakeTurn(session: string | null, input: string): boolean {
+  private startAutowakeTurn(session: string | null, input: string | null): boolean {
     const entry = this.registry.peek(session);
     if (entry === null || entry.inFlight) return false;
+    // W855 C8: a null wake needs the lane; a throw before/at the claim keeps it.
+    if (input === null && entry.runtime.pendingInjections("next-turn") === 0) return false;
     try {
       const turn = this.launch(entry, input, undefined, "autowake");
       autowakeLog(session, `woke the host: turn ${turn}`);
       return true;
     } catch (error) {
-      // Capacity (max concurrent turns) is the one raciness we can retry: the
-      // loop re-queues and comes back.
       if (error instanceof CapacityError) return false;
-      throw error;
+      if (entry.inFlight) this.registry.endTurn(entry, null);
+      autowakeLog(session, `wake failed: ${error instanceof Error ? error.message : String(error)}; messages kept queued`);
+      return false;
     }
   }
 
@@ -428,7 +427,7 @@ class RealEngine implements RealRuntimeAdapter {
    * W769 auto-wake take, so SSE frames, statusline phases, the turn number and
    * the busy guard cannot differ between them.
    */
-  private launch(entry: SessionRuntime, input: string, attachments?: readonly ImageRef[], source?: "autowake"): number {
+  private launch(entry: SessionRuntime, input: string | null, attachments?: readonly ImageRef[], source?: "autowake"): number {
     const controller = new AbortController();
     const turn = this.beginTurn(entry, controller);
     // W833 (R3 B8 / W816 F5): the signature is source?: "autowake", so the
@@ -488,7 +487,7 @@ class RealEngine implements RealRuntimeAdapter {
    */
   private async drive(
     entry: SessionRuntime,
-    input: string,
+    input: string | null,
     turn: number,
     controller: AbortController,
     attachments?: readonly ImageRef[],

@@ -112,6 +112,32 @@ describe("DefaultAgentLoop — stream consumption", () => {
     expect(lastOutcome(h.session)).toBe("completed");
   });
 
+  it("W855 C8: a null input writes NO user_message row (the drain supplies the content)", async () => {
+    const h = harness({ llm: new ScriptLlm([done(assistantText("done"))]) });
+
+    await h.loop.runTurn(h.ctx, null);
+
+    expect(h.session.events().map((e) => e.type)).toEqual([
+      "turn_start",
+      "assistant_message",
+      "turn_end",
+    ]);
+    expect(eventsOfType(h.session, "user_message")).toHaveLength(0);
+    expect(lastOutcome(h.session)).toBe("completed");
+  });
+
+  it("W855 C8: null + attachments still writes the empty-text image row (W804 preserved)", async () => {
+    const h = harness({ llm: new ScriptLlm([done(assistantText("done"))]) });
+    const ref = { attachment_id: "a".repeat(64), media_type: "image/png" as const, width: 1, height: 1 };
+
+    await h.loop.runTurn(h.ctx, null, [ref]);
+
+    const rows = eventsOfType(h.session, "user_message");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text).toBe("");
+    expect(rows[0]?.attachments).toEqual([ref]);
+  });
+
   it("delivers stream events to the sink in emission order", async () => {
     const h = harness({
       llm: new ScriptLlm([

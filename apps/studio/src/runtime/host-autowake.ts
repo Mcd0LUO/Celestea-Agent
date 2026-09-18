@@ -19,10 +19,41 @@ import type { SessionMailbox } from "@celestea/workers";
 export interface HostAutowakeOptions {
   /** `CELESTEA_AUTOWAKE` (read once by the adapter at construction). */
   enabled: boolean;
-  /** Current state of one host conversation (null = no live generation). */
-  lookup: (session: string | null) => { mailbox: SessionMailbox | null; busy: boolean } | null;
+  /**
+   * Current state of one host conversation (null = no live generation).
+   * W855 (C8): `userPending` is the size of the USER's `next-turn` lane; the
+   * loop only observes it (the turn-start drain is the lane's consumer).
+   */
+  lookup: (session: string | null) => { mailbox: SessionMailbox | null; busy: boolean; userPending: number } | null;
   /** Claim the slot and run one ordinary turn over the drained receipts. */
-  wake: (session: string | null, input: string) => boolean;
+  wake: (session: string | null, input: string | null) => boolean;
+}
+
+/**
+ * W855 (C8): the generation state the loop reads on every pass, seen
+ * structurally (the registry entry satisfies it). Keeping this here — instead of
+ * inline in `real-runtime-adapter.ts` — is what keeps that file under its
+ * eslint `max-lines` budget.
+ */
+export interface AutowakeGeneration {
+  inFlight: boolean;
+  runtime: {
+    workers?: { mailbox?: SessionMailbox | null } | null;
+    pendingInjections(lane?: "next-turn"): number;
+  };
+}
+
+/** Mailbox + busy + the USER's next-turn lane depth, from one entry (or null). */
+export function autowakeStateOf(
+  entry: AutowakeGeneration | null,
+): { mailbox: SessionMailbox | null; busy: boolean; userPending: number } | null {
+  return entry === null
+    ? null
+    : {
+        mailbox: entry.runtime.workers?.mailbox ?? null,
+        busy: entry.inFlight,
+        userPending: entry.runtime.pendingInjections("next-turn"),
+      };
 }
 
 /** The studio's log line for auto-wake decisions (stderr, like boot recovery). */
@@ -61,6 +92,7 @@ export class HostAutowake {
       queueKey: session ?? HOST_SESSION_ID,
       mailbox: () => this.opts.lookup(session)?.mailbox ?? null,
       isBusy: () => this.opts.lookup(session)?.busy ?? false,
+      userPending: () => this.opts.lookup(session)?.userPending ?? 0,
       wake: (input) => this.opts.wake(session, input),
       log: (line) => autowakeLog(session, line),
     });

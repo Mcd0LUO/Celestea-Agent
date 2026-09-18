@@ -188,7 +188,7 @@ export class Runtime {
   // --- driving turns -----------------------------------------------------
 
   /** Drive one turn; a second concurrent call is a [TurnBusyError] (409). */
-  async runTurn(input: string, opts: TurnOptions = {}): Promise<TurnOutcome> {
+  async runTurn(input: string | null, opts: TurnOptions = {}): Promise<TurnOutcome> {
     this.assertLive();
     return this.p.runner.runTurn(input, opts);
   }

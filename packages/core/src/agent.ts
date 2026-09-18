@@ -50,8 +50,16 @@ export interface AgentLoop {
    * W804: `attachments` are content-addressed image references for THIS
    * turn's user message. The loop writes them onto the `user_message` row; the
    * bytes never enter the log. Omitted/empty => the pre-W804 row byte for byte.
+   *
+   * W855 (C8): `userInput === null` means "this turn has NO input of its own" —
+   * the content is whatever the turn-start drain already injected (a queued
+   * `next-turn` lane message or a mailbox receipt). The loop then writes NO
+   * `user_message` row for the input, so an autowake turn never fabricates an
+   * empty user bubble. `null` is not `""`: the host rejects empty text
+   * (`input must not be empty`) and `""` is reserved for image-only turns
+   * (W804, `""` + attachments).
    */
-  runTurn(ctx: Context, userInput: string, attachments?: readonly ImageRef[]): Promise<void>;
+  runTurn(ctx: Context, userInput: string | null, attachments?: readonly ImageRef[]): Promise<void>;
 }
 
 /**

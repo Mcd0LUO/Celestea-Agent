@@ -139,7 +139,7 @@ export class TurnRunner {
     this.cancel();
   }
 
-  async runTurn(input: string, opts: TurnOptions = {}): Promise<TurnOutcome> {
+  async runTurn(input: string | null, opts: TurnOptions = {}): Promise<TurnOutcome> {
     if (this.released) throw new RuntimeReleasedError("the turn runner was stopped");
     if (this.busy) throw new TurnBusyError();
     this.busy = true;
@@ -173,7 +173,7 @@ export class TurnRunner {
     }
   }
 
-  private async drive(input: string, opts: TurnOptions, signal: AbortSignal): Promise<TurnOutcome> {
+  private async drive(input: string | null, opts: TurnOptions, signal: AbortSignal): Promise<TurnOutcome> {
     this.turnNo += 1;
     this.deps.status.beginTurn();
     const sink = this.makeSink(opts.sink);

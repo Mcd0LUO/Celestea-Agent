@@ -102,7 +102,7 @@ export class DefaultAgentLoop implements AgentLoop {
   }
 
   /** AgentLoop seam: drive one turn; rejects only on a broken Context wiring. */
-  async runTurn(ctx: Context, userInput: string, attachments?: readonly ImageRef[]): Promise<void> {
+  async runTurn(ctx: Context, userInput: string | null, attachments?: readonly ImageRef[]): Promise<void> {
     await this.runTurnOutcome(ctx, userInput, attachments);
   }
 
@@ -120,7 +120,7 @@ export class DefaultAgentLoop implements AgentLoop {
   }
 
   /** Same turn, handing the terminal state back to the caller (hosts / tests). */
-  async runTurnOutcome(ctx: Context, userInput: string, attachments?: readonly ImageRef[]): Promise<TurnOutcome> {
+  async runTurnOutcome(ctx: Context, userInput: string | null, attachments?: readonly ImageRef[]): Promise<TurnOutcome> {
     const seams = resolveSeams(ctx);
     // W855: the host provides the session-scoped retention policy; absent = off.
     this.retention = ctx.get<ToolResultRetention>(RETENTION_SERVICE) ?? null;
@@ -130,11 +130,14 @@ export class DefaultAgentLoop implements AgentLoop {
     seams.session.append({ type: "turn_start", id: turnId });
     // W804: the turn's own input carries this turn's attachments. The condition
     // keeps the no-attachment row byte-identical to the pre-W804 shape.
-    seams.session.append(
-      attachments !== undefined && attachments.length > 0
-        ? { type: "user_message", text: userInput, attachments: [...attachments] }
-        : { type: "user_message", text: userInput },
-    );
+    // W855 (C8): a `null` input with no attachments writes NO row — the turn's
+    // user content is whatever the drain already injected (see the AgentLoop
+    // seam doc). `null` + attachments still writes the `""`-text image row.
+    if (attachments !== undefined && attachments.length > 0) {
+      seams.session.append({ type: "user_message", text: userInput ?? "", attachments: [...attachments] });
+    } else if (userInput !== null) {
+      seams.session.append({ type: "user_message", text: userInput });
+    }
 
     let outcome: TurnOutcome = "interrupted";
     let failure: unknown;

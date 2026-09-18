@@ -11,12 +11,26 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseSessionJsonl } from "@celestea/session";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
 import { activate, engineOf, makeEngineHarness, readSessionLog } from "./test-util.js";
+import type { OfflineStep } from "./offline-llm.js";
 import type { BusFrame, BusSubscription } from "../sse.js";
 
 const harnesses: StudioHarness[] = [];
 
 function make(): StudioHarness {
   const h = makeEngineHarness({ sessions: { s1: [], s2: [] } });
+  harnesses.push(h);
+  return h;
+}
+
+/**
+ * W855 C8: a harness whose FIRST offline step streams slowly, so there is a real
+ * busy window in which a user can pick `mode: "queue"`. The script is filled
+ * after the harness exists because the engine composes lazily.
+ */
+function makeQueue(): StudioHarness {
+  const script: OfflineStep[] = [];
+  const h = makeEngineHarness({ sessions: { s1: [], s2: [] }, llm: { script, deltaMs: 3, chunkChars: 8 } });
+  script.push({ text: "x".repeat(2400) }); // ~0.9s of frames
   harnesses.push(h);
   return h;
 }
@@ -132,5 +146,54 @@ describe("W769 auto-wake (real adapter)", () => {
     // …and exactly ONE wake turn happened (a duplicate consumption would show up
     // as a second receipt row, not as the echo of the first).
     expect(wakeInputs(h, "s1")).toHaveLength(1);
+  });
+
+  it("W855 C8: a queued user input wakes the idle host by itself, exactly once", async () => {
+    const h = makeQueue();
+    await activate(h, "sample-ws/s1");
+    const engine = engineOf(h);
+    const sub = h.studio.services.bus.subscribe();
+    const frames: BusFrame[] = [];
+
+    // 1. a slow turn keeps the session busy; 2. while busy, the user picks queue.
+    const first = await h.app.request("/api/turn", jsonRequest("POST", { input: "长任务", session: "sample-ws/s1" }));
+    expect(first.status).toBe(202);
+    await until(() => engine.isBusy("sample-ws/s1"), "the slow turn to be busy");
+    const queued = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "排队输入", mode: "queue", session: "sample-ws/s1" }));
+    expect(queued.body["placement"]).toBe("queued");
+    expect(queued.body["injected"]).toBe(false);
+    expect(queued.body["pending"]).toBe(1);
+    // Busy: the lane holds it and the RUNNING turn never sees it.
+    expect(logOf(h, "s1")).not.toContain("排队输入");
+
+    // 3. NO further input: the lane alone must produce the wake turn.
+    await until(() => logOf(h, "s1").includes("排队输入"), "the queued message to be auto-delivered");
+    await drain(sub, frames, (f) => f.some((x) => x.event === "status" && payloadOf(x)["source"] === "autowake" && payloadOf(x)["phase"] === "start"));
+    sub.close();
+
+    // 4. exactly ONE wake turn and ONE row for the queued text.
+    const starts = frames.filter((f) => f.event === "status" && payloadOf(f)["source"] === "autowake" && payloadOf(f)["phase"] === "start");
+    expect(starts.length).toBe(1);
+    const rows = parseSessionJsonl(logOf(h, "s1")).events.filter((e) => e.type === "user_message");
+    expect(rows.filter((e) => e.type === "user_message" && e.text === "排队输入")).toHaveLength(1);
+  });
+
+  it("W855 C8: the queued user message is delivered BEFORE a mailbox receipt drained in the same idle wake", async () => {
+    const h = make();
+    await activate(h, "sample-ws/s1");
+    const engine = engineOf(h);
+
+    // Both sources are pending while IDLE, so ONE autowake turn drains them:
+    // the lane is parked (next-turn) and a receipt is dropped into the mailbox.
+    const queued = engine.inject({ input: "排队输入", session: "sample-ws/s1", mode: "queue" });
+    expect(queued.placement).toBe("queued");
+    const mailbox = engine.workersOf("sample-ws/s1")?.mailbox;
+    expect(mailbox).toBeDefined();
+    mailbox!.send("sample-ws/s1", "receipt body", "W9");
+
+    await until(() => logOf(h, "s1").includes("排队输入") && logOf(h, "s1").includes("[from W9]"), "the lane message and the receipt");
+    const log = logOf(h, "s1");
+    // drainPending's order is lane-then-mailbox; autowake must preserve it.
+    expect(log.indexOf("排队输入")).toBeLessThan(log.indexOf("[from W9]"));
   });
 });

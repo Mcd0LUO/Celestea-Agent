@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { SessionMailbox } from "@celestea/workers";
 import {
   AUTOWAKE_BUSY_RETRY_MS,
+  AUTOWAKE_ERROR_BACKOFF_MS,
   AutowakeLoop,
   ENV_AUTOWAKE,
   autowakeEnabled,
@@ -60,12 +61,13 @@ function manualTiming(): {
 }
 
 /** A loop harness: real mailbox, stub wake, manual clock. */
-function harness(options: { wake?: (input: string) => boolean } = {}) {
+function harness(options: { wake?: (input: string | null) => boolean } = {}) {
   const mailbox = new SessionMailbox(() => 0);
   const clock = manualTiming();
-  const inputs: string[] = [];
+  const inputs: (string | null)[] = [];
   const logs: string[] = [];
   let busy = false;
+  let userPending = 0;
   let current: SessionMailbox | null = mailbox;
   let accept = true;
   const loop = new AutowakeLoop(
@@ -73,9 +75,14 @@ function harness(options: { wake?: (input: string) => boolean } = {}) {
       queueKey: "cli-main",
       mailbox: () => current,
       isBusy: () => busy,
+      userPending: () => userPending,
       wake: (input) => {
         inputs.push(input);
-        return options.wake === undefined ? accept : options.wake(input);
+        const started = options.wake === undefined ? accept : options.wake(input);
+        // A STARTED turn drains the user lane at its turn start (drainPending);
+        // the stub models that so a lane-only wake does not spin forever.
+        if (started) userPending = 0;
+        return started;
       },
       log: (line) => logs.push(line),
     },
@@ -89,6 +96,10 @@ function harness(options: { wake?: (input: string) => boolean } = {}) {
     logs,
     setBusy: (value: boolean) => {
       busy = value;
+    },
+    /** W855 C8: size of the user lane the loop observes (it never drains it). */
+    setUserPending: (value: number) => {
+      userPending = value;
     },
     setMailbox: (value: SessionMailbox | null) => {
       current = value;
@@ -230,12 +241,12 @@ describe("AutowakeLoop (W769)", () => {
     await h.loop.stop();
   });
 
-  it("survives a throwing wake (logged, backed off, still alive)", async () => {
+  it("survives a throwing wake and RE-QUEUES the drained messages (W855 C8)", async () => {
     let explode = true;
     const mailbox = new SessionMailbox(() => 0);
     const clock = manualTiming();
     const logs: string[] = [];
-    const inputs: string[] = [];
+    const inputs: (string | null)[] = [];
     const loop = new AutowakeLoop(
       {
         queueKey: "cli-main",
@@ -257,10 +268,12 @@ describe("AutowakeLoop (W769)", () => {
     expect(inputs).toHaveLength(1);
     expect(logs.some((l) => l.includes("turn exploded"))).toBe(true);
 
+    // The throwing attempt did not consume the message: it went back into the
+    // queue. The next message joins it and BOTH are delivered in one wake.
     explode = false;
     mailbox.send("cli-main", "second", "W2");
-    await clock.advance(AUTOWAKE_BUSY_RETRY_MS);
-    expect(inputs.at(-1)).toBe("[from W2] second");
+    await clock.advance(AUTOWAKE_ERROR_BACKOFF_MS);
+    expect(inputs.at(-1)).toBe("[from W1] receipt\n\n[from W2] second");
     await loop.stop();
   });
 
@@ -277,4 +290,40 @@ describe("AutowakeLoop (W769)", () => {
     expect(h.inputs).toEqual([]);
     await h.loop.stop(); // idempotent
   });
+});
+
+describe("W855 C8: the user next-turn lane as a wake source", () => {
+  it("wakes an idle host with null for a lane-only queue (the loop never drains it)", async () => {
+    const h = harness();
+    h.loop.start();
+    await h.settle();
+
+    // The lane is set WITHOUT notifying the loop: the 250ms floor must notice.
+    h.setUserPending(1);
+    await h.clock.advance(AUTOWAKE_BUSY_RETRY_MS);
+
+    expect(h.inputs).toEqual([null]); // "no own input"; drainPending supplies it
+    await h.loop.stop();
+  });
+
+  it("leaves BOTH sources queued while busy, then wakes once when idle", async () => {
+    const h = harness();
+    h.setBusy(true);
+    h.loop.start();
+    await h.settle();
+    h.setUserPending(1);
+    h.mailbox.send("cli-main", "receipt", "W1");
+
+    for (let i = 0; i < 5; i += 1) await h.clock.advance(AUTOWAKE_BUSY_RETRY_MS);
+    expect(h.inputs).toEqual([]);
+    expect(h.mailbox.pending("cli-main")).toBe(1);
+
+    h.setBusy(false);
+    await h.clock.advance(AUTOWAKE_BUSY_RETRY_MS);
+    // The mailbox decides the input; the lane is left for drainPending, so the
+    // loop only needed it as a trigger.
+    expect(h.inputs).toEqual(["[from W1] receipt"]);
+    await h.loop.stop();
+  });
+
 });

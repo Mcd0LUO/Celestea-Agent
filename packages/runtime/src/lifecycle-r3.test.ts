@@ -57,7 +57,7 @@ function gatedLoop(): { factory: LoopFactory; started: Promise<void>; release: (
       if (log === undefined) throw new Error("no session log");
       const id = log.nextTurnId();
       log.append({ type: "turn_start", id });
-      log.append({ type: "user_message", text: input });
+      log.append({ type: "user_message", text: input ?? "" });
       markStarted();
       await gate;
       log.append({ type: "turn_end", id, outcome: "completed" });
