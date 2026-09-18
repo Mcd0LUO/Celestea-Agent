@@ -468,5 +468,6 @@ describe("worker endpoints", () => {
     const noBody = await getJson(h.app, "/api/worker/spawn", jsonRequest("POST", { wid: "W2" }));
     expect(noBody.status).toBe(422);
   });
+  // W866（用户 → worker 的发言）见 ./w866-worker-turn.test.ts：单独成文件是
+  // 因为本文件已接近 ESLint 的 max-lines 上限（与 worker-spawn-session.test.ts 同例）。
 });
-

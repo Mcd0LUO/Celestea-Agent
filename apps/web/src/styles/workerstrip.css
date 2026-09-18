@@ -1,0 +1,75 @@
+/* ============================================================================
+   W866 · 会话页左上角的「本会话 worker 快捷条」（ui/worker-strip.ts）
+   —— 位置：**正文列左侧的空白带**（.sess-pane 的正文列 = clamp(680,64%,920) 居中
+      且 .mcol 最大 660px），左上角竖排一列紧凑 chip；不占正文列、不遮挡正文。
+   —— 几何：宿主 .ws-strip 绝对定位在 #main（rail.css 已给 #main position:relative），
+      纵向钉在消息视口顶部（不在滚动容器里 ⇒ 不随消息滚动）；z-index 25
+      （低于 rail 悬停卡 40、高于消息流）。
+   —— 宽度上限 = 左侧空白带宽度；带宽不足（≤1024px 档）整条隐藏，正文优先。
+   —— 颜色/圆角/发丝线一律走 tokens.css 的 W12 令牌（--c-* / --r-* / --hairline）。
+   ========================================================================== */
+.ws-strip {
+  position: absolute;
+  top: var(--sp-flow);
+  left: 8px;
+  z-index: 25;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  max-width: calc((100% - min(var(--chat-col), 100%)) / 2 - 20px);
+  max-height: calc(100% - var(--sp-flow) * 2);
+  overflow: hidden; /* 带宽/高度不足时截断，绝不压到正文列上 */
+  pointer-events: none; /* 空白处穿透：只有 chip 自己可点 */
+  font-family: var(--mono);
+}
+.ws-strip.hidden { display: none; }
+.ws-strip-head { display: flex; align-items: center; gap: 4px; }
+.ws-strip-lead {
+  font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase;
+  color: var(--c-text-3);
+  padding: 0 5px;
+  border: var(--hairline) solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  white-space: nowrap;
+}
+.ws-strip-count {
+  font-size: 9.5px; color: var(--c-text-3);
+  border: var(--hairline) solid var(--c-border-subtle);
+  border-radius: var(--r-sm); padding: 0 4px;
+  background: var(--c-surface);
+}
+.ws-strip-list {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-width: 0; max-width: 100%;
+  overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: none;
+}
+.ws-strip-list::-webkit-scrollbar { display: none; }
+.ws-strip-row {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: 100%; min-width: 0;
+  padding: 1px 7px;
+  border: var(--hairline) solid var(--c-border-subtle);
+  border-radius: var(--r-badge);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-family: var(--mono); font-size: 10px; line-height: 15px;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+.ws-strip-row:hover { background: var(--c-accent-soft); border-color: var(--c-border-strong); color: var(--c-text-1); }
+.ws-strip-row .sess-dot { width: 6px; height: 6px; }
+.ws-strip-wid { flex: 0 0 auto; color: var(--c-text-1); letter-spacing: .3px; }
+.ws-strip-title {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-transform: none;
+}
+.ws-strip-meta { flex: 0 0 auto; color: var(--c-text-3); }
+.ws-strip-row.settled { opacity: .72; }
+
+/* 窄屏降级：≤1024px 时左侧空白带已容不下 chip（正文列贴边）→ 整条隐藏，正文优先。
+   ≤640px 同一条规则已覆盖。 */
+@media (max-width: 1024px) {
+  .ws-strip { display: none; }
+}

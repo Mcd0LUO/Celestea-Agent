@@ -1,6 +1,8 @@
 // ============================================================================
 // ui/send.ts — W805：发送编排（从 chat.ts 拆出，让附件乐观路径有清晰落点）。
 //   空闲 → 开新轮（带图片附件）；运行中 → 插话/排队（只支持文字，附件需等空闲）；
+//   worker 会话（W866）→ 送入该 worker 的收件箱（同一句 POST /api/turn，后端按
+//   `worker:<sid>` 路由到 send_message 那条投递）；
 //   失败 → 带附件时**完整回滚**（气泡/输入框/待发附件），不带附件时保持原行为。
 // ============================================================================
 import { api } from '../api';
@@ -42,7 +44,7 @@ import {
   type SessionPane,
 } from './viewctx';
 
-/** 发送入口：命令 → 只读拦截 → 运行中（附件拒绝/插话/排队）→ 空闲开新轮。 */
+/** 发送入口：命令 → worker 专线 → 运行中（附件拒绝/插话/排队）→ 空闲开新轮。 */
 export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
   const t = text.trim();
   const ctx = activePane();
@@ -53,8 +55,10 @@ export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
     void runCompact(ctx);
     return;
   }
+  // W866：worker 会话是**可对话**的（不再是只读面板）。它有自己的串行收件箱，
+  // 没有「本会话的 busy 槽」，所以这里不看 ctx.streaming：一律走 worker 专线。
   if (ctx.kind === 'worker') {
-    flashStatus('Worker 会话为只读视图，未发送', 'err', 5_000);
+    void sendToWorker(ctx, t, mode);
     return;
   }
   if (ctx.streaming && pending > 0) {
@@ -105,6 +109,49 @@ function startTurn(ctx: SessionPane, t: string): void {
       }
     })
     .catch((err: unknown) => failTurn(ctx, key, col, t, items, err));
+}
+
+/**
+ * W866：用户 → worker 的发言（乐观优先）。
+ *
+ * 与「运行中插话」同一节拍：气泡 + 一句「已送达/未送达」注记当帧入场，请求在
+ * 后台跑，失败时**撤销气泡并把文本放回输入框** —— 绝不留下一个看起来发出去了、
+ * 实际谁也没收到的气泡。附件在 worker 车道上先被拦下（收件箱只收文本）。
+ */
+async function sendToWorker(ctx: SessionPane, t: string, mode: SubmitMode): Promise<void> {
+  if (t === '') return;
+  if (pendingCount() > 0) {
+    const hint = 'worker 会话不收图片附件（收件箱只收文字）';
+    if (isActivePane(ctx)) flashStatus(hint, 'err', 6_000);
+    renderInfoBlock(ctx, hint, 'warn');
+    return;
+  }
+  const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'user' });
+  clearInput();
+  ctx.draft = '';
+  const noteEl = renderInterjectNote(ctx, '发送中 · 等待送达…', undefined, col);
+  setLegacyOwner(ctx);
+  try {
+    const r = await api.turn(t, sid(ctx));
+    const settled = r.status !== undefined && r.status !== '' && r.status !== 'RUNNING';
+    noteEl.textContent =
+      settled
+        ? '已送达 · 该 worker 已结束（' + r.status + '），消息留在它的收件箱里'
+        : '已送达 · 将作为它的一轮对话处理';
+    noteEl.className = 'interject-note ok';
+    if (isActivePane(ctx)) flashStatus(settled ? '已送达（该 worker 已结束）' : '已送达 worker', 'ok', 4_000);
+  } catch (err: unknown) {
+    col.remove();
+    noteEl.parentElement?.remove();
+    ctx.interjectNote = null;
+    restoreDraft(ctx, t);
+    const hint = '未送达（' + msgOf(err) + '）：已将内容还原到输入框';
+    if (isActivePane(ctx)) {
+      setStatus(hint, 'err');
+      window.setTimeout(() => flashStatus(hint, 'err', 6_000), 0);
+    }
+    renderInfoBlock(ctx, hint, 'warn');
+  }
 }
 
 /** 发送失败：带附件时完整回滚（不保留「看起来发出去了」的假气泡）。 */

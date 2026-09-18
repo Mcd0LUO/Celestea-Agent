@@ -16,6 +16,7 @@ import { autoscroll } from './messages';
 import type { SessionPane } from './viewctx';
 import type { ToolCardRef } from './view';
 import type { ToolPayload, ToolResultPayload } from '../types';
+import { noteWorkerSpawn } from './worker-strip';
 
 export type { ToolCardRef };
 
@@ -177,6 +178,7 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   msg.appendChild(bubble);
   col.appendChild(msg);
   return {
+    toolName: d.name,
     col,
     card,
     label: state.querySelector<HTMLElement>('.ts-label') ?? state,
@@ -224,8 +226,34 @@ export function pushToolCard(ctx: SessionPane, p: ToolPayload, into?: HTMLElemen
   return ref.col;
 }
 
+/**
+ * W866：`spawn_worker` 成功 → 把新 worker **当帧**插进「本会话 worker 快捷条」，
+ * 不等下一次会话列表轮询（那是 5s 级的）。识别条件刻意收窄：工具名必须是
+ * spawn_worker、结果里真有 sessionId；随后的列表刷新照常对账（同 id 只更新）。
+ */
+function noteSpawnedWorker(toolName: string, p: ToolResultPayload): void {
+  if (toolName !== 'spawn_worker' || p.ok === false) return;
+  const v = p.value;
+  if (typeof v !== 'object' || v === null) return;
+  const rec = v as Record<string, unknown>;
+  const sid = typeof rec['sessionId'] === 'string' ? rec['sessionId'] : '';
+  if (sid === '') return;
+  const wid = typeof rec['wid'] === 'string' ? rec['wid'] : '';
+  const title = typeof rec['title'] === 'string' ? rec['title'] : '';
+  noteWorkerSpawn({
+    id: 'worker:' + sid,
+    kind: 'worker',
+    ...(wid === '' ? {} : { wid }),
+    ...(title === '' ? {} : { title }),
+    workspace: 'engine',
+  });
+}
+
 /** 应用工具结果：状态/结果摘要/结果全文（按 id 索引，索引属于该会话）。 */
 export function applyToolResult(ctx: SessionPane, p: ToolResultPayload): void {
+  // W866：spawn_worker 的结果到达当帧 → 快捷条立刻出现新行（见函数注释）。
+  // 工具名取**卡片自己的**（历史恢复路径也一样有），不依赖 live 帧带 name。
+  noteSpawnedWorker(ctx.ops.get(String(p.id))?.toolName ?? '', p);
   const rec = ctx.ops.get(String(p.id));
   if (!rec) return;
   const failed = p.ok === false || !!p.error;

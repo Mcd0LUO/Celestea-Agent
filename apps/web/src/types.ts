@@ -196,6 +196,10 @@ export interface SessionInfo {
   kind?: 'session' | 'worker' | string;
   /** W514: a turn is running on this session (absent on legacy backends). */
   busy?: boolean;
+  /** W513/W866: worker rows carry their registry wid / status / state. */
+  wid?: string;
+  status?: string;
+  state?: string;
   workspace?: string | null;
   events?: number;
   live?: boolean;
@@ -399,6 +403,16 @@ export interface TurnResp {
   inbox_target?: string;
   /** W514: session the turn (or the injection) belongs to. */
   session?: string;
+  /**
+   * W866: a turn addressed at an engine-memory worker (`session: 'worker:<sid>'`)
+   * is DELIVERED to that worker's inbox instead of starting a filesystem-session
+   * turn. `worker` echoes the inner session id and `status`/`state` carry the
+   * worker's own registry row (a settled worker still accepts the message, it
+   * just will not run another turn).
+   */
+  worker?: string;
+  status?: string;
+  state?: string;
   error?: string;
 }
 

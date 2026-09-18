@@ -21,6 +21,7 @@ import './styles/rail.css'; // 灵动选择条 v3（W238 重做）
 import './styles/hint.css'; // W790 悬浮提示宿主（内置提示插件）
 import './styles/question.css'; // W784 模型提问卡片（选项 / 自由输入 / 倒计时）
 import './styles/attachments.css'; // W805 图片附件（待发条 / 气泡网格 / 放大）
+import './styles/workerstrip.css'; // W866 会话页左上角 worker 快捷条
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
 
 import { api } from './api';
@@ -30,6 +31,7 @@ import { initViewCtx } from './ui/viewctx'; // W514 每会话视图容器
 import { initSessionBar } from './ui/sessionbar'; // W514 聚焦会话条
 import { initSettingsPage } from './ui/config';
 import { initSessionsPanel } from './ui/sessions';
+import { initWorkerStrip } from './ui/worker-strip'; // W866 会话页左上角 worker 快捷条
 import { initGrants } from './ui/grants'; // W701 提权通道（能力位未就绪时入口隐藏）
 import { restoreActiveHistory } from './ui/restore';
 import { initRail } from './ui/rail';
@@ -72,6 +74,9 @@ function init(): void {
 
   // 4) statusline（/api/status?session= 轮询 + SSE 增量，发送栏正上方）
   statusline.start();
+
+  // 3.2) W866：会话页左上角的 worker 快捷条（当前会话派了哪些 worker，点击聚焦）
+  initWorkerStrip();
 
   // 4) 左侧面板：工作区/会话树（W227；工具清单已迁至「通用设置」页）
   initSessionsPanel();

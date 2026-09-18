@@ -72,6 +72,8 @@ import {
 } from './ui/viewctx';
 import { railActivate, railRebind } from './ui/rail';
 import { updateSessionBar } from './ui/sessionbar';
+// W866：会话页左上角的「本会话 worker 快捷条」
+import { updateWorkerStrip } from './ui/worker-strip';
 
 const PHASE_LABELS: Record<string, string> = {
   completed: '完成',
@@ -98,11 +100,11 @@ function mergePaneStatus(ctx: SessionPane, p: StatusPayload): void {
 // ---- 聚焦容器 chrome 同步（statusline / 状态栏 / 输入栏 / 会话条） ------------------
 
 /**
- * 输入栏模式真源（W514）：聚焦容器是否运行中 / 是否 worker 只读。
- * 发送按钮在运行中**不禁用**（走插话路径），只切文案与浅提示。
+ * 输入栏模式真源（W514）：聚焦容器是否运行中 / 是否 worker 会话（W866）。
+ * 发送按钮**任何模式都不禁用**（运行中走插话，worker 走收件箱投递），只切文案与浅提示。
  */
 function refreshInputMode(pane: SessionPane): void {
-  setInputMode(pane.kind === 'worker' ? 'readonly' : pane.streaming ? 'interject' : 'idle');
+  setInputMode(pane.kind === 'worker' ? 'worker' : pane.streaming ? 'interject' : 'idle');
 }
 
 function syncChrome(pane: SessionPane): void {
@@ -235,7 +237,7 @@ function onTool(ctx: SessionPane, p: ToolPayload): void {
 function onToolResult(ctx: SessionPane, p: ToolResultPayload): void {
   if (ctx.turn === null) ctx.turn = p.turn ?? null;
   if (p.turn !== undefined && ctx.turn !== null && p.turn !== ctx.turn) return;
-  applyToolResult(ctx, p);
+  applyToolResult(ctx, p); // W866：内部含 spawn_worker → 快捷条即时插入
   autoscroll(ctx);
 }
 
@@ -408,6 +410,8 @@ export function initChat(): void {
     syncChrome(pane);
     refreshAttachmentTray();
     refreshAttachmentEntry();
+    // W866：快捷条只属于「当前聚焦会话」——切会话只按已有列表重算归属（零请求）。
+    updateWorkerStrip(null, pane);
   });
 
   // 任一会话运行态变化 → 会话条 + 侧栏运行态点（订阅方各自局部更新）；
@@ -419,5 +423,7 @@ export function initChat(): void {
       refreshInputMode(pane);
       setBusy(pane.streaming);
     }
+    // W866：worker 的运行态点由 paneBusy 驱动 —— 变了就重画快捷条（局部）。
+    updateWorkerStrip(null, pane);
   });
 }

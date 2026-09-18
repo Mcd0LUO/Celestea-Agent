@@ -4,7 +4,9 @@
 //
 // W514 多会话 / 插话契约：
 //   - 运行中**不再禁用发送**：Enter/发送 = 注入运行中的轮次（不新开轮）；
-//   - readonly 模式（worker 会话视图）：发送禁用，仅查看；
+//   - worker 模式（W866）：worker 会话视图**可输入可发送** —— 用户的话走
+//     POST /api/turn {session:'worker:<sid>'} 投进该 worker 自己的收件箱
+//     （与模型 send_message 同一条投递），worker 正常继续；
 //   - 发送/取消/停止按钮的显隐真源仍是 setBusy（当前聚焦会话的运行态）。
 //
 // W515 提交两态（对齐 DSH Agent Inbox 的两条车道）：
@@ -39,7 +41,7 @@ export interface InputBarHandlers {
   cancel(): void;
 }
 
-export type InputMode = 'idle' | 'interject' | 'readonly';
+export type InputMode = 'idle' | 'interject' | 'worker';
 
 const MAX_HEIGHT = 240;
 const PLACEHOLDER_IDLE = '输入消息，Enter 发送，Shift+Enter 换行';
@@ -47,7 +49,8 @@ const PLACEHOLDER_IDLE = '输入消息，Enter 发送，Shift+Enter 换行';
 // 占位符只说明输入行为（车道），不再重复状态词。
 const PLACEHOLDER_STEER = 'Enter 插话（下一步送达）· Ctrl/Cmd+Enter 排队（下一回合送达）';
 const PLACEHOLDER_QUEUE = 'Enter 排队（本轮结束后送达）· Ctrl/Cmd+Enter 插话（下一步送达）';
-const PLACEHOLDER_READONLY = 'Worker 会话 · 只读查看';
+// W866：worker 会话不再是「只读视图」——占位符说明**会送到哪里**，不承诺运行态。
+const PLACEHOLDER_WORKER = '对 worker 说点什么（送入它的收件箱，它空闲时会开新一轮）';
 
 let bar: HTMLElement | null = null;
 let inputEl: HTMLTextAreaElement | null = null;
@@ -94,12 +97,14 @@ function renderSubmitUi(): void {
     inputEl.placeholder = submitMode === 'steer' ? PLACEHOLDER_STEER : PLACEHOLDER_QUEUE;
   }
   if (sendBtn) {
-    sendBtn.disabled = inputMode === 'readonly';
+    // W866：worker 视图也走同一条「发送」——按钮不再进入禁用态（禁用只属于
+    // 连协议都不支持的旧服务，那种情况由发送路径自己回滚并说明）。
+    sendBtn.disabled = false;
     sendBtn.textContent =
-      inputMode === 'readonly' ? '只读' : inputMode === 'interject' ? (submitMode === 'steer' ? '插话' : '排队') : '发送';
+      inputMode === 'worker' ? '发送' : inputMode === 'interject' ? (submitMode === 'steer' ? '插话' : '排队') : '发送';
     sendBtn.title =
-      inputMode === 'readonly'
-        ? 'Worker 会话为只读视图'
+      inputMode === 'worker'
+        ? '发送到该 worker 的收件箱（Enter）'
         : inputMode === 'interject'
           ? submitMode === 'steer'
             ? '插话（Enter）：注入运行中的轮次，下一步送达'
@@ -180,25 +185,27 @@ export function setBusy(busy: boolean): void {
   }
 }
 
-/** 输入栏模式（空闲 / 插话·排队 / 只读）——只切 class 与文案，不重建 DOM。 */
+/** 输入栏模式（空闲 / 插话·排队 / worker）——只切 class 与文案，不重建 DOM。 */
 export function setInputMode(mode: InputMode): void {
   inputMode = mode;
   const input = inputEl;
   if (bar) {
     bar.classList.toggle('interject', mode === 'interject');
-    bar.classList.toggle('readonly', mode === 'readonly');
+    bar.classList.toggle('worker', mode === 'worker');
+    // W866：#inputbar 上不再有 .readonly —— 任何会话（含 worker）都可输入。
+    bar.classList.remove('readonly');
   }
   if (modeBtn) modeBtn.classList.toggle('hidden', mode !== 'interject');
   if (input) {
     input.placeholder =
-      mode === 'readonly'
-        ? PLACEHOLDER_READONLY
+      mode === 'worker'
+        ? PLACEHOLDER_WORKER
         : mode === 'interject'
           ? submitMode === 'steer'
             ? PLACEHOLDER_STEER
             : PLACEHOLDER_QUEUE
           : PLACEHOLDER_IDLE;
-    input.readOnly = false; // 只读视图仍允许打字（草稿保留），发送被禁用
+    input.readOnly = false; // 三种模式都可打字（草稿保活）
   }
   renderSubmitUi();
 }

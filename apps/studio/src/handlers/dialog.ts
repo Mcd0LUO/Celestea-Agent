@@ -51,6 +51,65 @@ function registerEvents(app: Hono, deps: Deps, table: RouteTable): string {
   return events.id;
 }
 
+/** W866: the engine-memory worker session prefix (`worker:<sid>`). */
+const WORKER_SESSION_PREFIX = "worker:";
+
+/**
+ * W866: the inner session id of an engine-memory worker target, else null.
+ *
+ * A worker conversation lives in its owner session's `WorkerRegistry`, not on
+ * disk: `sessions.require("worker:…")` can only 404 it. Recognising the prefix
+ * HERE is what lets a USER message take the worker route instead of the
+ * filesystem-session route (parity with the DSH-side `worker:<sid>` ids the UI
+ * already lists and renders).
+ */
+function workerSidOf(asked: string | undefined): string | null {
+  if (typeof asked !== "string" || !asked.startsWith(WORKER_SESSION_PREFIX)) return null;
+  const sid = asked.slice(WORKER_SESSION_PREFIX.length);
+  return sid === "" ? null : sid;
+}
+
+/**
+ * W866: deliver one USER message to an engine-memory worker session.
+ *
+ * The delivery itself is the SAME `send_message` tool the model calls (the
+ * worker driver serialises mailbox arrivals into its own turns), so the user
+ * path and the model path cannot drift. Two deliberate refusals before that:
+ * images (the mailbox carries text only) and unknown/settled workers (a message
+ * queued for a worker nobody drives would report success and never be processed).
+ */
+async function workerTurn(
+  c: Parameters<typeof failJson>[0],
+  deps: Deps,
+  sid: string,
+  text: string,
+  rawAttachments: unknown,
+): Promise<Response> {
+  if (Array.isArray(rawAttachments) && rawAttachments.length > 0) {
+    return failJson(c, 400, "worker sessions accept text only");
+  }
+  if (text === "") return errorOnly(c, 400, "input must not be empty");
+  const id = WORKER_SESSION_PREFIX + sid;
+  const row = deps.runtime.workerSessions().find((w) => w.id === id);
+  if (row === undefined) return failJson(c, 404, `unknown session '${id}'`);
+  const out = await deps.runtime.workerSend({ target: sid, content: text });
+  if (out["ok"] !== true) {
+    return failJson(c, 404, String(out["error"] ?? `unknown session '${id}'`));
+  }
+  // `status`/`state` let the client say whether the worker is still RUNNING
+  // (idle/in-turn) or settled — the one fact the delivery envelope does not carry.
+  return c.json({
+    ok: true,
+    delivered: true,
+    injected: false,
+    pending: 0,
+    placement: "context",
+    worker: sid,
+    status: row.status ?? "",
+    state: row.state ?? "",
+  });
+}
+
 /** The turn target: an explicit `{session}`, else the active session. */
 function turnTarget(c: Parameters<typeof failJson>[0], deps: Deps, asked: string | undefined): StoreResult<string | null> {
   if (asked === undefined || asked === "") return { ok: true, value: activeSession(deps) };
@@ -120,6 +179,12 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
     }
     const mode: TurnDeliveryMode = requestedMode === "queue" ? "queue" : "steer";
     const text = (input.ok ? (input.value ?? "") : "").trim();
+    // W866: an engine-memory worker session (`worker:<sid>`) is NOT a filesystem
+    // session — `turnTarget` could only 404 it, and `startTurn`/`inject` would
+    // compose a ghost runtime for the id (the W833 bug). A user message to a
+    // worker takes the worker route before any of that.
+    const workerSid = workerSidOf(asked.ok ? asked.value : undefined);
+    if (workerSid !== null) return workerTurn(c, deps, workerSid, text, read.body["attachments"]);
     const target = turnTarget(c, deps, asked.ok ? asked.value : undefined);
     if (!target.ok) return storeFail(c, target);
     const session = target.value;
