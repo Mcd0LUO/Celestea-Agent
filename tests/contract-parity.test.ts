@@ -36,11 +36,12 @@ import { runProductionTurn } from "./lib/engine-corpus.js";
 const SCHEMA = loadSessionEventSchema();
 const CONTRACT = loadTools();
 /**
- * The 7 specs `assembleTools` mounts on its own (the worker trio comes from the
- * frozen contract, and W783's `ask_user_question` is mounted only when the host
- * supplies a user-question service — see `REGISTRY_TOOLS_WITH_QUESTIONS`).
+ * The 8 specs `assembleTools` mounts on its own (the worker trio comes from the
+ * frozen contract, W783's `ask_user_question` is mounted only when the host
+ * supplies a user-question service, W804's `read_image` only with an attachment
+ * store, and W884's `load_skill` is always mounted).
  */
-const REGISTRY_TOOLS = ["http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "write_file"];
+const REGISTRY_TOOLS = ["http_request", "list_dir", "load_skill", "process_control", "read_file", "run_code", "run_shell", "write_file"];
 const WORKER_TOOLS = ["send_message", "spawn_worker", "stop_worker", "worker_status"];
 /** W783: the same registry once the host mounts the user-question capability. */
 const QUESTION_TOOLS = ["ask_user_question"];
@@ -171,23 +172,23 @@ describe("W744 · session-event schema EXECUTED against the real event streams",
   });
 });
 
-describe("W744 · all 7 builtin tool specs match the implementation registry", () => {
+describe("W744 · all 8 builtin tool specs match the implementation registry", () => {
   const specs = assembleTools({ guard: null, env: {}, sandbox: stubSandbox() }).registry.schemas();
 
-  it("the registry of record holds exactly the 7 contract tools", () => {
+  it("the registry of record holds exactly the 8 contract tools", () => {
     expect(specs.map((s) => s.name)).toEqual(REGISTRY_TOOLS);
   });
 
-  it("compares name + description + parameters of 7/7 against contracts/tools.json", () => {
+  it("compares name + description + parameters of 8/8 against contracts/tools.json", () => {
     const findings = compareToolSpecs(CONTRACT, specs);
     expect(describeFindings(findings)).toBe("");
     expect(specs).toHaveLength(REGISTRY_TOOLS.length);
   });
 
   it("leaves no contract tool uncovered (worker trio + W783 question tool come from elsewhere)", () => {
-    // W783: 10 -> 11; W804: 11 -> 12; W7: 12 -> 13. ask_user_question, read_image
-    // and the W7 worker pair are each covered by their own check below.
-    expect(CONTRACT.tools).toHaveLength(13);
+    // W783: 10 -> 11; W804: 11 -> 12; W7: 12 -> 13; W884: 13 -> 14. ask_user_question,
+    // read_image and the W7 worker pair are each covered by their own check below.
+    expect(CONTRACT.tools).toHaveLength(14);
     expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS, READ_IMAGE_TOOL])).toEqual([]);
   });
 

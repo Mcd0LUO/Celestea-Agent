@@ -127,6 +127,10 @@ export function assembleTools(options: ToolsPluginOptions = {}): ToolAssembly {
       sandbox,
       processes,
       http: httpOptions(env, grants),
+      // W884: the skill layers hang off the SAME session scope the sandbox and
+      // the path guard use (W768) — never the process cwd.
+      workspace: scope?.workspace ?? null,
+      env,
       ...(options.questions === undefined ? {} : { questions: options.questions }),
       ...(options.attachments === undefined ? {} : { attachments: options.attachments }),
       ...(options.imageInputAllowed === undefined ? {} : { imageInputAllowed: options.imageInputAllowed }),

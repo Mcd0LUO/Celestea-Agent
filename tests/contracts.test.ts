@@ -132,10 +132,11 @@ describe("contracts/sse-events.json", () => {
 describe("contracts/tools.json", () => {
   const t = loadTools();
 
-  // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`); W7: 12 -> 13 (`send_message` rename + `stop_worker`).
-  it("holds the 13 engine tools with parameters", () => {
-    expect(t.count).toBe(13);
-    expect(t.tools).toHaveLength(13);
+  // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`); W7: 12 -> 13 (`send_message` rename + `stop_worker`);
+  // W884: 13 -> 14 (`load_skill`, skill body on demand).
+  it("holds the 14 engine tools with parameters", () => {
+    expect(t.count).toBe(14);
+    expect(t.tools).toHaveLength(14);
     for (const tool of t.tools) {
       expect(tool.name).toMatch(/^[a-z_]+$/);
       expect(tool.description.length).toBeGreaterThan(10);
@@ -146,7 +147,7 @@ describe("contracts/tools.json", () => {
 
   it("matches the live /api/tools name set", () => {
     expect(t.tools.map((x) => x.name).sort()).toEqual(
-      ["ask_user_question", "http_request", "list_dir", "process_control", "read_file", "read_image", "run_code", "run_shell", "send_message", "spawn_worker", "stop_worker", "worker_status", "write_file"],
+      ["ask_user_question", "http_request", "list_dir", "load_skill", "process_control", "read_file", "read_image", "run_code", "run_shell", "send_message", "spawn_worker", "stop_worker", "worker_status", "write_file"],
     );
   });
 });
@@ -340,9 +341,10 @@ describe("W729 session modes (P0 contract delta)", () => {
     expect(properties["mode"]?.enum).toEqual(["standard", "execution"]);
     // `additionalProperties: false` means an undeclared argument is a schema error.
     expect(spawn?.parameters["additionalProperties"]).toBe(false);
-    // W729 changed no tool count; W783 took it to 11; W804 added read_image (12); W7 renamed + added stop_worker (13).
-    expect(tools.count).toBe(13);
-    expect(tools.tools).toHaveLength(13);
+    // W729 changed no tool count; W783 took it to 11; W804 added read_image (12); W7 renamed + added stop_worker (13);
+    // W884 added load_skill (14).
+    expect(tools.count).toBe(14);
+    expect(tools.tools).toHaveLength(14);
   });
 
   it("freezes the session.json mode enum and the W779 title, unknown keys tolerated", () => {
@@ -398,7 +400,7 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     const tools = byId.get("get_tools");
     expect(tools?.request.kind).toBe("query");
     expect(tools?.request.fields.map((f) => f.name)).toEqual(["session"]);
-    expect(String(tools?.response.fields[0]?.note)).toContain("13 tools");
+    expect(String(tools?.response.fields[0]?.note)).toContain("14 tools");
   });
 
   it("documents the ?archived= query of GET /api/sessions without adding an endpoint", () => {

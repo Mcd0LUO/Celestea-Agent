@@ -272,7 +272,7 @@ apps/studio → runtime.compose(profile)
 |---|---|
 | 1. 实现 `Tool`（`spec()` + `execute()`；需要 call_id / 自定义 render 时覆写 `executeWith()`） | `packages/tools/src/<tool-name>.ts` |
 | 2. 注册进注册表 | `packages/tools/src/index.ts`（或 compose 期由 `runtime` 注册） |
-| 3. 补 spec 契约 | `contracts/tools.json` |
+| 3. 补 spec 契约 | `contracts/tools.json`；**并显式决定该名字是否进 `EXECUTION_TOOL_NAMES`**（保留名单，缺省折叠）——W884 的 `load_skill` 进了保留名单（纯读，且不在 `SDK_TOOLS` 里，折叠会让执行模式下技能不可达） |
 | 4. 测试 | `packages/tools/src/<tool-name>.test.ts`（spec 快照 + guard 矩阵 + 失败路径） |
 | 5. 需要新 guard 时 | 新增 `packages/tools/src/guard-<name>.ts` 并在 compose 处**显式决定链序** |
 | 6. 文档 | 本文 §2.1 若改了职责；根 `README.md` 的工具表 |

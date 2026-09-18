@@ -216,7 +216,7 @@
             "name": "tools",
             "type": "array<{name:string,description:string}>",
             "required": false,
-            "note": "schemas() of the queried session's generation; sorted by name; up to 13 tools in standard mode (read_image is mounted only when the session has an attachment store), the 7 execution-mode names in execution mode"
+            "note": "schemas() of the queried session's generation; sorted by name; up to 14 tools in standard mode (read_image is mounted only when the session has an attachment store), the 8 execution-mode names in execution mode"
           }
         ]
       },

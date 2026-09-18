@@ -46,7 +46,16 @@ export const TOOL_UNAVAILABLE_CODE = "tool_unavailable_in_mode";
  * The list is a KEEP list on purpose: a tool registered later (W783's
  * `ask_user_question`, a future orchestration tool) must be *decided* about
  * rather than silently inherited by both modes. Anything outside it is folded —
- * which is why the execution face is exactly these six names (M7).
+ * which is why the execution face is exactly these eight names (M7).
+ *
+ * W884 adds `load_skill` to the keep list. It is a PURE READ of the session's
+ * own skill layers (no writes, no process, no network), and — unlike the four
+ * SDK-covered tools — it is NOT reachable from a `run_code` program
+ * (`SDK_TOOLS` exposes only read_file / write_file / list_dir / run_shell).
+ * Folding it would therefore make skills UNREACHABLE in execution mode while the
+ * turn-start catalog still advertises them: a prompt that lies about what the
+ * model can do, which §6.5 of the disclosure design forbids. Keeping it costs
+ * one schema and preserves progressive disclosure in both modes.
  */
 export const EXECUTION_TOOL_NAMES: readonly string[] = [
   "run_code",
@@ -56,6 +65,7 @@ export const EXECUTION_TOOL_NAMES: readonly string[] = [
   "send_message",
   "stop_worker",
   "worker_status",
+  "load_skill",
 ];
 
 /**

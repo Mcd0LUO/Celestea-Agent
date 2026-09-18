@@ -27,6 +27,7 @@
  *   tools/read-file.ts   read_file                                              (builtin.rs)
  *   tools/write-file.ts  write_file                                             (builtin.rs)
  *   tools/list-dir.ts    list_dir                                               (builtin.rs)
+ *   tools/load-skill.ts  load_skill: one SKILL.md body on demand (W884)
  *   tools/run_shell      run_shell: orchestration over the Sandbox seam         (builtin.rs, sandbox.rs)
  *   tools/process-control.ts  process_control (poll / stdin / kill)             (process.rs)
  *   tools/http-request.ts     http_request (SSRF, timeout, truncation)          (http.rs)
@@ -108,6 +109,7 @@ export { RegistryHandle, runCodeSpec, runCodeTool, runCodeToolWithHandle, type R
 export { httpRequestSpec, httpRequestTool, type HttpRequestToolOptions } from "./tools/http-request.js";
 export { ASK_USER_DESCRIPTION, askUserSpec, askUserTool, type AskUserToolOptions } from "./tools/ask-user.js";
 export { READ_IMAGE_DESCRIPTION, readImageSpec, readImageTool, type ReadImageToolOptions } from "./tools/read-image.js";
+export { LOAD_SKILL_DESCRIPTION, LOAD_SKILL_ERROR_PREFIX, loadSkillSpec, loadSkillTool, type LoadSkillToolOptions } from "./tools/load-skill.js";
 export { builtinTools, type BuiltinToolsOptions } from "./builtin.js";
 
 // --- attachments (W804): the per-session content-addressed image store ---------

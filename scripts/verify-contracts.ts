@@ -48,12 +48,13 @@ function degraded(endpoint: string, kind: Check["kind"], detail: string, observe
  * Section 4 -- session-explicit tool faces (W803 probe follow-up).
  *
  * A bare GET /api/tools answers for the FOCUSED/active session, whose mode can
- * drift (an execution session folds the face to 6), while contracts/tools.json is
- * the full registry (11). So name the session explicitly, one probe per face:
- *   - mode=standard  -> MUST equal the full registry exactly (11 names);
- *   - mode=execution -> MUST be the documented fold: exactly 6, a subset of the
+ * drift (an execution session folds the face to 8), while contracts/tools.json is
+ * the full registry (14). So name the session explicitly, one probe per face:
+ *   - mode=standard  -> MUST equal the full registry exactly (14 names);
+ *   - mode=execution -> MUST be the documented fold: exactly 8, a subset of the
  *     registry, folding out every tool outside EXECUTION_TOOL_NAMES: the four
- *     SDK bridge tools + ask_user_question + (W804) read_image
+ *     SDK bridge tools + ask_user_question + (W804) read_image (W884 keeps
+ *     load_skill in the keep list).
  *     (contracts/endpoints.json#get_tools, W791 P1; W804 added read_image).
  */
 async function probeToolFaces(
@@ -109,12 +110,12 @@ async function probeToolFaces(
     const outside = r.names.filter((n) => !contractSet.has(n));
     const folded = contractNames.filter((n) => !r.names.includes(n));
     const problems: string[] = [];
-    if (r.names.length !== 6) problems.push("expected exactly 6 names, got " + r.names.length);
+    if (r.names.length !== 8) problems.push("expected exactly 8 names, got " + r.names.length);
     if (outside.length > 0) problems.push("name(s) outside the contract: [" + outside.join(",") + "]");
     if (!sameNames(folded, EXPECTED_FOLDED)) problems.push("folded-out=[" + folded.join(",") + "] expected=[" + EXPECTED_FOLDED.join(",") + "]");
     const base = "session=" + executionSession.id + " (mode=execution); live=[" + r.names.join(",") + "] folded-out=[" + folded.join(",") + "]";
     if (problems.length === 0) {
-      pass(EXECUTION_LABEL, "tool-set", base + "; exactly 6 kept: the full registry folded out the four SDK bridge tools + ask_user_question + read_image", r.status);
+      pass(EXECUTION_LABEL, "tool-set", base + "; exactly 8 kept: the full registry folded out the four SDK bridge tools + ask_user_question + read_image (load_skill stays: pure read, not in SDK_TOOLS)", r.status);
     } else {
       fail(EXECUTION_LABEL, "tool-set", base + "; " + problems.join("; "), r.status);
     }

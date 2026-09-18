@@ -225,6 +225,10 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
       sandbox,
       processes,
       http,
+      // W884: `load_skill` resolves its two source layers from the session's own
+      // workspace — the value the composer resolved via `sessionWorkspaceOf`.
+      workspace: scope?.workspace ?? null,
+      env,
       ...(questions === null ? {} : { questions }),
       ...(opts.attachments === undefined ? {} : { attachments: opts.attachments }),
       ...(opts.imageInputAllowed === undefined ? {} : { imageInputAllowed: opts.imageInputAllowed }),

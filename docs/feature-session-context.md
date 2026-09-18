@@ -38,6 +38,7 @@ HTTP handler → runtime.sessionContext(id) → Runtime.contextSnapshot()
   - `role` 逐字透传：engine 历史里被 trim 出来的标记消息可能是 `system`，
     其余为 `user|assistant|tool`（不做映射，不隐藏——视图必须诚实）。
 - `tools` 是 `registry.schemas()` 逐字透传（`name` / `description` / `parameters`），顺序即引擎顺序。
+- W884：技能目录是**写进会话日志的 durable user-role 行**（turn 起点注入，见 `packages/runtime/src/turn-runner.ts` 的 `turnContext`），因此它天然同时出现在 `deriveMessages()` 与 `GET /api/sessions/{id}/context` 快照里——快照不另拼一份。
 
 ## §3 用量口径（复用 statusline，不另起一套 —— W755 对齐 DSH 宿主）
 

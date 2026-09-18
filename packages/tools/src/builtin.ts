@@ -20,6 +20,7 @@ import { askUserTool } from "./tools/ask-user.js";
 import { httpRequestTool, type HttpRequestToolOptions } from "./tools/http-request.js";
 import { listDirTool } from "./tools/list-dir.js";
 import { processControlTool } from "./tools/process-control.js";
+import { loadSkillTool } from "./tools/load-skill.js";
 import { readImageTool } from "./tools/read-image.js";
 import { readFileTool } from "./tools/read-file.js";
 import type { AttachmentStore } from "./attachments/store.js";
@@ -50,6 +51,16 @@ export interface BuiltinToolsOptions {
   imageInputAllowed?: boolean;
   /** W804: the model id, for the read_image refusal text. */
   model?: string;
+  /**
+   * W884: the composing SESSION's workspace root for `load_skill` (W768's
+   * `sessionWorkspaceOf` — the single source of truth). `null`/absent = a
+   * generation with no workspace (the detached default); the tool is still
+   * REGISTERED so every face advertises the same names, and a call fails with a
+   * structured `no_workspace` error instead of guessing a path.
+   */
+  workspace?: string | null;
+  /** W884: environment the CELESTEA_HOME global skill layer resolves under. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** The six builtins, sharing one sandbox + one process registry. */
@@ -63,6 +74,12 @@ export function builtinTools(options: BuiltinToolsOptions = {}): Tool[] {
     runShellTool({ sandbox, processes }),
     processControlTool(processes),
     httpRequestTool(options.http ?? {}),
+    // W884: the 7th builtin — always mounted so the model face cannot drift
+    // between the detached default generation and a real session.
+    loadSkillTool({
+      workspace: options.workspace ?? null,
+      ...(options.env === undefined ? {} : { env: options.env }),
+    }),
   ];
   // W783: only when a human answerer actually exists in this host.
   if (options.questions !== undefined && options.questions !== null) tools.push(askUserTool({ questions: options.questions }));
