@@ -31,7 +31,16 @@ async function read(args: unknown): Promise<{ text: string; render: string | nul
   const path = stringArg(args, "path");
   const result = await readTextFile(path);
   if (!result.truncated) return { text: result.text, render: null };
-  return { text: result.text, render: truncationNote(`'${path}'`, MAX_READ_BYTES, result.totalBytes, "bytes") };
+  return {
+    text: result.text,
+    render: truncationNote(
+      `'${path}'`,
+      MAX_READ_BYTES,
+      result.totalBytes,
+      "bytes",
+      'read the rest with run_shell on the same path (head -c / tail -c / sed -n)',
+    ),
+  };
 }
 
 export function readFileTool(): Tool {

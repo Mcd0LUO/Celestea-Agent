@@ -83,9 +83,26 @@ export async function listDirNames(path: string): Promise<ListDirResult> {
   return { names: entries.slice(0, MAX_DIR_ENTRIES), truncated: entries.length > MAX_DIR_ENTRIES, total: entries.length };
 }
 
-/** `[truncated] showing first X of Y …` — the authored render note. */
-export function truncationNote(what: string, shown: number, total: number, unit: string): string {
-  return `[truncated] ${what}: showing first ${shown} of ${total} ${unit}`;
+/**
+ * The authored omission note (W855).
+ *
+ * Discipline: this note — and every `truncated` flag it accompanies — means THE
+ * BUDGET kept obtainable content out. An upstream that returned an incomplete
+ * body is a different fact and keeps its own domain field; it must never be
+ * described by this note.
+ *
+ * The omission is ALWAYS paired with a retrieval instruction (`retrieve`), so
+ * the model is never told "there was more" without being told how to get it.
+ */
+export function truncationNote(
+  what: string,
+  shown: number,
+  total: number,
+  unit: string,
+  retrieve: string,
+): string {
+  const base = "[truncated] " + what + ": showing first " + String(shown) + " of " + String(total) + " " + unit + " (budget)";
+  return retrieve === "" ? base : base + "; " + retrieve;
 }
 
 function ioFailure(tool: string, code: string, message: string): ToolFailure {

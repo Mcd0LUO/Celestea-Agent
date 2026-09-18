@@ -27,5 +27,6 @@ export * from "./cancel.js";
 export * from "./context-trim.js";
 export * from "./usage.js";
 export * from "./events.js";
+export * from "./retention.js";
 export * from "./plugin.js";
 export * from "./sse.js";

@@ -51,7 +51,9 @@ import {
   type ToolRegistry,
 } from "@celestea/core";
 import type { WorkerDrivers } from "@celestea/workers";
+import { RETENTION_SERVICE, type ToolResultRetention } from "@celestea/agent-loop";
 import { agentConfigFromProfile } from "./agent-config.js";
+import { createToolResultRetention, retentionSettingsFromEnv } from "./retention.js";
 import { ComposeError } from "./errors.js";
 import { loopEventToFrame, type FrameMapper } from "./frames.js";
 import type { Profile } from "./profile.js";
@@ -122,6 +124,12 @@ export interface ComposeConfig {
   shutdownHooks?: readonly ShutdownHook[];
   /** Injectable clock (status tracker rate window). */
   now?: () => number;
+  /**
+   * W855: tool-result retention policy. Absent = built from the environment
+   * and the session directory (`<dir>/spills/`), so the host gets the default
+   * without wiring anything; `null` explicitly disables it.
+   */
+  retention?: ToolResultRetention | null;
 }
 
 /** Compose one engine generation. Throws [ComposeError] on a missing seam. */
@@ -142,6 +150,13 @@ export function compose(config: ComposeConfig): Runtime {
   const mounted = mountWatchdogOf(ctx, config, workerHost);
   const session = requireSession(ctx);
   const sessionRef = { log: session };
+  // W855: session-scoped tool-result retention (the loop reads this per turn).
+  if (config.retention !== null) {
+    ctx.provide(
+      RETENTION_SERVICE,
+      config.retention ?? createToolResultRetention(retentionSettingsFromEnv(binding?.dir ?? null, config.env ?? process.env)),
+    );
+  }
   const llm = ctx.get<LlmRegistry>(LLM_REGISTRY_SERVICE) ?? null;
   const tools = ctx.get<ToolRegistry>(TOOL_REGISTRY_SERVICE) ?? null;
   const agentLoop = ctx.get<AgentLoop>(AGENT_LOOP_SERVICE) ?? null;

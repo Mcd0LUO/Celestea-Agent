@@ -56,6 +56,7 @@ export * from "./ledger-query.js";
 export * from "./status.js";
 export * from "./frames.js";
 export * from "./session-binding.js";
+export * from "./retention.js";
 export * from "./turn-runner.js";
 export * from "./inbox.js";
 export * from "./inbox-checkpoint.js";

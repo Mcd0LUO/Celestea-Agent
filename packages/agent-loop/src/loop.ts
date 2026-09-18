@@ -51,6 +51,13 @@ import { dispatchCall, resolveSeams, toToolInput, type Seams } from "./seams.js"
 import { absorbDone, emptyStreamOutcome, terminalFromStreamEvent, type GenerateResult, type StepResult, type StreamOutcome } from "./step.js";
 import { ThinkingBuffer } from "./thinking.js";
 import { UsageTracker } from "./usage.js";
+import {
+  RETENTION_SERVICE,
+  newStepRetention,
+  retainToolOutput,
+  type StepRetention,
+  type ToolResultRetention,
+} from "./retention.js";
 
 /** Optional collaborators of one loop instance (`with_bindings`). */
 export interface AgentLoopBindings {
@@ -73,6 +80,8 @@ export class DefaultAgentLoop implements AgentLoop {
   private readonly sink: EventSink | undefined;
   private readonly usage: UsageTracker | undefined;
   private readonly injections: InjectionSource | undefined;
+  /** W855: resolved from the Context once per turn (null = retention off). */
+  private retention: ToolResultRetention | null = null;
 
   constructor(config: AgentConfig, bindings: AgentLoopBindings = {}) {
     this.config = config;
@@ -113,6 +122,8 @@ export class DefaultAgentLoop implements AgentLoop {
   /** Same turn, handing the terminal state back to the caller (hosts / tests). */
   async runTurnOutcome(ctx: Context, userInput: string, attachments?: readonly ImageRef[]): Promise<TurnOutcome> {
     const seams = resolveSeams(ctx);
+    // W855: the host provides the session-scoped retention policy; absent = off.
+    this.retention = ctx.get<ToolResultRetention>(RETENTION_SERVICE) ?? null;
     // The LOG owns the monotonic turn id counter, so ids stay unique across
     // loop instances and process restarts.
     const turnId = seams.session.nextTurnId();
@@ -308,6 +319,8 @@ export class DefaultAgentLoop implements AgentLoop {
     }
     const answered = new Set<string>();
     const limit = Math.max(1, this.config.max_parallel_tool_calls);
+    // W855: ONE cumulative budget per step, debited in model order.
+    const step = newStepRetention();
     let cancelled = false;
     for (let start = 0; start < calls.length; start += limit) {
       const batch = calls.slice(start, start + limit);
@@ -318,7 +331,7 @@ export class DefaultAgentLoop implements AgentLoop {
         cancelled = true;
         break;
       }
-      for (const output of raced.value) this.recordToolResult(seams, output, answered);
+      for (const output of raced.value) await this.recordToolResult(seams, output, answered, step);
     }
     if (cancelled) this.synthesizeCancelledResults(seams, calls, answered);
     return cancelled;
@@ -329,10 +342,19 @@ export class DefaultAgentLoop implements AgentLoop {
     return Promise.all(batch.map((call) => dispatchCall(registry, toToolInput(call))));
   }
 
-  private recordToolResult(seams: Seams, output: ToolOutput, answered: Set<string>): void {
-    this.emit(toolResultEvent(output));
-    answered.add(output.call_id);
-    seams.session.append({ type: "tool_result", id: output.call_id, value: output.value, error: output.error });
+  private async recordToolResult(
+    seams: Seams,
+    output: ToolOutput,
+    answered: Set<string>,
+    step: StepRetention,
+  ): Promise<void> {
+    // W855: retention rewrites the MODEL-VISIBLE value (large results spill to
+    // a retrievable locator). A failed spill leaves the output untouched.
+    const recorded =
+      this.retention === null ? output : await retainToolOutput(output, this.retention, step);
+    this.emit(toolResultEvent(recorded));
+    answered.add(recorded.call_id);
+    seams.session.append({ type: "tool_result", id: recorded.call_id, value: recorded.value, error: recorded.error });
   }
 
   /**

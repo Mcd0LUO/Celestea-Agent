@@ -33,7 +33,13 @@ async function list(args: unknown): Promise<{ value: string[]; render: string | 
   if (!result.truncated) return { value: result.names, render: null };
   return {
     value: result.names,
-    render: truncationNote(`'${path}'`, MAX_DIR_ENTRIES, result.total, "entries"),
+    render: truncationNote(
+      `'${path}'`,
+      MAX_DIR_ENTRIES,
+      result.total,
+      "entries",
+      "list more with run_shell on the same path (ls | sed -n 'N,Mp', or find)",
+    ),
   };
 }
 

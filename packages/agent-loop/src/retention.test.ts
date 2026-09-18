@@ -1,0 +1,225 @@
+/**
+ * W855: tool-result retention — the budget is measured per result AND per step,
+ * the omitted count is exact, the cut never breaks UTF-8, and a failed spill is
+ * best-effort (the tool call stays successful with its full result inline).
+ */
+
+import { describe, expect, it } from "vitest";
+import { assistantText, toolResultText, type ToolInput, type ToolOutput, type ToolRegistry } from "@celestea/core";
+import {
+  FakeToolRegistry,
+  eventsOfType,
+  harness,
+  ScriptedLlm,
+  toolCallMessage,
+} from "./fakes.test-util.js";
+import {
+  RETENTION_SERVICE,
+  cutPrefixCodePoints,
+  cutSuffixCodePoints,
+  formatRetentionNotice,
+  newStepRetention,
+  retainToolOutput,
+  retentionText,
+  type SpillRef,
+  type ToolResultRetention,
+} from "./retention.js";
+
+function ref(locator = "/tmp/spill-1.txt"): SpillRef {
+  return { locator, bytes: 10, retrievalHint: 'read_file path="' + locator + '"' };
+}
+
+function policy(
+  spill?: ToolResultRetention["spill"],
+  overrides: Partial<ToolResultRetention> = {},
+): ToolResultRetention {
+  return {
+    singleResultBytes: 100,
+    stepResultBytes: 1000,
+    previewHeadBytes: 20,
+    previewTailBytes: 10,
+    spill: spill ?? (async () => ref()),
+    ...overrides,
+  };
+}
+
+function output(value: unknown, callId = "c1"): ToolOutput {
+  return { call_id: callId, value, render: null, error: null, decision: null };
+}
+
+describe("W855 retention primitives", () => {
+  it("cuts on code-point boundaries and reports the exact omitted byte count", () => {
+    const text = "é".repeat(10); // 2 bytes each
+    expect(cutPrefixCodePoints(text, 5)).toBe("éé");
+    expect(Buffer.byteLength(cutPrefixCodePoints(text, 5), "utf8")).toBe(4);
+    expect(cutSuffixCodePoints(text, 5)).toBe("éé");
+    expect(Buffer.byteLength(cutSuffixCodePoints(text, 5), "utf8")).toBe(4);
+    // never a broken lone surrogate / half code point
+    expect(cutPrefixCodePoints("𐍈x", 3)).toBe("");
+    expect(cutSuffixCodePoints("x𐍈", 3)).toBe("");
+  });
+
+  it("retentionText keeps a string value raw and JSON-encodes records", () => {
+    expect(retentionText(output("hello"))).toBe("hello");
+    expect(retentionText(output({ a: 1 }))).toBe('{"a":1}');
+    expect(
+      retentionText({ call_id: "c", value: "x", render: null, error: "boom", decision: null }),
+    ).toBe("Error: boom");
+  });
+
+  it("formatRetentionNotice names the exact budget omission and the retrieval hint", () => {
+    const notice = formatRetentionNotice(ref("/s/spills/c1-1.txt"), 1234, 9999);
+    expect(notice).toContain("[omitted] 1234 of 9999 bytes");
+    expect(notice).toContain("budget");
+    expect(notice).toContain("/s/spills/c1-1.txt");
+    expect(notice).toContain('read_file path="/s/spills/c1-1.txt"');
+  });
+});
+
+describe("W855 retainToolOutput", () => {
+  it("keeps a small result inline and debits the step budget", async () => {
+    const step = newStepRetention();
+    const small = output("hello");
+    const out = await retainToolOutput(small, policy(), step);
+    expect(out).toBe(small);
+    expect(step.consumedBytes).toBe(5);
+  });
+
+  it("spills an over-threshold result; the model-visible value loses the full text", async () => {
+    const big = "SECRET".repeat(40); // 240 bytes > 100
+    const seen: string[] = [];
+    const p = policy(async (text) => {
+      seen.push(text);
+      return ref();
+    });
+    const out = await retainToolOutput(output(big), p, newStepRetention());
+    expect(seen).toEqual([big]);
+    const value = String(out.value);
+    expect(value).not.toContain(big);
+    expect(value).toContain("/tmp/spill-1.txt");
+    expect(value).toContain("read_file path=");
+    expect(value).toContain("[omitted]");
+    expect(out.render).toBe(value);
+  });
+
+  it("retains when the STEP cumulative budget is exceeded, even under the single threshold", async () => {
+    const p = policy(undefined, { singleResultBytes: 1000, stepResultBytes: 150 });
+    const step = newStepRetention();
+    const first = await retainToolOutput(output("a".repeat(100), "c1"), p, step);
+    expect(first.value).toBe("a".repeat(100));
+    const second = await retainToolOutput(output("b".repeat(100), "c2"), p, step);
+    expect(String(second.value)).toContain("[omitted]");
+    expect(String(second.value)).toContain("/tmp/spill-1.txt");
+  });
+
+  it("keeps the ORIGINAL inline when the spill returns null; the call stays successful", async () => {
+    const big = "x".repeat(500);
+    const original = output(big);
+    const out = await retainToolOutput(original, policy(async () => null), newStepRetention());
+    expect(out).toBe(original);
+    expect(out.error).toBeNull();
+    expect(out.value).toBe(big);
+  });
+
+  it("keeps the ORIGINAL inline when the spill throws", async () => {
+    const big = "x".repeat(500);
+    const out = await retainToolOutput(
+      output(big),
+      policy(async () => {
+        throw new Error("disk full");
+      }),
+      newStepRetention(),
+    );
+    expect(out.value).toBe(big);
+    expect(out.error).toBeNull();
+  });
+
+  it("NEVER changes an object result's shape, even over the threshold", async () => {
+    const big = { stdout: "x".repeat(500), stderr: "", exit_code: 0 };
+    const spilled: string[] = [];
+    const p = policy(async (text) => {
+      spilled.push(text);
+      return ref();
+    });
+    const step = newStepRetention();
+    const original = output(big);
+    const out = await retainToolOutput(original, p, step);
+    expect(out).toBe(original);
+    expect(out.value).toBe(big);
+    expect(typeof out.value).toBe("object");
+    expect(spilled).toHaveLength(0);
+    // Non-string results still count toward the step budget.
+    expect(step.consumedBytes).toBeGreaterThan(500);
+  });
+
+  it("NEVER rewrites an error result", async () => {
+    const failed: ToolOutput = {
+      call_id: "c1",
+      value: null,
+      render: null,
+      error: "E".repeat(500),
+      decision: null,
+    };
+    const out = await retainToolOutput(failed, policy(), newStepRetention());
+    expect(out).toBe(failed);
+    expect(out.error).toBe("E".repeat(500));
+  });
+});
+
+/** A registry whose per-call value is set by the test. */
+class ValuesRegistry extends FakeToolRegistry {
+  readonly values = new Map<string, unknown>();
+  override async dispatch(input: ToolInput): Promise<ToolOutput> {
+    return {
+      call_id: input.call_id,
+      value: this.values.get(input.call_id) ?? { ok: true },
+      render: null,
+      error: null,
+      decision: { kind: "allow" },
+    };
+  }
+}
+
+describe("W855 loop integration", () => {
+  function turn(registry: ToolRegistry) {
+    return harness({
+      llm: new ScriptedLlm([
+        [{ kind: "done", message: toolCallMessage(["c1", "c2"]) }],
+        [{ kind: "done", message: assistantText("done") }],
+      ]),
+      registry: registry as FakeToolRegistry,
+    });
+  }
+
+  it("rewrites the logged tool_result value and the model request sees the bounded form", async () => {
+    const full = "TOPSECRET".repeat(200); // 1800 bytes
+    const registry = new ValuesRegistry();
+    registry.values.set("c1", full);
+    registry.values.set("c2", "ok");
+    const h = turn(registry);
+    h.ctx.provide(RETENTION_SERVICE, policy());
+    const outcome = await h.run("go");
+    expect(outcome).toBe("completed");
+    const rows = eventsOfType(h.session, "tool_result");
+    const value = String(rows[0]?.value ?? "");
+    expect(value).toContain("/tmp/spill-1.txt");
+    expect(value).toContain("[omitted]");
+    // The bounded form is strictly smaller and is not the full text any more.
+    expect(value).not.toBe(full);
+    expect(Buffer.byteLength(value, "utf8")).toBeLessThan(Buffer.byteLength(full, "utf8"));
+    // The text the model would receive is the bounded form, never the full text.
+    const modelText = toolResultText(rows[0]?.error ?? null, rows[0]?.value);
+    expect(modelText).not.toContain(full);
+    expect(modelText).toContain("/tmp/spill-1.txt");
+  });
+
+  it("without a retention policy the full text stays inline (the contrast that gives the case teeth)", async () => {
+    const registry = new ValuesRegistry();
+    registry.values.set("c1", "TOPSECRET".repeat(200));
+    registry.values.set("c2", "ok");
+    const h = turn(registry);
+    await h.run("go");
+    const rows = eventsOfType(h.session, "tool_result");
+    expect(JSON.stringify(rows[0]?.value)).toContain("TOPSECRET");
+  });
+});
