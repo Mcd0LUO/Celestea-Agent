@@ -10,8 +10,9 @@
 //   一个提供者（id 'rail-preview'，priority 10），延迟/宿主/撤卡统一归引擎；
 //   轨道条带是 pointer-events:none（交互走 #main 级命中判定），所以用 hoverHint()
 //   直驱悬停意图。本模块只负责「取内容 + 落位」，与原生 title 那套并存的历史取消。
-// ★ W872：轨道上新增**中间判定**（视口垂直中央落在哪一根长条上）—— 发丝指示线
-//   .railv3-mid + 命中条 .is-center 态（只变色）。纯函数 ./rail-center.ts，这里只接线。
+// ★ W872/W886：轨道的**中间判定**（视口垂直中央落在哪一根长条上）—— 命中条
+//   .is-center 态（只变色）+ 该条自身的悬停文案；W886 按用户要求删掉那条视口中间
+//   发丝指示线（判定本身保留）。纯函数 ./rail-center.ts，这里只接线。
 // ★ W514 多会话：长条按「会话视图容器」分别保存（WeakMap<SessionPane, RailState>）。
 //   切换会话只做一次指针交换 + 元素搬家（appendChild 移动节点，不重建）：
 //   各会话的长条集合/折叠条随容器一起保存，切回立即可见，零重排重建。
@@ -33,8 +34,6 @@ import { buildRailCard } from './rail-card';
 import { docCenterY, viewWindow } from './rail-doc';
 // W867：命中半径（hover 命中与点击命中共用同一口径；测试直接断言这个纯函数）。
 export { railHitRadius };
-// W872：中间判定（视口中间指示）的参考线选择器（测试直接断言真实产物）。
-export const RAIL_MID_SEL = '.railv3-mid';
 /** W790：rail 预览卡在提示注册缝里的提供者身份（priority 10 = 压过内置纯文本卡）。 */
 export const RAIL_HINT_ID = 'rail-preview';
 const MAX_ROWS = 20;
@@ -48,6 +47,8 @@ interface RailItem {
   y: number;
   visible: boolean;
   fold: number;
+  /** W886：本条常驻的提示文案（切走「居中」态时复位用）。 */
+  hint: string;
 }
 
 /** 单个会话容器的长条集合（会话切换时整组保活）。 */
@@ -71,8 +72,7 @@ let hoverItem: RailItem | null = null;
 let syncQueued = false;
 let midQueued = false;
 let moveQueued = false;
-/** W872：中间指示线（整轨唯一）+ 上一帧命中的条（换条时才动类与文案）。 */
-let midEl: HTMLElement | null = null;
+/** W872：上一帧命中的条（换条时才动类与文案）。 */
 let centerItem: RailItem | null = null;
 let moveX = -1;
 let moveY = -1;
@@ -112,35 +112,25 @@ function ensureTrack(): boolean {
     track = document.createElement('div');
     track.className = 'railv3';
     mainEl.appendChild(track);
-    midEl = null; // W872：轨道重建 → 指示线随新轨道一起造（旧节点已随 DOM 丢失）
   }
   return true;
 }
 
-function ensureMid(): void {
-  // W872：有且只有一条 —— 会话切换会整批搬轨道子节点，别会话的指示线可能被一起搬进来。
-  if (track) for (const n of Array.from(track.children)) if (n !== midEl && n.classList.contains('railv3-mid')) n.remove();
-  if (midEl && midEl.isConnected) return;
-  midEl = document.createElement('div');
-  midEl.className = 'railv3-mid';
-  setHint(midEl, '视口中间');
-  (track ?? mainEl)!.appendChild(midEl);
-}
-
 function syncCenter(shown: RailItem[]): void {
-  // shown 按时间自上而下 ⇒ 指示线的两端就是首/末可见条（rail-center 的端点兜底口径）
-  if (!midEl || !msgsEl || railW <= 0) return; // 轨道被藏起（留白不足）时不判
-  const hit = railCenterHit(shown.map((it) => ({ it, y: it.y, yDoc: docCenterY(msgsEl!, it.startCol) })), msgsEl.scrollTop + railH / 2);
+  // shown 按时间自上而下；端点之外（视口中央在首/末条之外）返回 item = null ⇒ 没有条高亮。
+  if (!msgsEl || railW <= 0) return; // 轨道被藏起（留白不足）时不判
+  const hit = railCenterHit(shown.map((it) => ({ it, yDoc: docCenterY(msgsEl!, it.startCol) })), msgsEl.scrollTop + railH / 2);
   const item = hit?.item?.it ?? null;
-  // 位置 / 端点态 / 显隐：每帧一次单值写入（不写几何、不重建 DOM）
-  midEl.style.transform = 'translateY(' + (hit ? hit.y.toFixed(1) : '0') + 'px)';
-  midEl.classList.toggle('is-out', hit?.clamped === true); // 端点兜底：线停在首/末条心
-  midEl.style.visibility = shown.length > 0 ? '' : 'hidden';
-  // 「居中」态 + 悬停文案：只在命中的那一根变化时动 DOM
+  // 「居中」态 + 悬停文案：只在命中的那一根变化时动 DOM（几何一字不写）
   if (item !== centerItem) {
-    if (centerItem) centerItem.el.classList.remove('is-center');
-    if (item) item.el.classList.add('is-center');
-    if (hit) setHint(midEl, railCenterLabel(hit, item?.fold ?? 0));
+    if (centerItem) {
+      centerItem.el.classList.remove('is-center');
+      setHint(centerItem.el, centerItem.hint); // 复位为常驻文案
+    }
+    if (item && hit) {
+      item.el.classList.add('is-center');
+      setHint(item.el, railCenterLabel(hit, item.fold));
+    }
   }
   centerItem = item;
 }
@@ -166,11 +156,9 @@ function layout(): void {
   if (lane.hidden) {
     track.style.display = 'none';
     railW = 0;
-    if (midEl) midEl.style.visibility = 'hidden'; // W872：整轨隐藏时指示线一并收
     return;
   }
   track.style.display = '';
-  ensureMid(); // W872：railReset 清空过轨道内容 → 指示线在这里重建（幂等，零开销）
   const thin = lane.thin;
   railX = lane.left;
   railW = lane.width;
@@ -178,7 +166,6 @@ function layout(): void {
   track.style.left = railX + 'px';
   track.style.top = railTop + 'px';
   track.style.height = railH + 'px';
-  track.style.setProperty('--mid-w', railW + 'px'); // W872：指示线长度 = 本档位最长条（不写死 px）
 
   const usable = Math.max(0, railH - 2 * RAIL_PAD_Y);
   if (st.items.length === 0) {
@@ -186,7 +173,7 @@ function layout(): void {
       st.foldItem.el.remove();
       st.foldItem = null;
     }
-    syncCenter([]); // W872：没有条可判 → 指示线隐藏（位置不动，不重建节点）
+    syncCenter([]); // W872：没有条可判 → 清掉「居中」态
     return;
   }
   const foldN = st.items.length > MAX_ROWS ? st.items.length - MAX_ROWS : 0;
@@ -203,12 +190,12 @@ function layout(): void {
         y: 0,
         visible: false,
         fold: foldN,
+        hint: '',
       };
       fresh.el.className = 'railv3-item railv3-fold';
       fresh.el.textContent = '⋯';
       track.appendChild(fresh.el);
       itemByEl.set(fresh.el, fresh);
-      setHint(fresh.el, '更早的 ' + foldN + ' 轮已折叠');
       st.foldItem = fresh;
       if (stale && stale.parentNode) stale.remove();
     } else {
@@ -216,7 +203,8 @@ function layout(): void {
     }
     if (st.foldItem) {
       st.foldItem.fold = foldN;
-      setHint(st.foldItem.el, '更早的 ' + st.foldItem.fold + ' 轮已折叠');
+      st.foldItem.hint = '更早的 ' + foldN + ' 轮已折叠';
+      setHint(st.foldItem.el, st.foldItem.hint);
     }
   } else if (st.foldItem) {
     st.foldItem.el.remove();
@@ -249,7 +237,7 @@ function layout(): void {
     it.el.style.top = it.y - barH / 2 + 'px';
     it.el.style.setProperty('--barh', barH + 'px');
   }
-  syncCenter(shown); // W872：同帧写中间指示（transform + 一个类，不重建 DOM）
+  syncCenter(shown); // W872：同帧刷新「居中」态（一个类 + 文案，不重建 DOM）
 }
 
 // ---- 预览卡片 = 提示注册缝的一个提供者（W790；W872 只把「取内容」搬到 ./rail-card.ts） ----
@@ -366,15 +354,15 @@ function onClick(e: MouseEvent): void {
 }
 
 function onScroll(): void {
-  // W872：条带全显示时也要重对指示线，但不做全量重排（只走一次 rAF + 单值写入）。
+  // W872：条带全显示时也要重判「视口中央命中哪一轮」，但不做全量重排（只走一次 rAF）。
   if (modeAll) {
     queueMid();
     return;
   }
-  queueSync(); // 超长会话：滚动刷新「跟随可见区域」子集（指示线随 layout 一起对）
+  queueSync(); // 超长会话：滚动刷新「跟随可见区域」子集（判定随 layout 一起更新）
 }
 
-/** W872：只刷新中间指示线（条带几何不变时用），与 queueSync 同一套 rAF 节流口径。 */
+/** W872：只刷新中间判定（条带几何不变时用），与 queueSync 同一套 rAF 节流口径。 */
 function queueMid(): void {
   if (midQueued) return;
   midQueued = true;
@@ -410,7 +398,8 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
     const bar = document.createElement('div');
     bar.className = 'railv3-item' + (role === 'assistant' ? ' is-reply' : '');
     target.appendChild(bar);
-    setHint(bar, '第 ' + (st.items.length + 1) + ' 轮 · 悬停看预览，点击定位');
+    const hint = '第 ' + (st.items.length + 1) + ' 轮 · 悬停看预览，点击定位';
+    setHint(bar, hint);
     st.items.push({
       startCol: col,
       cols: [col],
@@ -419,6 +408,7 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
       y: 0,
       visible: false,
       fold: 0,
+      hint,
     });
     itemByEl.set(bar, st.items[st.items.length - 1]!);
   } else {
@@ -441,10 +431,7 @@ export function railReset(ctx: SessionPane): void {
     clearHover();
     hoverItem = null;
     centerItem = null; // W872：命中条即将被清空，判定随之复位
-    if (track) {
-      track.textContent = '';
-      midEl = null; // W872：指示线随 textContent 一起消失，下次 layout 重建
-    }
+    if (track) track.textContent = '';
   }
 }
 
@@ -464,13 +451,10 @@ export function railActivate(ctx: SessionPane): void {
   }
   if (cur && track) {
     const prev = stateOf(cur);
-    // W872 修复（真机/夹具实测：切换会话后轨道里会攒出两条 .railv3-mid）：指示线是
-    // **整轨唯一**的装饰节点，不属于任何会话的条目集合 —— 它必须在这里被摘掉并复位，
-    // 否则会被下面的「整轨搬家」当成旧会话的子节点搬进 holder，而 ensureMid 只按
-    // `isConnected` 判存在（holder 是游离节点）→ 下一次 layout 又造一条，越切越多。
-    midEl?.remove();
-    midEl = null;
-    centerItem = null; // 旧会话的「居中」条即将随搬家离开轨道，判定结果一并复位
+    // W872/W886：旧会话的「居中」条即将随整批搬家离开轨道。先把它的高亮摘掉再复位
+    // 引用，否则切回该会话时新命中的条会与它同时带着 .is-center（同一轨两条高亮）。
+    if (centerItem) centerItem.el.classList.remove('is-center');
+    centerItem = null;
     while (track.firstChild) prev.holder.appendChild(track.firstChild);
   }
   clearHover();
