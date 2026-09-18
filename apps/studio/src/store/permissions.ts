@@ -135,15 +135,6 @@ function sanitizePreset(preset: PermissionPreset): PermissionPreset {
   };
 }
 
-export type PresetValidation = { ok: true; preset: PermissionPreset } | { ok: false; error: string };
-
-export function validatePresetInput(raw: unknown, existingIds: readonly string[]): PresetValidation {
-  const parsed = parsePreset(raw);
-  if (parsed === null) return { ok: false, error: "preset must be an object with a valid id ([a-z][a-z0-9_-]{0,63})" };
-  if (isBuiltinPresetId(parsed.id)) return { ok: false, error: "id '" + parsed.id + "' is a built-in preset" };
-  if (existingIds.includes(parsed.id)) return { ok: false, error: "preset '" + parsed.id + "' already exists" };
-  return { ok: true, preset: parsed };
-}
 
 export interface SessionPermissionRead {
   exists: boolean;

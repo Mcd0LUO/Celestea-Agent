@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { effectiveGrantsOf } from "./runtime/engine-grants.js";
+import { effectivePermissionOf } from "./runtime/engine-permissions.js";
 import type { GrantRecord } from "./store/grants.js";
 
 const roots: string[] = [];
@@ -72,5 +73,20 @@ describe("W9 permission baseline", () => {
     const result = effectiveGrantsOf(dir, env, NOW);
     expect(result.grants.writeRoots).toEqual([]);
     expect(result.warnings.join(" | ")).toContain("read-only");
+  });
+
+  it("clamps a custom preset's extra writeRoots by CELESTEA_PERMISSION_MAX", () => {
+    const dataDir = tempDir("data");
+    const dir = sessionDir("clamp");
+    const out = join(dataDir, "out");
+    mkdirSync(out, { recursive: true });
+    const wide = { id: "wide", label: "wide", network: false, workspaceWritable: true, toolRootsWritable: false, writeRoots: [out], unsandboxed: false, toolDeny: [] };
+    writeFileSync(join(dataDir, "permissions.json"), JSON.stringify({ version: 1, updated_at: 0, presets: [wide] }));
+    writeFileSync(join(dir, "permission.json"), JSON.stringify({ version: 1, session: "ws/s1", preset: "wide", updated_at: 0 }));
+    const clamp = envOf(dataDir, { CELESTEA_PERMISSION_MAX: "write-read" });
+    expect(effectivePermissionOf(dir, clamp).writeRoots).toEqual([]);
+    expect(effectiveGrantsOf(dir, clamp, NOW).grants.writeRoots).toEqual([]);
+    const open = envOf(dataDir, { CELESTEA_PERMISSION_MAX: "wide" });
+    expect(effectivePermissionOf(dir, open).writeRoots).toEqual([out]);
   });
 });

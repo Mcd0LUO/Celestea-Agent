@@ -252,10 +252,15 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
   // Present, it withholds part of the disclosable universe and reveals it one
   // turn at a time, appended at the tail (see `disclosure.ts`).
   const mode = opts.mode ?? DEFAULT_SESSION_MODE;
-  // W9: the permission baseline removes its denied tools FIRST; the mode fold
-  // and the dynamic-disclosure layer then act on what is left.
-  const universe = assembly.registry.schemas().map((spec) => spec.name).filter((name) => !grants.toolDeny.includes(name));
-  const blocked = mode === "execution" ? universe.filter((name) => !EXECUTION_TOOL_NAMES.includes(name)) : [];
+  // W9: the permission baseline's denied tools join the BLOCKED set (never
+  // disclosed), so the mode fold and the dynamic-disclosure layer both keep
+  // them out — the universe still lists them, which is what makes `hidden()`
+  // and therefore `exposedRegistry` drop them from the face.
+  const universe = assembly.registry.schemas().map((spec) => spec.name);
+  const blocked = [
+    ...(mode === "execution" ? universe.filter((name) => !EXECUTION_TOOL_NAMES.includes(name)) : []),
+    ...grants.toolDeny,
+  ];
   const disclosure = new DisclosurePolicy({ universe, initial: opts.disclosure?.initial ?? universe, blocked });
   const wrapped = mode === "execution" || opts.disclosure !== undefined || grants.toolDeny.length > 0;
   const exposed: ToolRegistry = wrapped ? exposedRegistry(assembly.registry, disclosureExposure(disclosure)) : assembly.registry;

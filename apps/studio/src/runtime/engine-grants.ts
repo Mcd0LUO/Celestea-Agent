@@ -37,6 +37,7 @@ import { sessionIdOfDir } from "@celestea/runtime";
 export { sessionIdOfDir };
 import type { GrantsAuditEventName } from "../store/grants-audit.js";
 import { loadStudioConfig } from "../config.js";
+import { isBuiltinPresetId, parsePreset, type PermissionPreset } from "../store/permissions.js";
 import { effectivePermissionOf, type PermissionBaseline } from "./engine-permissions.js";
 import {
   ENV_GRANTS_UNSANDBOXED,
@@ -339,6 +340,34 @@ export interface EngineGrantEvent {
 export type EngineGrantAudit = (event: EngineGrantEvent) => void;
 
 /** Cap names currently in force (never paths) — `GET /api/status` (§5.7). */
+/**
+ * W9: validate a CUSTOM permission preset, reusing the grants root rules
+ * (`rejectRoot`) so a preset can never declare a root an equivalent
+ * `write_roots` grant would have been refused (data dir, $HOME, `/`,
+ * non-absolute, non-existent, credential-shaped, read-root overlap).
+ * Returns `conflict: true` for a built-in or already-taken id.
+ */
+export function validatePermissionPreset(
+  raw: unknown,
+  env: NodeJS.ProcessEnv,
+  existingIds: readonly string[],
+): { ok: true; preset: PermissionPreset } | { ok: false; error: string; conflict?: boolean } {
+  const parsed = parsePreset(raw);
+  if (parsed === null) return { ok: false, error: "preset must be an object with a valid id ([a-z][a-z0-9_-]{0,63})" };
+  if (isBuiltinPresetId(parsed.id) || existingIds.includes(parsed.id)) {
+    return { ok: false, error: "preset '" + parsed.id + "' already exists", conflict: true };
+  }
+  const ctx: Ctx = { env, known: knownSecretsOf(env), readRoots: envReadRoots(env) };
+  const roots: string[] = [];
+  for (const entry of parsed.writeRoots) {
+    const rejected = rejectRoot(entry, ctx, { cap: "write_roots" } as GrantRecord);
+    if (rejected !== null) return { ok: false, error: "write root '" + entry + "': " + rejected };
+    const resolved = canonicalPath(entry);
+    if (resolved !== null && !roots.includes(resolved)) roots.push(resolved);
+  }
+  return { ok: true, preset: { ...parsed, writeRoots: roots } };
+}
+
 export function grantsActiveCaps(grants: EffectiveGrants): string[] {
   const caps: GrantCap[] = [];
   if (grants.network) caps.push("network");

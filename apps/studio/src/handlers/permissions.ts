@@ -7,11 +7,11 @@
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
 import { effectivePermissionOf, permissionDataDir } from "../runtime/engine-permissions.js";
+import { validatePermissionPreset } from "../runtime/engine-grants.js";
 import {
   BUILTIN_PRESETS,
   isBuiltinPresetId,
   maxPermissionId,
-  parsePreset,
   readPermissionsFile,
   readSessionPermission,
   writePermissionsFile,
@@ -57,17 +57,14 @@ function registerCreatePreset(app: Hono, deps: Deps, table: RouteTable): string 
     if (!body.ok) return body.response;
     const dataDir = permissionDataDir(deps.grants.env);
     const read = readPermissionsFile(dataDir);
-    const parsed = parsePreset(body.body["preset"]);
-    if (parsed === null) return failJson(c, 422, "invalid preset: expected an object with a valid id");
-    if (isBuiltinPresetId(parsed.id) || read.presets.some((p) => p.id === parsed.id)) {
-      return failJson(c, 409, "preset '" + parsed.id + "' already exists");
-    }
+    const validated = validatePermissionPreset(body.body["preset"], deps.grants.env, read.presets.map((p) => p.id));
+    if (!validated.ok) return failJson(c, validated.conflict === true ? 409 : 422, validated.error);
     try {
-      writePermissionsFile(dataDir, [...read.presets, parsed], nowSec(deps.grants));
+      writePermissionsFile(dataDir, [...read.presets, validated.preset], nowSec(deps.grants));
     } catch (e) {
       return failJson(c, 500, "cannot persist permissions: " + errText(e));
     }
-    return c.json({ ok: true, preset: presetBody(parsed) });
+    return c.json({ ok: true, preset: presetBody(validated.preset) });
   });
   return route.id;
 }
@@ -82,16 +79,16 @@ function registerUpdatePreset(app: Hono, deps: Deps, table: RouteTable): string 
     const dataDir = permissionDataDir(deps.grants.env);
     const read = readPermissionsFile(dataDir);
     if (!read.presets.some((p) => p.id === id)) return failJson(c, 404, "no custom preset '" + id + "'");
-    const parsed = parsePreset(body.body["preset"]);
-    if (parsed === null) return failJson(c, 422, "invalid preset: expected an object with a valid id");
-    if (parsed.id !== id) return failJson(c, 422, "preset id must not change (" + id + ")");
-    const next = read.presets.map((p) => (p.id === id ? parsed : p));
+    const validated = validatePermissionPreset(body.body["preset"], deps.grants.env, []);
+    if (!validated.ok) return failJson(c, 422, validated.error);
+    if (validated.preset.id !== id) return failJson(c, 422, "preset id must not change (" + id + ")");
+    const next = read.presets.map((p) => (p.id === id ? validated.preset : p));
     try {
       writePermissionsFile(dataDir, next, nowSec(deps.grants));
     } catch (e) {
       return failJson(c, 500, "cannot persist permissions: " + errText(e));
     }
-    return c.json({ ok: true, preset: presetBody(parsed) });
+    return c.json({ ok: true, preset: presetBody(validated.preset) });
   });
   return route.id;
 }

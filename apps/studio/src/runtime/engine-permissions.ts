@@ -58,7 +58,7 @@ function clampByMax(preset: PermissionPreset, max: PermissionPreset): Permission
     network: preset.network && max.network,
     workspaceWritable: preset.workspaceWritable && max.workspaceWritable,
     toolRootsWritable: preset.toolRootsWritable && max.toolRootsWritable,
-    writeRoots: writesAllowed ? [...preset.writeRoots] : [],
+    writeRoots: writesAllowed ? preset.writeRoots.filter((root) => max.writeRoots.includes(root)) : [],
     unsandboxed: preset.unsandboxed && max.unsandboxed,
     toolDeny: [...new Set([...preset.toolDeny, ...max.toolDeny])],
   };

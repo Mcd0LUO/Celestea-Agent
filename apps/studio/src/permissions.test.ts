@@ -81,3 +81,12 @@ describe("W9 /api/sessions/{id}/permission", () => {
   });
 });
 
+describe("W9 preset writeRoots validation", () => {
+  it("rejects a preset whose writeRoots are not a usable absolute directory", async () => {
+    const h = open();
+    const rel = await getJson(h.app, "/api/permissions/presets", jsonRequest("POST", { preset: preset("bad-one", { writeRoots: ["relative/x"] }) }));
+    expect(rel.status).toBe(422);
+    const root = await getJson(h.app, "/api/permissions/presets", jsonRequest("POST", { preset: preset("bad-two", { writeRoots: ["/"] }) }));
+    expect(root.status).toBe(422);
+  });
+});
