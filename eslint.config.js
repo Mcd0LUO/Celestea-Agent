@@ -132,6 +132,10 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      // W886: worker worktrees live at <repo>/.worktrees/<wid>. Each is a full
+      // checkout of this repo; linting them from the main worktree would grade a
+      // worker's in-progress code and duplicate every finding.
+      ".worktrees/**",
       "reports/**",
       "fixtures/**",
       "contracts/**",

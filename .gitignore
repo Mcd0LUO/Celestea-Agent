@@ -26,3 +26,8 @@ fixtures/sessions/*
 .celestea/
 .celestea-*
 /*-[0-9]*.[0-9]*/
+
+# worker 工作树（W886）：派工时在仓内 <repo>/.worktrees/<wid> 建独立 worktree，
+# 而不是 /tmp（这台机的 /tmp 是 tmpfs，node_modules 会常驻内存）。
+# 它们必须是 git 与 eslint 的盲区，否则主工作树会把它们当未跟踪文件、并 lint 半成品代码。
+.worktrees/
