@@ -1,0 +1,84 @@
+/* ============================================================================
+ * styles/quote.css — F1 选段提及：引用卡 / 选区浮标 / 待发引用 chip。
+ *   颜色走 tokens.css 的 --c-* 令牌；几何与既有消息气泡、输入栏展示夹一致。
+ * ============================================================================ */
+
+/* ---- 气泡内引用卡（user / steering / queued 消息，正文之上） ---- */
+.quote-block {
+  margin: 0 0 6px;
+  padding: 4px 10px;
+  border-left: 2px solid var(--c-border-strong);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-raised);
+}
+.quote-block:last-child { margin-bottom: 0; }
+.quote-head {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--c-text-3);
+  margin-bottom: 2px;
+}
+.quote-body {
+  font-size: 12px;
+  color: var(--c-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+
+/* ---- 选区浮标（document.body + position:fixed，落位由 ui/quote/select.ts 写） ---- */
+.quote-float {
+  position: fixed;
+  z-index: 30;
+  padding: 3px 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-raised);
+  color: var(--c-text-1);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  box-shadow: var(--shadow-panel);
+}
+.quote-float:hover { background: var(--c-accent-soft); }
+.quote-float.hidden { display: none; }
+
+/* ---- 待发引用 chip 收纳区（浮在输入框上沿之上、附件夹之上） ---- */
+.quote-tray {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 6px;
+  pointer-events: none; /* 空白处穿透；chip 自身恢复 */
+}
+.quote-tray.hidden { display: none; }
+.quote-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 6px 3px 8px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-raised);
+  color: var(--c-text-2);
+  font-size: 11.5px;
+  pointer-events: auto;
+}
+.quote-chip-src { color: var(--c-accent); font-family: var(--mono); font-size: 10px; }
+.quote-chip-text { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quote-chip-bytes { color: var(--c-text-3); font-family: var(--mono); font-size: 10px; }
+.quote-chip-remove {
+  border: none;
+  background: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.quote-chip-remove:hover { color: var(--c-text-1); }

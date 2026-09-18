@@ -30,6 +30,7 @@ import {
 } from './attachments';
 // W867（追加）：展示夹的落位 / 尺寸 / 渲染接线整段在 ./attach-tray.ts，本文件只调用。
 import { createAttachTray, refreshAttachmentTray } from './attach-tray';
+import { initQuoteTray } from './quote/tray'; // F1：选段提及的待发引用 chip 收纳区
 export { refreshAttachmentTray }; // 既有调用方（chat.ts / send.ts / 测试）不变
 
 /**
@@ -328,6 +329,7 @@ function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): v
   const side = host.querySelector<HTMLElement>('.input-side');
   // W867（追加）：展示夹的建立/挂载/贴位订阅整段在 ui/attach-tray.ts（出流，见该文件顶注）。
   createAttachTray(host, box);
+  initQuoteTray(host, box);
   attachBtn = document.createElement('button');
   attachBtn.id = 'btnAttach';
   attachBtn.type = 'button';

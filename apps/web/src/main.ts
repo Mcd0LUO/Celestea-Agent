@@ -21,6 +21,7 @@ import './styles/rail.css'; // 灵动选择条 v3（W238 重做）
 import './styles/hint.css'; // W790 悬浮提示宿主（内置提示插件）
 import './styles/question.css'; // W784 模型提问卡片（选项 / 自由输入 / 倒计时）
 import './styles/attachments.css'; // W805 图片附件（待发条 / 气泡网格 / 放大）
+import './styles/quote.css'; // F1 选段提及（引用卡 / 选区浮标 / 待发引用 chip）
 import './styles/workerstrip.css'; // W866 会话页左上角 worker 快捷条
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
 
@@ -36,6 +37,7 @@ import { initGrants } from './ui/grants'; // W701 提权通道（能力位未就
 import { restoreActiveHistory } from './ui/restore';
 import { initRail } from './ui/rail';
 import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
+import { installQuoteSelection } from './ui/quote/select'; // F1：选段提及（选区浮标）
 import { versionLabel, describeLabel, BUILD_TIME, APP_DIRTY } from './version'; // W887 构建期版本标签
 import { initSidebar } from './ui/sidebar';
 import { initChatCol } from './ui/chatcol'; // W867：正文列宽（两侧留白）可拖动调节
@@ -101,6 +103,7 @@ function init(): void {
   // 7) 消息 rail（左侧灵动长条）+ 聊天主循环 + 启动恢复（按活跃会话） + SSE
   initRail();
   initChat();
+  installQuoteSelection(); // F1：选段提及（viewctx 已就绪）
   refreshHealthChip();
   void restoreActiveHistory();
   connectSse();

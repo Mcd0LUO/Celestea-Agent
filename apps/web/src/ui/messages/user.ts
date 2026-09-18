@@ -4,11 +4,24 @@
 //   worker 回执）；车道文案 laneLabel。
 //   纯搬家：行为 / 文案 / DOM 结构逐字不变。
 // ============================================================================
-import { el, fmtNow } from '../../utils/dom';
+import { el, esc, fmtNow } from '../../utils/dom';
+import { sanitizeNodes } from '../../utils/sanitize';
 import type { SessionPane } from '../viewctx';
+import type { QuoteRef } from '../quote/model';
 import { railAdd, railSync } from '../rail';
 import { autoscroll, hideEmptyHint } from './scroll';
 import { renderAttachmentGrid, type AttachmentView } from '../attachments';
+
+/** F1：引用卡 —— 正文不可信，经 esc + sanitizeNodes 进 DOM（绝不 innerHTML）。 */
+function quoteBlockEl(q: QuoteRef): HTMLElement {
+  const label = q.source.label + (q.truncated ? ' · 已截断' : '');
+  const html =
+    '<div class="quote-head"><span class="quote-src">' + esc(label) + '</span></div>' +
+    '<div class="quote-body">' + esc(q.text) + '</div>';
+  const wrap = el('div', 'quote-block');
+  wrap.replaceChildren(...sanitizeNodes(html));
+  return wrap;
+}
 
 // ---- message builders ----------------------------------------------------------
 
@@ -34,7 +47,7 @@ const USER_CAPTION: Record<MsgKind, string> = {
 export function addUserMessage(
   ctx: SessionPane,
   text: string,
-  opts?: { kind?: MsgKind; into?: HTMLElement; attachments?: AttachmentView[] },
+  opts?: { kind?: MsgKind; into?: HTMLElement; attachments?: AttachmentView[]; quotes?: readonly QuoteRef[] },
 ): HTMLElement {
   const kind: MsgKind = opts?.kind ?? 'user';
   const target = opts?.into ?? ctx.el;
@@ -47,6 +60,7 @@ export function addUserMessage(
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble');
+  for (const q of opts?.quotes ?? []) bubble.appendChild(quoteBlockEl(q)); // 引用卡在正文之上
   const body = el('div', 'content');
   body.textContent = text;
   body.style.whiteSpace = 'pre-wrap';

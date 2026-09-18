@@ -29,6 +29,7 @@ import {
   renderInboxMessage,
   type MsgKind,
 } from './messages';
+import { parseQuoteBlocks } from './quote/model'; // F1：历史回放解析引用块
 import { railReset, railSync } from './rail';
 import { buildToolCard, descFromArgs, setToolResult } from './toolcards';
 // W784：转录里的提问行（§7.2）+ 未决列表重建（刷新 / 重连 / 切会话后）。
@@ -181,7 +182,13 @@ function renderOne(
     return;
   }
   if (m.role === 'user') {
-    addUserMessage(ctx, content, { kind: userKindOf(m), attachments: attachmentViewsOf(m.attachments), into: container });
+    const parsed = parseQuoteBlocks(content); // 只在 role=user 解析（架构侧裁决）
+    addUserMessage(ctx, parsed.rest, {
+      kind: userKindOf(m),
+      attachments: attachmentViewsOf(m.attachments),
+      quotes: parsed.quotes,
+      into: container,
+    });
     return;
   }
   if (m.role === 'assistant') {

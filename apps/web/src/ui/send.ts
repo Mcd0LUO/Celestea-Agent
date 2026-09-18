@@ -18,6 +18,8 @@ import {
   toWire,
   type PendingAttachment,
 } from './attachments';
+import { refreshQuoteTray, restoreQuotes, takeQuotes } from './quote/tray'; // F1：引用待发区
+import { serializeQuotes, type QuoteRef } from './quote/model';
 import { settleTextItems, withTextAttachments } from './text-attach';
 import {
   clearInput,
@@ -83,8 +85,9 @@ export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
 function startTurn(ctx: SessionPane, t: string): void {
   const key = ctx.id; // R3 W838-F3：发送时记住原会话 key，失败回滚按它归位
   const items = takePending(key);
+  const quotes = takeQuotes(key);
   const views = pendingViews(items);
-  const col = addUserMessage(ctx, t, views.length > 0 ? { attachments: views } : undefined);
+  const col = addUserMessage(ctx, t, { attachments: views, quotes });
   clearInput();
   refreshAttachmentTray();
   setLegacyOwner(ctx);
@@ -104,7 +107,7 @@ function startTurn(ctx: SessionPane, t: string): void {
   // 文本读取失败走与读图失败同一条路（AttachmentReadError → failTurn 完整回滚）。
   void settleTextItems(items)
     .then(() => toWire(items))
-    .then((wire) => api.turn(withTextAttachments(t, items), sid(ctx), undefined, wire))
+    .then((wire) => api.turn(withTextAttachments(serializeQuotes(t, quotes), items), sid(ctx), undefined, wire))
     .then((r) => {
       if (r.session) adoptLocalIfUnbound(r.session);
       if (ctx.turn === null && r.turn !== undefined) ctx.turn = r.turn;
@@ -114,7 +117,7 @@ function startTurn(ctx: SessionPane, t: string): void {
         setStatus('运行中…', 'busy');
       }
     })
-    .catch((err: unknown) => failTurn(ctx, key, col, t, items, err));
+    .catch((err: unknown) => failTurn({ ctx, key, col, text: t, items, quotes, err }));
 }
 
 /**
@@ -132,13 +135,14 @@ async function sendToWorker(ctx: SessionPane, t: string, mode: SubmitMode): Prom
     renderInfoBlock(ctx, hint, 'warn');
     return;
   }
-  const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'user' });
+  const quotes = takeQuotes(ctx.id);
+  const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'user', quotes });
   clearInput();
   ctx.draft = '';
   const noteEl = renderInterjectNote(ctx, '发送中 · 等待送达…', undefined, col);
   setLegacyOwner(ctx);
   try {
-    const r = await api.turn(t, sid(ctx));
+    const r = await api.turn(serializeQuotes(t, quotes), sid(ctx));
     const settled = r.status !== undefined && r.status !== '' && r.status !== 'RUNNING';
     noteEl.textContent =
       settled
@@ -150,6 +154,7 @@ async function sendToWorker(ctx: SessionPane, t: string, mode: SubmitMode): Prom
     col.remove();
     noteEl.parentElement?.remove();
     ctx.interjectNote = null;
+    if (quotes.length > 0) restoreQuotes(ctx.id, quotes);
     restoreDraft(ctx, t);
     const hint = '未送达（' + msgOf(err) + '）：已将内容还原到输入框';
     if (isActivePane(ctx)) {
@@ -161,34 +166,37 @@ async function sendToWorker(ctx: SessionPane, t: string, mode: SubmitMode): Prom
 }
 
 /** 发送失败：带附件时完整回滚（不保留「看起来发出去了」的假气泡）。 */
-function failTurn(
-  ctx: SessionPane,
-  key: string,
-  col: HTMLElement,
-  text: string,
-  items: PendingAttachment[],
-  err: unknown,
-): void {
+function failTurn(o: {
+  ctx: SessionPane;
+  key: string;
+  col: HTMLElement;
+  text: string;
+  items: PendingAttachment[];
+  quotes: readonly QuoteRef[];
+  err: unknown;
+}): void {
+  const { ctx, key, col, text, items, quotes, err } = o;
   setPaneStreaming(ctx, false);
   ctx.phase = '发送失败';
   if (getLegacyOwner() === ctx) setLegacyOwner(null);
-  const withAttachments = items.length > 0;
-  if (withAttachments) {
+  const rolled = items.length > 0 || quotes.length > 0;
+  if (rolled) {
     col.remove();
-    restorePending(key, items); // R3 W838-F3：放回**原会话**，不放到 await 期间切到的会话
+    if (items.length > 0) restorePending(key, items); // R3 W838-F3：放回**原会话**
+    if (quotes.length > 0) restoreQuotes(key, quotes);
     restoreDraft(ctx, text);
     refreshAttachmentTray();
+    refreshQuoteTray();
   }
-  const hint =
-    '发送失败：' + msgOf(err) + (withAttachments ? '；附件已放回待发区，可重试' : '');
+  const hint = '发送失败：' + msgOf(err) + (rolled ? '；待发内容已放回，可重试' : '');
   if (isActivePane(ctx)) {
     setBusy(false);
     stopElapsedTimer();
     setStatus(hint, 'err');
     window.setTimeout(() => flashStatus(hint, 'err', 6_000), 0);
   }
-  renderInfoBlock(ctx, hint, withAttachments ? 'warn' : 'err');
-  if (withAttachments) note(hint);
+  renderInfoBlock(ctx, hint, rolled ? 'warn' : 'err');
+  if (rolled) note(hint);
   updateSessionBar();
 }
 
@@ -197,7 +205,9 @@ function failTurn(
  * 撤销乐观渲染并把文本还原输入框 —— 不丢字。
  */
 async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promise<void> {
-  const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'steering' });
+  const quotes = takeQuotes(ctx.id);
+  const wire = serializeQuotes(t, quotes);
+  const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'steering', quotes });
   clearInput();
   refreshAttachmentTray();
   ctx.draft = '';
@@ -213,7 +223,7 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
     noteEl.className = 'interject-note ok';
   };
   try {
-    const r = await api.turn(t, sid(ctx), mode);
+    const r = await api.turn(wire, sid(ctx), mode);
     // W847：终态以响应里的权威落点 placement 为准，而不是 injected。旧后端在
     // 运行中收到 mode='queue' 仍会回 injected:true —— 先看 injected 会把「已排队」
     // 覆盖成「已插话」。缺 placement 的旧服务走下面的兜底分支，一字不放宽。
@@ -244,7 +254,7 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
   } catch (err: unknown) {
     if (mode === 'queue') {
       try {
-        const r2 = await api.turn(t, sid(ctx), 'steer');
+        const r2 = await api.turn(wire, sid(ctx), 'steer');
         if (r2.injected !== false) {
           const lane = laneLabel(r2.inbox_target ?? 'next-step');
           ok('当前版本不支持排队 → 已按插话送达' + (lane ? '（' + lane + '）' : ''));
@@ -257,6 +267,7 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
     col.remove();
     noteEl.parentElement?.remove();
     ctx.interjectNote = null;
+    if (quotes.length > 0) restoreQuotes(ctx.id, quotes);
     restoreDraft(ctx, t);
     const hint = (mode === 'queue' ? '排队未送达（' : '插话未送达（') + msgOf(err) + '）：已将内容还原到输入框';
     if (isActivePane(ctx)) {
