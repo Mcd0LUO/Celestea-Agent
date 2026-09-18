@@ -33,6 +33,28 @@ function make(options: Parameters<typeof makeEngineHarness>[0] = {}): StudioHarn
   return h;
 }
 
+/**
+ * User messages written by ONE turn (1-based), delimited by TURN BOUNDARIES, not
+ * by wall-clock timing. W847: the queued message may legitimately be drained by
+ * an idle-host AUTOWAKE turn (real-runtime-adapter.ts `startAutowakeTurn`) into
+ * a LATER turn before a test reads the file, and `waitIdle` only waits for
+ * "not busy" (never for the wake loop) — so the invariant is scoped per turn.
+ */
+function userTextsOfTurn(log: string, turn: number): string[] {
+  const out: string[] = [];
+  let index = 0;
+  for (const e of parseSessionJsonl(log).events) {
+    if (e.type === "turn_start") {
+      index += 1;
+      if (index > turn) break;
+      continue;
+    }
+    if (e.type === "turn_end" && index === turn) break;
+    if (index === turn && e.type === "user_message") out.push(e.text);
+  }
+  return out;
+}
+
 afterEach(() => {
   for (const h of harnesses.splice(0)) h.cleanup();
 });
@@ -103,7 +125,13 @@ describe("POST /api/turn over the real engine", () => {
   });
 
   it("W847: busy + mode=queue parks on the next-turn lane and the running turn never sees it", async () => {
-    const h = make({ sessions: { s1: [] }, llm: { script: [{ text: "x".repeat(4000) }], deltaMs: 3, chunkChars: 8 } });
+    // W887: the subject is the next-turn LANE, not autowake. With the idle-host
+    // wake loop ON, an autowake turn may legitimately drain the lane (and be
+    // running) before the explicit next turn, so `waitIdle` — which only waits
+    // for "not busy" — is not a deterministic barrier for the `202` below.
+    // Autowake has its own tests (autowake-host.test.ts); the analogous
+    // placement test in session-independence.test.ts isolates it the same way.
+    const h = make({ sessions: { s1: [] }, llm: { script: [{ text: "x".repeat(4000) }], deltaMs: 3, chunkChars: 8 }, env: { CELESTEA_AUTOWAKE: "0" } });
     await activate(h, "sample-ws/s1");
     const sub = h.studio.services.bus.subscribe();
     const frames: FrameRecord[] = [];
@@ -129,10 +157,15 @@ describe("POST /api/turn over the real engine", () => {
         .events.filter((e) => e.type === "user_message")
         .map((e) => (e.type === "user_message" ? e.text : ""));
 
-    // The RUNNING turn is untouched: only its own input is on disk.
-    expect(userTexts(readSessionLog(h, "s1"))).toEqual(["长任务"]);
+    // The RUNNING turn is untouched: its OWN turn boundary carries only its own
+    // input. Scoped BY TURN, not by the whole file: an idle-host AUTOWAKE turn
+    // may drain the queued message into a LATER turn before this read, and
+    // `waitIdle` only waits for "not busy" — never for the wake loop.
+    expect(userTextsOfTurn(readSessionLog(h, "s1"), 1)).toEqual(["长任务"]);
 
-    // The NEXT turn drains the queue at turn start, before its own input.
+    // The queue's single consumer is a TURN-START drain (`compose.ts`
+    // `drainPending`): the next turn appends the queued text BEFORE its own
+    // input. (Autowake is isolated above, so that next turn is the explicit one.)
     const second = await h.app.request("/api/turn", jsonRequest("POST", { input: "第二轮输入" }));
     expect(second.status).toBe(202);
     await waitIdle(h);
