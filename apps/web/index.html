@@ -71,23 +71,31 @@
             <!-- W788：会话工作方式（只读徽标「标准」/「执行」；点击弹层切换）。
                  显隐真源 = statusline/mode.ts —— 快照里没有 mode（老服务）时保持 .hidden。 -->
             <button class="sl-mode hidden" id="slMode" type="button" title="工作方式（点击切换）"></button>
-            <span class="sl-spacer"></span>
-            <!-- W701：本会话权限盾牌（三态：未授予 / 已授予 / 即将失效）。
-                 显隐真源 = ui/grants.ts —— 能力位未就绪时保持 .hidden（入口隐藏，不置灰报错）。 -->
-            <button id="slGrant" class="sl-grant hidden" type="button" title="本会话权限：默认（仅工作区，无网络）" aria-label="本会话权限">
-              <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 1.6 13.2 3.4v4.2c0 3.1-2.1 5.6-5.2 6.8-3.1-1.2-5.2-3.7-5.2-6.8V3.4z"></path></svg>
-              <span class="sl-grant-badge" id="slGrantBadge"></span>
-              <span class="sl-grant-dot" aria-hidden="true"></span>
-            </button>
-            <!-- W846：运行态的提交车道切换（插话/排队）从输入栏移到本行右端，与停止键同组。
-                 移出输入栏后 .input-side 在空闲/运行两态宽度一致，#input 不再被运行态
-                 多出的按钮挤窄（移动端 ≤640px 尤甚）。显隐真源仍是 ui/inputbar.setInputMode。 -->
-            <button id="btnMode" class="sl-mode-btn hidden" type="button" title="提交车道：插话 / 排队">插话</button>
-            <!-- W302：运行中显示的正方形停止按钮（取消当前轮次；显隐真源 = ui/inputbar.setBusy） -->
-            <button id="slStop" class="sl-stop hidden" type="button" title="停止本轮生成" aria-label="停止本轮生成">
-              <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="currentColor"></rect></svg>
-            </button>
-            <span class="sl-hint" id="slHint"></span>
+            <!-- W847：右端集群（权限盾牌 / 车道切换 / 停止 / 提示）包进 .sl-end。
+                 flex:0 0 auto + margin-left:auto 取代原 .sl-spacer：集群恒贴右缘，
+                 行超宽时由 .sl-row-main 的 overflow 先裁左边的用量/模型信息，
+                 取消键永不被挤出屏幕。 -->
+            <div class="sl-end">
+              <!-- W701：本会话权限盾牌（三态：未授予 / 已授予 / 即将失效）。
+                   显隐真源 = ui/grants.ts —— 能力位未就绪时保持 .hidden（入口隐藏，不置灰报错）。 -->
+              <button id="slGrant" class="sl-grant hidden" type="button" title="本会话权限：默认（仅工作区，无网络）" aria-label="本会话权限">
+                <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 1.6 13.2 3.4v4.2c0 3.1-2.1 5.6-5.2 6.8-3.1-1.2-5.2-3.7-5.2-6.8V3.4z"></path></svg>
+                <span class="sl-grant-badge" id="slGrantBadge"></span>
+                <span class="sl-grant-dot" aria-hidden="true"></span>
+              </button>
+              <!-- W846：运行态的提交车道切换（插话/排队）从输入栏移到本行右端，与停止键同组。
+                   显隐真源仍是 ui/inputbar.setInputMode。W847：≤640 只留内联箭头图标
+                   （文字视觉隐藏、无障碍名保留），不占整块宽度，不为它牺牲取消键。 -->
+              <button id="btnMode" class="sl-mode-btn hidden" type="button" title="提交车道：插话 / 排队">
+                <svg class="sl-mode-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M2.5 5.5h10M10 3l2.5 2.5L10 8M13.5 10.5h-10M6 8l-2.5 2.5L6 13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                <span class="sl-mode-label">插话</span>
+              </button>
+              <!-- W302：运行中显示的正方形停止按钮（取消当前轮次；显隐真源 = ui/inputbar.setBusy） -->
+              <button id="slStop" class="sl-stop hidden" type="button" title="停止本轮生成" aria-label="停止本轮生成">
+                <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="currentColor"></rect></svg>
+              </button>
+              <span class="sl-hint" id="slHint"></span>
+            </div>
           </div>
           <div class="sl-row sl-row-sub">
             <!-- W514 聚焦会话条（会话名 / worker 标记 / 运行态 / 其它运行中会话入口）。
@@ -118,10 +126,14 @@
         </footer>
 
         <div id="inputbar">
-          <textarea id="input" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
+          <!-- W847：.input-box 承担原 #input 的 flex 槽位；图片入口 #btnAttach 由 JS 注入
+               到框内（绝对定位、内联回形针 SVG），出流 ⇒ 不改变本行宽度。 -->
+          <div class="input-box">
+            <textarea id="input" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
+          </div>
           <!-- W846：运行态不再向输入栏追加按钮 —— 车道切换（#btnMode）已移到 statusline，
                取消由 statusline 的 #slStop 单点承担（两者本就共用 chat.ts requestCancel）。
-               因此空闲/运行两态 .input-side 恒为 [图片][发送]，#input 宽度逐像素不变。 -->
+               W847：.input-side 恒为 [发送]，#input 宽度逐像素不变。 -->
           <div class="input-side">
             <button id="btnSend" class="btn btn-accent">发送</button>
           </div>

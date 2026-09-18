@@ -24,13 +24,24 @@
 /* W789：运行态 #slStop / #slHint 出现时**绝不换行** —— 换行会让 statusline 多出一行、
    把消息区（flex:1）顶掉一截，用户看到的就是「发送后下方窗口浮动」。
    不靠 overflow 截断：需要压缩的项自己带 ellipsis（.sl-model / .sl-hint）。 */
-.sl-row-main { flex-wrap: nowrap; min-width: 0; }
+.sl-row-main { flex-wrap: nowrap; min-width: 0; overflow: hidden; }
 .sl-row-sub { color: var(--c-text-3); }
 
 .sl-sep { color: var(--c-text-3); opacity: .6; }
-.sl-spacer { flex: 1 1 auto; }
+/* W847：右端集群（盾牌/车道/停止/提示）—— flex:0 0 auto + margin-left:auto 取代
+   .sl-spacer：集群整体贴右缘、不参与收缩。 */
+.sl-end {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 8px;
+}
 
-.sl-ctx { font-variant-numeric: tabular-nums; color: var(--c-text-1); white-space: nowrap; }
+/* W847：.sl-ctx 曾是左边最后一个不可压缩项（只有 nowrap、没有 min-width:0）——
+   行超宽时把右端取消键顶出视口。补 ellipsis 三件套后它可压缩。 */
+.sl-ctx {
+  font-variant-numeric: tabular-nums; color: var(--c-text-1); white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
 /* W846：运行态第 1 行右端多了车道切换键，可用宽度变窄 —— 用量格不再换行，
    空间由 .sl-model / .sl-hint 的 ellipsis 吸收（两者 overflow:hidden，min-width auto = 0）。 */
 .sl-model {
@@ -304,6 +315,8 @@
  *   几何与 .sl-stop 同族：桌面 16px 高（≤ .sl-row-main 实测 ~20px，不撑行高），
  *   ≤1024 触控档由 responsive.css 抬到 --tap-min（与 .sl-stop 同高，不新增行高）。
  * ============================================================================ */
+/* W847：≤640 才把车道键收成内联图标；桌面仍显示 .sl-mode-label 文字（逐像素不变）。 */
+.sl-mode-icon { display: none; }
 .sl-mode-btn {
   flex: 0 0 auto;
   display: inline-flex; align-items: center;

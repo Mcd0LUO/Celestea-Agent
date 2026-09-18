@@ -75,6 +75,9 @@ button,
   .sl-effort, .sl-mode { padding: 0 8px; }
   .sl-grant, .sl-stop { width: var(--tap-min); height: var(--tap-min); }
   .sl-grant svg { width: 14px; height: 14px; }
+  /* W847：内联图片入口的触控命中区 ≥ --tap-min；#input 让位避免文字压到图标 */
+  #btnAttach.attach-inline { width: var(--tap-min); height: var(--tap-min); }
+  .input-box #input { padding-left: calc(var(--tap-min) + 8px); }
 
   /* 列表 / 折叠行 / 工具卡 / 弹层选项 */
   .sess-leaf, .ws-head { min-height: var(--tap-min); }
@@ -170,7 +173,14 @@ button,
   #inputbar { padding: 8px 10px calc(8px + var(--safe-b)); gap: 8px; }
   #input { font-size: 16px; max-height: 32dvh; }
   #btnSend { min-width: 72px; padding: 0 12px; }
-  #btnMode { padding: 0 8px; } /* W846：车道切换键已移入 statusline，触控高度由 ≤1024 档统一给 */
+  /* W847：车道键收成 ~32px 内联图标（文字视觉隐藏、无障碍名保留），不为它牺牲取消键 */
+  #btnMode { min-width: 32px; padding: 0 6px; }
+  #btnMode .sl-mode-icon { display: block; }
+  #btnMode .sl-mode-label {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .sl-end { gap: 6px; }
   .input-side { gap: 6px; }
 
   /* ---- 2.5 消息 / 工具卡：占满宽度、长内容自己滚、长路径省略 ---- */

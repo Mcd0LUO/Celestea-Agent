@@ -91,7 +91,7 @@ const HTML =
   '<span class="sl-steps" id="slSteps">— 步</span></div></div>' +
   '<footer id="statusbar"><span class="dot" id="statusDot"></span><span id="statusText">连接中…</span>' +
   '<span id="statusTurn"></span><span id="statusStep"></span><span id="statusTime"></span></footer>' +
-  '<div id="inputbar"><textarea id="input" rows="2"></textarea>' +
+  '<div id="inputbar"><div class="input-box"><textarea id="input" rows="2"></textarea></div>' +
   '<div class="input-side"><button id="btnSend" class="btn btn-accent">发送</button></div></div></main></div></div>';
 
 const sideIds = (): string[] => {
@@ -161,7 +161,11 @@ describe("W846 · 发送前后结构不变量（真实模块）", () => {
     };
     bar.initInputBar({ send: () => {}, cancel: () => {} });
     const before = sideIds();
-    expect(before).toEqual(["btnAttach", "btnSend"]); // 初始就与运行态一致
+    // W847：#btnAttach 已收进 .input-box（内联图标、出流），.input-side 恒为 [发送]。
+    expect(before).toEqual(["btnSend"]);
+    expect(
+      (doc.querySelector("#inputbar .input-box") as ElLike).querySelector("#btnAttach"),
+    ).not.toBeNull();
     bar.setBusy(true);
     bar.setInputMode("interject");
     expect(sideIds()).toEqual(before); // 结构逐节点不变 ⇒ #input 宽度不因子节点变化

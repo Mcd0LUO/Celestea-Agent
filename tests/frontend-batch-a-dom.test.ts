@@ -103,7 +103,7 @@ const HTML =
   '<span id="statusTurn"></span><span id="statusStep"></span><span id="statusTime"></span></footer>' +
   // W846：运行态不再向 .input-side 追加按钮 —— #btnMode 已移入 .sl-row-main，
   // 取消由 #slStop 单点承担（输入栏恒为 [图片][发送]，两态宽度逐像素一致）。
-  '<div id="inputbar"><textarea id="input" rows="2"></textarea>' +
+  '<div id="inputbar"><div class="input-box"><textarea id="input" rows="2"></textarea></div>' +
   '<div class="input-side">' +
   '<button id="btnSend" class="btn btn-accent">发送</button></div></div></main></div></div>';
 
@@ -280,9 +280,10 @@ describe("W789 · 运行态 composer 结构不变量（8）", () => {
     // W846：运行态按钮**不在** .input-side 里（否则会抢 #input 宽度）。
     // W805 在行首新增图片入口 #btnAttach（能力位就绪前保持 .hidden）。
     const side = ib.querySelector(".input-side") as ElLike;
-    expect(["btnAttach", "btnSend"]).toEqual(
-      Array.from(side.children).map((c) => c.id),
-    );
+    // W847：#btnAttach 收进 .input-box 内联图标（出流、不改变本行宽度），.input-side 恒为 [发送]。
+    expect(["btnSend"]).toEqual(Array.from(side.children).map((c) => c.id));
+    const box = ib.querySelector(".input-box") as ElLike;
+    expect(box.querySelector("#btnAttach")).not.toBeNull();
     // 运行态出现的两个控制都在 statusline 第 1 行：车道键 + 停止键
     const main = sl.querySelector(".sl-row-main") as ElLike;
     expect(main.querySelector("#btnMode")).not.toBeNull();

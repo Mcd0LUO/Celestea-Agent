@@ -79,7 +79,11 @@ export function toggleSubmitMode(): void {
 /** 车道相关 UI 重绘（切换按钮 / 占位符 / 发送按钮文案）——只改文案与 class。 */
 function renderSubmitUi(): void {
   if (modeBtn) {
-    modeBtn.textContent = submitMode === 'steer' ? '插话' : '排队';
+    // W847：≤640 只显示内联图标，文字落在 .sl-mode-label（视觉隐藏、无障碍名保留）。
+    // 旧夹具没有 label span 时回退 textContent，行为与几何不变。
+    const label = modeBtn.querySelector<HTMLElement>('.sl-mode-label');
+    if (label) label.textContent = submitMode === 'steer' ? '插话' : '排队';
+    else modeBtn.textContent = submitMode === 'steer' ? '插话' : '排队';
     modeBtn.title =
       submitMode === 'steer'
         ? '当前：插话（Enter）· 下一步送达 · 点击改为排队'
@@ -206,6 +210,11 @@ let noteEl: HTMLElement | null = null;
 let attachBtn: HTMLButtonElement | null = null;
 let fileInput: HTMLInputElement | null = null;
 
+/** W847：内联回形针（常量字面量、无依赖、无 emoji；沿用仓库既有内联 SVG 做法）。 */
+const ATTACH_CLIP_SVG =
+  '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
+  '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+
 function barEl(): HTMLElement | null {
   return bar ?? document.getElementById('inputbar');
 }
@@ -298,15 +307,19 @@ function acceptFileDialog(): void {
 function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): void {
   trayEl = el('div', 'attach-tray hidden');
   noteEl = el('div', 'attach-note hidden');
+  const box = host.querySelector<HTMLElement>('.input-box');
   const side = host.querySelector<HTMLElement>('.input-side');
   attachBtn = document.createElement('button');
   attachBtn.id = 'btnAttach';
   attachBtn.type = 'button';
-  attachBtn.className = 'btn btn-soft btn-icon';
-  attachBtn.textContent = '图片';
+  attachBtn.className = 'btn btn-soft btn-icon attach-inline';
+  attachBtn.innerHTML = ATTACH_CLIP_SVG; // 内联回形针（常量字面量，无注入面）
   attachBtn.title = '添加图片（可粘贴 / 拖拽 / 选择）';
+  attachBtn.setAttribute('aria-label', '添加图片'); // 图标按钮的无障碍名（原「图片」文字）
   attachBtn.addEventListener('click', () => acceptFileDialog());
-  if (side && side.firstChild) side.insertBefore(attachBtn, side.firstChild);
+  // W847：优先注入 .input-box（框内左下角、绝对定位）；旧夹具无 .input-box → 回退 .input-side。
+  if (box) box.appendChild(attachBtn);
+  else if (side && side.firstChild) side.insertBefore(attachBtn, side.firstChild);
   else (side ?? host).appendChild(attachBtn);
 
   fileInput = document.createElement('input');
