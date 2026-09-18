@@ -9,3 +9,14 @@ reports/*.tmp
 # generated per-run compare output
 reports/replay-diff-*.json
 results/
+
+# Celestea 会话产物（对话日志/附件/授权/检查点）。
+# 工作区根可能就是一个 git 仓库（本项目自己就是），会话数据绝不能进版本库。
+# W876/W877：会话目录正在收进 <ws>/.celestea/。
+#   .celestea/          终态容器（会话/归档/回收站/prompts/run-code）
+#   .celestea-*         过渡期仍散在根上的旧产物（.celestea-trash/.celestea-archived/.celestea-prompts.json）
+#   /*-[0-9]*.[0-9]*/   过渡期仍散在根上的旧布局会话目录（<标题>-<秒>.<纳秒>）
+# 切片 C 迁移完成后，后两条可以删掉。
+.celestea/
+.celestea-*
+/*-[0-9]*.[0-9]*/
