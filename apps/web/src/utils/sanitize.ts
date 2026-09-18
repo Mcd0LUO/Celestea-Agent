@@ -53,14 +53,15 @@ const ALLOWED_TAGS = new Set<string>([
   'a', 'img', 'strong', 'b', 'em', 'i', 'u', 's', 'del', 'ins', 'mark',
   'small', 'sub', 'sup', 'kbd', 'samp', 'var', 'abbr', 'cite', 'q', 'dfn',
   'code', 'time', 'bdi', 'bdo', 'wbr', 'ruby', 'rt', 'rp',
-  // W846：MathML 子集（KaTeX output:mathml 实测产物；只渲染、无交互）
+  // W846/W847 A1：MathML 子集（KaTeX output:mathml 实测产物；只渲染、无交互）。
+  //   A1 依 katex 0.18.7 重测：补 mpadded（此前被解包）；无上表标签在 0.18.7 消失。
   'math', 'semantics', 'annotation',
   'mrow', 'mi', 'mn', 'mo', 'mtext',
   'msup', 'msub', 'msubsup',
   'mfrac', 'msqrt', 'mroot',
   'mstyle', 'mtable', 'mtr', 'mtd',
   'mover', 'munder', 'munderover',
-  'mphantom', 'mspace', 'menclose',
+  'mphantom', 'mspace', 'menclose', 'mpadded',
   // GFM 任务清单复选框（属性被限制为 type=checkbox + disabled）
   'input',
 ]);
@@ -96,7 +97,8 @@ const TAG_ATTRS: Record<string, string[]> = {
   time: ['datetime'],
   details: ['open'],
   input: ['type', 'checked', 'disabled'],
-  // W846：MathML 属性（以 KaTeX output:mathml 实测为准；href 对任何 math 元素都不列入）
+  // W846/W847 A1：MathML 属性（以 KaTeX output:mathml 实测为准；href 对任何 math 元素都不列入）。
+  //   A1 重测补：munder@accentunder、mspace@height|mathbackground、mpadded@*（style 仍不在列）。
   math: ['display', 'xmlns'],
   annotation: ['encoding'],
   menclose: ['notation'],
@@ -104,7 +106,9 @@ const TAG_ATTRS: Record<string, string[]> = {
   mi: ['mathvariant'],
   mo: ['fence', 'mathvariant', 'stretchy'],
   mover: ['accent'],
-  mspace: ['width'],
+  mspace: ['width', 'height', 'mathbackground'],
+  munder: ['accentunder'],
+  mpadded: ['depth', 'height', 'lspace', 'mathbackground', 'voffset', 'width'],
   mstyle: ['displaystyle', 'mathcolor', 'scriptlevel'],
   mtable: ['columnalign', 'columnlines', 'columnspacing', 'rowlines', 'rowspacing'],
 };
@@ -131,7 +135,7 @@ const MATH_VARIANTS = new Set<string>([
   'sans-serif-italic', 'sans-serif-bold-italic', 'monospace', 'initial', 'tailed', 'looped', 'stretched',
 ]);
 const MATH_COLOR_RE = /^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]{1,24}|rgba?\([0-9.,%\s]{1,32}\)|hsla?\([0-9.,%\s]{1,32}\))$/;
-const MATH_LENGTH_RE = /^(?:thin|medium|thick|-?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)$/;
+const MATH_LENGTH_RE = /^(?:thin|medium|thick|[+-]?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)$/;
 const MATH_ALIGN_RE = /^(?:left|center|right)(?: (?:left|center|right))*$/;
 const MATH_LINES_RE = /^(?:none|solid|dashed)(?: (?:none|solid|dashed))*$/;
 const MATH_SPACING_RE = /^(?:-?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)(?: -?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)*$/;
@@ -204,12 +208,14 @@ function scrubAttrs(el: Element, tag: string): void {
       case 'width':
       case 'height': {
         // img: 纯数字像素；mspace: MathML 长度（如 1em / 0.2778em）
-        const ok = tag === 'mspace' ? MATH_LENGTH_RE.test(value) : SIZE_ATTR_RE.test(value);
+        const ok = tag === 'mspace' || tag === 'mpadded' ? MATH_LENGTH_RE.test(value) : SIZE_ATTR_RE.test(value);
         if (!ok) el.removeAttribute(attr.name);
         break;
       }
       case 'depth':
-      case 'linethickness': {
+      case 'linethickness':
+      case 'lspace':
+      case 'voffset': {
         if (!MATH_LENGTH_RE.test(value)) el.removeAttribute(attr.name);
         break;
       }
@@ -241,7 +247,8 @@ function scrubAttrs(el: Element, tag: string): void {
       case 'displaystyle':
       case 'fence':
       case 'stretchy':
-      case 'accent': {
+      case 'accent':
+      case 'accentunder': {
         if (value !== 'true' && value !== 'false') el.removeAttribute(attr.name);
         break;
       }
