@@ -24,7 +24,7 @@
 import type { ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 
-import type { Sandbox, SandboxConfig, SandboxRunRequest, SandboxRunResult, SandboxShellLookup, SandboxSpawnRequest, SandboxSpawned } from "@celestea/core";
+import type { Sandbox, SandboxConfig, SandboxMeta, SandboxRunRequest, SandboxRunResult, SandboxShellLookup, SandboxSpawnRequest, SandboxSpawned } from "@celestea/core";
 import { SandboxError } from "@celestea/core";
 
 import { wrapChild } from "./child.js";
@@ -130,7 +130,7 @@ export class BwrapSandbox implements Sandbox {
     requestedWorkdir: string | undefined,
     withStdin: boolean,
     limits: SandboxLimits,
-  ): Promise<{ child: ChildProcess; meta: BwrapMeta }> {
+  ): Promise<{ child: ChildProcess; meta: SandboxMeta }> {
     this.assertUsable();
     const workdir = await resolveWorkdir(this.config, requestedWorkdir);
     // W880: the program dir must exist before bwrap can bind it; run_code
@@ -155,7 +155,7 @@ export class BwrapSandbox implements Sandbox {
         withStdin,
         label: `${bwrapLabel(this.options)} ${preview(command, 128)}`,
       });
-      return { child, meta: runtimeMeta(this.options, limits, this.probe, limited.via) };
+      return { child, meta: resultMeta(runtimeMeta(this.options, limits, this.probe, limited.via)) };
     } finally {
       blob?.dispose();
     }
@@ -190,6 +190,27 @@ function runtimeMeta(options: BwrapOptions, limits: SandboxLimits, probe: HostPr
     nproc: limits.nproc,
     uid_threads: probe.uidThreads,
     bwrap_version: probe.bwrapVersion,
+  };
+}
+
+/**
+ * The model-visible projection: EXACTLY the `SandboxMeta` seam contract
+ * (`provider`, `net_isolated`, `tmp_private`, `seccomp`, optional `cpu_sec`).
+ *
+ * Why this exists: [runtimeMeta] also carries host diagnostics (`bwrap_version`,
+ * `rlimit_via`, `uid_threads`, `nproc`, `readonly_root`) that are identical on
+ * every single call and are NOT part of the contract. Shipping them inside every
+ * `run_shell` result floods the caller's context with constants (the userspace
+ * provider never did — see `USERSPACE_SANDBOX_META`). Diagnostics stay available
+ * on [BwrapSandbox.describe] for logs / health, never inside a tool result.
+ */
+function resultMeta(meta: BwrapMeta): SandboxMeta {
+  return {
+    provider: meta.provider,
+    net_isolated: meta.net_isolated,
+    tmp_private: meta.tmp_private,
+    seccomp: meta.seccomp,
+    ...(meta.cpu_sec === undefined ? {} : { cpu_sec: meta.cpu_sec }),
   };
 }
 
