@@ -48,7 +48,12 @@ describe("apps/studio contract surface", () => {
     // at all (the retired backend answered 404 on the first two);
     // `session_mode_tools` (P1) additionally promises the mode is observable in
     // the tool face and that the TS-only switch endpoint is there.
-    expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "capabilities", "model", "name", "ok"]);
+    // W887: the version key is a PURE ADDITION (the same git-derived value the
+    // frontend build injects); the exact key set is asserted so an undeclared
+    // field still fails here.
+    expect(Object.keys(health).sort()).toEqual(["base_url", "bind", "capabilities", "model", "name", "ok", "version"]);
+    expect(typeof health["version"]).toBe("string");
+    expect(String(health["version"]).length).toBeGreaterThan(0);
     expect(health["capabilities"]).toEqual({ grants: true, context: true, session_mode: true, session_mode_tools: true, multimodal: true });
     const status = (await (await app.request("/api/status")).json()) as Record<string, unknown>;
     // W785: capability 4 always adds `effective_model` + `fallback`; capability

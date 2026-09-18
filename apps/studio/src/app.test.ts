@@ -79,6 +79,9 @@ describe("health / status / tools / config", () => {
       model: "test-model",
       base_url: "http://127.0.0.1:3001/v1",
       bind: "127.0.0.1:3777",
+      // W887: the derived version is a PURE ADDITION (same value as the frontend
+      // build injects); the exact key set still fails on an undeclared field.
+      version: expect.any(String),
       // W516/W725/W729/W791: the capability bits the frontend gates the
       // permission panel, the context viewer and the mode selector on
       // (`session_mode_tools` = the P1 mode face + switch endpoint exist).

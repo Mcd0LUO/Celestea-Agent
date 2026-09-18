@@ -31,6 +31,11 @@
 
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
+// W887: the version is derived ONCE from the same script the frontend build uses
+// (scripts/version.mjs, source of truth = git tag). The deep relative hop into the
+// repo-level toolchain seam is deliberate and limited to this single line.
+// eslint-disable-next-line no-restricted-imports -- W887 version single source
+import { computeVersion } from "../../../../scripts/version.mjs";
 import type { LedgerCostBlock } from "@celestea/runtime";
 import { emptyRecoveryView } from "../runtime/recovery-view.js";
 import type { FallbackStatusView } from "../runtime/fallback-host.js";
@@ -38,6 +43,9 @@ import { activeSession, modeOfSession, sessionModelCovered, type Deps } from "./
 import { baseUrlOf } from "./config-shape.js";
 import { effectiveGrantsOf, grantsActiveCaps } from "../runtime/engine-grants.js";
 import { nowSec } from "../store/grants-service.js";
+
+/** W887: computed once at process start from git (falls back to package.json). */
+const STUDIO_VERSION = computeVersion();
 
 export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string[] {
   const health = table.get("get_health");
@@ -48,6 +56,9 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       model: deps.runtime.profile().model,
       base_url: baseUrlOf(deps),
       bind: deps.config.bind,
+      // W887: the SAME derived version the frontend shows (PURE ADDITION; a client
+      // that does not see the key degrades to no version line).
+      version: STUDIO_VERSION.version,
       // W725: `context: true` gates the context-ring entry point; a client
       // that does not see exactly `true` degrades to no context viewer.
       // W729: `session_mode: true` gates the (P1) mode selector; a client that

@@ -73,6 +73,12 @@
             "note": "constant DEFAULT_BIND; does NOT follow STUDIO_BIND"
           },
           {
+            "name": "version",
+            "type": "string",
+            "required": false,
+            "note": "W887: derived Studio version (single source = git tag via scripts/version.mjs; falls back to apps/web/package.json). PURE ADDITION."
+          },
+          {
             "name": "capabilities",
             "type": "object{grants:bool,context:bool,session_mode:bool}",
             "required": false,
@@ -83,7 +89,8 @@
       "errors": [],
       "notes": [
         "Always 200; no error branch.",
-        "W729: capabilities.session_mode = true (P0: read-only announcement; session_mode_tools arrives with P1)."
+        "W729: capabilities.session_mode = true (P0: read-only announcement; session_mode_tools arrives with P1).",
+        "W887: version is the same derived value the frontend build injects (git tag; package.json fallback)."
       ],
       "probe": {
         "checked": true,
