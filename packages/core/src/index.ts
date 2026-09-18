@@ -29,6 +29,8 @@
  *   redact.ts        secret redaction for fixtures / reports
  *   repo.ts          repository-relative path helpers
  *   celestea-home.ts CELESTEA_HOME data-root resolution (W880)
+ *   celestea-sources.ts project/global source layers (W882)
+ *   skills.ts        skill discovery + frontmatter contract (W882)
  *   errors.ts        shared error types
  *   contracts/       contract-file loaders (frozen data in contracts/)
  */
@@ -56,4 +58,6 @@ export * from "./errors.js";
 export * from "./redact.js";
 export * from "./repo.js";
 export * from "./celestea-home.js";
+export * from "./celestea-sources.js";
+export * from "./skills.js";
 export * from "./contracts/index.js";

@@ -2,10 +2,11 @@
  * W880 acceptance — every celestea artifact lands under CELESTEA_HOME, the
  * workspace root stays clean, and both legacy layouts stay readable.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { globalSourceRoot, listSkills, projectSourceRoot, readLayers } from "@celestea/core";
 import { workspaceHome } from "./celestea-home.js";
 import { PromptsStore } from "./prompts.js";
 import { SessionOps } from "./session-ops.js";
@@ -111,6 +112,26 @@ describe("W880 · prompts triple-read / canonical write", () => {
     expect(store.read(scope).prompts.map((p) => p.id)).toEqual(["legacy", "new"]);
     // The legacy file is a READ fallback, never rewritten.
     expect((JSON.parse(readFileSync(legacy, "utf8")) as { prompts: unknown[] }).prompts).toHaveLength(1);
+  });
+});
+
+describe("W882 · source layers stay read-only (no project .celestea write)", () => {
+  it("session create + prompt write leave no .celestea under the workspace", () => {
+    const homeInput = { env: { CELESTEA_HOME: join(root, "data") } };
+    expect(sessions.create({ workspace: "sample-ws", title: "layer" }).ok).toBe(true);
+    const store = new PromptsStore(join(root, "global-prompts.json"));
+    const scope = store.scopeWorkspace("sample-ws", ws);
+    expect(store.upsert(scope, { id: "p", name: "P" }).ok).toBe(true);
+
+    // The project layer is read-only: no .celestea (not even an empty dir) appears.
+    expect(projectSourceRoot(ws)).toBe(join(ws, ".celestea"));
+    expect(existsSync(projectSourceRoot(ws))).toBe(false);
+    expect(readdirSync(ws).filter((n) => n.startsWith(".celestea"))).toEqual([]);
+
+    // The global layer is the workspace container; discovery over both layers is empty.
+    expect(globalSourceRoot(ws, homeInput)).toBe(workspaceHome(ws, homeInput));
+    expect(readLayers(ws, homeInput).map((l) => l.source)).toEqual(["project", "global"]);
+    expect(listSkills(readLayers(ws, homeInput))).toEqual({ skills: [], rejected: [] });
   });
 });
 
