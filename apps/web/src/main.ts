@@ -38,6 +38,7 @@ import { initRail } from './ui/rail';
 import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
 import { APP_VERSION, BUILD_TIME } from './version'; // 灵动选择条 v3（W238 重做）
 import { initSidebar } from './ui/sidebar';
+import { initChatCol } from './ui/chatcol'; // W867：正文列宽（两侧留白）可拖动调节
 import { statusline } from './statusline';
 import { S } from './state';
 import { initTheme, setupThemeSwitcher } from './theme';
@@ -64,6 +65,9 @@ function init(): void {
 
   // 2) 侧栏：收起/展开 + 拖宽（状态持久）
   initSidebar();
+
+  // 2.1) W867：正文列宽拖拽手柄（--chat-col-user 持久化；≤1024px 由 responsive 层隐藏）
+  initChatCol();
 
   // 3) W514：多会话视图容器（LOCAL 容器先立起来 → 永不空白）+ 聚焦会话条
   initViewCtx();

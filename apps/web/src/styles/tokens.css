@@ -35,6 +35,11 @@
   --sp-dock-inset: 8px;
   --composer-text-max-h: 336px;
   --chat-col: clamp(680px, 64%, 920px);
+  /* W867：**生效**列宽 —— --chat-col-user（ui/chatcol.ts 写在 :root 上的用户值，px）优先；
+     没设过 / 双击复位 → 上面那条缺省 clamp（未动一个字符）。布局只读 --chat-col-live，
+     而它 = max(--sp-composer-side, (100% − live) / 2)，所以改这一个值就是「两侧与页面
+     边距的距离同步放缩」（用户 5）。 */
+  --chat-col-live: var(--chat-col-user, var(--chat-col));
   --hairline: 0.5px;
 
   /* W12：static 原始色板（唯一写死颜色处；alias 见下，深色只覆盖它）。 */

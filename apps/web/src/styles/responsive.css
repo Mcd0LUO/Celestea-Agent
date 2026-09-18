@@ -98,7 +98,12 @@ button,
      `#input` 必须单列：layout.css 的 `#input{font-size:14px}` 是 id 选择器，类型选择器压不过它 */
   #input, input, select, textarea { font-size: 16px; }
 
+  /* W867（追加）：触摸档把圆角外框的边距收到 4px（屏幕本来就窄，8px 是浪费）。 */
+  .chat-shell { margin: 4px; }
   .sess-pane { padding: 16px 14px; }
+  /* W867：这一档正文列宽固定 16/14（用户列宽不生效）→ 列宽手柄一并隐藏，
+     避免「能拖但没反应」的误导；回到桌面档自动恢复。 */
+  .chatcol-resizer { display: none; }
   .toolcard { --card-gutter: 26px; }
 }
 
@@ -184,6 +189,7 @@ button,
   .input-side { gap: 6px; }
 
   /* ---- 2.5 消息 / 工具卡：占满宽度、长内容自己滚、长路径省略 ---- */
+  .chat-shell { margin: 2px; border-radius: var(--r-md); } /* W867（追加）：手机档再收一档 */
   .sess-pane { padding: 12px 10px; }
   .msg.user .bubble { max-width: 100%; } /* 桌面 78% 的窄气泡在手机上浪费宽度 */
   .toolcard { --card-gutter: 22px; }

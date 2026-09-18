@@ -47,10 +47,11 @@ export function removeAssistant(ctx: SessionPane, view: AssistantView): void {
 
 /** 清空该会话消息流并重建空态（/api/clear 成功后调用；同时重置流式状态）。 */
 export function resetMessages(ctx: SessionPane): void {
-  if (ctx.renderTimer !== null) {
-    window.clearTimeout(ctx.renderTimer);
-    ctx.renderTimer = null;
+  if (ctx.render.timer !== null) {
+    window.clearTimeout(ctx.render.timer);
+    ctx.render.timer = null;
   }
+  ctx.render.deadline = Number.NEGATIVE_INFINITY; // W867：清空后第一帧同样立即渲染
   if (ctx.assistant) doms.delete(ctx.assistant);
   ctx.assistant = null;
   ctx.turn = null;
@@ -62,8 +63,14 @@ export function resetMessages(ctx: SessionPane): void {
   renderEmptyHint(ctx);
 }
 
-// ---- 流式正文渲染节流 ---------------------------------------------------------
-const RENDER_INTERVAL = 60; // ms —— 重渲染节拍（兼顾流畅与 CPU）
+// ---- 流式正文渲染节拍（W867：近似立即 + 短 debounce 合并） ----------------------
+/**
+ * 合并窗口（ms，≈1 帧）。语义 = leading 立即 + trailing 合并：
+ *   · 距上次渲染已过窗口（首次 / 空闲后的第一帧）→ **同一调用栈内立即渲染**，事件到达
+ *     即出字，不再等一个 60ms 节拍（旧口径在流式与快速切换时明显发顿，用户 6②）；
+ *   · 同一窗口内的连续增量 → 并成一次尾部渲染，绝不逐字节重排。
+ */
+export const RENDER_DEBOUNCE = 12;
 
 /**
  * 增量渲染文本段（W301 + W514 每容器独立节拍）：
@@ -107,27 +114,44 @@ function renderTextView(ctx: SessionPane, view: AssistantView): void {
   highlightCode(view.content);
   // W846：码块高亮后，把数学占位懒加载升级为 MathML（渲染器未就绪时登记，就绪后替换）。
   upgradeMath(view.content);
-  autoscroll(ctx);
+  autoscrollView(ctx, view); // W867：离屏（历史恢复）不写滚动位
   railSync(ctx);
 }
 
 function scheduleTextView(ctx: SessionPane, view: AssistantView): void {
-  if (ctx.renderTimer !== null) return; // 已有一次节拍排队
-  const wait = Math.max(0, ctx.renderDeadline + RENDER_INTERVAL - performance.now());
-  ctx.renderTimer = window.setTimeout(() => {
-    ctx.renderTimer = null;
-    ctx.renderDeadline = performance.now();
+  if (ctx.render.timer !== null) return; // 已有一次尾部渲染排队（窗口内的增量都并进它）
+  const now = performance.now();
+  const wait = Math.max(0, ctx.render.deadline + RENDER_DEBOUNCE - now);
+  if (wait === 0) {
+    ctx.render.deadline = now;
+    renderTextView(ctx, view); // leading：立即渲染（不再等定时器）
+    return;
+  }
+  ctx.render.timer = window.setTimeout(() => {
+    ctx.render.timer = null;
+    ctx.render.deadline = performance.now();
     renderTextView(ctx, view);
   }, wait);
 }
 
+/**
+ * W867：只有**已挂载**的气泡才需要跟随滚动。历史恢复在离屏容器里构建（restore.ts 的
+ * off），逐条写 scrollTop 是纯浪费（200 条 ≈ 200 次强制布局 + 无效写）；恢复末尾
+ * restoreSessionHistory 自己会 autoscroll(ctx, true) 贴底一次，观感不变。
+ * 用 `=== false` 判定（而不是 `!isConnected`）：DOM 垫片没有该属性时行为与改动前一致。
+ */
+function autoscrollView(ctx: SessionPane, view: AssistantView, force = false): void {
+  if (view.root.isConnected === false) return;
+  autoscroll(ctx, force);
+}
+
 /** 立即冲刷（turn 结束 / done 事件 / 最终文本到来时调用）。 */
 function flushTextView(ctx: SessionPane, view: AssistantView): void {
-  if (ctx.renderTimer !== null) {
-    window.clearTimeout(ctx.renderTimer);
-    ctx.renderTimer = null;
+  if (ctx.render.timer !== null) {
+    window.clearTimeout(ctx.render.timer);
+    ctx.render.timer = null;
   }
-  ctx.renderDeadline = performance.now();
+  ctx.render.deadline = performance.now();
   renderTextView(ctx, view);
 }
 
@@ -209,5 +233,5 @@ export function finalizeAssistant(ctx: SessionPane, view: AssistantView): void {
   view.bubble.classList.remove('streaming');
   view.bubble.classList.add('complete');
   flushTextView(ctx, view);
-  autoscroll(ctx, true);
+  autoscrollView(ctx, view, true); // W867：离屏（历史恢复）不写滚动位
 }

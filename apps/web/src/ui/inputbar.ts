@@ -23,10 +23,10 @@ import {
   imageEntryDisabledReason,
   invalidateAttachmentCapabilities,
   loadAttachmentCapabilities,
-  pendingList,
-  removePending,
-  renderTray,
 } from './attachments';
+// W867（追加）：展示夹的落位 / 尺寸 / 渲染接线整段在 ./attach-tray.ts，本文件只调用。
+import { createAttachTray, refreshAttachmentTray } from './attach-tray';
+export { refreshAttachmentTray }; // 既有调用方（chat.ts / send.ts / 测试）不变
 
 /**
  * 提交车道：
@@ -212,7 +212,6 @@ export function setInputMode(mode: InputMode): void {
 
 // ---- W805：图片附件三入口（粘贴 / 拖拽 / 文件选择） --------------------------
 
-let trayEl: HTMLElement | null = null;
 let noteEl: HTMLElement | null = null;
 let attachBtn: HTMLButtonElement | null = null;
 let fileInput: HTMLInputElement | null = null;
@@ -224,15 +223,6 @@ const ATTACH_CLIP_SVG =
 
 function barEl(): HTMLElement | null {
   return bar ?? document.getElementById('inputbar');
-}
-
-/** 重建待发缩略图条（选择/粘贴/拖入、发送清空、失败回滚后都要调）。 */
-export function refreshAttachmentTray(): void {
-  if (!trayEl) return;
-  renderTray(trayEl, pendingList(), (item) => {
-    removePending(item);
-    refreshAttachmentTray();
-  });
 }
 
 /** 附件入口显隐/禁用文案（能力位就绪、切会话、切模型后重绘）。 */
@@ -312,10 +302,11 @@ function acceptFileDialog(): void {
 }
 
 function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): void {
-  trayEl = el('div', 'attach-tray hidden');
   noteEl = el('div', 'attach-note hidden');
   const box = host.querySelector<HTMLElement>('.input-box');
   const side = host.querySelector<HTMLElement>('.input-side');
+  // W867（追加）：展示夹的建立/挂载/贴位订阅整段在 ui/attach-tray.ts（出流，见该文件顶注）。
+  createAttachTray(host, box);
   attachBtn = document.createElement('button');
   attachBtn.id = 'btnAttach';
   attachBtn.type = 'button';
@@ -340,8 +331,7 @@ function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): v
     if (fileInput) fileInput.value = '';
   });
 
-  host.insertBefore(trayEl, host.firstChild);
-  host.insertBefore(noteEl, trayEl.nextSibling);
+  host.insertBefore(noteEl, host.firstChild);
   host.appendChild(fileInput);
 
   // 粘贴：有图片就收；**不** preventDefault —— 同一次粘贴里的文字照常落进输入框。

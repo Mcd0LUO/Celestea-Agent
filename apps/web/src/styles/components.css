@@ -68,7 +68,9 @@
 .msg.user .msg-caption { flex-direction: row-reverse; }
 
 /* W243 任务2：气泡按文字自适应宽度（不再铺满）；
-   用户右对齐紧凑（max-width 72% + 反色底），AI 左对齐（72%）。 */
+   用户右对齐紧凑（max-width 72% + 反色底），AI 左对齐。
+   W867（用户 5）：助手气泡不再被 72% 收窄 —— 右缘必须与用户气泡的右缘（= .mcol 右缘，
+   用户尾巴靠 margin-left:auto 贴齐）一致，否则长回复比用户消息窄一截（见下方 .msg.assistant）。 */
 .bubble {
   width: fit-content;
   max-width: 72%;
@@ -84,6 +86,9 @@
 }
 .msg.user .bubble .content { color: inherit; }
 .msg.user .bubble a { color: var(--c-accent-fg); text-decoration: underline; }
+/* W867：助手正文铺满到与用户消息同一右缘（用户 5）。宽仍取 fit-content ⇒ 短回复不会被
+   拉成一个空框；只有原本被 72% 截断的长回复才会真正吃满列宽。 */
+.msg.assistant .bubble { max-width: 100%; }
 /* W764：工具卡 / 思考段不再套「气泡」外框 —— 卡片（TerminalBlock 的 code-block
    表面）与折叠行（DisclosureRow 的裸行）各自带表面与留白；信息块保留浅表面。 */
 .msg.tool .bubble, .msg.info .bubble, .msg.think-seg .bubble {

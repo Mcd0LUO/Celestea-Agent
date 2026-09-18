@@ -22,17 +22,15 @@ import { registerHintPlugin } from '../plugins/register'; // W859：经插件模
 import { activePane, type SessionPane } from './viewctx';
 
 // ---- 紧凑几何（细条 —— 自然高 5px、间隙 4px） ----
-const GAP = 4;
-const PITCH_NATURAL = 5 + GAP; // 9px
-const PITCH_MIN = 4;
-const PAD_Y = 8;
-const BASE_W = 7;
-const MAX_W = 110;
-const GUTTER_NORMAL = 64;
-const GUTTER_HIDE = 24;
-const RANGE = 80;
-const HIT_BOOST = 6;
-const BASE_OPACITY = 0.3;
+// W867：几何常量与公式搬到 ./rail-geom.ts（零 DOM、可单测；rail.ts 要回到模块体积
+// 棘轮上限内）。纯搬家：取值与算式逐字未变，只把常量改由 rail-geom 统一导出。
+import {
+  RAIL_PAD_Y, RAIL_PITCH_NATURAL, railBarHeight, railBarOpacity, railBarWidth,
+  railFitsAll, railGrow, railGutterWidth, railHitRadius, railLane, railPitch,
+} from './rail-geom';
+// W867：命中半径（hover 命中与点击命中共用同一口径；测试直接断言这个纯函数）。
+export { railHitRadius };
+
 const PREVIEW_CHARS = 40;
 /** W790：rail 预览卡在提示注册缝里的提供者身份（priority 10 = 压过内置纯文本卡）。 */
 export const RAIL_HINT_ID = 'rail-preview';
@@ -75,8 +73,8 @@ let moveY = -1;
 let railX = 8;
 let railTop = 0;
 let railH = 0;
-let railW = MAX_W;
-let pitch = PITCH_NATURAL;
+let railW = 110; // W867：缺省 = rail-geom 的 RAIL_MAX_W（此处不再单独引常量）
+let pitch = RAIL_PITCH_NATURAL;
 let modeAll = true;
 
 function stateOf(ctx: SessionPane): RailState {
@@ -111,13 +109,12 @@ function ensureTrack(): boolean {
   return true;
 }
 
-/** 留白带宽：.mcol 左缘 − #main 左缘（mcol 居中富余 + 容器内边距）。 */
+/** 留白带宽：.mcol 左缘 − #main 左缘（算式在 ./rail-geom.ts，这里只取 rect）。 */
 function gutterWidth(): number {
   if (!mainEl || !msgsEl) return 0;
   const col = msgsEl.querySelector<HTMLElement>('.mcol');
   const m = mainEl.getBoundingClientRect();
-  if (!col) return Math.max(0, m.width - 24);
-  return Math.max(0, col.getBoundingClientRect().left - m.left);
+  return railGutterWidth(m.left, m.width, col ? col.getBoundingClientRect().left : null);
 }
 
 /** 全量重排：横向档位 + 纵向节距 + 条组居中（railSync / 滚动 / 尺寸变化）。 */
@@ -129,22 +126,22 @@ function layout(): void {
   railTop = Math.max(0, v.top - m.top);
   railH = v.height;
 
-  const gw = gutterWidth();
-  if (gw < GUTTER_HIDE) {
+  const lane = railLane(gutterWidth());
+  if (lane.hidden) {
     track.style.display = 'none';
     railW = 0;
     return;
   }
   track.style.display = '';
-  const thin = gw < GUTTER_NORMAL;
-  railX = 8;
-  railW = thin ? Math.max(6, gw - 24) : Math.min(MAX_W, gw - 26);
+  const thin = lane.thin;
+  railX = lane.left;
+  railW = lane.width;
   track.classList.toggle('railv3-thin', thin);
   track.style.left = railX + 'px';
   track.style.top = railTop + 'px';
   track.style.height = railH + 'px';
 
-  const usable = Math.max(0, railH - 2 * PAD_Y);
+  const usable = Math.max(0, railH - 2 * RAIL_PAD_Y);
   if (st.items.length === 0) {
     if (st.foldItem) {
       st.foldItem.el.remove();
@@ -188,17 +185,17 @@ function layout(): void {
   const bars = allItems(st);
   const count = bars.length;
   let shown: RailItem[];
-  if (count * PITCH_MIN <= usable) {
+  if (railFitsAll(usable, count)) {
     modeAll = true;
-    pitch = Math.max(PITCH_MIN, Math.min(PITCH_NATURAL, usable / count));
+    pitch = railPitch(usable, count);
     shown = bars;
   } else {
     modeAll = false;
     shown = viewWindow(st);
-    pitch = Math.max(PITCH_MIN, Math.min(PITCH_NATURAL, usable / Math.max(1, shown.length)));
+    pitch = railPitch(usable, shown.length);
   }
-  const stripTop = PAD_Y + Math.max(0, (usable - shown.length * pitch) / 2);
-  const barH = Math.max(2, pitch - GAP);
+  const stripTop = RAIL_PAD_Y + Math.max(0, (usable - shown.length * pitch) / 2);
+  const barH = railBarHeight(pitch);
   for (const it of bars) {
     const i = shown.indexOf(it);
     if (i < 0) {
@@ -317,10 +314,9 @@ export function railHintPlugin(): HintPlugin {
 // ---- 交互（fisheye + hover 停留预览 + 点击定位） --------------------------------
 
 function setGrow(it: RailItem, g: number): void {
-  const k = Math.max(0, Math.min(1, g));
-  const w = BASE_W + k * Math.max(0, railW - BASE_W) + (k >= 1 ? HIT_BOOST : 0);
-  it.el.style.width = w.toFixed(1) + 'px';
-  it.el.style.opacity = (BASE_OPACITY + (0.7 - BASE_OPACITY) * k).toFixed(3);
+  // W867：宽度 / 不透明度算式搬到 ./rail-geom.ts（逐字同式，纯搬家）。
+  it.el.style.width = railBarWidth(g, railW).toFixed(1) + 'px';
+  it.el.style.opacity = railBarOpacity(g).toFixed(3);
 }
 
 function clearHover(): void {
@@ -362,13 +358,13 @@ function applyMove(): void {
     collapse();
     return;
   }
-  const hitR = Math.max(pitch / 2, 8);
+  const hitR = railHitRadius(pitch); // W867：命中 = 落在长条上（旧 max(pitch/2, 8) 恒 8px）
   let best: RailItem | null = null;
   let bestD = Infinity;
   for (const it of allItems(st)) {
     if (!it.visible) continue;
     const d = Math.abs(y - (railTop + it.y));
-    setGrow(it, 1 - d / RANGE);
+    setGrow(it, railGrow(d)); // W867：增益公式在 ./rail-geom.ts（默认 range = RAIL_FISHEYE_RANGE）
     if (d < bestD) {
       bestD = d;
       best = it;
@@ -397,7 +393,7 @@ function onClick(e: MouseEvent): void {
   const x = e.clientX - m.left;
   const y = e.clientY - m.top;
   if (x < railX - 6 || x > railX + railW + 14 || y < railTop || y > railTop + railH) return;
-  if (Math.abs(y - (railTop + hoverItem.y)) > Math.max(pitch / 2, 8)) return;
+  if (Math.abs(y - (railTop + hoverItem.y)) > railHitRadius(pitch)) return; // W867：与 applyMove 同口径
   e.preventDefault();
   hoverItem.startCol.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }

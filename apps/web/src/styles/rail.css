@@ -6,7 +6,7 @@
  *   由 ui/rail.ts 实时对齐 #messages 视口的 top/height，left 固定 #main
  *   左缘内侧 8px —— 「侧栏 + 拖宽分隔条」右侧的留白带最左端。
  *   → 不挂在滚动容器里：不随消息滚动而移动；
- *   → 长条最长 min(110, 留白−26)，距 .mcol 左缘 ≥18px 收住：不贴消息列
+ *   → 长条最长 min(66, 留白−26)（W867：原 110 × 0.6），距 .mcol 左缘 ≥18px 收住：不贴消息列
  *     边缘、不遮消息内容；
  *   → 留白收窄自适应：≥64px 正常 / 24–64px 细条化（.railv3-thin）/
  *     <24px 由 JS 整体隐藏，任何档位不溢出留白带。
@@ -17,7 +17,7 @@
 
 .railv3 {
   position: absolute;
-  width: 1px;            /* 占位；长条宽度由 JS fisheye 覆写 */
+  width: 1px;            /* 占位（轨道宽度，不是条长）；长条宽度由 JS fisheye 覆写 */
   z-index: 20;
   pointer-events: none;  /* 交互统一走 #main 级监听 + 命中判定（ui/rail.ts） */
 }
@@ -25,7 +25,9 @@
 .railv3-item {
   position: absolute;
   left: 0;
-  width: 7px;            /* 未悬停细条宽（变长由 JS fisheye 覆写） */
+  /* W867：条长刻度 ×0.6（用户第 6 条澄清「条太长，缩减 40%」）——静止 7→4，
+     与 ui/rail-geom.ts 的 RAIL_BASE_W 必须同步（吸附上限 110→66 见 RAIL_MAX_W）。 */
+  width: 4px;            /* 未悬停细条宽（变长由 JS fisheye 覆写） */
   height: var(--barh, 5px); /* 细高固定 5px：hover/吸附绝不加粗加高（第 18 轮） */
   border-radius: 999px;
   background: var(--c-text-3);

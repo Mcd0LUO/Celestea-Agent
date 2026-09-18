@@ -83,6 +83,23 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* ---- 主区 ---- */
 #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
+/* W867（追加）：对话页圆角外框 —— statusline / 消息区 / 状态栏 / 输入栏同属一个表面。
+   只加外边距、圆角与发丝线：**不改任何子项的 flex 尺寸**，所以消息区高度、输入框
+   宽度、滚动容器语义（滚动仍归 .sess-pane）逐项不变。窄屏在 responsive.css 里收边距。 */
+.chat-shell {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin: var(--sp-dock-inset);
+  background: var(--bg-layer-1);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
 #messages {
   /* W12：唯一滚动容器在 .sess-pane（本层只做布局，不滚）。 */
   flex: 1; min-height: 0; overflow: hidden;

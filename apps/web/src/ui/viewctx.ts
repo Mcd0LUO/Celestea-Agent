@@ -10,6 +10,7 @@ import { S } from '../state';
 import { el } from '../utils/dom';
 import type { StatusSnapshot } from '../types';
 import type { AssistantView, DedupState, ThinkSeg, ToolCardRef } from './view';
+import { newRenderCadence, type RenderCadence } from './messages/cadence'; // W867：渲染节拍字段族
 
 /** 未解析/无会话 id 时的占位容器（旧后端的单会话行为）。 */
 export const LOCAL_ID = '';
@@ -31,10 +32,10 @@ export interface SessionPane {
   assistant: AssistantView | null;
   /** 当前思考段（每轮结束清除，DOM 保留） */
   thinkSeg: ThinkSeg | null;
-  /** 同轮最近文本段（thinking 重排锚点） + 文本段节拍渲染定时器（每容器独立） */
+  /** 同轮最近文本段（thinking 重排锚点） */
   lastTextCol: HTMLElement | null;
-  renderTimer: number | null;
-  renderDeadline: number;
+  /** 文本段渲染节拍（每容器独立；读写方只有 ui/messages/assistant.ts） */
+  render: RenderCadence;
   /** 工具卡索引（tool_call_id → 卡片） */
   ops: Map<string, ToolCardRef>;
   /** 本轮工具步数 */
@@ -105,8 +106,7 @@ function buildPane(id: string, kind: string, title: string): SessionPane {
     assistant: null,
     thinkSeg: null,
     lastTextCol: null,
-    renderTimer: null,
-    renderDeadline: 0,
+    render: newRenderCadence(), // W867：节拍字段族搬到 ui/messages/cadence.ts
     ops: new Map(),
     step: 0,
     turn: null,

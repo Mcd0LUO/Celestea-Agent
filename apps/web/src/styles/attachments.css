@@ -4,17 +4,43 @@
 
 .attach-file { display: none; }
 
+/* W867（追加）：收纳展示夹 —— 悬浮在输入框**上方**的一条紧凑缩略图带。
+   为什么绝对定位：W847 的「输入框宽度逐像素不变」不变量要求附件条**出流**，
+   既不能挤 #input 的 flex 槽位，也不能把输入框顶高（原实现是 #inputbar 里的普通
+   子项、flex-wrap 换行多行 → 挤占输入区）。
+   定位由 ui/inputbar.ts 的 placeTray() 按 .input-box 实际矩形写入（--tray-h / bottom /
+   left / right），所以无论输入框多高都贴得住。 */
 .attach-tray {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--tray-h, 0px);
+  z-index: 3;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* 单行 + 横向滚动（多行会盖住输入区） */
+  align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  border: 1px solid var(--c-border-subtle);
+  padding: 6px 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: var(--hairline) solid var(--border-l1);
   border-radius: var(--r-md);
-  background: var(--c-surface);
+  background: var(--c-surface-raised);
+  box-shadow: var(--shadow-panel);
 }
 .attach-tray.hidden { display: none; }
+.attach-tray.collapsed .attach-item:not(.attach-mode) { display: none; }
+
+/* 展示夹自己的折叠键（不属于任何一条附件，故不受 .collapsed 影响） */
+.attach-mode {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 4px;
+  border: none; background: none; padding: 0 2px;
+  color: var(--c-text-3); cursor: pointer;
+  font-family: var(--mono); font-size: 11px; line-height: 1;
+}
+.attach-mode:hover { color: var(--c-text-1); }
+.attach-mode-fold { font-size: 10px; }
 
 .attach-note { font-size: 12px; color: var(--c-warn); padding: 2px 4px; }
 .attach-note.hidden { display: none; }
