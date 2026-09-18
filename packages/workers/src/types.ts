@@ -25,6 +25,8 @@ export interface WorkerSessionMeta {
    * and in the host's `store/mode.ts`. `null` = the caller declared none.
    */
   mode: string | null;
+  /** W9: the permission preset the session was created with (null = default). */
+  permission?: string | null;
 }
 
 /** One addressable conversation: its meta plus the log the driver appends to. */
@@ -55,6 +57,20 @@ export interface WorkerSessionSpec {
   model?: string | null;
   /** W729: mode token carried into the session meta (see [WorkerSessionMeta]). */
   mode?: string | null;
+  /** W9: permission preset carried into the session meta (see [WorkerSessionMeta]). */
+  permission?: string | null;
+}
+
+/** What the receipt protocol needs about a worker, kept in memory at spawn. */
+export interface SpawnInfo {
+  wid: string;
+  short: string;
+  brief: string;
+  reportTo: string | null;
+  /** W729: the working mode recorded at spawn (null = the caller declared none). */
+  mode: string | null;
+  /** W9: the permission preset recorded at spawn (null = the caller declared none). */
+  permission?: string | null;
 }
 
 /** One queued mailbox message (FIFO per session). */

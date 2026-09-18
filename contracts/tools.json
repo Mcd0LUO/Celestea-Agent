@@ -462,6 +462,10 @@
             ],
             "description": "worker 会话的会话模式（W729）：缺省继承父会话的 mode；standard=逐步直调工具，execution=优先用一个 run_code 程序完成多步依赖调用"
           },
+          "permission": {
+            "type": "string",
+            "description": "worker 子会话的权限预设（W9）：read-only / write-read / full-access 或自定义预设 id；缺省继承 host 的权限解析（未设置=full-access）。落到子会话 meta 与 registry 行的 permission= token。"
+          },
           "report_to": {
             "type": "string",
             "description": "回报目标会话 id：非空时在简报尾部注入中性回执提示；brief 轮结束后引擎机械写报告 results/<wid>-<short>.md 并发送 WORKER_<wid>_DONE/FAILED 回执到该会话 mailbox；回执到达会唤醒该目标会话新一轮处理（主 agent 读报告整合结论）"

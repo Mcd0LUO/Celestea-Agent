@@ -37,6 +37,7 @@ import { sessionIdOfDir } from "@celestea/runtime";
 export { sessionIdOfDir };
 import type { GrantsAuditEventName } from "../store/grants-audit.js";
 import { loadStudioConfig } from "../config.js";
+import { effectivePermissionOf, type PermissionBaseline } from "./engine-permissions.js";
 import {
   ENV_GRANTS_UNSANDBOXED,
   isExpired,
@@ -56,6 +57,10 @@ export interface EffectiveGrants {
   netHosts: readonly string[];
   toolExtra: readonly string[];
   unsandboxed: boolean;
+  /** W9: the permission baseline of the session (enforced by the sandbox/guard). */
+  workspaceWritable: boolean;
+  /** W9: tools the baseline removes from the face (before tool_extra adds). */
+  toolDeny: readonly string[];
   /** Provenance for the audit trail / UI (`cap` + grant id + expiry). */
   sources: ReadonlyArray<{ cap: string; grantId: string; expiresAt: number | null }>;
 }
@@ -67,6 +72,8 @@ export const EMPTY_GRANTS: EffectiveGrants = {
   netHosts: [],
   toolExtra: [],
   unsandboxed: false,
+  workspaceWritable: true,
+  toolDeny: [],
   sources: [],
 };
 
@@ -104,7 +111,23 @@ export function netHostsEffective(env: NodeJS.ProcessEnv, grants: EffectiveGrant
 }
 
 /** Read + validate; NEVER throws, only degrades with warnings (§4.1). */
-export function effectiveGrantsOf(sessionDir: string | null, env: NodeJS.ProcessEnv, now: number): EffectiveGrantsResult {
+/**
+ * W9: read the session's permission baseline and intersect its grants into it
+ * (the permission is authoritative; grants only widen INSIDE it).
+ */
+export function effectiveGrantsOf(
+  sessionDir: string | null,
+  env: NodeJS.ProcessEnv,
+  now: number,
+  presetHint?: string | null,
+): EffectiveGrantsResult {
+  const permission = effectivePermissionOf(sessionDir, env, presetHint);
+  const base = collectGrants(sessionDir, env, now);
+  const merged = intersectGrants(base.grants, permission, env);
+  return { grants: merged.grants, warnings: [...permission.warnings, ...base.warnings, ...merged.warnings] };
+}
+
+function collectGrants(sessionDir: string | null, env: NodeJS.ProcessEnv, now: number): EffectiveGrantsResult {
   if (sessionDir === null) return { grants: EMPTY_GRANTS, warnings: [] };
   const read = readGrantsFile(sessionDir, sessionIdOfDir(sessionDir));
   if (!read.exists) return { grants: EMPTY_GRANTS, warnings: [] };
@@ -113,6 +136,32 @@ export function effectiveGrantsOf(sessionDir: string | null, env: NodeJS.Process
     return { grants: EMPTY_GRANTS, warnings: [`grants_unreadable: ${reason} — the session runs with no grants`] };
   }
   return collect(read.file, env, now);
+}
+
+/**
+ * W9: the permission baseline is the ceiling. `network` is decided by the
+ * baseline; `write_roots` is dropped (with a warning) when the baseline allows
+ * no writes at all (read-only); reads/hosts stay additive; `unsandboxed` is
+ * `preset.unsandboxed && the operator env gate` (decision W9-b).
+ */
+function intersectGrants(grants: EffectiveGrants, permission: PermissionBaseline, env: NodeJS.ProcessEnv): { grants: EffectiveGrants; warnings: string[] } {
+  const warnings: string[] = [];
+  const writesAllowed = permission.workspaceWritable || permission.toolRootsWritable || permission.writeRoots.length > 0;
+  if (!writesAllowed && grants.writeRoots.length > 0) warnings.push("write_roots grant ignored: the session permission is read-only");
+  return {
+    grants: {
+      network: permission.network,
+      readRoots: grants.readRoots,
+      writeRoots: writesAllowed ? [...new Set([...permission.writeRoots, ...grants.writeRoots])] : [],
+      netHosts: grants.netHosts,
+      toolExtra: grants.toolExtra,
+      unsandboxed: (permission.unsandboxed || grants.unsandboxed) && unsandboxedAvailable(env),
+      workspaceWritable: permission.workspaceWritable,
+      toolDeny: permission.toolDeny,
+      sources: grants.sources,
+    },
+    warnings,
+  };
 }
 
 /** Fold the (already shape-checked) entries into the effective set. */
@@ -127,7 +176,7 @@ function collect(file: GrantsFile, env: NodeJS.ProcessEnv, now: number): { grant
     }
     applyGrant(acc, grant, ctx, warnings);
   }
-  return { grants: { ...acc, network: acc.network === true, unsandboxed: acc.unsandboxed === true }, warnings };
+  return { grants: { ...acc, network: acc.network === true, unsandboxed: acc.unsandboxed === true, workspaceWritable: true, toolDeny: [] }, warnings };
 }
 
 /**

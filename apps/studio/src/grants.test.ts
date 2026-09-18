@@ -76,7 +76,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
   it("reads nothing out of a missing or void file and warns about the void one", () => {
     const dir = sessionDir("void");
     const missing = effectiveGrantsOf(dir, envOf(dir), NOW);
-    expect(missing.grants).toEqual({ network: false, readRoots: [], writeRoots: [], netHosts: [], toolExtra: [], unsandboxed: false, sources: [] });
+    expect(missing.grants).toEqual({ network: true, readRoots: [], writeRoots: [], netHosts: [], toolExtra: [], unsandboxed: false, workspaceWritable: true, toolDeny: [], sources: [] });
     expect(missing.warnings).toEqual([]);
 
     for (const body of ["{ nope", JSON.stringify({ version: 2, session: "ws/s1", grants: [] }), JSON.stringify({ version: 1, session: "other/x", grants: [] }), JSON.stringify({ version: 1, session: "ws/s1", grants: {} })]) {
@@ -109,7 +109,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
     expect(read.grants.writeRoots).toEqual([]);
     expect(read.grants.netHosts).toEqual(["10.1.2.3"]);
     expect(read.grants.toolExtra).toEqual(["browser"]);
-    expect(read.grants.network).toBe(false);
+    expect(read.grants.network).toBe(true); // W9: default full-access
     const warnings = read.warnings.join(" | ");
     expect(warnings).toContain("filesystem root");
     expect(warnings).toContain("studio data directory");
@@ -136,7 +136,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
     const read = effectiveGrantsOf(dir, envOf(dataDir), NOW);
     expect(read.grants.readRoots).toEqual([shared]);
     expect(read.grants.writeRoots).toEqual([writable]);
-    expect(grantsActiveCaps(read.grants)).toEqual(["read_roots", "write_roots"]);
+    expect(grantsActiveCaps(read.grants)).toEqual(["network", "read_roots", "write_roots"]); // W9: preset network
     expect(read.grants.sources.map((s) => s.grantId)).toEqual(["g-read", "g-write"]);
     const warnings = read.warnings.join(" | ");
     expect(warnings).toContain("overlaps the read root");
@@ -144,6 +144,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
     expect(warnings).not.toContain("sk-abcdefghijklmnopqrstuvwxyz012345");
   });
 });
+
 
 describe("grants.json on disk (§2.1/§5.4)", () => {
   it("writes 0600, drops unknown fields, redacts the note and GCs expired rows", () => {
@@ -285,7 +286,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
   it("audits use + spends a one-shot entry when the instance is composed", () => {
     const dir = sessionDir("oneshot");
     const dataDir = tempDir("data");
-    const env = envOf(dataDir, { CELESTEA_GRANTS_ALLOW_UNSANDBOXED: "1" });
+    const env = envOf(dataDir, { CELESTEA_GRANTS_ALLOW_UNSANDBOXED: "1", CELESTEA_PERMISSION_MAX: "write-read" });
     writeFile(dir, [grantEntry("unsandboxed", {}, { id: "g-once", uses_left: 1, expires_at: NOW + 600 })]);
     const reader = createSessionGrants({ dataDir, env, now: () => NOW * 1000 });
     const read = reader.read("ws/s1", dir);
@@ -296,6 +297,8 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     expect(audit).toContain("g-once");
     expect(audit).toContain("one-shot grant spent");
     // the one-shot is gone, so the NEXT turn composes without it
+    // W9: with the preset not carrying it (MAX=write-read) the grant is the only
+    // source, so the spent one-shot turns it off again.
     expect(effectiveGrantsOf(dir, env, NOW).grants.unsandboxed).toBe(false);
   });
 
@@ -330,7 +333,7 @@ describe("grants through the live app (§4.2, §4.4, §5.5.5)", () => {
       await waitIdle(h);
       // Next boundary: the instance is recomposed with the new grants.
       expect((await getJson(h.app, `/api/sessions/${S1}/activate`, jsonRequest("POST"))).body).toMatchObject({ ok: true, runtime: "reused", rebuilt: true });
-      expect((await getJson(h.app, `/api/status?session=${S1}`)).body["grants_active"]).toEqual(["write_roots"]);
+      expect((await getJson(h.app, `/api/status?session=${S1}`)).body["grants_active"]).toEqual(["network", "write_roots"]); // W9
       expect(readFileSync(join(h.root, "grants-audit.jsonl"), "utf8")).toContain('"event":"grant"');
     } finally {
       h.cleanup();
@@ -425,7 +428,7 @@ describe("grants through the live app (§4.2, §4.4, §5.5.5)", () => {
       writeFileSync(join(dir, "grants.json"), "{ this is not json");
       const broken = await getJson(h.app, `/api/sessions/${S1}/grants`);
       expect(broken.body["grants"]).toEqual([]);
-      expect(broken.body["effective"]).toMatchObject({ network: false, write_roots: [] });
+      expect(broken.body["effective"]).toMatchObject({ network: true, write_roots: [] }); // W9: default full-access
       expect(String((broken.body["warnings"] as string[])[0])).toContain("grants_unreadable");
       // §2.2: `unsandboxed` is not offered without an operator opt-in.
       expect(h.studio.services.grants.env["CELESTEA_GRANTS_ALLOW_UNSANDBOXED"]).toBeUndefined();

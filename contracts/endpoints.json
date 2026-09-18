@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 51,
+  "count": 57,
   "endpoints": [
     {
       "id": "get_health",
@@ -3505,6 +3505,316 @@
         "The engine-side ESTIMATE of iteration E §3.2.4, never the platform's bill: the price snapshot comes from `<data dir>/pricing.json` and an unknown model is reported as `unpriced` instead of being charged 0 (LTS `biz/newapi.md` I1-I3).",
         "One process shares ONE append-only ledger file (`<data dir>/usage-ledger.jsonl`), so this endpoint reads every session's rows and the `session` filter is a query, not a boundary.",
         "`session` matches the row's own label (`<workspace>/<session>` for a named session, `sessionId ?? \"cli-main\"` for the detached generation); a trailing whitespace-only value is treated as absent."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_permissions_presets",
+      "method": "GET",
+      "path": "/api/permissions/presets",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W9)",
+      "docRef": "docs/feature-session-permissions.md#w9",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "builtin",
+            "type": "array<object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}>",
+            "required": true
+          },
+          {
+            "name": "custom",
+            "type": "array<object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}>",
+            "required": true
+          },
+          {
+            "name": "max",
+            "type": "string",
+            "required": true,
+            "note": "CELESTEA_PERMISSION_MAX (the clamp ceiling)"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "Built-ins are code constants (read-only/write-read/full-access); custom presets live at <data dir>/permissions.json."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "post_permissions_presets",
+      "method": "POST",
+      "path": "/api/permissions/presets",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W9)",
+      "docRef": "docs/feature-session-permissions.md#w9",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "preset",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "preset",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "required": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 409,
+          "error": "preset '{id}' already exists"
+        },
+        {
+          "status": 422,
+          "error": "invalid preset: {reason}"
+        }
+      ],
+      "notes": [
+        "Atomic 0600 write to <data dir>/permissions.json; a built-in id is rejected."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "put_permissions_preset",
+      "method": "PUT",
+      "path": "/api/permissions/presets/{id}",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W9)",
+      "docRef": "docs/feature-session-permissions.md#w9",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "preset",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "preset",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "required": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "no custom preset '{id}'"
+        },
+        {
+          "status": 409,
+          "error": "'{id}' is a built-in preset"
+        },
+        {
+          "status": 422,
+          "error": "invalid preset: {reason}"
+        }
+      ],
+      "notes": [
+        "Built-in presets are read-only."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "delete_permissions_preset",
+      "method": "DELETE",
+      "path": "/api/permissions/presets/{id}",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W9)",
+      "docRef": "docs/feature-session-permissions.md#w9",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "deleted",
+            "type": "string",
+            "required": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "no custom preset '{id}'"
+        },
+        {
+          "status": 409,
+          "error": "'{id}' is a built-in preset"
+        }
+      ],
+      "notes": [],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_session_permission",
+      "method": "GET",
+      "path": "/api/sessions/{id}/permission",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W9)",
+      "docRef": "docs/feature-session-permissions.md#w9",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "preset",
+            "type": "string",
+            "required": true,
+            "note": "the effective preset id (after the MAX clamp)"
+          },
+          {
+            "name": "effective",
+            "type": "object{network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "required": true
+          },
+          {
+            "name": "warnings",
+            "type": "string[]",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        }
+      ],
+      "notes": [
+        "No permission.json -> the effective preset is CELESTEA_PERMISSION_DEFAULT (full-access).",
+        "worker:<sid> has no directory and is rejected by session resolution."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "put_session_permission",
+      "method": "PUT",
+      "path": "/api/sessions/{id}/permission",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W9)",
+      "docRef": "docs/feature-session-permissions.md#w9",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "preset",
+            "type": "string",
+            "required": true
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "preset",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "effective",
+            "type": "object",
+            "required": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        },
+        {
+          "status": 422,
+          "error": "unknown preset '{preset}'"
+        }
+      ],
+      "notes": [
+        "Atomic 0600 write to <session dir>/permission.json (parallel to grants.json)."
       ],
       "probe": {
         "checked": false,

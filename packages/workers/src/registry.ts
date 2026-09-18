@@ -55,7 +55,7 @@ import {
 } from "./registry-tsv.js";
 import { dropTokens, entryView, isOwn, setToken as setTokenOf, terminalEntry, withProc, withState, withTokens } from "./row.js";
 import { observeWorkerTable, type WorkerRecoveryOptions, type WorkerRecoveryReport } from "./recovery.js";
-import { sanitizeExtra, truncateChars, utcNow, type WorkerSession, type WorkerVerdict } from "./types.js";
+import { sanitizeExtra, truncateChars, utcNow, type SpawnInfo, type WorkerSession, type WorkerVerdict } from "./types.js";
 import { PersistFailureLog, type PersistFailure } from "./persist-log.js";
 
 // W787: the pure ROW-FORMAT helpers moved to `row.ts` (§4.1 budget); their public
@@ -65,15 +65,7 @@ export { entryView, isOwn, withProc, withState } from "./row.js";
 export const RESULTS_DIR_DEFAULT = "results";
 export const WORKER_REGISTRY_SERVICE = "celestea.workers.WorkerRegistry";
 
-/** What the receipt protocol needs about a worker, kept in memory at spawn. */
-export interface SpawnInfo {
-  wid: string;
-  short: string;
-  brief: string;
-  reportTo: string | null;
-  /** W729: the working mode recorded at spawn (null = the caller declared none). */
-  mode: string | null;
-}
+export type { SpawnInfo } from "./types.js";
 
 export interface WorkerRegistryOptions {
   /** `null` = keep the table in memory only (no file IO at all). */
@@ -256,6 +248,7 @@ export class WorkerRegistry {
       workspace: getExtra(entry, "workspace"),
       model: getExtra(entry, "model"),
       mode,
+      permission: remembered.permission ?? null,
     });
     // E §2.2.2 + §5.2: a re-dispatch is the NEXT attempt of the same wid
     // (0 -> 1, the 0-based cross-capability convention) — the report name and the
@@ -276,6 +269,7 @@ export class WorkerRegistry {
       brief: remembered.brief,
       reportTo: remembered.reportTo,
       mode,
+      permission: remembered.permission ?? null,
     });
     void this.persistObserved(wid);
     if (this.canDrive()) this.driveIfPossible(session.meta.id, remembered.brief);

@@ -78,15 +78,17 @@ async function spawnWorker(registry: WorkerRegistry, args: Record<string, unknow
   // W729 §2.3: an explicit `mode` wins; otherwise the worker inherits the mode
   // of the session that owns this registry (its own host conversation).
   const mode = optionalArg(args, "mode") ?? registry.hostMode;
+  const permission = optionalArg(args, "permission");
   const driven = registry.canDrive();
   const session = registry.sessions.create({
     title: fullTitle,
     workspace: optionalArg(args, "workspace"),
     model: optionalArg(args, "model"),
     mode,
+    permission,
   });
   const injected = reportTo === null ? brief : `${brief}\n\n${completionFeedback()}`;
-  registry.rememberSpawn(session.meta.id, { wid, short, brief, reportTo, mode });
+  registry.rememberSpawn(session.meta.id, { wid, short, brief, reportTo, mode, permission });
   const warn = registry.upsert({
     wid,
     started_at: utcNow(),
@@ -158,6 +160,9 @@ function extraTokens(args: Record<string, unknown>, t: SpawnTokens): string {
   tokens.push(["lease", t.lease]);
   if (t.reportTo !== null) tokens.push(["report_to", t.reportTo]);
   if (t.mode !== null) tokens.push(["mode", t.mode]);
+  // W9: the permission preset travels as ONE persistable token too.
+  const permission = optionalArg(args, "permission");
+  if (permission !== null) tokens.push(["permission", permission]);
   tokens.push(["brief", truncateChars(sanitizeExtra(t.injected), 300)]);
   return tokens.map(([k, v]) => `${k}=${sanitizeExtra(v)}`).join(" ");
 }

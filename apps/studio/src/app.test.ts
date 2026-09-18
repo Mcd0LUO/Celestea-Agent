@@ -59,8 +59,8 @@ describe("W729/W791 endpoint invariants", () => {
     // snapshot (W725) moved it to 44, W767's login-cookie gate to 47, W783's user
     // questions to 49, W785's usage-ledger view to 50 — W729 itself adds none, and
     // W791 (P1) adds `POST /api/sessions/{id}/mode` (50 -> 51).
-    expect(API_ENDPOINT_COUNT).toBe(51);
-    expect(loadEndpoints().count).toBe(51);
+    expect(API_ENDPOINT_COUNT).toBe(57);
+    expect(loadEndpoints().count).toBe(57);
     expect(loadEndpoints().endpoints.map((e) => e.id)).toContain("post_session_mode");
   });
 });

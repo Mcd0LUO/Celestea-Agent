@@ -55,7 +55,7 @@ export interface EndpointProbe {
 }
 export interface EndpointContract {
   id: string;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "DELETE" | "PUT";
   path: string;
   group: string;
   rustHandler: string;
@@ -158,7 +158,7 @@ export interface DataFilesIndex {
  * freeze revision.
  */
 export const FROZEN_COUNTS = {
-  endpoints: 51,
+  endpoints: 57,
   sseEvents: 9,
   tools: 13,
 } as const;

@@ -21,7 +21,7 @@ import { loadEndpoints, type EndpointContract } from "@celestea/core";
 
 export interface RegisteredRoute {
   id: string;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "DELETE" | "PUT";
   /** Contract path, e.g. /api/sessions/{id}/messages */
   contractPath: string;
   /** Hono path, e.g. /api/sessions/:id/messages */
@@ -51,7 +51,7 @@ export function studioRoutes(): RegisteredRoute[] {
   }));
 }
 
-export const API_ENDPOINT_COUNT = 51;
+export const API_ENDPOINT_COUNT = 57;
 export const STATIC_ROUTE_COUNT = 4;
 
 /** Id-keyed view of the contract routes: a handler asks for its id, never a path. */

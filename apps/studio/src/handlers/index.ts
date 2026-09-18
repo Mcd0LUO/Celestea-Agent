@@ -23,6 +23,7 @@
  *   grants.ts        GET+POST+DELETE /api/sessions/{id}/grants | grants/confirm-token
  *   questions.ts     W783: GET /api/questions | POST /api/questions/{id}/answer
  *   usage.ts         W785: GET /api/usage/ledger (the ledger's aggregate view)
+ *   permissions.ts   W9: /api/permissions/presets (+{id}) | /api/sessions/{id}/permission
  *   auth.ts          W767: GET /login | POST /auth/login | GET /auth/check
  *
  * W725: the context endpoint (44th) lives in sessions.ts; its shaping is in
@@ -37,6 +38,7 @@ import { registerDialog } from "./dialog.js";
 import { registerFs } from "./fs.js";
 import { registerGrants } from "./grants.js";
 import { registerHealth } from "./health.js";
+import { registerPermissions } from "./permissions.js";
 import { registerPrompts } from "./prompts.js";
 import { registerProviders } from "./providers.js";
 import { registerQuestions } from "./questions.js";
@@ -60,6 +62,8 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     ...registerPrompts(app, deps, table),
     ...registerWorker(app, deps, table),
     ...registerGrants(app, deps, table),
+    // W9: permission presets (custom CRUD + a session's chosen preset).
+    ...registerPermissions(app, deps, table),
     // W783: the user-question answer + pending-list endpoints (47 -> 49).
     ...registerQuestions(app, deps, table),
     // W785 (E-P1, capability 3): the usage ledger's aggregate view (49 -> 50).

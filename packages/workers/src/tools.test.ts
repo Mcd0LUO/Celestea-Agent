@@ -88,6 +88,8 @@ describe("spawn_worker", () => {
       reportTo: "cli-main",
       // W729: this registry declares no host mode and the spawn passed none.
       mode: null,
+      // W9: no permission argument -> null (the default resolves at compose).
+      permission: null,
     });
     expect(registry.sessions.get("session-0")?.meta.title).toBe("W101·Do the thing");
   });
@@ -112,6 +114,17 @@ describe("spawn_worker", () => {
     await call(tools, "spawn_worker", { wid: "W3", brief: "b" });
     expect(registry.sessions.get("session-0")?.meta.mode).toBeNull();
     expect(getExtra(registry.getEntry("W3")!, "mode")).toBeNull();
+  });
+
+  it("W9: records the permission preset on the child meta, spawn facts and row token", async () => {
+    const { registry, tools } = harness();
+    await call(tools, "spawn_worker", { wid: "W1", brief: "b", permission: "read-only" });
+    expect(registry.sessions.get("session-0")?.meta.permission).toBe("read-only");
+    expect(registry.spawnInfo("session-0")?.permission).toBe("read-only");
+    expect(getExtra(registry.getEntry("W1")!, "permission")).toBe("read-only");
+    await call(tools, "spawn_worker", { wid: "W2", brief: "b" });
+    expect(registry.sessions.get("session-1")?.meta.permission).toBeNull();
+    expect(getExtra(registry.getEntry("W2")!, "permission")).toBeNull();
   });
 
   it("rejects a duplicate wid in any state", async () => {
