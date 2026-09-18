@@ -1,22 +1,23 @@
 // @vitest-environment jsdom
 /**
- * W872 · thread-rail「中间判定」（视口中间的常驻指示）。
+ * W872/W886 · thread-rail「中间判定」（视口中间的常驻指示）。
  *
  * 语义（与 ui/rail-center.ts 的文件头口径一致）：
  *   · 消息滚动内容坐标 yDoc(轮) = 该轮 rect.top − 消息区 rect.top + scrollTop + 半高；
  *   · 视口中央 = scrollTop + 视口高 / 2（与轨道几何同源）；
- *   · 命中 = 与视口中央最近的那一根长条（拿到 .is-center）；
- *   · 指示线在相邻两根条心之间按 doc 坐标**线性插值**（条心之间的空隙如实显示，
- *     「视口中央落在哪一根上 / 落在哪两根之间」两件事都能从线上读出来）；
- *   · 视口中央落在第一轮之前 / 最后一轮之后 ⇒ 线夹在首/末条心（clamped、无命中）。
+ *   · 命中 = 与视口中央最近的那一根长条（拿到 .is-center），且**任何时刻最多一条**；
+ *   · 命中的那一条同时携带用户语言提示（data-hint 含「视口中间」与轮次）；
+ *   · 视口中央落在第一轮之前 / 最后一轮之后 ⇒ **没有** .is-center（端点兜底）。
+ *
+ * W886：用户否掉了 W872 的中间指示线（那条细横线）本身，判定保留 —— 因此这里不再
+ * 断言线的存在/位置，改为断言「线不存在」+「命中条正确」+「换条时旧高亮摘掉」。
  *
  * 夹具沿用 tests/w867-rail-hit.test.ts 的写实桩（每轮一个 rect，滚动时 rect 跟着
  * scrollTop 走），因此「滚动」是真的滚动、不是改内部字段。几何刻意选成天然节距：
- * 4 轮 × 400px、视口 600px ⇒ 条心间隔恰为 9px（pitch = RAIL_PITCH_NATURAL），
- * 断言用相对关系（line 在首/末两条心之间），不写魔数。
+ * 4 轮 × 400px、视口 600px ⇒ 条心间隔恰为 9px（pitch = RAIL_PITCH_NATURAL）。
  *
- * 读数口径：条心 = 条 top + 半条高（与 w867 的 barY 同式）；线位置 = 指示线的
- * transform translateY（单值写入、不重建 DOM）。
+ * 读数口径：条心 = 条 top + 半条高（与 w867 的 barY 同式）；命中条 = 条元素上的
+ * .is-center 类。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { at, doc, Ev, resetHarness, type ElLike } from './lib/w795-dom.js';
@@ -31,7 +32,6 @@ const BAR_H = 5;
 
 /** 第 i 轮（0 起）条心在「消息滚动内容坐标」里的 Y —— 夹具造的就是这个值。 */
 const yDoc = (i: number): number => DOC_PAD + i * ROUND_H + ROUND_H / 2;
-const lastYDOC = (): number => DOC_PAD + (ROUNDS - 1) * ROUND_H + ROUND_H / 2;
 /** 让第 i 轮正好落在视口中央所需的 scrollTop。 */
 const toCenter = (i: number): number => yDoc(i) - PANE_H / 2;
 
@@ -43,13 +43,12 @@ interface RailMod {
   initRail(): void;
   railAdd(p: unknown, c: unknown, role: string): void;
   railSync(p: unknown): void;
-  RAIL_MID_SEL: string;
 }
 interface CenterMod {
   railCenterHit(
-    items: readonly { y: number; yDoc: number }[],
+    items: readonly { yDoc: number }[],
     yMid: number,
-  ): { item: { y: number } | null; y: number; clamped: boolean; round: number } | null;
+  ): { item: { yDoc: number } | null; clamped: boolean; round: number } | null;
   railCenterLabel(hit: { round: number; clamped: boolean }, fold?: number): string;
 }
 interface ViewCtxMod {
@@ -116,10 +115,11 @@ async function bootRail(): Promise<Boot> {
 
 const bars = (): ElLike[] => Array.from(doc.querySelectorAll('#main .railv3-item')) as ElLike[];
 const barY = (i: number): number => Number.parseFloat(String(bars()[i]?.style?.['top'])) + BAR_H / 2;
-const midEl = (): ElLike | null => doc.querySelector('#main .railv3-mid') as ElLike | null;
-/** 指示线的位置（transform 的单值写入，不依赖 jsdom 的布局）。 */
-const midY = (): number => Number.parseFloat((String(midEl()?.style?.['transform']) || '').replace(/[^0-9.-]/g, ''));
 const centerIdx = (): number => bars().findIndex((b) => b.classList.contains('is-center'));
+/** 命中条数量：会话切换/换条后都不得残留多条。 */
+const centerCount = (): number => doc.querySelectorAll('#main .is-center').length;
+/** W886：中间指示线必须彻底不存在。 */
+const midCount = (): number => doc.querySelectorAll('#main .railv3-mid').length;
 const barW = (i: number): number => Number.parseFloat(String(bars()[i]?.style?.['width']));
 
 /** 真滚动：改 scrollTop + 派发 scroll，再跑完 rail 的 rAF 节流。 */
@@ -138,86 +138,77 @@ function moveTo(main: ElLike, x: number, y: number): void {
   vi.advanceTimersByTime(200);
 }
 
-describe('W872 · rail 中间判定（视口中间指示）', () => {
+describe('W872/W886 · rail 中间判定（视口中间指示，无指示线）', () => {
   beforeEach(() => { resetHarness(); resetHeights(); vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); doc.body.replaceChildren(); });
 
-  it('① 初始/滚到顶：指示线存在且落在第一根条附近；端点之外不停用、不越界、不抖动', async () => {
+  it('① 线不存在：滚到顶时命中第 1 轮；端点之外没有 .is-center', async () => {
     const { rail, msgs, pane } = await bootRail();
-    const mid = midEl();
-    expect(mid, '中间指示线必须存在（' + rail.RAIL_MID_SEL + '）').not.toBeNull();
-    expect(mid?.style?.['visibility'], '有条可判时不得隐藏').not.toBe('hidden');
+    expect(midCount(), 'W886：中间指示线必须已不存在').toBe(0);
+    expect(doc.querySelector('#main .railv3-mid'), '选择器查询也为 null').toBeNull();
     expect(bars().length, '夹具 4 轮').toBe(ROUNDS);
-    // scrollTop = 0 ⇒ 视口中央 yDoc 300 落在第 1 轮（yDoc 208）与第 2 轮（608）之间，
-    // 离第 1 轮最近 ⇒ 命中第 1 轮；线在两条心之间（首条心之上、第二条心之下）。
+    // scrollTop = 0 ⇒ 视口中央 yDoc 300 离第 1 轮（yDoc 208）最近 ⇒ 命中第 1 轮
     expect(centerIdx(), '滚到顶时视口中央在第 1 轮上').toBe(0);
-    expect(midY(), '线不早于第 1 根条心').toBeGreaterThanOrEqual(barY(0) - 0.001);
-    expect(midY(), '线不越过第 2 根条心').toBeLessThanOrEqual(barY(1) + 0.001);
-    const atTop = midY(); // 线位置由 transform 的 toFixed(1) 写入，读数取整到 0.1px
-    scrollTo(msgs, 0); // 再滚一次（同为顶）→ 位置必须稳定，不回跳
-    expect(midY(), '顶部的重复读数稳定').toBe(atTop);
+    expect(centerCount(), '同一时刻最多一条 .is-center').toBe(1);
+    scrollTo(msgs, 0); // 再滚一次（同为顶）→ 判定必须稳定，不回跳
     expect(centerIdx()).toBe(0);
+    expect(centerCount()).toBe(1);
     // 「刚进页」的另一种常见形态：第一轮比视口还高（长回答）⇒ 视口中央落在
-    // **第一根条之前**：线如实停在第一根条上，且此时没有任何一轮被标成居中。
+    // **第一根条之前**：此时没有任何一轮被标成居中（端点兜底）。
     heights[0] = 1600;
     rail.railSync(pane);
     vi.advanceTimersByTime(50); // queueSync → layout
     scrollTo(msgs, 0);
-    expect(midEl()?.style?.['visibility'], '端点之外也不得隐藏').not.toBe('hidden');
-    expect(midY(), '线停在第一根条上').toBeCloseTo(barY(0), 5);
-    expect(midEl()?.classList.contains('is-out'), '端点态：线降一档对比（不是消失）').toBe(true);
     expect(centerIdx(), '端点之外没有「居中」条').toBe(-1);
+    expect(centerCount(), '端点之外没有 .is-center').toBe(0);
+    expect(midCount()).toBe(0);
   });
 
-  it('② 滚到中间某轮：指示线随滚动更新，命中条拿到「居中」态与用户语言提示', async () => {
+  it('② 滚到中间某轮：命中条跟着换，且提示文案挂在命中条上', async () => {
     const { msgs } = await bootRail();
-    const y0 = midY();
     scrollTo(msgs, toCenter(2));
-    expect(midY(), '指示线跟着滚动走').not.toBeCloseTo(y0, 5);
-    expect(midY(), '正中第 3 轮时线就在第 3 根条心').toBeCloseTo(barY(2), 5);
     expect(centerIdx(), '第 3 轮拿到 .is-center').toBe(2);
-    // 提示走注册缝（data-hint），不是原生 title；文案是用户语言且含轮次
-    expect(midEl()?.getAttribute('data-hint') ?? '').toContain('第 3 轮');
-    expect(midEl()?.getAttribute('data-hint') ?? '').toContain('视口中间');
-    expect(midEl()?.getAttribute('title'), '不得挂原生 title（会与卡片双弹）').toBeNull();
-    // 逐轮推进：再滚到第 4 轮（线落在第 3/第 4 条心之间 ⇒ 指示「在两轮之间」）
+    expect(centerCount(), '最多一条').toBe(1);
+    // 提示走注册缝（data-hint），挂在**命中条自身**（不是已删除的线）；用户语言且含轮次
+    const hitHint = bars()[2]?.getAttribute('data-hint') ?? '';
+    expect(hitHint, '命中条提示含轮次').toContain('第 3 轮');
+    expect(hitHint, '命中条提示含「视口中间」').toContain('视口中间');
+    expect(bars()[2]?.getAttribute('title'), '不得挂原生 title（会与卡片双弹）').toBeNull();
+    // 逐轮推进：再滚到第 4 轮 → 命中条换成第 4 条，旧命中条摘掉高亮并复位文案
     scrollTo(msgs, toCenter(3) - 100);
-    expect(centerIdx(), '视口中央仍最近第 4 轮').toBe(3);
-    expect(midY()).toBeGreaterThan(barY(2));
-    expect(midY()).toBeLessThan(barY(3));
+    expect(centerIdx(), '视口中央最近第 4 轮').toBe(3);
     expect(bars()[2]?.classList.contains('is-center'), '旧命中条必须摘掉').toBe(false);
+    expect(centerCount(), '换条后仍最多一条').toBe(1);
+    expect(bars()[2]?.getAttribute('data-hint') ?? '', '旧命中条文案复位为常驻文案').not.toContain('视口中间');
     scrollTo(msgs, toCenter(3));
-    expect(midY(), '正中第 4 轮时线回到第 4 根条心').toBeCloseTo(barY(3), 5);
-    expect(centerIdx()).toBe(3);
+    expect(centerIdx(), '正中第 4 轮').toBe(3);
+    expect(centerCount()).toBe(1);
+    expect(bars()[3]?.getAttribute('data-hint') ?? '').toContain('第 4 轮');
   });
 
-  it('③ 滚到底：指示线落在最后一根条附近（不是消失、不是越界）', async () => {
+  it('③ 滚到底：命中最后一条；越过任一端点后没有 .is-center', async () => {
     const { msgs } = await bootRail();
     // 真实底部：scrollHeight − clientHeight（夹具内容高 = 2*PAD + ROUNDS*ROUND_H）
     Object.defineProperty(msgs, 'scrollHeight', { value: DOC_PAD * 2 + ROUNDS * ROUND_H, configurable: true });
     Object.defineProperty(msgs, 'clientHeight', { value: PANE_H, configurable: true });
     scrollTo(msgs, Number(msgs.scrollHeight) - PANE_H);
-    expect(midEl(), '到底时指示线仍在').not.toBeNull();
-    expect(midEl()?.style?.['visibility'], '到底时不得隐藏').not.toBe('hidden');
     expect(centerIdx(), '到底时视口中央在最后一轮上').toBe(ROUNDS - 1);
-    expect(midY(), '线落在最后一根条附近（末两条心之间）').toBeGreaterThan(barY(ROUNDS - 2) - 0.001);
-    expect(midY(), '线不越过最后一根条心').toBeLessThanOrEqual(barY(ROUNDS - 1) + 0.001);
-    // 极端越界（惯性滚动 / 拉伸）：仍如实停在末条心，且没有任何一轮被标成居中
+    expect(centerCount()).toBe(1);
+    expect(midCount(), '到底也没有指示线').toBe(0);
+    // 极端越界（惯性滚动 / 拉伸）：端点之外 ⇒ 没有任何一轮被标成居中
     scrollTo(msgs, 100000);
-    expect(midY(), '越过端点后夹在末条心').toBeCloseTo(barY(ROUNDS - 1), 5);
-    expect(midEl()?.style?.['visibility']).not.toBe('hidden');
-    expect(midEl()?.classList.contains('is-out'), '端点态：线降一档对比').toBe(true);
-    expect(centerIdx(), '端点之外没有「居中」条').toBe(-1);
-    // 反向端点：滚到负值（回弹）同样夹在首条心
+    expect(centerIdx(), '越过端点后没有「居中」条').toBe(-1);
+    expect(centerCount(), '端点之外没有 .is-center').toBe(0);
+    // 反向端点：滚到负值（回弹）同样没有命中条
     scrollTo(msgs, -500);
-    expect(midY(), '越过起点后夹在首条心').toBeCloseTo(barY(0), 5);
     expect(centerIdx()).toBe(-1);
-    // 最后一轮比视口还高（底部仍「还没读到最后一轮」）：同样夹在末条心
+    expect(centerCount()).toBe(0);
+    // 最后一轮比视口还高（底部仍「还没读到最后一轮」）：同样没有命中条
     heights[ROUNDS - 1] = 1600;
     Object.defineProperty(msgs, 'scrollHeight', { value: DOC_PAD * 2 + ROUND_H * (ROUNDS - 1) + 1600, configurable: true });
     scrollTo(msgs, Number(msgs.scrollHeight) - PANE_H);
-    expect(midY(), '底部仍在端点之外 ⇒ 线停在末条心').toBeCloseTo(barY(ROUNDS - 1), 5);
     expect(centerIdx(), '「还没读到最后一轮」时没有「居中」条').toBe(-1);
+    expect(centerCount()).toBe(0);
   });
 
   it('④ 「居中」态不改变条长：命中条与邻居宽度不受影响（与 fisheye 解耦）', async () => {
@@ -246,16 +237,19 @@ describe('W872 · rail 中间判定（视口中间指示）', () => {
     expect(bars().map((_, i) => barW(i)), '悬停长度不因「居中」条变化而变').toEqual(hoverW);
   });
 
-  it('⑤ 纯函数口径：最近命中 / 相邻插值 / 端点兜底 / 空轨道（ui/rail-center.ts）', async () => {
+  it('⑤ 纯函数口径：最近命中 / 端点兜底 / 空轨道；不再产出线位置 y（ui/rail-center.ts）', async () => {
     const c = (await import(/* @vite-ignore */ at('ui/rail-center.ts'))) as CenterMod;
-    const items = [{ y: 10, yDoc: 0 }, { y: 20, yDoc: 100 }];
+    const items = [{ yDoc: 0 }, { yDoc: 100 }];
     expect(c.railCenterHit([], 50), '空轨道没有判定结果').toBeNull();
-    expect(c.railCenterHit(items, 0), '正中第一根').toMatchObject({ y: 10, clamped: false, round: 1 });
-    expect(c.railCenterHit(items, 100), '正中最后一根').toMatchObject({ y: 20, clamped: false, round: 2 });
-    expect(c.railCenterHit(items, 50), '两根之间：线在中间插值，同距取靠上的一根').toMatchObject({ y: 15, clamped: false, round: 1 });
-    expect(c.railCenterHit(items, 60), '过中点后换命中').toMatchObject({ y: 16, clamped: false, round: 2 });
-    expect(c.railCenterHit(items, -50), '第一根之前：夹在首条心').toMatchObject({ item: null, y: 10, clamped: true, round: -1 });
-    expect(c.railCenterHit(items, 999), '最后一根之后：夹在末条心').toMatchObject({ item: null, y: 20, clamped: true, round: -1 });
+    expect(c.railCenterHit(items, 0), '正中第一根').toMatchObject({ clamped: false, round: 1 });
+    expect(c.railCenterHit(items, 0)?.item, 'item 就是命中的那一条').toBe(items[0]);
+    expect(c.railCenterHit(items, 100), '正中最后一根').toMatchObject({ clamped: false, round: 2 });
+    expect(c.railCenterHit(items, 50), '两根之间：同距取靠上的一根').toMatchObject({ clamped: false, round: 1 });
+    expect(c.railCenterHit(items, 60), '过中点后换命中').toMatchObject({ clamped: false, round: 2 });
+    expect(c.railCenterHit(items, -50), '第一根之前：无命中').toMatchObject({ item: null, clamped: true, round: -1 });
+    expect(c.railCenterHit(items, 999), '最后一根之后：无命中').toMatchObject({ item: null, clamped: true, round: -1 });
+    // W886：线没了 ⇒ 判定结果不再含线位置字段（防止死代码回流）
+    expect(c.railCenterHit(items, 50), '不得再有 y 字段').not.toHaveProperty('y');
     expect(c.railCenterLabel({ round: 3, clamped: false })).toBe('第 3 轮附近（视口中间）');
     expect(c.railCenterLabel({ round: -1, clamped: true }, 0)).toBe('视口中间 · 在这几轮之外');
     expect(c.railCenterLabel({ round: 1, clamped: false }, 7), '折叠条另有文案').toContain('更早的 7 轮');
