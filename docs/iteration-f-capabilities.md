@@ -166,6 +166,17 @@ bwrap + `rlimits=false shareNet=true` ⇒ ALIVE + 网络 200。**不可用**：�
 浏览器进程生命周期**挂到会话**上，会话结束即回收，不留孤儿进程。
 
 **权限**：走既有 grants/权限模型，首次使用需显式授权；被拒要**可见**。
+**沙箱落地（实读结论，决定改动面）**：
+- **网络已有现成授权通道**：`packages/tools/src/sandbox/provider.ts:154-159` 的 grant 会 OR 进 `shareNet`
+  （`shareNet: envFlag(env[ENV_SANDBOX_NET], …) || grants.network === true`），且注释明写「只动 shareNet，
+  shareTmp/seccomp/maskDirs/rlimits 一律保持运维设定不变」⇒ **浏览器工具只需申请 network 能力位**，不必新造机制。
+- **地址空间没有豁免通道**：rlimits 是全局开关（`packages/tools/src/sandbox/limits.ts:111-112` `rlimitsEnabled(env)`），
+  上限是全局 `memMb`（`:36,46` 默认 2048），落地为 `--as=<memMb*1024*1024>`（`sandbox/rlimit.ts:57`）/ `ulimit -v`（`:71`）。
+  ⇒ F4 需要**新增一条按调用的豁免**（例如 `browser` 能力位 ⇒ 该次调用不加 `--as`，其余 rlimit 照旧）。
+- **不能靠「把 memMb 调大」**：W885 实测 2/3/4/8/16/32 GiB **全部 SIGTRAP(133)**，只有 64 GiB 才活 ——
+  现代 Chromium 会预留极大的**虚拟**地址空间（V8 指针压缩笼），`RLIMIT_AS` 与它天然冲突。
+  豁免 AS 之后，内存兜底必须靠**别的层**（cgroup MemoryMax / 浏览器自身堆上限），这点要写进安全说明。
+
 **工具面（W885 建议）**：`browser_open(url, viewport)` + `browser_act(click/type/key/scroll, target)`，
 返回「裁剪后的 AX 文本快照 + PNG 图像」。**P1 = L2 桌面**：Xvfb + 注入工具（需 apt 安装，走运维流程与审计）。
 **P2**：远程/多机、录制回放。
