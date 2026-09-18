@@ -42,8 +42,10 @@ afterEach(() => {
 
 describe("route table coverage", () => {
   // W783: 47 -> 49 (the two user-question endpoints); W785: 49 -> 50
-  // (GET /api/usage/ledger); W791: 50 -> 51 (POST /api/sessions/{id}/mode).
-  it("binds exactly the 51 contract endpoints with the contract method+path", () => {
+  // (GET /api/usage/ledger); W791: 50 -> 51 (POST /api/sessions/{id}/mode);
+  // W9: 51 -> 57 (the six permission endpoints); W860: 57 -> 60 (the two
+  // session-tool switches + GET /api/plugins).
+  it("binds exactly the 60 contract endpoints with the contract method+path", () => {
     const h = make();
     expect(h.studio.endpointIds).toHaveLength(API_ENDPOINT_COUNT);
     expect(new Set(h.studio.endpointIds).size).toBe(API_ENDPOINT_COUNT);
@@ -58,9 +60,10 @@ describe("W729/W791 endpoint invariants", () => {
     // The design's "43" was the baseline of the day it was written; the context
     // snapshot (W725) moved it to 44, W767's login-cookie gate to 47, W783's user
     // questions to 49, W785's usage-ledger view to 50 — W729 itself adds none, and
-    // W791 (P1) adds `POST /api/sessions/{id}/mode` (50 -> 51).
-    expect(API_ENDPOINT_COUNT).toBe(57);
-    expect(loadEndpoints().count).toBe(57);
+    // W791 (P1) adds `POST /api/sessions/{id}/mode` (50 -> 51). W9's permission
+    // CRUD took it to 57 and W860's session-tool switches + plugin inventory to 60.
+    expect(API_ENDPOINT_COUNT).toBe(60);
+    expect(loadEndpoints().count).toBe(60);
     expect(loadEndpoints().endpoints.map((e) => e.id)).toContain("post_session_mode");
   });
 });

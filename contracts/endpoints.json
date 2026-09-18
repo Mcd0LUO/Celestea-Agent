@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (51 endpoints)",
+  "title": "Celestea Studio HTTP API contract (60 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -8,7 +8,7 @@
     "routes": "frozen from the retired backend implementation (original source file deleted 2026-09-15); kept as contracts/route-table.snapshot.json (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "routeSnapshot": "contracts/route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only)."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only). W9 added the six permission endpoints (51 -> 57). W860 added GET|PUT /api/sessions/{id}/tools and GET /api/plugins (57 -> 60)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 57,
+  "count": 60,
   "endpoints": [
     {
       "id": "get_health",
@@ -3815,6 +3815,178 @@
       ],
       "notes": [
         "Atomic 0600 write to <session dir>/permission.json (parallel to grants.json)."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_session_tools",
+      "method": "GET",
+      "path": "/api/sessions/{id}/tools",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W860)",
+      "docRef": "docs/feature-session-permissions.md#w860",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "disabled",
+            "type": "string[]",
+            "required": true,
+            "note": "W860: the session's OWN disabled tool names, normalized (trimmed, blank-free, deduped, first-occurrence order); [] when no tools.json exists"
+          },
+          {
+            "name": "effective",
+            "type": "object{toolDeny:string[]}",
+            "required": true,
+            "note": "W860: the permission preset's toolDeny UNIONED with disabled (preset first, session second, deduped) — read back through the engine's one grant reader, so it is exactly what the next turn's disclosure policy blocks"
+          },
+          {
+            "name": "warnings",
+            "type": "string[]",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        }
+      ],
+      "notes": [
+        "W860: pure SUBTRACTION — a disabled name can only remove a tool from the session face; it can never add one back (the execution-mode fold stays folded).",
+        "Fail-closed read: a void <session dir>/tools.json (bad JSON / wrong version / another session / disabled not a string[]) is ignored with ONE warning and the session runs with no tools disabled.",
+        "effective.toolDeny is the union that engine-grants.ts hands to the composed instance, so GET /api/tools?session= and adapter.sessionContext() report the same face."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "put_session_tools",
+      "method": "PUT",
+      "path": "/api/sessions/{id}/tools",
+      "group": "permissions",
+      "rustHandler": "(none - TypeScript-only, W860)",
+      "docRef": "docs/feature-session-permissions.md#w860",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "disabled",
+            "type": "string[]",
+            "required": true,
+            "note": "tool names to disable for THIS session; every element must be a non-empty string (422 otherwise), then trimmed + deduped before the write"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "disabled",
+            "type": "string[]",
+            "required": true,
+            "note": "the normalized list that was persisted"
+          },
+          {
+            "name": "effective",
+            "type": "object{toolDeny:string[]}",
+            "required": true,
+            "note": "the preset deny unioned with the new disabled list"
+          },
+          {
+            "name": "warnings",
+            "type": "string[]",
+            "required": false
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        },
+        {
+          "status": 422,
+          "error": "field 'disabled' must be an array of strings"
+        },
+        {
+          "status": 422,
+          "error": "field 'disabled' must not contain an empty tool name"
+        }
+      ],
+      "notes": [
+        "Atomic 0600 write to <session dir>/tools.json (parallel to permission.json and grants.json).",
+        "Calls RuntimeAdapter.invalidateSession(id): the denials take effect at the next turn boundary, exactly like PUT /api/sessions/{id}/permission."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_plugins",
+      "method": "GET",
+      "path": "/api/plugins",
+      "group": "plugins",
+      "rustHandler": "(none - TypeScript-only, W860)",
+      "docRef": "docs/feature-session-permissions.md#w860",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "plugins",
+            "type": "array<{name:string,layer:string,hot:boolean}>",
+            "required": true,
+            "note": "W860: the plugins THIS process mounted at startup, in mount order; layer is always \"host\" and hot always false"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "W860: the names come from composeStudio recording pluginNames(storePlugins(...)) + pluginNames(hostPlugins(...)) at mount time — never a hand-maintained constant list.",
+        "BOUNDARY: host STARTUP plugins only (the five store plugins + the three host singletons studio/bus, studio/runtime, studio/settings). Plugins the ENGINE mounts while composing a session are NOT part of this inventory."
       ],
       "probe": {
         "checked": false,

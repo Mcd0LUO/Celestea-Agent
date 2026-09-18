@@ -16,7 +16,7 @@
  *   settings    -> host-side overrides (system_prompt / base_url)
  */
 
-import { Context, definePlugin, mountPlugins, type Plugin } from "@celestea/core";
+import { Context, definePlugin, mountPlugins, pluginNames, type Plugin } from "@celestea/core";
 import { dirname } from "node:path";
 import { createStudioBus, type StudioBus } from "./sse.js";
 import { createGrantsServices, type GrantsServices } from "./store/grants-service.js";
@@ -85,6 +85,17 @@ export interface StudioServices {
    * mutate and `await` the engine, so the two must never interleave.
    */
   applyQueue: SerialQueue;
+  /**
+   * W860: the names of the plugins THIS composition mounted at startup, in mount
+   * order (the store plugins, then the host singletons) — recorded with
+   * `pluginNames` over the very arrays that were mounted, so
+   * `GET /api/plugins` can never drift from `storePlugins`/`hostPlugins`.
+   *
+   * Boundary: this is the HOST startup layer only. Plugins the engine mounts
+   * while composing a session (its own tool/disclosure/loop plugins) are not
+   * part of this list.
+   */
+  hostPluginNames: string[];
 }
 
 /**
@@ -121,7 +132,8 @@ export function hostPlugins(runtime: RuntimeAdapter, bus: StudioBus): Plugin[] {
  */
 export function composeStudio(input: ComposeInput): StudioServices {
   const ctx = Context.root();
-  mountPlugins(ctx, storePlugins(input.config, input.now ?? Date.now));
+  const storePluginList = storePlugins(input.config, input.now ?? Date.now);
+  mountPlugins(ctx, storePluginList);
   const stores: StoreServices = {
     workspaces: ctx.require(WORKSPACES_SERVICE),
     sessions: ctx.require(SESSIONS_SERVICE),
@@ -132,12 +144,23 @@ export function composeStudio(input: ComposeInput): StudioServices {
   const runtime = typeof input.runtime === "function" ? input.runtime(stores) : input.runtime;
   const bus = createStudioBus({ statusline: () => runtime.statusline() });
   runtime.attach(bus);
-  mountPlugins(ctx, hostPlugins(runtime, bus));
+  const hostPluginList = hostPlugins(runtime, bus);
+  mountPlugins(ctx, hostPluginList);
   const grants = createGrantsServices({
     dataDir: dirname(input.config.paths.workspacesFile),
     workspacesFile: input.config.paths.workspacesFile,
     ...(input.env === undefined ? {} : { env: input.env }),
     ...(input.now === undefined ? {} : { now: input.now }),
   });
-  return { ctx, config: input.config, bus, runtime, settings: ctx.require(SETTINGS_SERVICE), grants, applyQueue: new SerialQueue(), ...stores };
+  return {
+    ctx,
+    config: input.config,
+    bus,
+    runtime,
+    settings: ctx.require(SETTINGS_SERVICE),
+    grants,
+    applyQueue: new SerialQueue(),
+    hostPluginNames: [...pluginNames(storePluginList), ...pluginNames(hostPluginList)],
+    ...stores,
+  };
 }

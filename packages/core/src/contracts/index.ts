@@ -158,7 +158,8 @@ export interface DataFilesIndex {
  * freeze revision.
  */
 export const FROZEN_COUNTS = {
-  endpoints: 57,
+  // W860: 57 -> 60 (GET|PUT /api/sessions/{id}/tools + GET /api/plugins).
+  endpoints: 60,
   sseEvents: 9,
   tools: 13,
 } as const;

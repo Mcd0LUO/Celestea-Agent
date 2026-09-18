@@ -39,6 +39,7 @@ import type { GrantsAuditEventName } from "../store/grants-audit.js";
 import { loadStudioConfig } from "../config.js";
 import { isBuiltinPresetId, parsePreset, type PermissionPreset } from "../store/permissions.js";
 import { effectivePermissionOf, type PermissionBaseline } from "./engine-permissions.js";
+import { readSessionTools } from "../store/session-tools.js";
 import {
   ENV_GRANTS_UNSANDBOXED,
   isExpired,
@@ -123,9 +124,18 @@ export function effectiveGrantsOf(
   presetHint?: string | null,
 ): EffectiveGrantsResult {
   const permission = effectivePermissionOf(sessionDir, env, presetHint);
+  /**
+   * W860: the session's own DISABLED tool list is read HERE, through the same
+   * reader every other consumer of the effective grants goes through
+   * (`session-grants.ts` for the composed instance, `RealRuntimeAdapter.sessionTools`
+   * for `GET /api/tools?session=`). A void `tools.json` warns and changes no
+   * other cap; a session without a directory has nothing to read, so its
+   * `toolDeny` is exactly the permission baseline's.
+   */
+  const sessionTools = sessionDir === null ? { disabled: [], warnings: [] } : readSessionTools(sessionDir, sessionIdOfDir(sessionDir));
   const base = collectGrants(sessionDir, env, now);
-  const merged = intersectGrants(base.grants, permission, env);
-  return { grants: merged.grants, warnings: [...permission.warnings, ...base.warnings, ...merged.warnings] };
+  const merged = intersectGrants(base.grants, permission, env, sessionTools.disabled);
+  return { grants: merged.grants, warnings: [...permission.warnings, ...sessionTools.warnings, ...base.warnings, ...merged.warnings] };
 }
 
 function collectGrants(sessionDir: string | null, env: NodeJS.ProcessEnv, now: number): EffectiveGrantsResult {
@@ -145,7 +155,7 @@ function collectGrants(sessionDir: string | null, env: NodeJS.ProcessEnv, now: n
  * no writes at all (read-only); reads/hosts stay additive; `unsandboxed` is
  * `preset.unsandboxed && the operator env gate` (decision W9-b).
  */
-function intersectGrants(grants: EffectiveGrants, permission: PermissionBaseline, env: NodeJS.ProcessEnv): { grants: EffectiveGrants; warnings: string[] } {
+function intersectGrants(grants: EffectiveGrants, permission: PermissionBaseline, env: NodeJS.ProcessEnv, sessionDisabled: readonly string[] = []): { grants: EffectiveGrants; warnings: string[] } {
   const warnings: string[] = [];
   const writesAllowed = permission.workspaceWritable || permission.toolRootsWritable || permission.writeRoots.length > 0;
   if (!writesAllowed && grants.writeRoots.length > 0) warnings.push("write_roots grant ignored: the session permission is read-only");
@@ -158,7 +168,10 @@ function intersectGrants(grants: EffectiveGrants, permission: PermissionBaseline
       toolExtra: grants.toolExtra,
       unsandboxed: (permission.unsandboxed || grants.unsandboxed) && unsandboxedAvailable(env),
       workspaceWritable: permission.workspaceWritable,
-      toolDeny: permission.toolDeny,
+      // W860: preset deny first, session-level deny second, deduped. Both are
+      // pure SUBTRACTION, so a name the `execution` mode already folded away can
+      // never come back through this list (engine-plugins keeps them blocked).
+      toolDeny: [...new Set([...permission.toolDeny, ...sessionDisabled])],
       sources: grants.sources,
     },
     warnings,

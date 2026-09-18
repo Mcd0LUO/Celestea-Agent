@@ -24,6 +24,8 @@
  *   questions.ts     W783: GET /api/questions | POST /api/questions/{id}/answer
  *   usage.ts         W785: GET /api/usage/ledger (the ledger's aggregate view)
  *   permissions.ts   W9: /api/permissions/presets (+{id}) | /api/sessions/{id}/permission
+ *   session-tools.ts W860: GET+PUT /api/sessions/{id}/tools (the session's disabled list)
+ *   plugins.ts       W860: GET /api/plugins (the host startup plugin inventory)
  *   auth.ts          W767: GET /login | POST /auth/login | GET /auth/check
  *
  * W725: the context endpoint (44th) lives in sessions.ts; its shaping is in
@@ -39,10 +41,12 @@ import { registerFs } from "./fs.js";
 import { registerGrants } from "./grants.js";
 import { registerHealth } from "./health.js";
 import { registerPermissions } from "./permissions.js";
+import { registerPlugins } from "./plugins.js";
 import { registerPrompts } from "./prompts.js";
 import { registerProviders } from "./providers.js";
 import { registerQuestions } from "./questions.js";
 import { registerSessionMoves } from "./session-move.js";
+import { registerSessionTools } from "./session-tools.js";
 import { registerSessions } from "./sessions.js";
 import { registerUsage } from "./usage.js";
 import { registerWorker } from "./worker.js";
@@ -70,6 +74,9 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     ...registerUsage(app, deps, table),
     // W767: Studio's OWN login-cookie gate (page + login + nginx auth_request).
     ...registerAuth(app, deps, table),
+    // W860: session-level tool switches (57 -> 59) + the host plugin inventory (59 -> 60).
+    ...registerSessionTools(app, deps, table),
+    ...registerPlugins(app, deps, table),
   ];
 }
 

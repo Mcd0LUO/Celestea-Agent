@@ -20,9 +20,11 @@ describe("contracts/endpoints.json", () => {
   const c = loadEndpoints();
 
   // W791: 50 -> 51 (`POST /api/sessions/{id}/mode`, the P1 session working mode).
-  it("holds exactly 57 endpoints (W725 context, W767 cookie gate, W783 questions, W785 ledger, W791 mode)", () => {
-    expect(c.count).toBe(57);
-    expect(c.endpoints).toHaveLength(57);
+  // W9: 51 -> 57 (the six permission endpoints); W860: 57 -> 60 (session tool
+  // switches + the host plugin inventory).
+  it("holds exactly 60 endpoints (W725 context, W767 cookie gate, W783 questions, W785 ledger, W791 mode, W9 permissions, W860 tools/plugins)", () => {
+    expect(c.count).toBe(60);
+    expect(c.endpoints).toHaveLength(60);
   });
 
   // W767: Studio's own login-cookie gate is served on `/login` + `/auth/*` — the
@@ -57,12 +59,13 @@ describe("contracts/endpoints.json", () => {
     // declared as a TypeScript-only delta instead of being written into it.
     // W783: 8 -> 10 (GET /api/questions + POST /api/questions/{id}/answer).
     // W785: 10 -> 11 (GET /api/usage/ledger).
-    // W791: 11 -> 12 (POST /api/sessions/{id}/mode).
-    expect(snap.tsOnlyRoutes).toHaveLength(18);
-    expect(snap.tsApiEndpoints).toBe(57);
-    expect(snap.tsMethodPathCombos).toBe(61);
+    // W791: 11 -> 12 (POST /api/sessions/{id}/mode); W9: 12 -> 18 (the six
+    // permission endpoints); W860: 18 -> 21 (tool switches + plugin inventory).
+    expect(snap.tsOnlyRoutes).toHaveLength(21);
+    expect(snap.tsApiEndpoints).toBe(60);
+    expect(snap.tsMethodPathCombos).toBe(64);
     const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
-    expect(fromSnapshot.size).toBe(57);
+    expect(fromSnapshot.size).toBe(60);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });
@@ -211,9 +214,9 @@ describe("contracts/data-files", () => {
   });
 
   // W728 §3 P0: the ledger and its price snapshot are data files; P0 added no
-  // endpoint of its own. W785's aggregate endpoint is the ledger's ONLY endpoint,
-  // and the frozen count is W785's 50 (`API_ENDPOINT_COUNT`).
-  it("registers the usage ledger and the pricing snapshot (W728), 50 endpoints after W785", () => {
+  // endpoint of its own. W785's aggregate endpoint is the ledger's ONLY endpoint;
+  // the frozen count was W785's 50 and is W860's 60 (`API_ENDPOINT_COUNT`).
+  it("registers the usage ledger and the pricing snapshot (W728), 60 endpoints after W860", () => {
     const names = idx.files.map((f) => f.file);
     expect(names).toContain("usage-ledger.jsonl");
     expect(names).toContain("pricing.json");
@@ -227,7 +230,7 @@ describe("contracts/data-files", () => {
     expect(kind?.enum).toEqual(["ok", "error"]);
     expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
 
-    expect(loadEndpoints().count).toBe(57);
+    expect(loadEndpoints().count).toBe(60);
   });
 });
 
@@ -240,11 +243,11 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     expect(entry?.mode).toBe("0600");
     expect(idx.durability["checkpoint.json"]).toContain("tmp-<pid> + rename");
     expect(idx.recovery?.implemented).toContain("turn_end: interrupted");
-    // P0 adds NO endpoint: /api/status.recovery is P1 and stays out. The count is
-    // W785's 50 — and now W791's 51 — for the unrelated reason that the question,
-    // ledger and mode endpoints exist.
-    expect(loadEndpoints().count).toBe(57);
-    expect(loadEndpoints().endpoints).toHaveLength(57);
+    // P0 adds NO endpoint: /api/status.recovery is P1 and stays out. The count
+    // moved for the unrelated reason that the question, ledger, mode, permission,
+    // session-tool and plugin endpoints exist (W860: 60).
+    expect(loadEndpoints().count).toBe(60);
+    expect(loadEndpoints().endpoints).toHaveLength(60);
   });
 
   it("freezes the sidecar shape (version, open_turn, repaired[])", () => {
@@ -275,8 +278,8 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     const worker = byId.get("get_worker_status")?.response.fields.map((f) => f.name) ?? [];
     expect(worker).toContain("stale");
     expect(worker).toContain("orphans");
-    expect(loadEndpoints().count).toBe(57);
-    expect(API_ENDPOINT_COUNT).toBe(57);
+    expect(loadEndpoints().count).toBe(60);
+    expect(API_ENDPOINT_COUNT).toBe(60);
   });
 
   it("B7: the studio's own worker table is a declared data file with the new tokens", () => {
@@ -322,9 +325,10 @@ describe("W729 session modes (P0 contract delta)", () => {
     expect(String(byId.get("get_sessions")?.response.fields[0]?.type)).toContain("mode:");
     expect(byId.get("get_status")?.response.fields.map((f) => f.name)).toContain("mode");
     expect(String(byId.get("get_health")?.response.fields.find((f) => f.name === "capabilities")?.type)).toContain("session_mode");
-    // W729 added no endpoint; W791's mode switch is the P1 addition (50 -> 51).
-    expect(c.count).toBe(57);
-    expect(c.endpoints).toHaveLength(57);
+    // W729 added no endpoint; W791's mode switch is the P1 addition (50 -> 51),
+    // W9's six permission endpoints took it to 57 and W860's three to 60.
+    expect(c.count).toBe(60);
+    expect(c.endpoints).toHaveLength(60);
   });
 
   it("declares spawn_worker.mode without changing the tool count", () => {
@@ -383,8 +387,8 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     // Declared as TypeScript-only (the retired backend has no counterpart).
     const tsOnly = loadRouteSnapshot().tsOnlyRoutes ?? [];
     expect(tsOnly.map((r) => `${r.method} ${r.path}`)).toContain("POST /api/sessions/{id}/mode");
-    expect(c.count).toBe(57);
-    expect(API_ENDPOINT_COUNT).toBe(57);
+    expect(c.count).toBe(60);
+    expect(API_ENDPOINT_COUNT).toBe(60);
   });
 
   it("documents the ?session= query of GET /api/tools (absent = the focused session)", () => {
@@ -405,9 +409,10 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     expect(String(sessions?.response.fields[0]?.type)).toContain("archived?:true");
     expect(String(sessions?.response.fields[0]?.note)).toContain("ONLY on the `?archived=1` listing");
     expect(sessions?.notes?.some((n) => n.includes("?archived=1"))).toBe(true);
-    // B adds NO endpoint: W791's 51 is the mode switch alone.
-    expect(c.count).toBe(57);
-    expect(c.endpoints).toHaveLength(57);
+    // B adds NO endpoint: W791's 51 is the mode switch alone (W860's 60 comes
+    // from the session-tool switches and the plugin inventory).
+    expect(c.count).toBe(60);
+    expect(c.endpoints).toHaveLength(60);
   });
 });
 
