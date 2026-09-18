@@ -151,12 +151,25 @@ P1 追加端点单测（二进制/分页/越界/不存在）+ 契约一致性测
 - 动作：导航 / 点击 / 输入 / 滚动 / 取文本；
 - 截图复用已有图像链（`read_image` 的 `tool_value.attachments`）。
 
-**沙箱**：必须**按工具放宽 `RLIMIT_AS`**（已知 2 GiB ⇒ SIGTRAP 133）、允许监听回环端口；
+**沙箱（W885 spike 实测，两条硬阻塞，缺一不可）**：
+1. **RLIMIT_AS 必须豁免**：默认 `memMb=2048` ⇒ `--as=2048MB`，浏览器在打印任何日志前就 SIGTRAP(rc=133)。实测 2/3/4/8/16/32 GiB **全部 133**，**64 GiB 才 ALIVE** ⇒ 要的是**豁免**，不是调大数值。
+2. **网络命名空间必须共享**：`bwrap --unshare-all` 下浏览器能起但 NET_ERR/LOCAL_ERR，且隔离 netns 里的 CDP 端点**宿主够不到**；`shareNet=true` 时外网与本机 127.0.0.1 都 200。
+
+**可用组合（实测）**：userspace + `rlimits=false` ⇒ ALIVE + 写 /tmp + 外网/本机均 200；
+bwrap + `rlimits=false shareNet=true` ⇒ ALIVE + 网络 200。**不可用**：任何 `rlimits=true` 组合（133）。
+⚠️ `rlimits=true` 时**整条命令仍 exit=0**（只有浏览器死了）⇒ **不能用退出码判断可用性**，必须显式探测。
+
+**性能（实测）**：冷启动到 ws:// 端点 0.084–0.168s（均值 0.115s，5/5 成功）；全链路 199–295ms；截图 23–51ms。
+**进程**：每个浏览器 6–7 个进程；对 launcher 发 SIGTERM 后 +1.5s 全部回收无残留；2 并发实例均成功。
+**安全代价（必须显式记录）**：需要 `--no-sandbox`（网页内容只能靠外层沙箱兜底）、CDP 本身无鉴权、bwrap 下 /tmp 是私有 tmpfs。
+**AX 必须封顶**：Studio 首页实测 3687 节点 / 1.23 MB，整棵塞模型不可行 ⇒ 工具返回**裁剪过的 AX 文本快照** + PNG 图像。
 浏览器进程生命周期**挂到会话**上，会话结束即回收，不留孤儿进程。
 
 **权限**：走既有 grants/权限模型，首次使用需显式授权；被拒要**可见**。
-**P1 = L2 桌面**：Xvfb + 注入工具（需 apt 安装，走运维流程与审计）。
+**工具面（W885 建议）**：`browser_open(url, viewport)` + `browser_act(click/type/key/scroll, target)`，
+返回「裁剪后的 AX 文本快照 + PNG 图像」。**P1 = L2 桌面**：Xvfb + 注入工具（需 apt 安装，走运维流程与审计）。
 **P2**：远程/多机、录制回放。
+**未验证（W885 交底）**：真正 run_code broker/LLM 回路、`CELESTEA_SANDBOX_SECCOMP=1`、file:// 下载上传、Windows/macOS、长稳与 RSS。
 
 **验收**：spike 报告（`docs/research/computer-use-spike.md`）先行 → 工具面契约 → 沙箱兼容性测试（含 rlimit 断言）→
 进程泄漏测试（跑完断言无残留进程）→ live 端到端（真开一个页面、真点一下、真截一张图）。
@@ -182,8 +195,8 @@ P1 追加端点单测（二进制/分页/越界/不存在）+ 契约一致性测
 
 ## 6. 未验证项（诚实清单）
 
-1. 本机 `chrome-headless-shell` 能否在**产品沙箱**（bwrap + prlimit）里存活并监听回环端口——spike 待跑；
-2. 放宽 `RLIMIT_AS` 的**最小可行值**未知（只知道 2 GiB 会 SIGTRAP）；
+1. ~~本机 chrome-headless-shell 能否在产品沙箱里存活并监听回环端口~~ **已实测（W885 spike）**：能，但必须同时满足两条豁免（§4）；
+2. ~~放宽 RLIMIT_AS 的最小可行值未知~~ **已实测**：2/3/4/8/16/32 GiB 全部 SIGTRAP(133)，**64 GiB 才 ALIVE** ⇒ 需要的是**豁免**；
 3. 可访问性树在真实站点上的**体积与噪声**未知（可能大到塞不进上下文，需要裁剪策略）；
 4. 记忆检索在**中文**上的 BM25 效果未验证（需要分词，零依赖分词是难点）；
 5. 引用块与**已有文本附件块**在同一消息里共存时的渲染顺序未定；
