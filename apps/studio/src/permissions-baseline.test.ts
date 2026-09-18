@@ -43,13 +43,13 @@ function writeFile(session: string, grants: unknown[], sessionId = "ws/s1"): voi
 describe("W9 permission baseline", () => {
   it("defaults to full-access (network on) and clamps to CELESTEA_PERMISSION_MAX", () => {
     const dir = sessionDir("perm");
-    const full = effectiveGrantsOf(dir, envOf(dir), NOW).grants;
+    const full = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
     expect(full.network).toBe(true);
     expect(full.workspaceWritable).toBe(true);
-    const clamped = effectiveGrantsOf(dir, envOf(dir, { CELESTEA_PERMISSION_MAX: "write-read" }), NOW).grants;
+    const clamped = effectiveGrantsOf(dir, "ws/s1", envOf(dir, { CELESTEA_PERMISSION_MAX: "write-read" }), NOW).grants;
     expect(clamped.network).toBe(false);
     expect(clamped.workspaceWritable).toBe(true);
-    const ro = effectiveGrantsOf(dir, envOf(dir, { CELESTEA_PERMISSION_MAX: "read-only" }), NOW).grants;
+    const ro = effectiveGrantsOf(dir, "ws/s1", envOf(dir, { CELESTEA_PERMISSION_MAX: "read-only" }), NOW).grants;
     expect(ro.workspaceWritable).toBe(false);
     expect(ro.toolDeny).toContain("write_file");
   });
@@ -59,9 +59,9 @@ describe("W9 permission baseline", () => {
     const dataDir = tempDir("data");
     const env = envOf(dataDir, { CELESTEA_GRANTS_ALLOW_UNSANDBOXED: "1", CELESTEA_PERMISSION_MAX: "write-read" });
     writeFile(dir, [grantEntry("unsandboxed", {}, { id: "g-u", expires_at: NOW + 600 })]);
-    expect(effectiveGrantsOf(dir, env, NOW).grants.unsandboxed).toBe(true);
+    expect(effectiveGrantsOf(dir, "ws/s1", env, NOW).grants.unsandboxed).toBe(true);
     const closed = envOf(dataDir, { CELESTEA_PERMISSION_MAX: "write-read" });
-    expect(effectiveGrantsOf(dir, closed, NOW).grants.unsandboxed).toBe(false);
+    expect(effectiveGrantsOf(dir, "ws/s1", closed, NOW).grants.unsandboxed).toBe(false);
   });
   it("ignores a write_roots grant when the baseline is read-only", () => {
     const dir = sessionDir("perm-ro-grant");
@@ -70,7 +70,7 @@ describe("W9 permission baseline", () => {
     mkdirSync(out, { recursive: true });
     writeFile(dir, [grantEntry("write_roots", { roots: [out] }, { id: "g-w" })]);
     const env = envOf(dataDir, { CELESTEA_PERMISSION_MAX: "read-only" });
-    const result = effectiveGrantsOf(dir, env, NOW);
+    const result = effectiveGrantsOf(dir, "ws/s1", env, NOW);
     expect(result.grants.writeRoots).toEqual([]);
     expect(result.warnings.join(" | ")).toContain("read-only");
   });
@@ -84,9 +84,9 @@ describe("W9 permission baseline", () => {
     writeFileSync(join(dataDir, "permissions.json"), JSON.stringify({ version: 1, updated_at: 0, presets: [wide] }));
     writeFileSync(join(dir, "permission.json"), JSON.stringify({ version: 1, session: "ws/s1", preset: "wide", updated_at: 0 }));
     const clamp = envOf(dataDir, { CELESTEA_PERMISSION_MAX: "write-read" });
-    expect(effectivePermissionOf(dir, clamp).writeRoots).toEqual([]);
-    expect(effectiveGrantsOf(dir, clamp, NOW).grants.writeRoots).toEqual([]);
+    expect(effectivePermissionOf(dir, "ws/s1", clamp).writeRoots).toEqual([]);
+    expect(effectiveGrantsOf(dir, "ws/s1", clamp, NOW).grants.writeRoots).toEqual([]);
     const open = envOf(dataDir, { CELESTEA_PERMISSION_MAX: "wide" });
-    expect(effectivePermissionOf(dir, open).writeRoots).toEqual([out]);
+    expect(effectivePermissionOf(dir, "ws/s1", open).writeRoots).toEqual([out]);
   });
 });

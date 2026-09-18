@@ -13,7 +13,7 @@
  * safe direction (it can only be lost earlier, never used twice).
  */
 
-import { effectiveGrantsOf, expiredGrants, sessionIdOfDir, type EffectiveGrants } from "./engine-grants.js";
+import { effectiveGrantsOf, expiredGrants, type EffectiveGrants } from "./engine-grants.js";
 import type { EngineGrantAudit, EngineGrantEvent } from "./engine-grants.js";
 import { GrantsAuditWriter } from "../store/grants-audit.js";
 import { isExpired, readGrantsFile, writeGrantsFile, type GrantRecord, type GrantsFile } from "../store/grants.js";
@@ -54,7 +54,7 @@ export function createSessionGrants(opts: SessionGrantsOptions): SessionGrantsRe
     writer.write({ session: sessionId ?? "", ...event });
   const ctx: ComposedCtx = { env: opts.env, now: opts.now ?? Date.now };
   return {
-    read: (sessionId, dir) => effectiveGrantsOf(dir, ctx.env, Math.floor(ctx.now() / 1000)),
+    read: (sessionId, dir) => effectiveGrantsOf(dir, sessionId, ctx.env, Math.floor(ctx.now() / 1000)),
     audit,
     flush: () => writer.flush(),
     onComposed: (sessionId, dir, result) => recordComposed(writer, sessionId, dir, result, ctx),
@@ -80,14 +80,18 @@ function recordComposed(
     if (!HEAVY_CAPS.includes(source.cap)) continue;
     sink({ event: "use", cap: source.cap, grant_id: source.grantId, detail: "active for the composed session instance" });
   }
-  const read = dir === null ? null : readGrantsFile(dir, sessionIdOfDir(dir));
+  // W878: the file is self-describing, so validate it against the TRUSTED id
+  // (never a path inference). A null id with a real dir reads nothing.
+  const read = dir === null || sessionId === null ? null : readGrantsFile(dir, sessionId);
   if (read?.file === undefined) return;
   for (const grant of expiredGrants(read.file, seconds)) sink({ event: "expire", cap: grant.cap, grant_id: grant.id });
-  spendOneShot(writer, { dir, file: read.file, active: new Set(result.grants.sources.map((s) => s.grantId)), seconds, env: ctx.env });
+  spendOneShot(writer, { dir, sessionId, file: read.file, active: new Set(result.grants.sources.map((s) => s.grantId)), seconds, env: ctx.env });
 }
 
 interface SpendCtx {
   dir: string | null;
+  /** W878: the trusted id the rewrite must self-describe as. */
+  sessionId: string | null;
   file: GrantsFile;
   active: ReadonlySet<string>;
   seconds: number;
@@ -97,14 +101,14 @@ interface SpendCtx {
 /** Remove the one-shot entries that were just composed in (§2.3). */
 function spendOneShot(writer: GrantsAuditWriter, ctx: SpendCtx): void {
   const spent = ctx.file.grants.filter((entry) => entry.uses_left === 1 && ctx.active.has(entry.id) && !isExpired(entry, ctx.seconds));
-  if (ctx.dir === null || spent.length === 0) return;
+  if (ctx.dir === null || ctx.sessionId === null || spent.length === 0) return;
   const keep: GrantRecord[] = ctx.file.grants.filter((entry) => !spent.some((s) => s.id === entry.id));
   try {
-    writeGrantsFile(ctx.dir, { version: 1, session: sessionIdOfDir(ctx.dir), updated_at: ctx.seconds, grants: keep }, { env: ctx.env, now: ctx.seconds });
+    writeGrantsFile(ctx.dir, { version: 1, session: ctx.sessionId, updated_at: ctx.seconds, grants: keep }, { env: ctx.env, now: ctx.seconds });
   } catch {
     return; // best-effort: the entry stays and stays valid for one more turn
   }
   for (const entry of spent) {
-    writer.write({ session: sessionIdOfDir(ctx.dir), event: "use", cap: entry.cap, grant_id: entry.id, uses_left: 0, detail: "one-shot grant spent" });
+    writer.write({ session: ctx.sessionId, event: "use", cap: entry.cap, grant_id: entry.id, uses_left: 0, detail: "one-shot grant spent" });
   }
 }

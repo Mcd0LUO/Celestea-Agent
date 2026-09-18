@@ -25,7 +25,7 @@ import { failJson, readJsonBody, storeFail, type Deps } from "./common.js";
 /** The frozen response body of both endpoints (one shape, one construction). */
 function sessionToolsBody(deps: Deps, session: string, dir: string): Record<string, unknown> {
   const read = readSessionTools(dir, session);
-  const effective = effectiveGrantsOf(dir, deps.grants.env, nowSec(deps.grants));
+  const effective = effectiveGrantsOf(dir, session, deps.grants.env, nowSec(deps.grants));
   const warnings = [...new Set([...read.warnings, ...effective.warnings])];
   return {
     ok: true,

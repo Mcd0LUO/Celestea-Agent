@@ -89,13 +89,13 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
   it("reads nothing out of a missing or void file and warns about the void one", () => {
     const dir = sessionDir("void");
     pinPathOnlySession(dir, dir);
-    const missing = effectiveGrantsOf(dir, envOf(dir), NOW);
+    const missing = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW);
     expect(missing.grants).toEqual({ network: true, readRoots: [], writeRoots: [], netHosts: [], toolExtra: [], unsandboxed: false, workspaceWritable: true, toolDeny: [], sources: [] });
     expect(missing.warnings).toEqual([]);
 
     for (const body of ["{ nope", JSON.stringify({ version: 2, session: "ws/s1", grants: [] }), JSON.stringify({ version: 1, session: "other/x", grants: [] }), JSON.stringify({ version: 1, session: "ws/s1", grants: {} })]) {
       writeFileSync(join(dir, "grants.json"), body);
-      const read = effectiveGrantsOf(dir, envOf(dir), NOW);
+      const read = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW);
       expect(read.grants).toEqual(missing.grants);
       expect(read.warnings).toHaveLength(1);
       expect(read.warnings[0]).toContain("grants_unreadable");
@@ -119,7 +119,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
       grantEntry("root_everything", {}),
       grantEntry("network", {}, { id: "g-expired", expires_at: 1 }),
     ]);
-    const read = effectiveGrantsOf(dir, envOf(dataDir), NOW);
+    const read = effectiveGrantsOf(dir, "ws/s1", envOf(dataDir), NOW);
     expect(read.grants.readRoots).toEqual([]);
     expect(read.grants.writeRoots).toEqual([]);
     expect(read.grants.netHosts).toEqual(["10.1.2.3"]);
@@ -149,7 +149,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
       grantEntry("write_roots", { roots: [join(shared, "sub")] }, { id: "g-overlap" }),
       grantEntry("read_roots", { roots: ["sk-abcdefghijklmnopqrstuvwxyz012345"] }, { id: "g-secret" }),
     ]);
-    const read = effectiveGrantsOf(dir, envOf(dataDir), NOW);
+    const read = effectiveGrantsOf(dir, "ws/s1", envOf(dataDir), NOW);
     expect(read.grants.readRoots).toEqual([shared]);
     expect(read.grants.writeRoots).toEqual([writable]);
     expect(grantsActiveCaps(read.grants)).toEqual(["network", "read_roots", "write_roots"]); // W9: preset network
@@ -207,7 +207,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     mkdirSync(out, { recursive: true });
     const env = envOf(dataDir, { CELESTEA_TOOL_WORKDIR: join(dir, "..", "s1") });
     writeFile(dir, [grantEntry("write_roots", { roots: [out] })]);
-    const granted = effectiveGrantsOf(dir, env, NOW).grants;
+    const granted = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
 
     const withGrant = assemblyOf(dir, granted, env);
     const ok = await withGrant.registry.dispatch({ call_id: "w1", name: "write_file", args: { path: join(out, "made.txt"), content: "hi" } });
@@ -219,7 +219,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     writeFile(dir, []);
     const stillAllowed = await withGrant.registry.dispatch({ call_id: "w2", name: "write_file", args: { path: join(out, "again.txt"), content: "hi" } });
     expect(stillAllowed.error).toBeNull();
-    const nextTurn = assemblyOf(dir, effectiveGrantsOf(dir, env, NOW).grants, env);
+    const nextTurn = assemblyOf(dir, effectiveGrantsOf(dir, "ws/s1", env, NOW).grants, env);
     const denied = await nextTurn.registry.dispatch({ call_id: "w3", name: "write_file", args: { path: join(out, "third.txt"), content: "hi" } });
     expect(String(denied.error)).toContain("toolguard: code=path_forbidden");
     expect(existsSync(join(out, "third.txt"))).toBe(false);
@@ -233,13 +233,13 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     mkdirSync(out, { recursive: true });
     const env = envOf(dataDir, { CELESTEA_TOOL_WORKDIR: dir });
     // Turn N: composed BEFORE the grant — the boundary is fixed for the turn.
-    const running = assemblyOf(dir, effectiveGrantsOf(dir, env, NOW).grants, env);
+    const running = assemblyOf(dir, effectiveGrantsOf(dir, "ws/s1", env, NOW).grants, env);
     writeFile(dir, [grantEntry("write_roots", { roots: [out] })]);
     const sameTurn = await running.registry.dispatch({ call_id: "w1", name: "write_file", args: { path: join(out, "in-turn.txt"), content: "x" } });
     expect(String(sameTurn.error)).toContain("path_forbidden");
     expect(existsSync(join(out, "in-turn.txt"))).toBe(false);
     // Turn N+1: composed AFTER the grant — allowed.
-    const next = assemblyOf(dir, effectiveGrantsOf(dir, env, NOW).grants, env);
+    const next = assemblyOf(dir, effectiveGrantsOf(dir, "ws/s1", env, NOW).grants, env);
     expect(await next.registry.dispatch({ call_id: "w2", name: "write_file", args: { path: join(out, "next-turn.txt"), content: "x" } })).toMatchObject({ error: null });
     expect(existsSync(join(out, "next-turn.txt"))).toBe(true);
   });
@@ -253,7 +253,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     writeFileSync(join(shared, "note.txt"), "shared");
     writeFile(dir, [grantEntry("read_roots", { roots: [shared] })]);
     const env = envOf(dataDir, { CELESTEA_TOOL_WORKDIR: dir });
-    const withGrant = assemblyOf(dir, effectiveGrantsOf(dir, env, NOW).grants, env);
+    const withGrant = assemblyOf(dir, effectiveGrantsOf(dir, "ws/s1", env, NOW).grants, env);
     expect((withGrant.registry as ToolRegistryImpl).guardChain()).toHaveLength(1);
     return Promise.all([
       expect(withGrant.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: join(shared, "note.txt") } })).resolves.toMatchObject({ error: null }),
@@ -271,7 +271,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
       llm: createOfflineLlm(),
       workers: null,
       env,
-      grants: { ...effectiveGrantsOf(dir, env, NOW).grants, network: true, unsandboxed: true, netHosts: ["10.1.2.3"] },
+      grants: { ...effectiveGrantsOf(dir, "ws/s1", env, NOW).grants, network: true, unsandboxed: true, netHosts: ["10.1.2.3"] },
       audit: (event) => events.push(event.event),
     });
     // `degraded_by_grant` itself is asserted deterministically in
@@ -287,7 +287,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     const dir = sessionDir("net");
     const dataDir = tempDir("data");
     const env = envOf(dataDir, { CELESTEA_TOOL_WORKDIR: dir });
-    const base = effectiveGrantsOf(dir, env, NOW).grants;
+    const base = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     const granted = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants: { ...base, network: true } });
     const plain = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants: base });
     // W741: no grant is no bypass — the SAME provider policy decides, so the
@@ -318,7 +318,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
     // the one-shot is gone, so the NEXT turn composes without it
     // W9: with the preset not carrying it (MAX=write-read) the grant is the only
     // source, so the spent one-shot turns it off again.
-    expect(effectiveGrantsOf(dir, env, NOW).grants.unsandboxed).toBe(false);
+    expect(effectiveGrantsOf(dir, "ws/s1", env, NOW).grants.unsandboxed).toBe(false);
   });
 
   it("audits an ignored entry as a denial and a void file as grants_unreadable (§4.3)", () => {

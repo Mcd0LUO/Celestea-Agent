@@ -15,7 +15,7 @@
 
 import type { Context, Hono } from "hono";
 import type { RouteTable } from "../routes.js";
-import { effectiveGrantsOf, netHostsEffective, sessionIdOfDir, unsandboxedAvailable, type EffectiveGrants } from "../runtime/engine-grants.js";
+import { effectiveGrantsOf, netHostsEffective, unsandboxedAvailable, type EffectiveGrants } from "../runtime/engine-grants.js";
 import { isOfferedGrantCap, MAX_TTL_SEC, emptyGrantsFile, newGrantId, readGrantsFile, writeGrantsFile, type GrantCap, type GrantRecord, type GrantsFile } from "../store/grants.js";
 import { CONFIRM_HEADER, SEC_FETCH_MODE, SEC_FETCH_SITE, ORIGIN_HEADER } from "../store/grants-tokens.js";
 import { nowSec, type GrantsServices } from "../store/grants-service.js";
@@ -52,7 +52,7 @@ function registerList(app: Hono, deps: Deps, table: RouteTable): string {
     if (!resolved.ok) return storeFail(c, resolved);
     const seconds = nowSec(deps.grants);
     const read = readGrantsFile(resolved.value.dir, resolved.value.id);
-    const effective = effectiveGrantsOf(resolved.value.dir, deps.grants.env, seconds);
+    const effective = effectiveGrantsOf(resolved.value.dir, resolved.value.id, deps.grants.env, seconds);
     const grants = (read.file?.grants ?? []).map((grant) => entryJson(grant, seconds));
     // W757 (§6.1): report the DEPLOYMENT fact as well as the readable warning —
     // the verdict comes from the very policy the engine mounts its tools with.
@@ -136,7 +136,7 @@ function persistGrant(c: Context, deps: Deps, dir: string, sessionId: string, re
     return failJson(c, 500, `cannot persist grants: ${errText(e)}`);
   }
   deps.runtime.invalidateSession?.(sessionId);
-  const effective = effectiveGrantsOf(dir, services.env, seconds);
+  const effective = effectiveGrantsOf(dir, sessionId, services.env, seconds);
   services.audit.write({
     session: sessionId,
     event: "grant",
@@ -203,7 +203,7 @@ function revoke(c: Context, deps: Deps, target: RevokeTarget): Response {
     }
     deps.runtime.invalidateSession?.(sessionId);
   }
-  const effective = effectiveGrantsOf(dir, services.env, seconds);
+  const effective = effectiveGrantsOf(dir, sessionId, services.env, seconds);
   for (const grant of revoked) {
     services.audit.write({ session: sessionId, event: "revoke", grant_id: grant.id, cap: grant.cap, actor: GRANT_ACTOR, effective_after: effectiveJson(effective.grants) });
   }

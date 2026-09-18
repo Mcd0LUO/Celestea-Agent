@@ -10,9 +10,10 @@
  *     over the file's records, or the honest `ok:false` when there is no ledger;
  *   - [costBlockView]   — `/api/status.cost`: one session's block, `null` when
  *     there is no ledger (the handler then omits the optional key);
- *   - [ledgerLabel]     — the label rows are booked under: `<workspace>/<session>`
- *     for a named session (`sessionIdOfDir`, the SAME label `session-compose.ts`
- *     uses), `sessionId ?? "cli-main"` for the detached generation.
+ *   - [ledgerLabel]     — the label rows are booked under: the TRUSTED session
+ *     id the caller resolved (`<workspace>/<session>`, the SAME label
+ *     `session-compose.ts` books under), `sessionId ?? "cli-main"` when it is
+ *     null. W878: never inferred from `dir`.
  *
  * Both readers call `file.readAll()` on every request — the current file plus
  * the rolled `.1` segment (P2-2), so a rotation cannot zero the cumulative
@@ -24,7 +25,6 @@ import {
   HOST_SESSION_ID,
   ledgerCostBlock,
   queryLedger,
-  sessionIdOfDir,
   type LedgerCostBlock,
   type LedgerQuery,
   type LedgerQueryResult,
@@ -62,7 +62,13 @@ export function costBlockView(
   }
 }
 
-/** The ledger label of a session — the same one its rows are booked under. */
-export function ledgerLabel(session: string | null, dir: string | null): string {
-  return dir === null ? (session ?? HOST_SESSION_ID) : sessionIdOfDir(dir);
+/**
+ * The ledger label of a session — the same one its rows are booked under.
+ *
+ * W878: the id is an INPUT, not something to re-derive from `dir`. The `_dir`
+ * parameter is retained only because the adapter's `costBlock` seam already
+ * holds it; it is deliberately ignored.
+ */
+export function ledgerLabel(session: string | null, _dir: string | null): string {
+  return session ?? HOST_SESSION_ID;
 }

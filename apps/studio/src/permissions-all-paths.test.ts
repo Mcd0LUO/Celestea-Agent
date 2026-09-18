@@ -82,10 +82,10 @@ function presetBody(over: Record<string, unknown> = {}): Record<string, unknown>
 describe("W864 allPaths — the baseline", () => {
   it("the default full-access baseline sets allPaths and BOTH effective root lists to ['/']", () => {
     const dir = sessionDir("default");
-    const baseline = effectivePermissionOf(dir, envOf(dir));
+    const baseline = effectivePermissionOf(dir, "ws/s1", envOf(dir));
     expect(baseline.preset).toBe("full-access");
     expect(baseline.allPaths).toBe(true);
-    const grants = effectiveGrantsOf(dir, envOf(dir), NOW).grants;
+    const grants = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
     expect(grants.readRoots).toEqual(["/"]);
     expect(grants.writeRoots).toEqual(["/"]);
     // Unchanged caps: only the paths moved.
@@ -97,8 +97,8 @@ describe("W864 allPaths — the baseline", () => {
   it("CELESTEA_PERMISSION_MAX=write-read clamps allPaths away (no '/' anywhere)", () => {
     const dir = sessionDir("clamp");
     const env = envOf(dir, { CELESTEA_PERMISSION_MAX: "write-read" });
-    expect(effectivePermissionOf(dir, env).allPaths).toBe(false);
-    const grants = effectiveGrantsOf(dir, env, NOW).grants;
+    expect(effectivePermissionOf(dir, "ws/s1", env).allPaths).toBe(false);
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     expect(grants.readRoots).toEqual([]);
     expect(grants.writeRoots).toEqual([]);
     expect(grants.workspaceWritable).toBe(true); // write-read keeps the workspace
@@ -107,8 +107,8 @@ describe("W864 allPaths — the baseline", () => {
   it("CELESTEA_PERMISSION_MAX=read-only clamps it away too (and keeps the preset's toolDeny)", () => {
     const dir = sessionDir("ro");
     const env = envOf(dir, { CELESTEA_PERMISSION_MAX: "read-only" });
-    expect(effectivePermissionOf(dir, env).allPaths).toBe(false);
-    const grants = effectiveGrantsOf(dir, env, NOW).grants;
+    expect(effectivePermissionOf(dir, "ws/s1", env).allPaths).toBe(false);
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     expect(grants.readRoots).toEqual([]);
     expect(grants.writeRoots).toEqual([]);
     expect(grants.workspaceWritable).toBe(false);
@@ -122,9 +122,9 @@ describe("W864 allPaths — the baseline", () => {
     writeFileSync(join(dataDir, "permissions.json"), JSON.stringify({ version: 1, updated_at: 0, presets: [presetBody({ id: "wide-path", allPaths: true })] }));
     writeFileSync(join(dir, "permission.json"), JSON.stringify({ version: 1, session: "ws/s1", preset: "wide-path", updated_at: 0 }));
     const env = envOf(dataDir);
-    const baseline = effectivePermissionOf(dir, env);
+    const baseline = effectivePermissionOf(dir, "ws/s1", env);
     expect(baseline).toMatchObject({ preset: "wide-path", allPaths: true, network: false, unsandboxed: false });
-    const grants = effectiveGrantsOf(dir, env, NOW).grants;
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     expect(grants.readRoots).toEqual(["/"]);
     expect(grants.writeRoots).toEqual(["/"]); // allPaths opens writes even with workspaceWritable:false
     expect(grants.network).toBe(false); // path-only: network is untouched
@@ -134,7 +134,7 @@ describe("W864 allPaths — the baseline", () => {
   it("keeps the W860 session toolDeny union intact under allPaths", () => {
     const dir = sessionDir("tooldeny");
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ version: 1, session: "ws/s1", disabled: ["write_file", "http_request"] }));
-    const grants = effectiveGrantsOf(dir, envOf(dir), NOW).grants;
+    const grants = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
     expect(grants.readRoots).toEqual(["/"]);
     expect(grants.writeRoots).toEqual(["/"]);
     expect(grants.toolDeny).toEqual(["write_file", "http_request"]);
@@ -146,8 +146,8 @@ describe("W864 allPaths — the baseline", () => {
     const dir = sessionDir("parse");
     writeFileSync(join(dataDir, "permissions.json"), JSON.stringify({ version: 1, updated_at: 0, presets: [presetBody({ id: "noisy", allPaths: "true" })] }));
     writeFileSync(join(dir, "permission.json"), JSON.stringify({ version: 1, session: "ws/s1", preset: "noisy", updated_at: 0 }));
-    expect(effectivePermissionOf(dir, envOf(dataDir)).allPaths).toBe(false);
-    expect(effectiveGrantsOf(dir, envOf(dataDir), NOW).grants.readRoots).toEqual([]);
+    expect(effectivePermissionOf(dir, "ws/s1", envOf(dataDir)).allPaths).toBe(false);
+    expect(effectiveGrantsOf(dir, "ws/s1", envOf(dataDir), NOW).grants.readRoots).toEqual([]);
   });
 });
 
@@ -201,7 +201,7 @@ describe("W864 allPaths — the composed tool face", () => {
     const outside = mkdtempSync(join(tmpdir(), "allpaths-out-"));
     roots.push(outside);
     const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir });
-    const grants = effectiveGrantsOf(dir, env, NOW).grants;
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     expect(grants.readRoots).toEqual(["/"]);
     const tools = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants });
 
@@ -219,7 +219,7 @@ describe("W864 allPaths — the composed tool face", () => {
   it("the engine's grant view reaches the OS sandbox as --bind / / (the whole chain)", () => {
     const dir = sessionDir("argv");
     const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir });
-    const grants = effectiveGrantsOf(dir, env, NOW).grants;
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     // Exactly the view engine-plugins.ts hands the provider policy.
     const opts = bwrapOptionsFromEnv(env, {
       network: grants.network,
@@ -240,7 +240,7 @@ describe("W864 allPaths — the composed tool face", () => {
     // write-read, not read-only: read-only's PRESET toolDeny removes write_file
     // from the face entirely (W9), which would mask the guard denial under test.
     const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir, CELESTEA_PERMISSION_MAX: "write-read" });
-    const grants = effectiveGrantsOf(dir, env, NOW).grants;
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     const tools = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants });
     const read = await tools.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: "/etc/hostname" } });
     expect(String(read.error)).toContain("toolguard: code=path_forbidden");
