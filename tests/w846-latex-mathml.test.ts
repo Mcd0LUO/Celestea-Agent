@@ -231,3 +231,117 @@ describe('W846 · 懒加载升级（占位 -> MathML，过 sanitize）', () => {
     expect(out).not.toContain('javascript');
   });
 });
+
+// ============================================================================
+// W865 · 用户报「不支持」的冷门符号 + mhchem 化学扩展（\ce / \pu）
+//
+// 背景（用户原句）：\preceq \curlyeqprec \pmod{n} \bmod \lfloor \rfloor \lceil
+//   \rceil \llcorner \lrcorner「不支持」，另问 mhchem 化学式要不要支持。
+// 实测结论（本组用例把它们锁成回归网）：
+//   · 上面这些符号 katex 0.18.7 **本来就支持**，不需要新宏；
+//   · 用户原句里唯一的真失败是 a \; \middle| \; b —— \middle 必须跟在
+//     \left/\right 之后，否则 ParseError；throwOnError:false 下 KaTeX 产出
+//     katex-error span（保留原始 TeX），整条式子显示成原始文本，容易被误读成
+//     「符号不支持」。这是**调用方语法错误**，不是缺符号。正确写法：
+//     a \mid b  或  \left. a \;\middle|\; b \right.（下面两条都断言可渲染）；
+//   · \ce / \pu 确实要用 mhchem 扩展：ui/messages/math.ts 在首次渲染前
+//     动态 import('katex/contrib/mhchem')（仍在动态 chunk，不进主包）。
+// 反面对照（未加载扩展时的红标）见 tests/w865-mhchem-off.test.ts。
+// ============================================================================
+
+/** 走真实链路：markdown 占位 -> ui/messages/math.ts 懒加载升级 -> sanitizeNodes，返回占位元素。 */
+async function upgradeInline(tex: string): Promise<ElLike> {
+  const host = doc.createElement('div');
+  host.innerHTML = msgMd.md('$' + tex + '$');
+  mathMod.upgradeMath(host);
+  expect(await waitFor(() => host.querySelector('.math-done') !== null)).toBe(true);
+  const el = host.querySelector('.math-inline');
+  expect(el).not.toBeNull();
+  return el as ElLike;
+}
+
+describe('W865 · 冷门符号（用户报「不支持」，实测支持）逐条锁定', () => {
+  const CASES: Array<{ tex: string; want: string[] }> = [
+    { tex: 'a \\preceq b', want: ['<mo>⪯</mo>'] },
+    { tex: 'a \\curlyeqprec b', want: ['<mo>⋞</mo>'] },
+    {
+      tex: 'x \\pmod{n}',
+      want: [
+        '<mo stretchy="false">(</mo>',
+        '<mrow><mi mathvariant="normal">m</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi></mrow>',
+        '<mo stretchy="false">)</mo>',
+      ],
+    },
+    {
+      tex: 'x \\bmod n',
+      want: [
+        '<mo lspace="0.22em" rspace="0.22em">',
+        '<mrow><mi mathvariant="normal">m</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi></mrow>',
+      ],
+    },
+    { tex: '\\lfloor x \\rfloor', want: ['<mo stretchy="false">⌊</mo>', '<mo stretchy="false">⌋</mo>'] },
+    { tex: '\\lceil x \\rceil', want: ['<mo stretchy="false">⌈</mo>', '<mo stretchy="false">⌉</mo>'] },
+    {
+      tex: '\\llcorner \\lrcorner',
+      want: ['<mo><mi mathvariant="normal">⌞</mi></mo>', '<mo><mi mathvariant="normal">⌟</mi></mo>'],
+    },
+  ];
+
+  for (const c of CASES) {
+    it(c.tex + ' 渲染为 MathML 且字形/文本正确（无 katex-error）', async () => {
+      const el = await upgradeInline(c.tex);
+      expect(el.querySelector('math')).not.toBeNull();
+      const html = el.innerHTML; // 已经是 sanitizeNodes 的产物
+      expect(html).not.toContain('katex-error');
+      for (const w of c.want) expect(html).toContain(w);
+    });
+  }
+});
+
+describe('W865 · mhchem 化学扩展（math.ts 首次渲染前加载，仍在动态 chunk）', () => {
+  it('\\ce 渲染为化学式：反应箭头 + 下标 + mpadded/mphantom，且无未定义命令红标', async () => {
+    const el = await upgradeInline('\\ce{2H2 + O2 -> 2H2O}');
+    expect(el.querySelector('math')).not.toBeNull();
+    const html = el.innerHTML;
+    expect(html).not.toContain('#cc0000'); // 未定义命令红标 -> mhchem 已生效
+    expect(html).not.toContain('<mtext>\\ce</mtext>');
+    expect(html).toContain('→'); // mhchem 把 -> 排成反应箭头
+    expect(html).toContain('<msub>'); // H2 / O2 / H2O 的下标
+    expect(html).toContain('<mphantom>'); // mhchem 的排版结构，sanitize 不得剥掉
+    expect(html).toContain('<mpadded width="0px">');
+  });
+
+  it('\\pu 渲染为单位：kJ/mol 排成分式，无红标', async () => {
+    const el = await upgradeInline('\\pu{123 kJ//mol}');
+    expect(el.querySelector('math')).not.toBeNull();
+    const html = el.innerHTML;
+    expect(html).not.toContain('#cc0000');
+    expect(html).toContain('<mfrac>');
+    expect(html).toContain('<mi mathvariant="normal">J</mi>');
+    expect(html).toContain('<mi mathvariant="normal">l</mi>');
+  });
+});
+
+describe('W865 · \\middle 的正确用法（用户原句唯一的真失败）', () => {
+  it('缺 \\left/\\right 的 \\middle：不崩、fail-soft 保留原始 TeX（调用方语法错误，非缺符号）', async () => {
+    const tex = 'a \\; \\middle| \\; b';
+    const el = await upgradeInline(tex);
+    expect(el.querySelector('math')).toBeNull(); // 没有升级成 MathML
+    expect(el.textContent).toBe(tex); // 原文一字不差保留
+    expect(el.querySelector('.katex-error')).not.toBeNull(); // KaTeX 的 ParseError 标记
+  });
+
+  it('正确写法之一 \\mid：正常渲染出 ∣', async () => {
+    const el = await upgradeInline('a \\mid b');
+    expect(el.querySelector('math')).not.toBeNull();
+    expect(el.innerHTML).toContain('<mo>∣</mo>');
+    expect(el.innerHTML).not.toContain('katex-error');
+  });
+
+  it('正确写法之二 \\left. … \\middle| … \\right.：正常渲染出 fence', async () => {
+    const el = await upgradeInline('\\left. a \\;\\middle|\\; b \\right.');
+    expect(el.querySelector('math')).not.toBeNull();
+    expect(el.innerHTML).toContain('fence="true"');
+    expect(el.innerHTML).not.toContain('katex-error');
+  });
+});

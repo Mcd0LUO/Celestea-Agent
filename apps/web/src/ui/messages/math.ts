@@ -3,7 +3,9 @@
 //
 // utils/markdown-math.ts 只产出安全占位 <span|div class="math-inline|math-block">TeX</span>。
 // 本模块是**唯一**把占位升级为真实数学的地方：
-//   · 首次发现占位时才 import('katex')（动态 chunk，不进主包）；
+//   · 首次发现占位时才 import('katex') + import('katex/contrib/mhchem')（动态 chunk，不进主包）；
+//   · W865：首次渲染**之前**注册 mhchem 化学宏（\ce / \pu）；扩展加载失败只降级化学式，
+//     其它公式照常渲染（fail-soft，单独 try/catch，不拖垮 katex 本身）；
 //   · KaTeX 用 output:mathml（不产 HTML spans / 不依赖内联 style）；
 //   · 产物仍过 utils/sanitize 白名单（唯一 HTML->DOM 通道），href/style/on* 一律剔除；
 //   · 降级：import 失败或渲染异常都保留原始 TeX 文本（fail-soft，不吞内容）。
@@ -37,9 +39,17 @@ function load(): Promise<void> {
   if (renderer !== null) return Promise.resolve();
   if (loading === null) {
     loading = import('katex')
-      .then((mod) => {
+      .then(async (mod) => {
         const katex = katexOf(mod);
         if (katex === null) return;
+        // W865：mhchem 化学扩展（\ce / \pu）。必须在首次渲染**之前**注册宏；仍是动态
+        // import（与 katex 同一批懒加载 chunk，不进主包）。失败只让 \ce/\pu 退化成
+        // KaTeX 的未定义命令红标，其余公式照常 —— 所以单独 try/catch，不拖垮 katex。
+        try {
+          await import('katex/contrib/mhchem');
+        } catch {
+          /* fail-soft：无扩展也能渲染其余公式 */
+        }
         renderer = (tex, display) =>
           katex.renderToString(tex, { output: 'mathml', displayMode: display, throwOnError: false });
       })
