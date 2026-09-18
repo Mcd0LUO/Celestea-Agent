@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea engine tool specs (13 tools)",
+  "title": "Celestea engine tool specs (14 tools)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
     "liveEndpoint": "http://127.0.0.1:3777/api/tools (descriptions taken verbatim from the running engine)",
@@ -45,9 +45,17 @@
       "why": "The orchestration face needs a relay named for what it does (send_message) and a stop switch that halts a worker without deleting it (STOPPED terminal; row + session kept for audit).",
       "notInRust": "The retired engine had neither the rename nor stop_worker.",
       "endpoints": "W7 adds ZERO endpoints: stop_worker rides the existing worker tool dispatch, so API_ENDPOINT_COUNT stays 51."
+    },
+    "w884Delta": {
+      "addedTool": "load_skill",
+      "count": "13 -> 14",
+      "sourceRef": "packages/tools/src/tools/load-skill.ts (W884; reuses packages/core/src/skills.ts)",
+      "why": "Progressive disclosure for skills (W882 discovery + the W874/W879 non-system-prompt decision): the model must be able to load ONE skill's SKILL.md body on demand. The catalog (name + description only) is injected as durable user-role history at every turn start; the body enters the conversation only when this tool is called. Read-only: no writes, no process, no network; the name goes through W882's name contract (no path traversal).",
+      "executionKeepList": "W884 also adds load_skill to EXECUTION_TOOL_NAMES: it is a pure read and is NOT in SDK_TOOLS, so folding it would make skills unreachable in execution mode while the catalog still advertises them.",
+      "endpoints": "W884 adds ZERO endpoints: the catalog rides the existing turn-start context lane and the tool rides the existing dispatch, so API_ENDPOINT_COUNT stays 61."
     }
   },
-  "count": 13,
+  "count": 14,
   "tools": [
     {
       "name": "ask_user_question",
@@ -220,6 +228,28 @@
         "additionalProperties": false
       },
       "sourceRef": "crates/tools/src/builtin.rs:217-230"
+    },
+    {
+      "name": "load_skill",
+      "description": "Load one skill's full instructions (its SKILL.md BODY) into the conversation by name. The per-turn skill catalog lists the available names; call this before doing a task a skill covers. The result carries the skill's `body`, its `dir` (read anything the body references from there with read_file), and the `source` layer it won — a skill's child files (references/, scripts/) are NEVER inlined. An unknown name, a name that is not a lowercase `[a-z0-9-]` slug (path traversal included), or a SKILL.md whose frontmatter is invalid fails with a structured `load_skill: code=... msg=\"...\"` error naming the reason — never a silent empty result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Skill name exactly as listed in the skill catalog (lowercase letters, digits, hyphens)."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "packages/tools/src/tools/load-skill.ts (W884; reuses packages/core/src/skills.ts)"
     },
     {
       "name": "process_control",

@@ -97,6 +97,16 @@ export interface TurnRunnerDeps {
    * while a steering message is still waiting (W515 §1 invariant).
    */
   injections?: InjectionSource;
+  /**
+   * W884: durable, ENGINE-OWNED turn context — the skill catalog (name +
+   * description only). Evaluated at EVERY turn start, before the receipts and
+   * the input, and appended as ordinary user-role history so it stays resident
+   * and participates in trimming/compaction like any other message. Returning
+   * `[]` costs nothing (a workspace without skills). Unlike `drainPending`, this
+   * is not a message from anyone: it never enters the inbox and is not reported
+   * as a placement.
+   */
+  turnContext?: () => readonly string[];
 }
 
 export class TurnRunner {
@@ -179,6 +189,9 @@ export class TurnRunner {
     const sink = this.makeSink(opts.sink);
     const scope = this.turnScope(signal, sink);
     const log = this.deps.session();
+    // W884: the skill catalog is standing context, so it lands BEFORE the
+    // receipts (which are addressed messages and belong nearest the input).
+    this.injectTurnContext(log);
     this.injectReceipts(log);
     const start = log.events().length;
     const loop = this.resolveLoop(signal, sink);
@@ -246,6 +259,17 @@ export class TurnRunner {
       throw new ComposeError("no AgentLoop: pass a loopFactory or mount an agentLoopPlugin");
     }
     return loop;
+  }
+
+  /**
+   * W884: append the engine-owned turn context (the skill catalog). Blank rows
+   * are dropped, so a provider that has nothing to say is free to return [""].
+   */
+  private injectTurnContext(log: SessionLog): void {
+    for (const text of this.deps.turnContext?.() ?? []) {
+      if (text === "") continue;
+      log.append({ type: "user_message", text });
+    }
   }
 
   /** Turn-start drain: receipts and interjections land BEFORE the input. */

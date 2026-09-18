@@ -13,7 +13,7 @@
  */
 
 import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
-import type { Llm, PendingInjection, Sandbox, SessionLog, Tool, ToolGuard } from "@celestea/core";
+import { listSkills, readLayers, renderSkillCatalog, type Llm, type PendingInjection, type Sandbox, type SessionLog, type Tool, type ToolGuard } from "@celestea/core";
 import { createSessionInbox, type SessionInbox } from "@celestea/runtime";
 import {
   createLedgerLlm,
@@ -239,6 +239,18 @@ export class SessionComposer {
     // system prompt renders (the host's `resolveSession` hook). A session with no
     // resolvable workspace keeps the process env posture — never a failure.
     const workspace = sessionId === null ? null : (this.opts.resolveSession?.(sessionId)?.workspace ?? null);
+    // W884: the resident half of skill progressive disclosure. The catalog (name
+    // + description ONLY) is re-read at EVERY turn start from the SAME workspace
+    // the sandbox/guard use (W768) and injected as durable user-role history; a
+    // workspace with no skill produces NO rows at all (zero cost). A detached
+    // generation (no workspace) never injects.
+    const skillContext =
+      workspace === null
+        ? undefined
+        : (): readonly string[] => {
+            const catalog = renderSkillCatalog(listSkills(readLayers(workspace.path, { env: this.opts.env })));
+            return catalog === null ? [] : [catalog];
+          };
     const reader = this.opts.grants;
     const read = reader?.read(sessionId, dir) ?? { grants: EMPTY_GRANTS, warnings: [] };
     // W728: the ledger must exist before the Llm wrapper (every step books).
@@ -287,6 +299,7 @@ export class SessionComposer {
       ...(ledger === null ? {} : { ledger }),
       inbox: hooks.inbox ?? createSessionInbox(),
       ...(hooks.onInjected === undefined ? {} : { onInjected: hooks.onInjected }),
+      ...(skillContext === undefined ? {} : { turnContext: skillContext }),
       loopFactory: (bindings) => {
         // W806: the turn boundary is the ONLY place the disclosed set may move.
         engine.tools.disclosure.beginTurn();

@@ -5,6 +5,12 @@
 > 第 2 版改动：① 补入 DSH 官方 cookbook 的**渐进式披露配方**（§1.7b–d），纠正第 1 版把 pi-ai 兼容门误读为「DSH 不做渐进披露」；② 缓存章节增加**本轮独立复核探针 A1–A7**（§3.3）；③ 修正账本快照的时点标注；④ 重派 W802 复核补录 **W1–W7 二次独立复核**（§3.3，独立前缀 12808 prompt）与账本重算。
 > 范围：只改本文；不改 contracts / tests / fixtures / 产品代码；不新增依赖；不重启服务。
 > 前置阅读：`docs/modes-standard-vs-execution.md`（双模式折叠 W729/W791）、`packages/tools/src/exposure.ts`、`docs/feature-session-grants.md`。
+>
+> **W884 回填（技能渐进披露落地，2026-09-19）**：本文 §1.7d 记录的 DSH 先例（「目录常驻、正文按需」）已在本仓落地为**两个正交面**，与本文的动态工具披露**无关、不共用**：
+> 1. **目录常驻**：`packages/core/src/skill-catalog.ts` 只渲染 `name + description`（description >200 字符截断、≤32 条、按名排序并注明截断），由宿主在每个 **turn 起点**作为 **durable user-role 消息**追加进会话日志（`packages/runtime/src/turn-runner.ts` 的 `turnContext`，注入在 receipts/输入之前）；**不进 system prompt**（W874/W879 的裁决：system 在 tools/history 之前，改它会从 token 0 打断 KV 前缀缓存）。没有技能 → 一行都不注入（零成本）。
+> 2. **正文按需**：第 14 个契约工具 `load_skill`（`packages/tools/src/tools/load-skill.ts`）返回 SKILL.md 正文 + 目录，**绝不内联** references/scripts；未命中/非法 frontmatter 返回 `load_skill: code=… msg="…"` 结构化错误。
+>
+> 计数同步：`contracts/tools.json` **13 → 14**（有意契约变更）；`EXECUTION_TOOL_NAMES` 加入 `load_skill`，因此 execution 面 **7 → 8**，standard 面 **13 → 14**。加它的理由见 `exposure.ts`：它是纯读，且不在 `SDK_TOOLS` 白名单里，折叠会让执行模式下技能不可达而目录仍在宣传它们。
 
 ---
 
@@ -344,7 +350,7 @@ W 组与 A 组绝对 token 不同（前缀更长、历史占比更高），但**
 
 **叠加，不取代。**
 
-- `exposure.ts` 继续承担**模式基线折叠**：`standard` 11 面 / `execution` 6 面（`EXECUTION_TOOL_NAMES`，`exposure.ts:45-52`）。
+- `exposure.ts` 继续承担**模式基线折叠**：`standard` 14 面 / `execution` 8 面（`EXECUTION_TOOL_NAMES`；W884 起 `load_skill` 也在保留名单里）。
 - 动态披露是**第二层 hidden**：
   ~~~text
   effectiveHidden = modeBaselineHidden(mode) ∪ notYetDisclosed(session, turn)

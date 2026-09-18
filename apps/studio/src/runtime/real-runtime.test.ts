@@ -332,7 +332,8 @@ describe("GET /api/sessions/{id}/context over the real engine", () => {
     // W804: 11 -> 12 — the session has an attachment store, so read_image is
     // mounted too (it is not offered to a store-less embedding).
     // W7: 12 -> 13 — `stop_worker` joins the contract-driven worker tools.
-    expect(toolViews).toHaveLength(13);
+    // W884: 13 -> 14 — `load_skill` is mounted (it needs only the session workspace).
+    expect(toolViews).toHaveLength(14);
     expect(tools).toContain("ask_user_question");
     expect(tools).toContain("read_image");
     for (const view of toolViews) {

@@ -31,6 +31,7 @@
  *   celestea-home.ts CELESTEA_HOME data-root resolution (W880)
  *   celestea-sources.ts project/global source layers (W882)
  *   skills.ts        skill discovery + frontmatter contract (W882)
+ *   skill-catalog.ts skill catalog text for the per-turn injection (W884)
  *   errors.ts        shared error types
  *   contracts/       contract-file loaders (frozen data in contracts/)
  */
@@ -60,4 +61,5 @@ export * from "./repo.js";
 export * from "./celestea-home.js";
 export * from "./celestea-sources.js";
 export * from "./skills.js";
+export * from "./skill-catalog.js";
 export * from "./contracts/index.js";

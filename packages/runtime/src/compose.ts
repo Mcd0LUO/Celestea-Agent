@@ -120,6 +120,14 @@ export interface ComposeConfig {
    * `placement: "context"` (the message is now model-visible) over SSE.
    */
   onInjected?: (messages: readonly PendingInjection[], boundary: "turn-start" | "step") => void;
+  /**
+   * W884: durable, engine-owned turn context (the skill catalog, name +
+   * description only). Called once per turn start; each row is appended to the
+   * log as user-role history BEFORE the receipts and the input. `[]` = nothing
+   * (a workspace without skills pays nothing). The provider is the HOST's,
+   * because only the host knows the session's workspace (W768).
+   */
+  turnContext?: () => readonly string[];
   /** Host teardown hooks (process kills) — run once, in order, by `shutdown`. */
   shutdownHooks?: readonly ShutdownHook[];
   /** Injectable clock (status tracker rate window). */
@@ -195,6 +203,7 @@ export function compose(config: ComposeConfig): Runtime {
     frameMapper: config.frameMapper ?? loopEventToFrame,
     ...(config.ledger === undefined ? {} : { ledger: config.ledger }),
     ...(config.loopFactory === undefined ? {} : { loopFactory: config.loopFactory }),
+    ...(config.turnContext === undefined ? {} : { turnContext: config.turnContext }),
     drainPending: () => drained([...inbox.drain("next-turn"), ...receipts()], "turn-start"),
     injections: {
       drain: () => drained([...inbox.drain("next-step"), ...receipts()], "step"),

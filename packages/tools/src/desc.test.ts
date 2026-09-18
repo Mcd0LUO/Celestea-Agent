@@ -20,7 +20,7 @@ import { assembleTools } from "./plugin.js";
 import { createToolRegistry } from "./registry.js";
 import { readFileTool } from "./tools/read-file.js";
 
-/** The 7 builtin specs of the composed registry — the source of `GET /api/tools`. */
+/** The 8 builtin specs of the composed registry — the source of `GET /api/tools` (W884 added load_skill). */
 function builtinSpecs(): ToolSpec[] {
   return assembleTools({ guard: null, env: {}, sandbox: stubSandbox() }).registry.schemas();
 }
@@ -33,9 +33,9 @@ function stubSandbox(): Sandbox {
 }
 
 describe("W779 · the desc UI label is declared on every tool", () => {
-  it("carries the identical optional desc on all 7 builtin specs", () => {
+  it("carries the identical optional desc on all 8 builtin specs", () => {
     const specs = builtinSpecs();
-    expect(specs.map((s) => s.name)).toHaveLength(7);
+    expect(specs.map((s) => s.name)).toHaveLength(8);
     for (const spec of specs) {
       const properties = spec.parameters["properties"] as Record<string, unknown>;
       expect(properties["desc"], spec.name).toEqual(descParam());

@@ -162,7 +162,9 @@ export const FROZEN_COUNTS = {
   // W870: 60 -> 61 (PUT /api/sessions/{id}/model, the session-scoped model switch).
   endpoints: 61,
   sseEvents: 9,
-  tools: 13,
+  // W884: 13 -> 14 (`load_skill`, the on-demand half of skill progressive
+  // disclosure; the catalog half adds no tool).
+  tools: 14,
 } as const;
 
 /** One frozen-count divergence, with everything an operator needs to act. */
