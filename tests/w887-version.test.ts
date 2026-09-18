@@ -110,23 +110,12 @@ describe("W887 anti-drift", () => {
   });
 });
 
-describe("W887 build product carries the CURRENT derived version", () => {
-  const distAssets = join(REPO_ROOT, "apps", "web", "dist", "assets");
-  const built = existsSync(distAssets)
-    ? readdirSync(distAssets)
-        .filter((f) => f.endsWith(".js"))
-        .map((f) => readFileSync(join(distAssets, f), "utf8"))
-        .join("\n")
-    : "";
-
-  it.skipIf(built === "")("the bundle contains the git-derived version, not the old literal", () => {
-    const info = computeVersion();
-    expect(info.source).toBe("git");
-    expect(built).toContain("Studio v");
-    expect(built).toContain(info.version);
-    expect(built).not.toContain("2.6.5");
-  });
-});
+// W887 修正：「产物里必须含派生版本」这条断言**不放在这里**。
+// 根门禁的顺序是 test → check:web(build 然后 check)，也就是 `pnpm test` 跑在
+// `vite build` **之前**：写成 vitest 用例时读到的是**上一次**构建的 dist，
+// 树一改（合并出新提交 / 换了 tag）就必红——第一版正是这样把根门禁弄红的。
+// 该断言已搬到构建后的门禁 `apps/web/tools/check-version.mjs`（接在 check:web 里），
+// 那里 dist 一定是刚构建的。
 
 describe("W887 /api/health.version", () => {
   const harness = makeHarness({ session: { name: "sample-session", log: "" } });
