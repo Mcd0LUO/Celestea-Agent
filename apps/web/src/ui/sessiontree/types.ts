@@ -10,6 +10,8 @@ export interface TreeHost {
   newWorkspace(): void;
   /** 载入并渲染树（侧栏与设置页各自的宿主容器）。 */
   loadTreeInto(container: HTMLElement, countEl: HTMLElement | null): Promise<void>;
+  /** 就地把当前 store 状态重绘为树（不 fetch）；批量退出勾选模式用。缺省回退 loadTreeInto。 */
+  renderTreeInto?(container: HTMLElement, countEl: HTMLElement | null): void;
   /** 重新载入侧栏（#sessionTree / #sessionCount）。 */
   loadSessions(): Promise<void>;
 }

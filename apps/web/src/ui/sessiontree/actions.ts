@@ -20,7 +20,11 @@ import type { TreeHost } from './types';
 export function exitBatch(host: TreeHost, container: HTMLElement): void {
   setBatchMode(false);
   selected.clear();
-  void host.loadTreeInto(container, null);
+  // W5：就地退出勾选模式 —— 基于已更新的本地 getSessions() 重绘，**不** fetch/整树重载。
+  // 旧实现走 host.loadTreeInto：删除成功后它会重新 GET /api/sessions，若服务端列表还没
+  // 反映删除（或返回旧列表），刚乐观移除的行会被重新画回来。宿主未提供就地重绘时才回退重载。
+  if (host.renderTreeInto) host.renderTreeInto(container, null);
+  else void host.loadTreeInto(container, null);
 }
 
 /** 勾选框/底栏计数与既有 DOM 同步（只改属性与文本）。 */

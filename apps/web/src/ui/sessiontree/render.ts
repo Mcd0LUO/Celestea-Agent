@@ -40,14 +40,14 @@ import {
 import type { TreeHost } from './types';
 import { sortSessions, truncateName } from './util';
 
-export function renderToolbar(host: TreeHost, container: HTMLElement): void {
+export function renderToolbar(host: TreeHost, container: HTMLElement, mount: HTMLElement = container): void {
   // 新会话按钮（树顶部）
   const nsBtn = el('button', 'btn btn-soft ws-newsess') as HTMLButtonElement;
   nsBtn.type = 'button';
   nsBtn.appendChild(svgIcon('plus'));
   nsBtn.appendChild(el('span', null, '新会话'));
   nsBtn.addEventListener('click', () => host.newSession());
-  container.appendChild(nsBtn);
+  mount.appendChild(nsBtn);
 
   // 工具行：搜索 / 排序 / 新建工作区
   const row = el('div', 'ws-toolrow');
@@ -83,33 +83,36 @@ export function renderToolbar(host: TreeHost, container: HTMLElement): void {
   wsBtn.addEventListener('click', () => host.newWorkspace());
   row.appendChild(wsBtn);
 
-  container.appendChild(row);
-  container.appendChild(el('div', 'ws-divider'));
+  mount.appendChild(row);
+  mount.appendChild(el('div', 'ws-divider'));
 }
 
 export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInfo): HTMLElement {
   const id = s.id ?? '';
+  const batch = isBatchMode();
   const isActive = id === getActiveSession();
   const leaf = el('div', 'sess-leaf' + (isActive ? ' active' : '') + (S.selSession === id ? ' sel' : ''));
   leaf.dataset.id = id;
 
-  if (!isBatchMode()) {
+  if (!batch) {
     const dot = el('span', 'sess-dot' + (paneBusy(id) ? ' busy' : ''));
     dot.dataset.dot = id;
     setHint(dot, paneBusy(id) ? '运行中' : '空闲');
     leaf.appendChild(dot);
   }
-  if (isBatchMode()) {
-    const cb = el('input', 'sess-check') as HTMLInputElement;
-    cb.type = 'checkbox';
-    cb.dataset.id = id;
-    cb.checked = selected.has(id);
-    cb.addEventListener('change', () => {
-      if (cb.checked) selected.add(id);
+  let cb: HTMLInputElement | null = null;
+  if (batch) {
+    const checkbox = el('input', 'sess-check') as HTMLInputElement;
+    checkbox.type = 'checkbox';
+    checkbox.dataset.id = id;
+    checkbox.checked = selected.has(id);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selected.add(id);
       else selected.delete(id);
       refreshChecks(container);
     });
-    leaf.appendChild(cb);
+    leaf.appendChild(checkbox);
+    cb = checkbox;
   }
   leaf.appendChild(svgIcon('file'));
   const displayName = s.title || truncateName(id) || '(未命名)';
@@ -132,9 +135,9 @@ export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInf
   leaf.appendChild(grant);
   paintGrantMark(grant, grantMarkOf(id));
 
-  setHint(leaf, displayName + '（点击打开）');
+  setHint(leaf, displayName + (batch ? '（点击勾选）' : '（点击打开）'));
 
-  if (!isBatchMode()) {
+  if (!batch) {
     const kebab = el('button', 'sess-kebab', '⋯') as HTMLButtonElement;
     kebab.type = 'button';
     kebab.title = '会话操作';
@@ -155,7 +158,17 @@ export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInf
     });
     leaf.appendChild(kebab);
   }
-  leaf.addEventListener('click', () => {
+  leaf.addEventListener('click', (e) => {
+    // W5：批量模式点行 = 只切换勾选，**绝不打开会话**；点复选框本身交给它的 change，
+    // 这里不再切一次（否则双触发：change 一次 + 这里一次 = 白点）。
+    if (isBatchMode()) {
+      if (cb === null || e.target === cb) return;
+      cb.checked = !cb.checked;
+      if (cb.checked) selected.add(id);
+      else selected.delete(id);
+      refreshChecks(container);
+      return;
+    }
     openSessionRow(container, id, { kind: s.kind === 'worker' ? 'worker' : 'session', title: s.title });
   });
   return leaf;
@@ -205,7 +218,7 @@ export function renderWorkspaceNode(
   return wrap;
 }
 
-export function renderBatchBar(host: TreeHost, container: HTMLElement): void {
+export function renderBatchBar(host: TreeHost, container: HTMLElement, mount: HTMLElement = container): void {
   const bar = el('div', 'sess-batchbar');
   bar.appendChild(el('span', 'sess-batchbar-count', '已选 0 个会话'));
   const del = el('button', 'btn btn-danger btn-mini', '删除选中') as HTMLButtonElement;
@@ -216,5 +229,5 @@ export function renderBatchBar(host: TreeHost, container: HTMLElement): void {
   quit.addEventListener('click', () => exitBatch(host, container));
   bar.appendChild(del);
   bar.appendChild(quit);
-  container.appendChild(bar);
+  mount.appendChild(bar);
 }

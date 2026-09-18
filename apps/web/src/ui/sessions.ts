@@ -61,13 +61,6 @@ import {
 /** 载入并渲染：新会话按钮 + 工具行 + 工作区/会话树 + Worker 组（侧栏与设置页复用）。 */
 export async function loadTreeInto(container: HTMLElement, countEl: HTMLElement | null): Promise<void> {
   closeCtxMenu();
-  // 记录折叠状态与搜索框焦点（重建后保持，避免闪动）
-  const openMap = new Map<string, boolean>();
-  for (const det of container.querySelectorAll<HTMLDetailsElement>('.ws-details')) {
-    openMap.set(det.dataset.ws ?? '', det.open);
-  }
-  const searchFocused = document.activeElement?.classList.contains('ws-search-input') ?? false;
-  const off = document.createElement('div'); // 离屏容器：构建期间旧内容保持可见
   if (countEl) countEl.textContent = '…';
 
   try {
@@ -100,12 +93,36 @@ export async function loadTreeInto(container: HTMLElement, countEl: HTMLElement 
     else if (act?.id) setActiveSession(act.id);
   } catch (err) {
     stopWorkerPoll();
+    const off = document.createElement('div');
     off.appendChild(el('div', 'side-note err', '会话列表暂不可用'));
     off.appendChild(el('div', 'side-note', err instanceof Error ? err.message : String(err)));
     container.replaceChildren(...off.childNodes);
     if (countEl) countEl.textContent = '—';
     return;
   }
+
+  renderTree(container, countEl);
+}
+
+/**
+ * 基于**当前 store 状态**就地渲染树（不 fetch、不重载）。
+ *   批量删除成功退出勾选模式时用它：本地 getSessions() 已是最新，重载反而可能把
+ *   刚删的行按旧列表画回来（W5）。宿主经 TreeHost.renderTreeInto 调用。
+ */
+export function renderTreeFromState(container: HTMLElement, countEl: HTMLElement | null): void {
+  renderTree(container, countEl);
+}
+
+/** 树渲染（零网络请求）：工具行 + 工作区/会话树 + 批量条 + Worker 组。 */
+function renderTree(container: HTMLElement, countEl: HTMLElement | null): void {
+  closeCtxMenu();
+  // 记录折叠状态与搜索框焦点（重建后保持，避免闪动）
+  const openMap = new Map<string, boolean>();
+  for (const det of container.querySelectorAll<HTMLDetailsElement>('.ws-details')) {
+    openMap.set(det.dataset.ws ?? '', det.open);
+  }
+  const searchFocused = document.activeElement?.classList.contains('ws-search-input') ?? false;
+  const off = document.createElement('div'); // 离屏容器：构建期间旧内容保持可见
 
   const treeSessions = getSessions().filter((s) => !isWorkerSession(s));
   const wsNames = new Set<string>();
@@ -127,7 +144,7 @@ export async function loadTreeInto(container: HTMLElement, countEl: HTMLElement 
     counts.set(p, (counts.get(p) ?? 0) + 1);
   }
 
-  renderToolbar(HOST, off);
+  renderToolbar(HOST, container, off);
 
   // 树：按工作区收束（可折叠）
   const tree = el('div', 'ws-tree');
@@ -151,7 +168,7 @@ export async function loadTreeInto(container: HTMLElement, countEl: HTMLElement 
   off.appendChild(tree);
 
   // 批量勾选模式：底部操作条
-  if (isBatchMode()) renderBatchBar(HOST, off);
+  if (isBatchMode()) renderBatchBar(HOST, container, off);
 
   // 引擎 Worker 组（W514：常驻 host —— 轮询只替换 host 内容，不重建整棵树）
   const wHost = el('div', 'ws-worker-host');
@@ -206,6 +223,7 @@ const HOST: TreeHost = {
   newSession: (presetWs?: string) => newSession(presetWs),
   newWorkspace: () => newWorkspace(),
   loadTreeInto: (container: HTMLElement, countEl: HTMLElement | null) => loadTreeInto(container, countEl),
+  renderTreeInto: (container: HTMLElement, countEl: HTMLElement | null) => renderTreeFromState(container, countEl),
   loadSessions: () => loadSessions(),
 };
 
