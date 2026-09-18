@@ -348,7 +348,7 @@ live("W805 · 多模态附件对真实 3777 的端到端", () => {
     if (problems.length > 0) throw new Error("[W805] real-backend cleanup failed: " + problems.join(" | "));
   });
 
-  it("真发小图（走前端 api.turn）：请求被接受、消息里出现附件、日志只存引用", { timeout: 180000 }, async () => {
+  it("真发小图（走前端 api.turn）：请求被接受、消息里出现附件、日志只存引用", { timeout: 360000 }, async () => {
     const id = await createSession("glm-5.3-flash", "vision");
     // 先建流、后发 turn：本会话自己的帧一帧不漏，且不会被别的会话污染。
     const stream = openSessionStream(id);
@@ -367,7 +367,9 @@ live("W805 · 多模态附件对真实 3777 的端到端", () => {
         name: "w805.png",
       });
       // 本用例的回合必须真正结束，绝不把在飞回合留给下一个用例（turn 锚定）。
-      const end = await stream.waitFor((f) => f.event === "turn_end" && f.turn === res.turn, 120000);
+      // W1: the real vision turn can take >120s when the whole suite runs beside it
+      // (alone it is ~30s); give the SSE turn_end room without weakening the assertion.
+      const end = await stream.waitFor((f) => f.event === "turn_end" && f.turn === res.turn, 240000);
       expect(end, "视觉回合必须自行结束（turn_end，会话 " + id + "）").not.toBeNull();
       await waitSettled(id, 30000);
       // 红线（机械断言）：会话日志里没有 base64 / data:，只有引用。

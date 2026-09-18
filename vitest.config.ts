@@ -33,8 +33,8 @@ const REAL_BACKEND = [
 export default defineConfig({
   test: {
     // W839 (R3 B8 / W818-P2-1): the weak-reference release case needs --expose-gc.
-    // Root pool options are inherited by every project below.
-    poolOptions: { forks: { execArgv: ["--expose-gc"] } },
+    // Vitest 5 removed poolOptions; execArgv is a top-level (and inherited) option.
+    execArgv: ["--expose-gc"],
     projects: [
       {
         resolve: { alias },
@@ -50,11 +50,10 @@ export default defineConfig({
         test: {
           name: "real-backend",
           include: [...REAL_BACKEND],
-          // One live server, one active_session: singleFork = ONE worker process,
-          // so the three files can only run one at a time (everything else keeps
-          // the default parallel pool).
+          // One live server, one active_session: fileParallelism=false runs the
+          // three files one at a time (everything else keeps the parallel pool).
           pool: "forks",
-          poolOptions: { forks: { singleFork: true } },
+          fileParallelism: false,
           testTimeout: 120_000,
         },
       },

@@ -24,6 +24,11 @@ const PNG = Buffer.from(
 );
 const SHA = createHash("sha256").update(PNG).digest("hex");
 
+/** True when the request carries at least one image content block. */
+function requestHasImage(req: ModelRequest): boolean {
+  return req.messages.some((m) => m.content.some((c) => c.type === "image"));
+}
+
 describe("W804 POST /api/turn inline attachments (real engine)", () => {
   it("stores the bytes, logs only the reference and makes the image model-visible", async () => {
     const requests: ModelRequest[] = [];
@@ -65,7 +70,7 @@ describe("W804 POST /api/turn inline attachments (real engine)", () => {
     expect(readFileSync(join(dir, files[0]!)).equals(PNG)).toBe(true);
 
     // 3. the model saw an image content block AND the wire resolved its bytes.
-    const withImage = requests.find((req) => req.messages.some((m) => m.content.some((c) => c.type === "image")));
+    const withImage = requests.find(requestHasImage);
     expect(withImage).toBeDefined();
     const image = withImage?.messages.flatMap((m) => m.content).find((c) => c.type === "image");
     expect(image).toMatchObject({ type: "image", content: { attachment_id: SHA, media_type: "image/png" } });
