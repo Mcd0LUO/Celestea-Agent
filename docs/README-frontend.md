@@ -12,8 +12,8 @@
 
 - 原前端仓**现役** = **线上前端（`frontend/` → 现 `apps/web/`）+ 共享数据文件**（W781 起数据在 `/var/lib/celestea-agent/`）。
 - **后端（TypeScript，生产）在 [`/src/celestea_studio-ts`](/src/celestea_studio-ts/docs/README.md)**（W781 起与前端同仓）；
-  引擎**原址**（`/src/celestea_harness`）已于 2026-09-11 删除，其历史文档在 [`archive/frontend/harness/`](./archive/frontend/harness/README.md)。
-- 因此本页列表里凡是描述旧后端的文档一律归 **历史**（2026-09-11 归档进 [`archive/frontend/`](./archive/frontend/)，正文保留 + 顶部 📦 横幅），
+  引擎**原址**（`/src/celestea_harness`）已于 2026-09-11 删除，其历史文档已于 W881 清理出公开仓。
+- 本页原列表里描述旧后端的归档文档（2026-09-11 归档进 `archive/frontend/`）已于 W881 清理出公开仓，
   只有前端规则与数据文件格式仍属当前。
 
 ## 索引
@@ -23,14 +23,9 @@
 | [`DEVELOPMENT.md`](./DEVELOPMENT.md) | 当前（旧后端部分为历史参考） | 旧后端的开发者权威入口：架构总览、模块职责表、关键机制（Gen/swap_gen、SSE 信封、autowake、提示词装配）、开发工作流、测试现状与文档索引 | 本文自身的 §0 文档地图；后端开发改看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md) |
 | [`data-files.md`](./data-files.md) | 当前 | **共享数据文件** schema 与格式：`workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json`（写作时基于旧后端实现；TS 后端读写同一批文件） | 本文；字段变更以 TS 侧实现与 `/src/celestea_studio-ts/contracts/data-files/` 为准 |
 | [`pitfalls.md`](./pitfalls.md) | 当前 | 踩坑档案：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证（每条来自真实修复）；前端渲染与数据文件类条目**仍适用** | 本文 |
-| [`archive/frontend/api-contract.md`](./archive/frontend/api-contract.md) | 历史 | 已退役后端全部 HTTP 端点契约：39 端点 / 请求响应 / 每个错误分支的 status + error 原文 | [`/src/celestea_studio-ts/contracts/endpoints.json`](/src/celestea_studio-ts/contracts/endpoints.json)（47 端点） |
-| [`archive/frontend/deployment.md`](./archive/frontend/deployment.md) | 历史 | 已退役后端的 systemd / nginx / 环境变量 / 健康检查 / 重启与回滚（来自机器实际配置） | [`/src/celestea_studio-ts/scripts/run-studio-ts.sh`](/src/celestea_studio-ts/scripts/run-studio-ts.sh) + TS 仓文档 |
-| [`archive/frontend/frontend-session-persistence-eval.md`](./archive/frontend/frontend-session-persistence-eval.md) | 历史 | 「刷新后聊天消失」评估：后端已持久化，缺口在前端启动恢复（推荐方案 A，已实现） | [`DEVELOPMENT.md`](./DEVELOPMENT.md) |
-| [`archive/frontend/prompt-injection-eval.md`](./archive/frontend/prompt-injection-eval.md) | 历史 | 提示词变量注入 / 多提示词注册评估（`src/prompts.rs`）；机制已在 TS 后端落地 | [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md) |
-| [`archive/frontend/frontend-freeze-stop-button-plan.md`](./archive/frontend/frontend-freeze-stop-button-plan.md) | 历史 | 前端卡死修复 + statusline 停止按钮架构方案（W301/W302），方案已上线，文首「待执行」已过时 | [`DEVELOPMENT.md`](./DEVELOPMENT.md)、[`pitfalls.md`](./pitfalls.md) |
 
 本页在并入本仓后位于 `docs/` 根（`README-frontend.md` 前缀 `-frontend` 以与后端索引 [`README.md`](./README.md) 区分）：
-`DEVELOPMENT.md` / `data-files.md` / `pitfalls.md` 三篇 + `archive/frontend/` 13 篇历史文档。
+`DEVELOPMENT.md` / `data-files.md` / `pitfalls.md` 三篇；`archive/frontend/` 13 篇历史文档已于 W881 清理出公开仓。
 原前端仓根另有 [`../README.md`](../README.md)（已并入本仓 README 的「仓库角色」段）。
 
 ## 仓库角色与互链
@@ -39,11 +34,11 @@
 | --- | --- | --- |
 | `/src/celestea_studio-ts`（本仓，W781 前为两个仓） | 后端（TypeScript，生产）+ 线上前端 `apps/web/` | [`docs/README.md`](./README.md) / [`../README.md`](../README.md) |
 | `/var/lib/celestea-agent` | 运行数据（providers / workspaces / sessions / 账本；W781 前在原前端仓根） | [`../scripts/run-studio-ts.sh`](../scripts/run-studio-ts.sh) |
-| `/src/celestea_harness` | 引擎**原址**（2026-09-11 已删除） | 历史文档已归档：[`archive/frontend/harness/README.md`](./archive/frontend/harness/README.md) |
+| `/src/celestea_harness` | 引擎**原址**（2026-09-11 已删除） | 历史文档已于 W881 清理出公开仓 |
 
 ## 维护约定
 
 - 新增文档 → 在本页表格登记（文件 / 状态 / 一句话 / 权威入口），并同步 [`../README.md`](../README.md) 与
   [`DEVELOPMENT.md`](./DEVELOPMENT.md) §0 文档地图。
-- 文档过时 → 移入 `archive/`（`git mv` 保历史）+ 顶部 `📦 历史文档` 横幅 + 更新本页状态与全仓引用路径；**不删除正文**。
-- 归档不等于作废：`archive/` 里的报告是「为什么这样设计」的决策留痕，追溯时仍应读。
+- 文档过时 → 移入归档目录（`git mv` 保历史）+ 顶部 `📦 历史文档` 横幅 + 更新本页状态与全仓引用路径；**不删除正文**。
+- 归档不等于作废：归档报告是「为什么这样设计」的决策留痕；公开仓已不保留退役后端/引擎的历史文档（W881 清理）。

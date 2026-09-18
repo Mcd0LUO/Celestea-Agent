@@ -210,7 +210,7 @@ apps/studio → runtime.compose(profile)
 | EX-04 | `scripts/compare-replay.ts` | `main()` 115 行（限 80） | P0 对拍脚本：依次跑 A–E 五组对比并汇总写报告 | 每组对比抽成独立 `compareX()`，`main()` 只做调度与汇总 | P1 工具链整理 |
 
 **当前状态**：`ARCH_STRICT=1 pnpm lint` 的输出恰好是上表 4 个文件、8 条错误——**没有隐藏例外**。
-除上述之外，全部文件在当前配置下 0 error（`tests/fixtures.test.ts` 有 1 条 `reportUnusedDisableDirectives` warning，属待清理的陈旧 `eslint-disable` 注释，不影响门禁）。
+除上述之外，全部文件在当前配置下 0 error、0 warning（`tests/fixtures.test.ts` 的陈旧 `eslint-disable` 注释已于 W881 随失效测试分支一并删除）。
 
 **例外的三条纪律**
 

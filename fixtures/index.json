@@ -62,45 +62,13 @@
       "subCalls": 11,
       "expectedMessages": 41,
       "sseFrames": 53
-    },
-    {
-      "id": "celestea_harness/harness架构哥-1788933931.279221103",
-      "slug": "harness架构哥-1788933931.279221103",
-      "roles": [
-        "session-log",
-        "dangling-tool-call",
-        "run_code-parent-id",
-        "cancelled-outcome",
-        "error-outcome"
-      ],
-      "events": 606,
-      "turns": 17,
-      "danglingToolCalls": 3,
-      "subCalls": 11,
-      "expectedMessages": 575,
-      "sseFrames": 603
-    },
-    {
-      "id": "server-center/center-架构师-1788940601.93642104",
-      "slug": "center-架构师-1788940601.93642104",
-      "roles": [
-        "session-log",
-        "normal-multi-turn",
-        "error-outcome"
-      ],
-      "events": 967,
-      "turns": 7,
-      "danglingToolCalls": 0,
-      "subCalls": 0,
-      "expectedMessages": 953,
-      "sseFrames": 967
     }
   ],
   "counts": {
-    "sessions": 5,
+    "sessions": 3,
     "sseLiveFrames": 0,
     "registryRows": 11,
-    "files": 40
+    "files": 32
   },
   "files": [
     {
@@ -177,46 +145,6 @@
       "path": "sessions/test-1788787479.196315272/meta.json",
       "bytes": 2980,
       "sha256": "831a230281e2ecd70a89c01ecc19502937a476132207ad12ea2f3b241c042cd5"
-    },
-    {
-      "path": "sessions/harness架构哥-1788933931.279221103/cli-main.jsonl",
-      "bytes": 1041973,
-      "sha256": "a5efc7fb7cfcb7ee0e7b053c0980f42855f8815e2126f4ef64da7e400064a666"
-    },
-    {
-      "path": "sessions/harness架构哥-1788933931.279221103/messages-expected.json",
-      "bytes": 1099947,
-      "sha256": "08889a5fd50745dcb133eb05c1afafa962c1299019bd65fd663dc3ea48acac6c"
-    },
-    {
-      "path": "sessions/harness架构哥-1788933931.279221103/derive-messages-expected.json",
-      "bytes": 711183,
-      "sha256": "97811bf4b4e01c66392d206a83e202a61126f3f7262a816077847ad2282c2980"
-    },
-    {
-      "path": "sessions/harness架构哥-1788933931.279221103/meta.json",
-      "bytes": 3584,
-      "sha256": "86e9c6c53b296933a92c778938094ff4692f8ae9bf4dfe1f802fc480579a66f1"
-    },
-    {
-      "path": "sessions/center-架构师-1788940601.93642104/cli-main.jsonl",
-      "bytes": 1748688,
-      "sha256": "4f0bc465ab8dfda076c643062a69604182d91f0b4ce899014c09f02ed20b48a4"
-    },
-    {
-      "path": "sessions/center-架构师-1788940601.93642104/messages-expected.json",
-      "bytes": 1862128,
-      "sha256": "084704ea2788509de4b793e4d2675a886c8e4aad750b8360e8a1dcf668bbf2d6"
-    },
-    {
-      "path": "sessions/center-架构师-1788940601.93642104/derive-messages-expected.json",
-      "bytes": 952191,
-      "sha256": "651c83f54ba9fd698fde777e7b47f4a70c84927ffbfe7dbf9ca81fa720959d48"
-    },
-    {
-      "path": "sessions/center-架构师-1788940601.93642104/meta.json",
-      "bytes": 2789,
-      "sha256": "e4cca5a2338cceb92474177d4811b12d38749176c10bab192cd8d4f31aea4c91"
     },
     {
       "path": "sse/live-capture.raw.txt",
@@ -307,8 +235,6 @@
   "normalization": {
     "by": "W797 repo-wide retired-engine vocabulary purge",
     "sessions": [
-      "center-架构师-1788940601.93642104",
-      "harness架构哥-1788933931.279221103",
       "scratch-cancel-e2e-1788971355.259970577",
       "scratch-timeout-1788962615.856629520",
       "test-1788787479.196315272"
