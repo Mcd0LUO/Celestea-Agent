@@ -25,7 +25,7 @@
  * verdict is not a success flag.
  */
 
-import type { Tool, ToolDecision, ToolGuard, ToolInput, ToolOutput, ToolRegistry, ToolSpec } from "@celestea/core";
+import type { Tool, ToolDecision, ToolExecOutcome, ToolGuard, ToolInput, ToolOutput, ToolRegistry, ToolSpec } from "@celestea/core";
 
 import { GUARD_ERROR_PREFIX, TOOLARG_ERROR_PREFIX, contractError, errorText, quoteMessage } from "./errors.js";
 import { validateArgs } from "./schema.js";
@@ -80,7 +80,7 @@ export class ToolRegistryImpl implements ToolRegistry {
 
   private async runTool(tool: Tool, input: ToolInput): Promise<ToolOutput> {
     try {
-      const outcome =
+      const outcome: ToolExecOutcome =
         tool.executeWith === undefined
           ? { value: await tool.execute(input.args), render: null }
           : await tool.executeWith(input);
@@ -90,6 +90,8 @@ export class ToolRegistryImpl implements ToolRegistry {
         render: outcome.render ?? humanRender(outcome.value),
         error: null,
         decision: ALLOW,
+        // W855 (B6): a tool-authored model face (e.g. read_file truncation).
+        ...(outcome.surface === undefined ? {} : { surface: outcome.surface }),
       };
     } catch (e) {
       return failure(input.call_id, errorText(e));

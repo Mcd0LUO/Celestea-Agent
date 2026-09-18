@@ -1,7 +1,13 @@
 /**
  * Tool-result retention (W855) — bound what ONE step may keep inline, and make
  * every omitted byte retrievable.
- *
+
+ * B6 (W855) split the two halves of a result:
+ *   - the session LOG stores the ORIGINAL value (`retainToolResult().logged`);
+ *   - the MODEL/SSE face is the bounded head/tail window + locator notice
+ *     (`retainToolResult().face`), rendered by the shared core primitives so a
+ *     replay of the same log reproduces the live model context byte for byte.
+
  * Contract discipline (mirrors dsh-output-retention / dsh-spill):
  *   - an omission means THE BUDGET kept something out. An upstream that
  *     returned an incomplete body keeps its own domain field and is never
@@ -12,13 +18,13 @@
  *     boundaries;
  *   - a spill that fails is BEST-EFFORT: the inline text is kept and the tool
  *     call still succeeds (never turned into an error).
- *
+
  * The policy is session-scoped and lives in the Context under
  * [RETENTION_SERVICE]; the agent loop reads it once per turn. The persistence
  * half (where the bytes go) belongs to the host, NOT this L1 package.
  */
 
-import { toolResultText, type ToolOutput } from "@celestea/core";
+import { renderOmittedText, retainHeadTail, toolSurfaceText, toolSurfaceValue, type ToolOutput, type ToolResultSurface } from "@celestea/core";
 
 /** Context service token: the retention policy of THIS session. */
 export const RETENTION_SERVICE = "celestea.agent-loop.ToolResultRetention";
@@ -78,105 +84,53 @@ export function newStepRetention(): StepRetention {
   return { consumedBytes: 0 };
 }
 
+// W855 (B6): the pure cut/render primitives live in core so the projection can
+// render the face without importing this L1 policy layer. Re-exported here so
+// the package keeps its stable import path.
+export { cutPrefixCodePoints, cutSuffixCodePoints, retainHeadTail } from "@celestea/core";
+export type { RetainedText } from "@celestea/core";
+
 /** The text retention measures and persists: a string value stays RAW (so the
  * spill file is readable), anything else is the model-visible JSON. */
 export function retentionText(output: ToolOutput): string {
   if (typeof output.error === "string" && output.error.length > 0) return "Error: " + output.error;
-  return typeof output.value === "string" ? output.value : toolResultText(null, output.value);
+  return typeof output.value === "string" ? output.value : toolSurfaceText(output.value, undefined);
 }
 
-/** Longest prefix of text within maxBytes, never splitting a code point. */
-export function cutPrefixCodePoints(text: string, maxBytes: number): string {
-  if (maxBytes <= 0) return "";
-  let used = 0;
-  let out = "";
-  for (const ch of text) {
-    const n = Buffer.byteLength(ch, "utf8");
-    if (used + n > maxBytes) break;
-    used += n;
-    out += ch;
-  }
-  return out;
+/** The two surfaces of one tool result: what the log keeps vs what the model sees. */
+export interface ToolResultFaces {
+  /** The log row: the ORIGINAL value, plus the optional surface descriptor. */
+  logged: ToolOutput;
+  /** The model/SSE face: `value`/`render` replaced by the rendered surface. */
+  face: ToolOutput;
 }
 
-/** Longest suffix of text within maxBytes, never splitting a code point. */
-export function cutSuffixCodePoints(text: string, maxBytes: number): string {
-  if (maxBytes <= 0) return "";
-  let used = 0;
-  let out = "";
-  const chars = Array.from(text);
-  for (let i = chars.length - 1; i >= 0; i -= 1) {
-    const ch = chars[i] ?? "";
-    const n = Buffer.byteLength(ch, "utf8");
-    if (used + n > maxBytes) break;
-    used += n;
-    out = ch + out;
-  }
-  return out;
-}
-
-export interface RetainedText {
-  head: string;
-  tail: string;
-  keptBytes: number;
-  omittedBytes: number;
-  totalBytes: number;
-}
-
-/** Head+tail window over text (code-point safe) with the EXACT omitted count. */
-export function retainHeadTail(text: string, headBytes: number, tailBytes: number): RetainedText {
-  const totalBytes = Buffer.byteLength(text, "utf8");
-  if (totalBytes <= headBytes + tailBytes) {
-    return { head: text, tail: "", keptBytes: totalBytes, omittedBytes: 0, totalBytes };
-  }
-  const head = cutPrefixCodePoints(text, headBytes);
-  const tail = cutSuffixCodePoints(text, tailBytes);
-  const keptBytes = Buffer.byteLength(head, "utf8") + Buffer.byteLength(tail, "utf8");
-  return { head, tail, keptBytes, omittedBytes: totalBytes - keptBytes, totalBytes };
-}
-
-/** The standardized omission clause + the tool-shaped retrieval instruction. */
-export function formatRetentionNotice(ref: SpillRef, omittedBytes: number, totalBytes: number): string {
-  return (
-    "[omitted] " +
-    String(omittedBytes) +
-    " of " +
-    String(totalBytes) +
-    " bytes kept out of the model context by the tool-result budget; full text: " +
-    ref.locator +
-    " (" +
-    ref.retrievalHint +
-    ")"
-  );
-}
-
-/** Bounded head/tail window + notice (what replaces the inline value). */
-export function renderRetained(text: string, ref: SpillRef, headBytes: number, tailBytes: number): string {
-  const window = retainHeadTail(text, headBytes, tailBytes);
-  const notice = formatRetentionNotice(ref, window.omittedBytes, window.totalBytes);
-  if (window.tail === "") return window.head + "\n" + notice;
-  return window.head + "\n...\n" + window.tail + "\n" + notice;
+/** Apply a tool-authored surface (or none) to the face; the log keeps the original. */
+export function faceToolOutput(output: ToolOutput): ToolResultFaces {
+  if (output.surface === undefined) return { logged: output, face: output };
+  const face = toolSurfaceValue(output.value, output.surface); // RAW (SSE/UI) face
+  return { logged: output, face: { ...output, value: face, render: typeof face === "string" ? face : output.render } };
 }
 
 /**
- * Apply retention to ONE tool output.
+ * Apply retention to ONE tool output, returning BOTH surfaces.
  *
  * A result is retained when it exceeds the single-result threshold OR when it
  * would push this step past the cumulative threshold. On ANY spill failure the
- * ORIGINAL output is returned unchanged (fail-soft).
+ * ORIGINAL is kept inline (fail-soft).
  */
-export async function retainToolOutput(
+export async function retainToolResult(
   output: ToolOutput,
   policy: ToolResultRetention,
   step: StepRetention,
   toolName: string | null = null,
-): Promise<ToolOutput> {
+): Promise<ToolResultFaces> {
   const text = retentionText(output);
   const bytes = Buffer.byteLength(text, "utf8");
   // W855 #8b: a read tool's result IS the retrieval path, not a payload to
   // spill; skipping it prevents read -> spill -> read (and does not debit the
   // step budget — see RETENTION_SKIP_TOOLS).
-  if (toolName !== null && RETENTION_SKIP_TOOLS.has(toolName)) return output;
+  if (toolName !== null && RETENTION_SKIP_TOOLS.has(toolName)) return faceToolOutput(output);
   // W855 decision (architect, 2026-09-18): ONLY a successful STRING result is
   // rewritten. An object result's value shape is part of the tool contract
   // (consumers branch on typeof value === "object"), so this layer NEVER
@@ -185,13 +139,13 @@ export async function retainToolOutput(
   // Non-string results still count toward the step budget.
   if (output.error !== null || typeof output.value !== "string") {
     step.consumedBytes += bytes;
-    return output;
+    return faceToolOutput(output);
   }
   const overSingle = bytes > policy.singleResultBytes;
   const overStep = step.consumedBytes + bytes > policy.stepResultBytes;
   if (!overSingle && !overStep) {
     step.consumedBytes += bytes;
-    return output;
+    return faceToolOutput(output);
   }
   let ref: SpillRef | null = null;
   try {
@@ -202,9 +156,32 @@ export async function retainToolOutput(
   if (ref === null) {
     // Best-effort: the tool call stays successful and keeps its full result.
     step.consumedBytes += bytes;
-    return output;
+    return faceToolOutput(output);
   }
-  const bounded = renderRetained(text, ref, policy.previewHeadBytes, policy.previewTailBytes);
-  step.consumedBytes += Buffer.byteLength(bounded, "utf8");
-  return { ...output, value: bounded, render: bounded };
+  const window = retainHeadTail(text, policy.previewHeadBytes, policy.previewTailBytes);
+  const surface: ToolResultSurface = {
+    kind: "omitted",
+    omitted_bytes: window.omittedBytes,
+    total_bytes: window.totalBytes,
+    locator: ref.locator,
+    retrieval_hint: ref.retrievalHint,
+    head_bytes: policy.previewHeadBytes,
+    tail_bytes: policy.previewTailBytes,
+  };
+  const face = renderOmittedText(text, surface);
+  step.consumedBytes += Buffer.byteLength(face, "utf8");
+  return { logged: { ...output, surface }, face: { ...output, value: face, render: face, surface } };
+}
+
+/**
+ * Back-compat wrapper: the FACE only (what the model/SSE sees). Callers that
+ * must also persist the ORIGINAL use [retainToolResult].
+ */
+export async function retainToolOutput(
+  output: ToolOutput,
+  policy: ToolResultRetention,
+  step: StepRetention,
+  toolName: string | null = null,
+): Promise<ToolOutput> {
+  return (await retainToolResult(output, policy, step, toolName)).face;
 }

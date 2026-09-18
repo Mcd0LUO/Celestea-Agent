@@ -2,7 +2,7 @@
 
 import { outcomePhase, type ParseJsonlResult } from "./jsonl.js";
 import { auditTurnIds, type TurnIdAudit } from "./turn-id.js";
-import type { SessionEvent } from "@celestea/core";
+import { toolSurfaceValue, type SessionEvent } from "@celestea/core";
 
 export interface ReplayStats {
   physicalLines: number;
@@ -169,10 +169,12 @@ export function deriveSseTranscript(events: readonly SessionEvent[], startTurn =
         push("tool", { id: ev.id, name: ev.name, args: ev.args });
         break;
       case "tool_result":
+        // W855 (B6): the log stores the original; the frame a client saw carried
+        // the FACE, so replay applies the same surface the live loop emitted.
         push("tool_result", {
           id: ev.id,
           ok: ev.error === null,
-          value: ev.value,
+          value: toolSurfaceValue(ev.value, ev.surface),
           render: null,
           error: ev.error,
           decision: null,

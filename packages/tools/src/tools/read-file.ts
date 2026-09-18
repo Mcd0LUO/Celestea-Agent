@@ -7,7 +7,7 @@
  * projected to the model, so metadata there would be invisible.
  */
 
-import type { Tool, ToolSpec } from "@celestea/core";
+import type { Tool, ToolExecOutcome, ToolSpec } from "@celestea/core";
 
 import { optionalIntArg, stringArg } from "../args.js";
 import { descParam } from "../desc.js";
@@ -40,10 +40,8 @@ export function readFileSpec(): ToolSpec {
   };
 }
 
-interface ReadOutcome {
-  value: unknown;
-  render: string | null;
-}
+/** W855 (B6): `surface` carries the truncation note into the model face. */
+type ReadOutcome = ToolExecOutcome;
 
 async function read(args: unknown): Promise<ReadOutcome> {
   const path = stringArg(args, "path");
@@ -53,16 +51,16 @@ async function read(args: unknown): Promise<ReadOutcome> {
   if (offset === undefined && limit === undefined) {
     const result = await readTextFile(path);
     if (!result.truncated) return { value: result.text, render: null };
-    return {
-      value: result.text,
-      render: truncationNote(
-        `'${path}'`,
-        MAX_READ_BYTES,
-        result.totalBytes,
-        "bytes",
-        'read the rest with offset/limit, or run_shell on the same path (head -c / tail -c / sed -n)',
-      ),
-    };
+    const note = truncationNote(
+      `'${path}'`,
+      MAX_READ_BYTES,
+      result.totalBytes,
+      "bytes",
+      'read the rest with offset/limit, or run_shell on the same path (head -c / tail -c / sed -n)',
+    );
+    // W855 (B6): the note must reach the MODEL too — `render` is display-only
+    // (never projected), so it rides as a surface descriptor on the log row.
+    return { value: result.text, render: note, surface: { kind: "truncation", note } };
   }
   // W846 pagination: line window; metadata on `value` (render is not projected).
   const window = await readTextLines(path, offset ?? 0, limit ?? DEFAULT_READ_LIMIT);
@@ -94,9 +92,6 @@ export function readFileTool(): Tool {
   return {
     spec: () => spec,
     execute: async (args) => (await read(args)).value,
-    executeWith: async (input) => {
-      const { value, render } = await read(input.args);
-      return { value, render };
-    },
+    executeWith: async (input) => read(input.args),
   };
 }

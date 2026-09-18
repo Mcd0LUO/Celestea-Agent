@@ -14,7 +14,7 @@
  * contract.
  */
 
-import { deriveMessagesFrom } from "@celestea/core";
+import { deriveMessagesFrom, toolSurfaceValue } from "@celestea/core";
 import type { Message, SessionEvent, StudioMessage } from "@celestea/core";
 
 /** Studio projection of a single event; null for structural markers. */
@@ -46,14 +46,18 @@ export function sessionEventToMessage(ev: SessionEvent): StudioMessage | null {
       return out;
     }
     case "tool_result": {
+      // W855 (B6): the log stores the ORIGINAL value; the transcript shows the
+      // bounded/annotated FACE (the original can be arbitrarily large) plus the
+      // descriptor so a card can badge "N bytes omitted -> locator".
       const out: StudioMessage = {
         role: "tool",
         kind: "result",
         tool_call_id: ev.id,
-        tool_value: ev.value,
+        tool_value: toolSurfaceValue(ev.value, ev.surface),
         tool_error: ev.error,
       };
       if (ev.parent_id !== undefined) out.tool_parent_id = ev.parent_id;
+      if (ev.surface !== undefined) out.tool_surface = ev.surface;
       return out;
     }
     // W783 §7: the two host-side question rows. The Studio projection is the

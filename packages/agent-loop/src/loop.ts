@@ -53,8 +53,9 @@ import { ThinkingBuffer } from "./thinking.js";
 import { UsageTracker } from "./usage.js";
 import {
   RETENTION_SERVICE,
+  faceToolOutput,
   newStepRetention,
-  retainToolOutput,
+  retainToolResult,
   type StepRetention,
   type ToolResultRetention,
 } from "./retention.js";
@@ -356,14 +357,21 @@ export class DefaultAgentLoop implements AgentLoop {
     step: StepRetention,
     toolName: string | null,
   ): Promise<void> {
-    // W855: retention rewrites the MODEL-VISIBLE value (large results spill to
-    // a retrievable locator). A failed spill leaves the output untouched.
+    // W855 (B6): the LOG keeps the ORIGINAL value + a `surface` descriptor; the
+    // MODEL/SSE face is rendered from it (retention's bounded window, or a
+    // tool-authored truncation note). A failed spill keeps the original inline.
     // W855 #8b: `toolName` lets the policy exempt read tools (no read loop).
-    const recorded =
-      this.retention === null ? output : await retainToolOutput(output, this.retention, step, toolName);
-    this.emit(toolResultEvent(recorded));
-    answered.add(recorded.call_id);
-    seams.session.append({ type: "tool_result", id: recorded.call_id, value: recorded.value, error: recorded.error });
+    const faces =
+      this.retention === null ? faceToolOutput(output) : await retainToolResult(output, this.retention, step, toolName);
+    this.emit(toolResultEvent(faces.face));
+    answered.add(faces.logged.call_id);
+    seams.session.append({
+      type: "tool_result",
+      id: faces.logged.call_id,
+      value: faces.logged.value,
+      error: faces.logged.error,
+      ...(faces.logged.surface === undefined ? {} : { surface: faces.logged.surface }),
+    });
   }
 
   /**

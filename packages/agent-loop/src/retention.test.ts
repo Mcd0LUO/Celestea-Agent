@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { assistantText, toolResultText, type Message, type ToolInput, type ToolOutput, type ToolRegistry } from "@celestea/core";
+import { assistantText, formatOmissionNotice, toolResultText, type Message, type ToolInput, type ToolOutput, type ToolRegistry } from "@celestea/core";
 import {
   FakeToolRegistry,
   eventsOfType,
@@ -17,7 +17,6 @@ import {
   RETENTION_SERVICE,
   cutPrefixCodePoints,
   cutSuffixCodePoints,
-  formatRetentionNotice,
   newStepRetention,
   retainToolOutput,
   retentionText,
@@ -67,8 +66,16 @@ describe("W855 retention primitives", () => {
     ).toBe("Error: boom");
   });
 
-  it("formatRetentionNotice names the exact budget omission and the retrieval hint", () => {
-    const notice = formatRetentionNotice(ref("/s/spills/c1-1.txt"), 1234, 9999);
+  it("the omission notice names the exact budget omission and the retrieval hint", () => {
+    const notice = formatOmissionNotice({
+      kind: "omitted",
+      omitted_bytes: 1234,
+      total_bytes: 9999,
+      locator: "/s/spills/c1-1.txt",
+      retrieval_hint: 'read_file path="/s/spills/c1-1.txt"',
+      head_bytes: 4,
+      tail_bytes: 2,
+    });
     expect(notice).toContain("[omitted] 1234 of 9999 bytes");
     expect(notice).toContain("budget");
     expect(notice).toContain("/s/spills/c1-1.txt");
@@ -214,7 +221,7 @@ describe("W855 loop integration", () => {
     });
   }
 
-  it("rewrites the logged tool_result value and the model request sees the bounded form", async () => {
+  it("keeps the ORIGINAL in the log while the model request sees the bounded face (B6)", async () => {
     const full = "TOPSECRET".repeat(200); // 1800 bytes
     const registry = new ValuesRegistry();
     registry.values.set("c1", full);
@@ -224,16 +231,15 @@ describe("W855 loop integration", () => {
     const outcome = await h.run("go");
     expect(outcome).toBe("completed");
     const rows = eventsOfType(h.session, "tool_result");
-    const value = String(rows[0]?.value ?? "");
-    expect(value).toContain("/tmp/spill-1.txt");
-    expect(value).toContain("[omitted]");
-    // The bounded form is strictly smaller and is not the full text any more.
-    expect(value).not.toBe(full);
-    expect(Buffer.byteLength(value, "utf8")).toBeLessThan(Buffer.byteLength(full, "utf8"));
-    // The text the model would receive is the bounded form, never the full text.
-    const modelText = toolResultText(rows[0]?.error ?? null, rows[0]?.value);
+    // (1) the session log stores the ORIGINAL value + the surface descriptor.
+    expect(rows[0]?.value).toBe(full);
+    expect(rows[0]?.surface?.kind).toBe("omitted");
+    // (2) the model-visible face is the bounded form, never the full text.
+    const modelText = toolResultText(rows[0]?.error ?? null, rows[0]?.value, rows[0]?.surface);
     expect(modelText).not.toContain(full);
     expect(modelText).toContain("/tmp/spill-1.txt");
+    expect(modelText).toContain("[omitted]");
+    expect(Buffer.byteLength(modelText, "utf8")).toBeLessThan(Buffer.byteLength(full, "utf8"));
   });
 
   it("without a retention policy the full text stays inline (the contrast that gives the case teeth)", async () => {
@@ -267,7 +273,10 @@ describe("W855 loop integration", () => {
     expect(await h.run("go")).toBe("completed");
     const rows = eventsOfType(h.session, "tool_result");
     expect(rows[0]?.id).toBe("c1");
-    expect(rows[0]?.value).toBe(big); // read_file: untouched
-    expect(String(rows[1]?.value)).toContain("[omitted]"); // run_shell: retained
+    expect(rows[0]?.value).toBe(big); // read_file: untouched, no surface
+    expect(rows[0]?.surface).toBeUndefined();
+    expect(rows[1]?.value).toBe(big); // run_shell: log keeps the ORIGINAL
+    expect(rows[1]?.surface?.kind).toBe("omitted");
+    expect(toolResultText(rows[1]?.error ?? null, rows[1]?.value, rows[1]?.surface)).toContain("[omitted]");
   });
 });

@@ -26,6 +26,9 @@ export function loopEventToSse(ev: LoopEvent): SseFrame {
     case "tool_call":
       return { event: "tool", payload: { id: ev.id, name: ev.name, args: ev.args } };
     case "tool_result":
+      // W855 (B6): `value` is the MODEL FACE, not the log's original — the loop
+      // builds the face from the retention surface before emitting. Replay derives
+      // the same face from the log (`session/src/replay.ts`).
       return {
         event: "tool_result",
         payload: {

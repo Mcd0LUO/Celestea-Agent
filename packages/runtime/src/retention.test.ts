@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { deriveMessagesFrom, retainHeadTail, type SessionEvent } from "@celestea/core";
 
 import {
   createToolResultRetention,
@@ -87,5 +88,43 @@ describe("W855 runtime spill writer", () => {
     expect(retentionSettingsFromEnv("/s", {}).spillTtlMs).toBe(DEFAULT_SPILL_TTL_MS);
     expect(DEFAULT_SPILL_TTL_MS).toBe(7 * 24 * 60 * 60 * 1_000);
     expect(retentionSettingsFromEnv("/s", { CELESTEA_SPILL_TTL_MS: "1200" }).spillTtlMs).toBe(1200);
+  });
+
+  it("W855 B6: the sweep removes the spill file but the logged ORIGINAL stays readable", () => {
+    const dir = mkdtempSync(join(tmpdir(), "w855-b6-"));
+    const spills = join(dir, "spills");
+    mkdirSync(spills, { recursive: true });
+    const locator = join(spills, "c1-1.txt");
+    const original = "ORIGINAL".repeat(400); // 3200 bytes
+    writeFileSync(locator, original);
+
+    const window = retainHeadTail(original, 64, 32);
+    const event: SessionEvent = {
+      type: "tool_result",
+      id: "c1",
+      value: original,
+      error: null,
+      surface: {
+        kind: "omitted",
+        omitted_bytes: window.omittedBytes,
+        total_bytes: window.totalBytes,
+        locator,
+        retrieval_hint: 'read_file path="' + locator + '"',
+        head_bytes: 64,
+        tail_bytes: 32,
+      },
+    };
+
+    // TTL sweep deletes the spill copy...
+    expect(sweepSpills(dir, 1, Date.now() + 10_000)).toBe(1);
+    expect(existsSync(locator)).toBe(false);
+
+    // ...but the ORIGINAL is still on the log row, and the projection still
+    // renders the bounded model face from it.
+    expect(event.type === "tool_result" ? event.value : null).toBe(original);
+    const msgs = deriveMessagesFrom([event]);
+    const text = msgs[0]?.content.map((c) => (c.type === "text" ? c.content : "")).join("") ?? "";
+    expect(text).toContain("[omitted]");
+    expect(text).not.toBe(original);
   });
 });

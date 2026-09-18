@@ -28,7 +28,6 @@
  * assistant tool_calls message must be followed by one tool message per call.
  */
 
-import { serdeJsonString } from "./json.js";
 import {
   assistantText,
   attachmentRefsOfValue,
@@ -39,7 +38,8 @@ import {
   userMessageWithImages,
 } from "./message.js";
 import type { Message, ToolCall } from "./message.js";
-import type { SessionEvent } from "./types.js";
+import { toolSurfaceText } from "./tool-surface.js";
+import type { SessionEvent, ToolResultSurface } from "./types.js";
 
 /** W267 synthetic result text — byte-for-byte the engine's string (b046564). */
 export const CANCELLED_TOOL_CALL_TEXT = "Error: tool call was cancelled before execution (no result recorded)";
@@ -120,15 +120,24 @@ export function projectEvent(event: SessionEvent): Message | null {
 
 /** W804: one projected tool result — JSON text first, image references after. */
 function toolResultOf(event: Extract<SessionEvent, { type: "tool_result" }>): Message {
-  const text = toolResultText(event.error, event.value);
+  // W855 (B6): the log stores the ORIGINAL value; `surface` turns it into the
+  // model-visible face (bounded preview + locator, or a truncation note).
+  const text = toolResultText(event.error, event.value, event.surface);
   const images = attachmentRefsOfValue(event.value);
   return images.length > 0 ? toolResultWithImages(event.id, text, images) : toolResultMessage(event.id, text);
 }
 
-/** The text of a projected ToolResult: error first, else the value as JSON. */
-export function toolResultText(error: string | null | undefined, value: unknown): string {
+/**
+ * The text of a projected ToolResult: error first, else the value with its
+ * `surface` applied (absent surface = the value as serde JSON, as before).
+ */
+export function toolResultText(
+  error: string | null | undefined,
+  value: unknown,
+  surface?: ToolResultSurface,
+): string {
   if (typeof error === "string" && error.length > 0) return `Error: ${error}`;
-  return serdeJsonString(value === undefined ? null : value);
+  return toolSurfaceText(value === undefined ? null : value, surface);
 }
 
 /**

@@ -20,7 +20,7 @@
 
 import { isRecord, serdeJsonString } from "./json.js";
 import { isImageRef, normalizeImageRef, type ImageRef } from "./message.js";
-import { SESSION_EVENT_TYPES, type SessionEvent, type SessionEventType, type TurnOutcome } from "./types.js";
+import { SESSION_EVENT_TYPES, type SessionEvent, type SessionEventType, type ToolResultSurface, type TurnOutcome } from "./types.js";
 
 export type ValidateResult = { ok: true; event: SessionEvent } | { ok: false; errors: string[] };
 
@@ -104,6 +104,9 @@ export function validateSessionEvent(raw: unknown): ValidateResult {
         errors.push("field 'error' must be string|null");
       }
       optionalString(raw, "parent_id", errors);
+      // W855 (B6): the model-face descriptor is optional; a malformed one is an
+      // error (it would silently change the model context on replay).
+      optionalSurface(raw, "surface", errors);
       break;
     // W783: the two host-side user-question rows. `questions` / `answers` are
     // required and must be arrays; the timing fields are optional numbers.
@@ -156,6 +159,9 @@ function normalizeSessionEvent(raw: Record<string, unknown>, type: SessionEventT
     };
     const parent = nullableString(raw["parent_id"]);
     if (parent !== undefined) ev.parent_id = parent;
+    // W855 (B6): `null` normalises to absent, like `parent_id`.
+    const surface = raw["surface"];
+    if (surface !== undefined && surface !== null) ev.surface = surface as ToolResultSurface;
     return ev;
   }
   if (type === "user_question") {
@@ -275,6 +281,33 @@ function optionalString(raw: Record<string, unknown>, name: string, errors: stri
   }
 }
 
+/** W855 (B6): the optional model-face descriptor on a `tool_result` row. */
+function optionalSurface(raw: Record<string, unknown>, name: string, errors: string[]): void {
+  const v = raw[name];
+  if (v === undefined || v === null) return;
+  if (!isRecord(v)) {
+    errors.push(`field '${name}' must be an object when present`);
+    return;
+  }
+  if (v["kind"] === "omitted") {
+    for (const n of ["omitted_bytes", "total_bytes", "head_bytes", "tail_bytes"]) {
+      requirePresent(v, n, errors);
+      optionalNumber(v, n, errors);
+    }
+    for (const s of ["locator", "retrieval_hint"]) {
+      requirePresent(v, s, errors);
+      optionalString(v, s, errors);
+    }
+    return;
+  }
+  if (v["kind"] === "truncation") {
+    requirePresent(v, "note", errors);
+    optionalString(v, "note", errors);
+    return;
+  }
+  errors.push(`field '${name}.kind' must be "omitted" or "truncation"`);
+}
+
 /**
  * Serialize one event exactly like `serde_json::to_string(&SessionEvent)`:
  * the `type` tag first, then the fields in declaration order, `parent_id`
@@ -319,6 +352,9 @@ export function serializeSessionEvent(ev: SessionEvent): string {
       parts.push(`"value":${serdeJsonString(ev.value === undefined ? null : ev.value)}`);
       parts.push(`"error":${ev.error === undefined || ev.error === null ? "null" : JSON.stringify(ev.error)}`);
       if (ev.parent_id !== undefined && ev.parent_id !== null) parts.push(`"parent_id":${JSON.stringify(ev.parent_id)}`);
+      // W855 (B6): the model-face descriptor, omitted when absent (old rows keep
+      // their byte shape).
+      if (ev.surface !== undefined) parts.push(`"surface":${serializeToolSurface(ev.surface)}`);
       break;
     // W783: tag first, then the fields in declaration order; the optional ones
     // are omitted when absent (never written as null).
@@ -335,6 +371,28 @@ export function serializeSessionEvent(ev: SessionEvent): string {
       break;
   }
   return `{${parts.join(",")}}`;
+}
+
+/** W855 (B6): the `surface` object, field order fixed (declaration order). */
+function serializeToolSurface(surface: ToolResultSurface): string {
+  if (surface.kind === "omitted") {
+    return (
+      '{"kind":"omitted","omitted_bytes":' +
+      JSON.stringify(surface.omitted_bytes) +
+      ',"total_bytes":' +
+      JSON.stringify(surface.total_bytes) +
+      ',"locator":' +
+      JSON.stringify(surface.locator) +
+      ',"retrieval_hint":' +
+      JSON.stringify(surface.retrieval_hint) +
+      ',"head_bytes":' +
+      JSON.stringify(surface.head_bytes) +
+      ',"tail_bytes":' +
+      JSON.stringify(surface.tail_bytes) +
+      "}"
+    );
+  }
+  return '{"kind":"truncation","note":' + JSON.stringify(surface.note) + "}";
 }
 
 /** `TurnOutcome` serde shape: `"completed"` | … | `{"error":{"kind","message"}}`. */

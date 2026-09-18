@@ -68,6 +68,31 @@ export interface ToolCallEvent {
   /** W255 run_code sub-call: present only for nested rows. */
   parent_id?: string;
 }
+/**
+ * W855 (B6): how the MODEL-VISIBLE face of a tool result is derived from the
+ * log's ORIGINAL `value` at read time. The session log stores the original; the
+ * projection (`projection.ts`) applies this descriptor. Keeping it on the row is
+ * what makes a replay reproduce the live model context byte for byte (the
+ * retention decision is a per-step budget outcome, not a pure function of the
+ * value).
+ */
+export type ToolResultSurface =
+  | {
+      /** Retention replaced an oversized result with a bounded head/tail window. */
+      kind: "omitted";
+      omitted_bytes: number;
+      total_bytes: number;
+      locator: string;
+      retrieval_hint: string;
+      head_bytes: number;
+      tail_bytes: number;
+    }
+  | {
+      /** The tool itself truncated the result and authored a retrieval note. */
+      kind: "truncation";
+      note: string;
+    };
+
 export interface ToolResultEvent {
   type: "tool_result";
   id: string;
@@ -75,6 +100,8 @@ export interface ToolResultEvent {
   error: string | null;
   /** W255 run_code sub-call: present only for nested rows. */
   parent_id?: string;
+  /** W855 (B6): the model-face descriptor; absent = project `value` as-is. */
+  surface?: ToolResultSurface;
 }
 
 /**
@@ -168,9 +195,11 @@ export interface ToolResultMessageOut {
   role: "tool";
   kind: "result";
   tool_call_id: string;
+  /** W855 (B6): the bounded/annotated model face when the row carries a `surface`. */
   tool_value: unknown;
   tool_error: string | null;
   tool_parent_id?: string;
+  tool_surface?: ToolResultSurface;
 }
 
 /**

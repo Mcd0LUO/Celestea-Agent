@@ -38,6 +38,7 @@ export * from "./stream.js";
 export * from "./session-event.js";
 export * from "./session-log.js";
 export * from "./projection.js";
+export * from "./tool-surface.js";
 export * from "./turn-id.js";
 export * from "./injection.js";
 export * from "./plugin.js";

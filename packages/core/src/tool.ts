@@ -11,7 +11,7 @@
  * variants as the engine's enum.
  */
 
-import type { ToolDecision, ToolSpec } from "./types.js";
+import type { ToolDecision, ToolResultSurface, ToolSpec } from "./types.js";
 
 export interface ToolInput {
   call_id: string;
@@ -23,6 +23,12 @@ export interface ToolInput {
 export interface ToolExecOutcome {
   value: unknown;
   render: string | null;
+  /**
+   * W855 (B6): a tool-authored MODEL-FACE descriptor (e.g. `read_file`'s
+   * truncation note). Unlike `render` (display-only, never projected), this is
+   * persisted on the `tool_result` log row and applied by the projection.
+   */
+  surface?: ToolResultSurface;
 }
 
 export interface ToolOutput {
@@ -34,6 +40,8 @@ export interface ToolOutput {
   error: string | null;
   /** The guard verdict for this dispatch (null when no guard ran). */
   decision: ToolDecision | null;
+  /** W855 (B6): the model-face descriptor carried through dispatch (optional). */
+  surface?: ToolResultSurface;
 }
 
 export interface Tool {
