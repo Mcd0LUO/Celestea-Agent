@@ -16,6 +16,8 @@
 
 import type { SandboxMeta } from "@celestea/core";
 
+import { resolveShell, type ShellResolveInput } from "../platform/exec.js";
+
 /** Provider name reported in every `SandboxMeta` from this layer. */
 export const BWRAP_PROVIDER = "bwrap";
 
@@ -53,7 +55,8 @@ export const DEFAULT_BWRAP_OPTIONS: BwrapOptions = {
   writeRoots: [],
 };
 
-const SHELL = "/bin/sh";
+// W885: no module-level SHELL constant — `resolveShell` owns the choice (the
+// POSIX answer stays the literal `/bin/sh`, so the argv bytes do not move).
 
 /**
  * Mount/namespace flags, in the one order that works. `workdir === null` is the
@@ -97,9 +100,17 @@ export function buildBwrapArgv(workdir: string | null, options: BwrapOptions): s
   return argv;
 }
 
-/** The full `bwrap … -- /bin/sh -c <command>` argv (workdir bind included). */
-export function buildBwrapCommand(workdir: string, options: BwrapOptions, command: string): string[] {
-  return [...buildBwrapArgv(workdir, options), "--", SHELL, "-c", command];
+/**
+ * The full `bwrap … -- <shell> <args…> <command>` argv (workdir bind included).
+ *
+ * W885: the shell is RESOLVED, not the hardcoded `/bin/sh` — bwrap only exists
+ * on Linux today, so the POSIX answer is unchanged (this slice changes no Linux
+ * byte), but the gitbash/pwsh/cmd ladder is what a future Windows provider would
+ * consult. A host with no usable shell fails closed through [resolveShell].
+ */
+export function buildBwrapCommand(workdir: string, options: BwrapOptions, command: string, input: ShellResolveInput = {}): string[] {
+  const shell = resolveShell(command, input);
+  return [...buildBwrapArgv(workdir, options), "--", shell.path, ...shell.argv];
 }
 
 /** The isolation actually in force — reported, never inferred by the caller. */

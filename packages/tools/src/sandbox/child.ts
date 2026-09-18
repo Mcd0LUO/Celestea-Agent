@@ -8,8 +8,10 @@
  * tree, not leave orphans behind.
  */
 
-import type { ChildProcess } from "node:child_process";
+import { execFileSync, type ChildProcess } from "node:child_process";
 import type { SandboxChild, SandboxExit } from "@celestea/core";
+
+import { isWindows } from "../platform/paths.js";
 
 export interface WrapOptions {
   /** Child was spawned with `detached: true` (it leads its own process group). */
@@ -50,7 +52,7 @@ export function signalTree(child: ChildProcess, options: WrapOptions, signal: No
 }
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
-  if (process.platform === "win32") return false;
+  if (isWindows()) return taskkillTree(pid);
   try {
     // Negative pid targets the whole group: the child leads it (detached).
     process.kill(-pid, signal);
@@ -59,6 +61,40 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
     return false; // group already gone, or not ours to signal
   }
 }
+
+/**
+ * W885 — Windows process-tree recycling, BEST EFFORT.
+ *
+ * Windows has no POSIX process group and Node's `child.kill()` signals only the
+ * DIRECT child (W883 B10), so a `cmd.exe` that forked grandchildren would leak
+ * them. `taskkill /T` walks the parent-child chain and is the only tool the OS
+ * ships for this, but it is NOT an atomic boundary — standard Windows: a child
+ * can re-parent or die between the walk and the kill (TOCTOU) — which is why the
+ * real fix is a **Job Object** and is deferred to W885 slice 2 (Job Objects +
+ * resource limits + the Windows sandbox provider).
+ *
+ * Slice-2 TODO: create the child inside a Job Object with
+ * `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` so the tree dies atomically with the
+ * parent, instead of racing `taskkill`. The behaviour here is therefore
+ * "best-effort", never a guarantee.
+ *
+ * NOT verifiable on this host (Linux): the branch selection is unit-tested
+ * (`child.test.ts` injects `platform`), the actual kill is not.
+ */
+export function taskkillTree(pid: number, platform: string = process.platform): boolean {
+  if (!isWindows(platform)) return false;
+  try {
+    execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: WINDOWS_TASKKILL_TIMEOUT_MS });
+    return true;
+  } catch {
+    // taskkill missing, the pid already gone, or access denied: the caller
+    // falls back to `child.kill()`, which still stops the direct child.
+    return false;
+  }
+}
+
+/** taskkill is a local, bounded operation; never let it stall a timeout path. */
+const WINDOWS_TASKKILL_TIMEOUT_MS = 5_000;
 
 function signalChild(child: ChildProcess, signal: NodeJS.Signals): boolean {
   try {

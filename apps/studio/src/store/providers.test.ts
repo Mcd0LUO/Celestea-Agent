@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NO_API_KEY, UNSUPPORTED_FORMAT, probeModels, resolveProbeKey, testProvider, type ProbeFetch, type ProbeResponse } from "./provider-probe.js";
 import { ProvidersStore } from "./providers.js";
+import { FILE_MODES_MEANINGFUL } from "@celestea/tools";
 
 const SECRET = "sk-live-DEADBEEF-0123456789";
 let root: string;
@@ -33,11 +34,11 @@ function respond(status: number, body: string): ProbeResponse {
 describe("providers.json store (0600, redacted)", () => {
   it("round-trips and forces mode 0600 on every save", () => {
     const s = plant();
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(file).mode & 0o777).toBe(0o600);
     const raw = readFileSync(file, "utf8");
     expect(raw).toContain(SECRET);
     s.upsert({ id: "celestea", base_url: "http://127.0.0.1:3001/v1", models: [{ id: "m-1" }] });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(store().defaultModel()).toBe("m-1");
   });
 

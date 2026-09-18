@@ -130,12 +130,35 @@ export interface SandboxSpawned {
 }
 
 /**
+ * W885: the inputs a `run_code` broker needs to quote its interpreter line for
+ * the shell that will actually carry it. Structural on purpose — `core` is the
+ * dependency-free leaf and cannot import the tools implementation — and
+ * OPTIONAL: an absent field means the host default (the `celestea-home.ts`
+ * defaulting rule).
+ */
+export interface SandboxShellLookup {
+  /** `process.platform` equivalent. */
+  platform?: NodeJS.Platform | string;
+  /** `process.env` equivalent. */
+  env?: Record<string, string | undefined>;
+  /** PATH lookup seam (bare executable name -> absolute path or null). */
+  which?: (bin: string) => string | null;
+  /** Existence check for absolute candidate paths. */
+  exists?: (path: string) => boolean;
+}
+
+/**
  * The execution boundary. `run` is the foreground path (deadline enforced,
  * stdio captured); `spawn` is the background path (no deadline, stdin piped so
  * `process_control` can write lines).
  */
 export interface Sandbox {
   readonly config: SandboxConfig;
+  /**
+   * W885: the platform/shell view this provider runs commands under. Absent =
+   * host defaults; tests inject a win32 view to exercise the Windows branch.
+   */
+  readonly shell?: SandboxShellLookup;
   run(req: SandboxRunRequest): Promise<SandboxRunResult>;
   spawn(req: SandboxSpawnRequest): Promise<SandboxSpawned>;
 }

@@ -168,6 +168,52 @@ export {
   type ProcessRegistryOptions,
 } from "./process/registry.js";
 
+// --- platform seam (W885: injectable platform + shell resolution) ---------------
+export {
+  ENV_SHELL_PIN,
+  ShellNotFoundError,
+  execSuffixes,
+  envValue,
+  isWindows,
+  kindOfExecutable,
+  lookupFor,
+  pathApi,
+  pathDelimiter,
+  resolveShell,
+  resolveShellKind,
+  shellArgv,
+  whichInPath,
+  WINDOWS_EXEC_SUFFIXES,
+  type PlatformInput,
+  type ResolvedShell,
+  type ShellKind,
+  type ShellLookup,
+  type ShellResolveInput,
+} from "./platform/index.js";
+export {
+  PYTHON_CANDIDATES_POSIX,
+  PYTHON_CANDIDATES_WINDOWS,
+  pythonCandidates,
+  quoteCmd,
+  quoteForShell,
+  quotePath,
+  quoteWord,
+  runCodeCommand,
+  shellQuote,
+  type RunCodeLanguageName,
+} from "./platform/quote.js";
+export { taskkillTree } from "./sandbox/child.js";
+
+// --- testing capability gates (W885: visible skips instead of bare platform checks)
+export {
+  FILE_MODES_MEANINGFUL,
+  POSIX_PROCESS_GROUPS,
+  POSIX_SHELL,
+  platformGates,
+  whichUsable,
+  type PlatformGates,
+} from "./testing/platform-gates.js";
+
 // --- sandbox (userspace-lite; the OS-isolated provider is P2c) ----------------
 export {
   buildSandboxConfig,

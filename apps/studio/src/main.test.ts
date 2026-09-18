@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { POSIX_PROCESS_GROUPS } from "@celestea/tools";
 
 /** The repo root (vitest runs from it) and the local tsx binary. */
 const ROOT = process.cwd();
@@ -77,7 +78,10 @@ function expectOrderedTeardown(log: string, signal: string): void {
   expect(log).not.toContain("something still holds the event loop");
 }
 
-describe("W742 §3: the studio exits gracefully on a signal", () => {
+// W885: Windows does not deliver SIGTERM (W883 B12), so the signal suites are
+// a visible skip there; SIGINT remains testable but the teardown contract is
+// POSIX-shaped.
+describe.skipIf(!POSIX_PROCESS_GROUPS)("W742 §3: the studio exits gracefully on a signal", () => {
   it("SIGTERM drains, flushes the audit, stops the engine and exits 0", async () => {
     const run = startStudio();
     await until(run, "listening on");

@@ -45,6 +45,7 @@ import { resolve } from "node:path";
 
 import { envFlag, envString } from "../env.js";
 import { contractError } from "../errors.js";
+import { pathDelimiter } from "../platform/paths.js";
 import type { SessionFsScope } from "../sandbox/config.js";
 import { absolutize, isDirectory, isInside, resolveExistingTarget, resolveWriteTarget } from "./paths.js";
 
@@ -103,13 +104,21 @@ export const PATH_ARG_KEYS: readonly string[] = [
  * Note the platform distinction matters: a windows drive letter (`C:\dir`)
  * must not be split on `:`.
  */
-const LIST_SEPARATOR = new RegExp(`[${process.platform === "win32" ? ";" : ":"},]`);
+function listSeparator(platform: string): RegExp {
+  return new RegExp(`[${pathDelimiter(platform)},]`);
+}
 
-/** Split a root list (platform separator or comma; empty entries skipped). */
-export function parseToolRoots(value: string | undefined): string[] {
+/**
+ * Split a root list (platform separator or comma; empty entries skipped).
+ *
+ * W885: the separator is resolved from the INJECTED platform (default: the
+ * host), so a win32 test proves a drive letter survives the split instead of
+ * being cut at its colon.
+ */
+export function parseToolRoots(value: string | undefined, platform: string = process.platform): string[] {
   if (value === undefined) return [];
   return value
-    .split(LIST_SEPARATOR)
+    .split(listSeparator(platform))
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
 }

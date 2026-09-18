@@ -24,6 +24,7 @@ import type {
   SandboxMeta,
   SandboxRunRequest,
   SandboxRunResult,
+  SandboxShellLookup,
   SandboxSpawnRequest,
   SandboxSpawned,
 } from "@celestea/core";
@@ -43,6 +44,8 @@ export interface UserspaceSandboxOptions {
   limits?: SandboxLimits;
   /** false disables every rlimit (operator escape hatch). */
   rlimits?: boolean;
+  /** W885: the platform/shell view commands run under (defaults to the host). */
+  shell?: SandboxShellLookup;
 }
 
 /** The effective mode every result reports (never inferred by the caller). */
@@ -52,6 +55,8 @@ export class UserspaceSandbox implements Sandbox {
   readonly config: SandboxConfig;
   readonly probe: HostProbe;
   readonly limits: SandboxLimits;
+  /** W885: injected platform view; `undefined` = the host's own defaults. */
+  readonly shell: SandboxShellLookup | undefined;
   private readonly rlimits: boolean;
 
   constructor(config: SandboxConfig = sandboxConfigFromEnv(), options: UserspaceSandboxOptions = {}) {
@@ -59,6 +64,7 @@ export class UserspaceSandbox implements Sandbox {
     this.probe = options.probe ?? probeHost();
     this.limits = options.limits ?? limitsFromEnv(process.env, this.probe.uidThreads);
     this.rlimits = options.rlimits ?? rlimitsEnabled(process.env);
+    this.shell = options.shell;
   }
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): UserspaceSandbox {
@@ -93,7 +99,7 @@ export class UserspaceSandbox implements Sandbox {
     limits: SandboxLimits,
   ): Promise<{ child: ChildProcess; meta: SandboxMeta }> {
     const workdir = await resolveWorkdir(this.config, requestedWorkdir);
-    const { program, args } = shellInvocation(command);
+    const { program, args } = shellInvocation(command, this.shell);
     let plan = { program, args };
     if (this.rlimits) {
       try {

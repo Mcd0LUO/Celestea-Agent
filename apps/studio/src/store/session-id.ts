@@ -7,8 +7,52 @@
  * are pure — the stores own the filesystem side.
  */
 
-import { basename, isAbsolute } from "node:path";
+import { pathApi, type PlatformInput } from "@celestea/tools";
+
 import { workspaceHome } from "./celestea-home.js";
+
+/** The host's platform, injectable in tests (the W885 win32 seam). */
+export type PathInput = PlatformInput;
+export type PathInputLike = PlatformInput | string | undefined;
+
+/**
+ * W885 — collapse an input that may be a whole [PlatformInput] or a bare
+ * platform id (the pre-W885 signatures took neither, so both are additive).
+ */
+function platformOf(input: PathInputLike): string {
+  if (input === undefined) return process.platform;
+  return typeof input === "string" ? input : (input.platform ?? process.platform);
+}
+
+/** The path implementation of this call's platform (win32 in a win32 test). */
+function apiOf(input: PathInputLike): ReturnType<typeof pathApi> {
+  return pathApi(platformOf(input));
+}
+
+/** `<a>/<b>` under the call's platform, never string concatenation (W883 E1/E2). */
+function under(input: PathInputLike, base: string, ...segments: string[]): string {
+  return apiOf(input).join(base, ...segments);
+}
+
+/** `dirname` under the call's platform. */
+export function parentDir(path: string, input: PathInputLike = undefined): string {
+  return apiOf(input).dirname(path);
+}
+
+/** `basename` under the call's platform. */
+export function baseName(path: string, input: PathInputLike = undefined): string {
+  return apiOf(input).basename(path);
+}
+
+/** The filesystem root of `path` (`/`, `C:\\`, `\\\\\\\\server\\\\share\\\\`). */
+export function rootOf(path: string, input: PathInputLike = undefined): string {
+  return apiOf(input).parse(path).root;
+}
+
+/** Absolute per the call's platform (Windows drive letters included). */
+export function isAbsolutePath(path: string, input: PathInputLike = undefined): boolean {
+  return apiOf(input).isAbsolute(path);
+}
 
 /** Separators / control chars / whitespace -> '_'; CJK and letters survive. */
 export function sanitizeComponent(s: string): string {
@@ -78,9 +122,9 @@ export function stripCreationSuffix(name: string): string {
 }
 
 /** Folder basename, or null when the path has no usable last component. */
-export function workspaceBasename(path: string): string | null {
-  const base = basename(path);
-  return base === "" || base === "/" ? null : base;
+export function workspaceBasename(path: string, input: PathInputLike = undefined): string | null {
+  const base = baseName(path, input);
+  return base === "" || base === "/" || base === "\\" ? null : base;
 }
 
 /**
@@ -117,13 +161,24 @@ export const PROMPTS_FILE = "prompts.json";
 export const RUN_CODE_SUBDIR = "run-code";
 
 /** W880 canonical live-session root: `<CELESTEA_HOME>/workspaces/<ws>/sessions`. */
-export function sessionsRoot(wsPath: string): string {
-  return `${workspaceHome(wsPath)}/${SESSIONS_SUBDIR}`;
+export function sessionsRoot(wsPath: string, input: PathInputLike = undefined): string {
+  return under(input, workspaceHome(wsPath, inputOf(input)), SESSIONS_SUBDIR);
 }
 
 /** W877 transitional root: `<ws>/.celestea/sessions`. */
-export function legacySessionsRoot(wsPath: string): string {
-  return `${wsPath}/${CELESTEA_DIR}/${SESSIONS_SUBDIR}`;
+export function legacySessionsRoot(wsPath: string, input: PathInputLike = undefined): string {
+  return under(input, wsPath, CELESTEA_DIR, SESSIONS_SUBDIR);
+}
+
+/**
+ * The [PlatformInput] form of a [PathInputLike]: a bare `"win32"` has to become
+ * an input object before it can reach `celestea-home`, which resolves its own
+ * per-platform defaults (and `homedir` matters for the win32 branch).
+ */
+function inputOf(input: PathInputLike): PlatformInput {
+  if (input === undefined) return {};
+  if (typeof input === "string") return { platform: input };
+  return input;
 }
 
 /**
@@ -135,44 +190,44 @@ export function legacySessionsRoot(wsPath: string): string {
  * the write side stays consistent); `list()` scans all three and lets the
  * canonical row shadow a same-named legacy one.
  */
-export function sessionRoots(wsPath: string): string[] {
-  return [sessionsRoot(wsPath), legacySessionsRoot(wsPath), wsPath];
+export function sessionRoots(wsPath: string, input: PathInputLike = undefined): string[] {
+  return [sessionsRoot(wsPath, input), legacySessionsRoot(wsPath, input), wsPath];
 }
 
 /** `dir` under every live-session root, canonical FIRST. */
-export function liveDirCandidates(wsPath: string, dir: string): string[] {
-  return sessionRoots(wsPath).map((root) => `${root}/${dir}`);
+export function liveDirCandidates(wsPath: string, dir: string, input: PathInputLike = undefined): string[] {
+  return sessionRoots(wsPath, input).map((root) => under(input, root, dir));
 }
 
 /** Archive roots, canonical FIRST: `home/archive` -> `.celestea/archive` -> `.celestea-archived`. */
-export function archiveRoots(wsPath: string): string[] {
+export function archiveRoots(wsPath: string, input: PathInputLike = undefined): string[] {
   return [
-    `${workspaceHome(wsPath)}/${ARCHIVE_SUBDIR}`,
-    `${wsPath}/${CELESTEA_DIR}/${ARCHIVE_SUBDIR}`,
-    `${wsPath}/${ARCHIVED_DIR}`,
+    under(input, workspaceHome(wsPath, inputOf(input)), ARCHIVE_SUBDIR),
+    under(input, wsPath, CELESTEA_DIR, ARCHIVE_SUBDIR),
+    under(input, wsPath, ARCHIVED_DIR),
   ];
 }
 
 /** `dir` under every archive root, canonical FIRST. */
-export function archiveDirCandidates(wsPath: string, dir: string): string[] {
-  return archiveRoots(wsPath).map((root) => `${root}/${dir}`);
+export function archiveDirCandidates(wsPath: string, dir: string, input: PathInputLike = undefined): string[] {
+  return archiveRoots(wsPath, input).map((root) => under(input, root, dir));
 }
 
 /** Trash roots, canonical FIRST. */
-export function trashRoots(wsPath: string): string[] {
+export function trashRoots(wsPath: string, input: PathInputLike = undefined): string[] {
   return [
-    `${workspaceHome(wsPath)}/${TRASH_SUBDIR}`,
-    `${wsPath}/${CELESTEA_DIR}/${TRASH_SUBDIR}`,
-    `${wsPath}/${TRASH_DIR}`,
+    under(input, workspaceHome(wsPath, inputOf(input)), TRASH_SUBDIR),
+    under(input, wsPath, CELESTEA_DIR, TRASH_SUBDIR),
+    under(input, wsPath, TRASH_DIR),
   ];
 }
 
 /** Workspace prompt-registry candidates, canonical FIRST (write target = `[0]`). */
-export function promptsFileCandidates(wsPath: string): string[] {
+export function promptsFileCandidates(wsPath: string, input: PathInputLike = undefined): string[] {
   return [
-    `${workspaceHome(wsPath)}/${PROMPTS_FILE}`,
-    `${wsPath}/${CELESTEA_DIR}/${PROMPTS_FILE}`,
-    `${wsPath}/.celestea-prompts.json`,
+    under(input, workspaceHome(wsPath, inputOf(input)), PROMPTS_FILE),
+    under(input, wsPath, CELESTEA_DIR, PROMPTS_FILE),
+    under(input, wsPath, ".celestea-prompts.json"),
   ];
 }
 
@@ -190,4 +245,9 @@ export function validateWorkspaceName(raw: string): { ok: true; name: string } |
   return { ok: true, name };
 }
 
-export { isAbsolute };
+/** The host `isAbsolute` (kept exported for pre-W885 callers). */
+export function isAbsolute(path: string): boolean {
+  return isAbsolutePath(path);
+}
+
+export type { PlatformInput };

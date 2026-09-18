@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { CELESTEA_RUN_CODE_DIR, workspaceSubdir, type SandboxConfig } from "@celestea/core";
 
 import { envInt, envString } from "../env.js";
+import { resolveShell, type ShellResolveInput } from "../platform/exec.js";
 
 /** Env var: default kill deadline in milliseconds. */
 export const ENV_SHELL_TIMEOUT_MS = "CELAESTEA_RUN_SHELL_TIMEOUT_MS";
@@ -124,12 +125,19 @@ export function buildSandboxConfig(overrides: SandboxConfigOverrides = {}): Sand
   };
 }
 
-/** `{program, args}` of the platform shell (`sh -c` / `cmd.exe /C`). */
-export function shellInvocation(command: string): { program: string; args: string[] } {
-  if (process.platform === "win32") {
-    return { program: process.env["ComSpec"] ?? "cmd.exe", args: ["/C", command] };
-  }
-  return { program: "/bin/sh", args: ["-c", command] };
+/**
+ * `{program, args}` of the platform shell carrying exactly one command.
+ *
+ * W885: the decision moved into the injectable `resolveShell` ladder —
+ * POSIX answers the literal `/bin/sh -c <command>` (byte-identical to the
+ * pre-W885 code, asserted by `platform-exec.test.ts`), Windows walks
+ * gitbash > pwsh > cmd. A host with no usable shell now fails closed with a
+ * structured [ShellNotFoundError] instead of guessing `cmd.exe`; the
+ * `input` seam is what lets the win32 ladder be unit-tested on Linux.
+ */
+export function shellInvocation(command: string, input: ShellResolveInput = {}): { program: string; args: string[] } {
+  const shell = resolveShell(command, input);
+  return { program: shell.path, args: [...shell.argv] };
 }
 
 /** Allowlisted host env plus explicit operator additions (never `HOME`). */

@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AUTH_COOKIE, AUTH_MAX_FAILURES } from "./auth/index.js";
 import { makeHarness, type StudioHarness } from "./harness.test-util.js";
+import { FILE_MODES_MEANINGFUL } from "@celestea/tools";
 
 const USER = "studio-admin";
 const PASS = "correct horse battery staple";
@@ -172,7 +173,7 @@ describe.skipIf(!HAS_HTPASSWD)("GET /auth/check (the nginx gate)", () => {
     expect(existsSync(path)).toBe(false); // created lazily, on first use
     await h.app.request("/auth/login", form(USER, PASS));
     expect(existsSync(path)).toBe(true);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(readFileSync(path, "utf8").trim().length).toBeGreaterThan(20);
   });
 });

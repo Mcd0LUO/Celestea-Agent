@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { POSIX_SHELL } from "../testing/platform-gates.js";
 import { BwrapSandbox } from "./bwrap.js";
 import { buildSandboxConfig } from "./config.js";
 import { DEFAULT_LIMITS, resolveCpuSec, type SandboxLimits } from "./limits.js";
@@ -75,7 +76,8 @@ describe("W6 per-call cpu_sec", () => {
     expect(resolveCpuSec(20, 9999, 600)).toEqual({ cpuSec: 600, clamped: true, requested: 9999 });
   });
 
-  it("bwrap: the per-call cpu enters the prlimit plan and the meta", async () => {
+  // W885: the fake prlimit/bwrap are `#!/bin/sh` scripts — a POSIX host only.
+  it.skipIf(!POSIX_SHELL)("bwrap: the per-call cpu enters the prlimit plan and the meta", async () => {
     const dir = mkdtempSync(join(tmpdir(), "w6-bwrap-"));
     const prlimit = writeFakePrlimit(dir);
     writeFakeBwrap(dir);
@@ -89,7 +91,7 @@ describe("W6 per-call cpu_sec", () => {
     expect(out.sandbox.cpu_sec).toBe(7);
   });
 
-  it("bwrap: the default stays 20 and above-cap is clamped to the env cap", async () => {
+  it.skipIf(!POSIX_SHELL)("bwrap: the default stays 20 and above-cap is clamped to the env cap", async () => {
     const dir = mkdtempSync(join(tmpdir(), "w6-bwrap-"));
     const prlimit = writeFakePrlimit(dir);
     writeFakeBwrap(dir);
@@ -104,7 +106,7 @@ describe("W6 per-call cpu_sec", () => {
     expect(record).toContain("--cpu=50");
   });
 
-  it("userspace: the per-call cpu enters the prlimit plan too", async () => {
+  it.skipIf(!POSIX_SHELL)("userspace: the per-call cpu enters the prlimit plan too", async () => {
     const dir = mkdtempSync(join(tmpdir(), "w6-user-"));
     const prlimit = writeFakePrlimit(dir);
     const config = buildSandboxConfig({ workdir: dir, root: dir, maxCpuSec: 600 });

@@ -16,6 +16,7 @@ import { getJson, jsonRequest, type StudioHarness } from "./harness.test-util.js
 import { effectiveGrantsOf } from "./runtime/engine-grants.js";
 import type { RealRuntimeAdapter } from "./runtime/real-runtime-adapter.js";
 import { engineOf, makeEngineHarness } from "./runtime/test-util.js";
+import { FILE_MODES_MEANINGFUL } from "@celestea/tools";
 
 const S1 = "sample-ws/s1";
 const S2 = "sample-ws/s2";
@@ -126,7 +127,7 @@ describe("W860 /api/sessions/{id}/tools", () => {
     const path = join(h.workspace, "s1", "tools.json");
     const onDisk = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     expect(onDisk).toEqual({ version: 1, session: S1, disabled: ["write_file"], updated_at: expect.any(Number) });
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (FILE_MODES_MEANINGFUL) expect(statSync(path).mode & 0o777).toBe(0o600);
 
     // Composed instance = HTTP report = adapter seam, and all three dropped it.
     const expected = STANDARD_FACE.filter((name) => name !== "write_file");

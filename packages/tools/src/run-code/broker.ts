@@ -32,6 +32,9 @@ import type { Sandbox, SandboxChild, SandboxSpawned, SessionEvent, ToolExecOutco
 
 import { errorCode, errorText } from "../errors.js";
 import { stringArg } from "../args.js";
+import { resolveShellKind, type ShellResolveInput } from "../platform/exec.js";
+import { pythonCandidates, runCodeCommand } from "../platform/quote.js";
+import { whichSync } from "../sandbox/probe.js";
 import { TIMED_OUT, withTimeout } from "../sandbox/async.js";
 import { readCapped, REAP_GRACE_MS } from "../sandbox/launch.js";
 import { ToolFailure } from "../tool-failure.js";
@@ -98,6 +101,11 @@ let scriptSeq = 0;
  * mounts the host root read-only) and never depends on the child's PATH.
  * `/usr/bin/node` is preferred because it is the host's system-wide install;
  * `process.execPath` is the honest fallback (nvm/volta hosts).
+ *
+ * W885: the constant is kept for compatibility, but the interpreter actually
+ * used is resolved per run (`resolveInterpreter`), which checks the platform
+ * PATH first — `/usr/bin/node` is a POSIX convention that simply does not
+ * exist on Windows (W883 B9/B15).
  */
 export const TS_PROGRAM_RUNTIME = existsSync("/usr/bin/node") ? "/usr/bin/node" : process.execPath;
 
@@ -172,24 +180,48 @@ async function placeProgram(programDir: string, source: ProgramSource): Promise<
 // ---- child lifecycle ---------------------------------------------------------
 
 /**
- * The interpreter command line. Python keeps `python3 -uB` byte for byte;
- * TypeScript runs under an absolute Node path (native type stripping, no build,
- * no `node_modules`), so the child's PATH never matters.
+ * The interpreter of one `run_code` program (W885).
+ *
+ * TypeScript runs under the Node that runs THIS process — the one binary the
+ * sandbox is guaranteed to see through `--ro-bind / /` — with the host's PATH
+ * consulted first ONLY when that yields a Node (`node` is `node.exe` on
+ * Windows, and `process.execPath` there is routinely `C:\\Program Files\\…`
+ * with a space in it). Python keeps the historical `python3` on POSIX and
+ * falls back to the names Windows actually ships (`python`, `py`).
+ *
+ * Anything `whichSync` cannot find becomes the bare name, so a missing
+ * interpreter still surfaces as the interpreter's own "not found" instead of a
+ * silent wrong one.
  */
-function interpreterCommand(language: RunCodeLanguage, scriptPath: string): string {
-  const quoted = shellQuote(scriptPath);
-  return language === "python" ? `python3 -uB ${quoted}` : `${TS_PROGRAM_RUNTIME} ${quoted}`;
+export function resolveInterpreter(language: RunCodeLanguage, platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): string {
+  if (language === "typescript") {
+    const onPath = whichSync("node", env, platform);
+    if (onPath !== null) return onPath;
+    return process.execPath;
+  }
+  for (const candidate of pythonCandidates(platform)) {
+    const found = whichSync(candidate, env, platform);
+    if (found !== null) return found;
+  }
+  return pythonCandidates(platform)[0] ?? "python3";
 }
 
-/** POSIX single-quote a path so an absolute path with spaces stays one word. */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
+/**
+ * The interpreter command line, quoted for the shell that will run it.
+ *
+ * On POSIX the bytes are exactly what they always were — `python3 -uB '<path>'`
+ * / `<node> '<path>'` — because `kind` is `posix` there and both quoting
+ * helpers reproduce the historical single-quote rule verbatim.
+ */
+function interpreterCommand(language: RunCodeLanguage, scriptPath: string, input: ShellResolveInput = {}): string {
+  const kind = resolveShellKind(input).kind;
+  return runCodeCommand(kind, language, resolveInterpreter(language), scriptPath);
 }
 
 async function spawnProgram(sandbox: Sandbox, scriptPath: string, language: RunCodeLanguage): Promise<SandboxChild> {
   let spawned: SandboxSpawned;
   try {
-    spawned = await sandbox.spawn({ command: interpreterCommand(language, scriptPath) });
+    spawned = await sandbox.spawn({ command: interpreterCommand(language, scriptPath, sandbox.shell) });
   } catch (e) {
     throw runCodeFailure("spawn", errorText(e));
   }
