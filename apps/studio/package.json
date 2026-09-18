@@ -23,6 +23,6 @@
     "@celestea/tools": "workspace:*",
     "@celestea/workers": "workspace:*",
     "@hono/node-server": "^1.19.1",
-    "hono": "^4.9.6"
+    "hono": "^4.13.8"
   }
 }

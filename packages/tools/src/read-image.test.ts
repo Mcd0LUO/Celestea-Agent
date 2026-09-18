@@ -2,7 +2,7 @@
  * W804 (multimodal P0, stage 4): read_image against a REAL filesystem.
  *
  * No mocks: a real mkdtemp directory, the real content-addressed store, the real
- * image-size header parser and the real guarded registry. The assertions pin the
+ * in-repo header parser and the real guarded registry. The assertions pin the
  * two channels (value carries only refs; the image block reaches derive) and the
  * red line (no base64 anywhere in the tool value / log row).
  */

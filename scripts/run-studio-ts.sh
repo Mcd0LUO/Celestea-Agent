@@ -37,4 +37,11 @@ export CELESTEA_SANDBOX_NET="${CELESTEA_SANDBOX_NET:-0}"
 export STUDIO_STATIC_ROOT="${STUDIO_STATIC_ROOT:-$REPO/apps/web/dist}"
 export STUDIO_TS_PORT="${STUDIO_TS_PORT:-3777}"
 export STUDIO_TS_BIND="${STUDIO_TS_BIND:-127.0.0.1}"
+
+# --- W847 W0: fail-loud Node major guard (engines.node band) -----------------
+# pnpm does NOT auto-run pre/post scripts by default (enable-pre-post-scripts
+# defaults to false), so the guard lives on this production entry path instead of
+# a prestart hook that could silently never fire. `set -e` stops us on a bad Node.
+node "$REPO/scripts/check-node.mjs"
+
 exec pnpm --dir "$REPO/apps/studio" start

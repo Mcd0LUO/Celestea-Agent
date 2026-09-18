@@ -22,8 +22,9 @@
 | [`iteration-e-capabilities.md`](./iteration-e-capabilities.md) | 设计 | 迭代方向 E（能力深水区）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | 本文；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见 `docs/archive/frontend/harness/archive/dsh-ptc-mode-eval.md` |
 | [`ui-copy-tech-notes.md`](./ui-copy-tech-notes.md) | 当前（审计清单） | 共用前端「面向用户可见的技术文案」只读审计：27 个文件 + `index.html` 的问题清单与建议改法 | 本文；前端规则见 `apps/web/FRONTEND-RULES.md` |
+| [`DEPENDENCY-POLICY.md`](./DEPENDENCY-POLICY.md) | 当前（W847 W0） | **依赖与工具链策略**：Node 版本带 + 启动守卫、冻结安装（pnpm-workspace.yaml）、升级验证协议与回滚、为什么 audit 不进门禁、外部运行时依赖清点 | 本文 |
 
-上表覆盖 `docs/` 根的全部**当前与设计**文档（14 篇 + 本索引）；**新增文档必须在上表登记**。
+上表覆盖 `docs/` 根的全部**当前与设计**文档（15 篇 + 本索引）；**新增文档必须在上表登记**。
 另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）、[`archive/`](./archive/)（历史，只存史）。
 契约类真源不在 `docs/`，而在
 [`../contracts/`](../contracts/)（`endpoints.json` 47 端点、`sse-events.json`、`tools.json`、`data-files/`）——

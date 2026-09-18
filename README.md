@@ -16,6 +16,7 @@ Celestea Studio **全栈仓**：TypeScript 后端（**生产**）+ 线上前端�
 自 W781 起落在 `/var/lib/celestea-agent/`（见 `scripts/run-studio-ts.sh`）。
 
 - **[`docs/README.md`](docs/README.md)** — 本仓 `docs/` 全量索引：每份文档的**状态（当前 / 设计）**、一句话与权威入口。**找文档先看它。**
+- **[`docs/DEPENDENCY-POLICY.md`](docs/DEPENDENCY-POLICY.md)** — 依赖与工具链策略：Node 版本带（`.nvmrc`=26 + 启动守卫）、冻结安装、升级验证/回滚，以及为什么 `pnpm audit` 不进门禁（`pnpm deps:audit` 手工跑）。
 - **本仓角色**：Studio **后端**（TypeScript）。现状（2026-09-11）：`celestea-studio-ts.service` 跑在 127.0.0.1:3777，是**生产**后端。后端开发只在本仓。
 - **线上前端**在 [`apps/web/`](apps/web/)（Vite + TypeScript；构建产物 `apps/web/dist` 由后端作为静态根读取）。渲染铁律见 [`apps/web/FRONTEND-RULES.md`](apps/web/FRONTEND-RULES.md)。
 - **共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）在 `/var/lib/celestea-agent/`（W781 前在旧前端仓根）。
@@ -68,7 +69,7 @@ ssh -L 3777:localhost:3777 <server>
 
 ```bash
 cd /src/celestea_studio-ts
-pnpm install            # Node 24 + pnpm 11
+pnpm install            # Node 24–26（.nvmrc=26；engines >=24 <27）+ pnpm 11
 pnpm typecheck          # tsc --noEmit（strict + noUncheckedIndexedAccess + verbatimModuleSyntax）
 pnpm test               # vitest（全量单测）
 

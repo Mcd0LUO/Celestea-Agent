@@ -2,6 +2,13 @@ packages:
   - packages/*
   - apps/*
 
+# W847 W0 dependency policy (see docs/DEPENDENCY-POLICY.md). pnpm 11 reads PROJECT
+# settings from pnpm-workspace.yaml when it exists; a repo-level .npmrc is ignored
+# in that case (measured: these keys resolve here, while the same keys in .npmrc
+# stayed undefined and frozen-lockfile did not fire).
+engineStrict: true
+frozenLockfile: true
+
 allowBuilds:
   esbuild: true
 

@@ -9,15 +9,16 @@
  *
  * P0 scope (user decision 2026-09-16): sniff the four magic-byte formats, reject
  * oversize/oversized-pixel inputs, store the ORIGINAL bytes unchanged (no
- * re-encode, no downscale). Dimensions are read from the header via image-size.
+ * re-encode, no downscale). Dimensions are read from the header by the in-repo
+ * parser (attachments/image-header.ts) for the same four sniffed formats.
  */
 
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { imageSize } from "image-size";
 import type { ImageMediaType, ImageRef } from "@celestea/core";
+import { readImageHeader } from "./image-header.js";
 
 /** Directory name under the session dir. */
 export const ATTACHMENTS_DIRNAME = "attachments";
@@ -68,16 +69,15 @@ export function sniffImageMediaType(bytes: Uint8Array): ImageMediaType | null {
   return null;
 }
 
-/** Header-only dimensions; a header image-size cannot read is a decode failure. */
+/** Header-only dimensions; an unreadable header is a decode failure. */
 export function readImageDimensions(bytes: Uint8Array): { width: number; height: number } {
-  let out: { width?: number; height?: number };
+  let out: { width: number; height: number };
   try {
-    out = imageSize(bytes) as { width?: number; height?: number };
+    out = readImageHeader(bytes);
   } catch (e) {
     throw new AttachmentError("decode_failed", `cannot read image header: ${e instanceof Error ? e.message : String(e)}`);
   }
-  const width = out.width ?? 0;
-  const height = out.height ?? 0;
+  const { width, height } = out;
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     throw new AttachmentError("decode_failed", "image header carries no usable dimensions");
   }

@@ -7,7 +7,7 @@
   "description": "Celestea Studio backend - TypeScript rewrite (P0: contract freeze + skeleton + golden-sample toolchain)",
   "packageManager": "pnpm@11.22.0",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=24.0.0 <27.0.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -21,13 +21,15 @@
     "lint": "eslint .",
     "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps/studio scripts tests",
     "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test && pnpm check:web",
-    "check:web": "pnpm --dir apps/web run build && CELESTEA_BUNDLE_STRICT=1 pnpm --dir apps/web run check"
+    "check:web": "pnpm --dir apps/web run build && CELESTEA_BUNDLE_STRICT=1 pnpm --dir apps/web run check",
+    "node:check": "node scripts/check-node.mjs",
+    "deps:audit": "pnpm audit; pnpm outdated -r"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0",
+    "@types/node": "^26.0.0",
     "dependency-cruiser": "^17.4.3",
     "eslint": "^9.39.5",
-    "jsdom": "^30.0.1",
+    "jsdom": "^30.1.0",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
