@@ -76,6 +76,13 @@
                  行超宽时由 .sl-row-main 的 overflow 先裁左边的用量/模型信息，
                  取消键永不被挤出屏幕。 -->
             <div class="sl-end">
+              <!-- W858：会话权限**档位**徽标（基线 preset；与右邻的 W701 盾牌是两回事：
+                   盾牌管临时能力放宽，徽标管会话档位）。显隐真源 = statusline/permission.ts
+                   —— 无活动会话或该部署没有档位端点时保持 .hidden（不置灰报错）。 -->
+              <button id="slPerm" class="sl-perm hidden" type="button" title="会话权限档位" aria-label="会话权限档位">
+                <svg class="sl-perm-icon" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M5.4 7.2V5.5a2.6 2.6 0 0 1 5.2 0v1.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path><rect x="3.6" y="7.2" width="8.8" height="6.2" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"></rect></svg>
+                <span class="sl-perm-badge" id="slPermBadge"></span>
+              </button>
               <!-- W701：本会话权限盾牌（三态：未授予 / 已授予 / 即将失效）。
                    显隐真源 = ui/grants.ts —— 能力位未就绪时保持 .hidden（入口隐藏，不置灰报错）。 -->
               <button id="slGrant" class="sl-grant hidden" type="button" title="本会话权限：默认（仅工作区，无网络）" aria-label="本会话权限">
@@ -157,6 +164,7 @@
           <button class="settings-nav-item" type="button" data-page="archive">归档会话</button>
           <button class="settings-nav-item" type="button" data-page="providers">模型提供商</button>
           <button class="settings-nav-item" type="button" data-page="prompts">提示词</button>
+          <button class="settings-nav-item" type="button" data-page="permissions">权限预设</button>
         </nav>
         <div class="settings-content">
           <section class="settings-pane active" data-pane="config">
@@ -198,6 +206,13 @@
               <div id="promptsWrap"></div>
               <div id="settingsPrompts"></div>
             </div>
+          </section>
+          <section class="settings-pane" data-pane="permissions">
+            <header class="settings-pane-head">
+              <h4>权限预设</h4>
+              <span class="settings-sec-note">默认 Full Access；可自组合预设，运行时封顶会收窄</span>
+            </header>
+            <div class="settings-pane-body" id="settingsPermissions"></div>
           </section>
         </div>
       </div>

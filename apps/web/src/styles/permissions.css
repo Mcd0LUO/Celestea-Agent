@@ -1,0 +1,230 @@
+/* ============================================================================
+ * W858 · 权限预设（设置页「权限预设」pane + statusline 会话档位徽标/菜单）
+ *
+ *   颜色只引用 tokens.css 的 --c-* 与 --bg-* 与 --label-* 族；圆角只走 --r-*
+ *   （--r-sm / --r-md / --r-card / --r-badge）；发丝线用 --hairline；
+ *   一像素虚线一律不用（W12 机械门禁）。
+ *   1) statusline 档位徽标（与 .sl-grant 盾牌并列、互不重叠）
+ *   2) 档位选择弹层（沿用 .sl-popup / .sl-opt 样式族，仅补风险行配色）
+ *   3) 设置页 pane（工具条 / 卡片 / chips / 编辑器）
+ * ============================================================================ */
+
+/* ---- 1) statusline 会话档位徽标 ------------------------------------------- */
+.sl-perm {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  max-width: 18ch;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--c-text-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.sl-perm:hover {
+  background: var(--c-accent-soft);
+  border-color: var(--c-accent-ring);
+  color: var(--c-text-1);
+}
+.sl-perm:focus-visible {
+  outline: 1px solid var(--c-accent-ring);
+  outline-offset: 1px;
+}
+.sl-perm.hidden { display: none; }
+.sl-perm-icon { display: block; flex: 0 0 auto; }
+.sl-perm-badge {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 2) 档位选择弹层 ------------------------------------------------------- */
+.sl-popup.perm-popup { width: min(420px, calc(100vw - 40px)); }
+.sl-popup-note.perm-risk { color: var(--c-warn); }
+
+/* ---- 3) 设置页 pane -------------------------------------------------------- */
+.perm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-flow);
+  margin-bottom: 6px;
+}
+.perm-max {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--c-text-3);
+}
+.perm-toolbar .btn-mini { margin-left: auto; }
+.perm-status {
+  min-height: 16px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+.perm-status.ok { color: var(--c-ok); }
+.perm-status.err { color: var(--c-err); }
+.perm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.perm-card {
+  background: var(--bg-layer-1);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-card);
+  padding: 10px 12px;
+}
+.perm-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.perm-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+.perm-card-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--c-text-3);
+}
+.perm-badge {
+  font-size: 10.5px;
+  color: var(--c-text-2);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-badge);
+  padding: 0 6px;
+}
+.perm-card-ops {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+.perm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.perm-chip {
+  font-size: 10.5px;
+  color: var(--c-text-3);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-badge);
+  padding: 1px 7px;
+}
+.perm-chip.on {
+  color: var(--c-text-1);
+  border-color: var(--border-l3);
+}
+.perm-chip.deny {
+  color: var(--c-grant);
+  border-color: var(--c-grant);
+}
+.perm-roots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.perm-roots-label {
+  font-size: 11px;
+  color: var(--c-text-3);
+}
+.perm-root {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--c-text-2);
+  background: var(--bg-code);
+  border-radius: var(--r-sm);
+  padding: 1px 6px;
+}
+.perm-card-note {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--c-text-3);
+}
+
+/* ---- 编辑器 ---------------------------------------------------------------- */
+.perm-editor {
+  margin-top: 10px;
+  border-top: var(--hairline) solid var(--border-l1);
+  padding-top: 10px;
+}
+.perm-editor.hidden { display: none; }
+.perm-editor-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--c-text-1);
+  margin-bottom: 6px;
+}
+.perm-field-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.perm-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.perm-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--c-text-1);
+}
+.perm-roots-edit,
+.perm-roots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.perm-root-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.perm-addrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.perm-addrow .cfg-input {
+  flex: 1;
+  min-width: 0;
+}
+.perm-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+.perm-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--c-text-2);
+}
+.perm-editor-status {
+  font-size: 12px;
+  min-height: 16px;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.perm-editor-status.ok { color: var(--c-ok); }
+.perm-editor-status.err { color: var(--c-err); }

@@ -42,6 +42,15 @@ import type {
   TurnResp,
   WorkspacesResp,
 } from './types';
+// W858：权限族类型整族在 ./types/permission（types.ts 有模块体积棘轮，本轮不追加行数；
+// 先例：ui/attachments.ts 直接 import ./types/attachment）。
+import type {
+  PermissionPreset,
+  PermissionPresetDeletedResp,
+  PermissionPresetResp,
+  PermissionPresetsResp,
+  SessionPermissionResp,
+} from './types/permission';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -125,6 +134,15 @@ function postJson<T>(
   return requestJson<T>(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(headers ?? {}) },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
+/** PUT + JSON body（与 postJson 同款：唯一 fetch 出处仍在本文件）。 */
+function putJson<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body ?? {}),
   });
 }
@@ -306,6 +324,32 @@ export const api = {
       '/api/prompts/' + encodeURIComponent(id) + '/default',
       workspace ? { workspace } : {},
     ),
+  // ---- W9：权限预设 / 会话权限档位（设置页「权限预设」pane + statusline 档位徽标） ----
+  /**
+   * GET /api/permissions/presets —— 内置三档 + 自定义档 + 运行时封顶 max。
+   * max 是**真源**（可能低于所选档）：界面如实展示，不替用户「修正」。
+   */
+  permissionPresets: () => requestJson<PermissionPresetsResp>('/api/permissions/presets'),
+  /** POST /api/permissions/presets {preset}：409 = id 已存在（含内置 id）/ 422 = 字段非法。 */
+  createPermissionPreset: (preset: PermissionPreset) =>
+    postJson<PermissionPresetResp>('/api/permissions/presets', { preset }),
+  /** PUT /api/permissions/presets/{id} {preset}：内置档 409、不存在 404、非法 422。 */
+  updatePermissionPreset: (id: string, preset: PermissionPreset) =>
+    putJson<PermissionPresetResp>('/api/permissions/presets/' + encodeURIComponent(id), { preset }),
+  /** DELETE /api/permissions/presets/{id}：200 {deleted} / 内置 409 / 不存在 404。 */
+  deletePermissionPreset: (id: string) =>
+    requestJson<PermissionPresetDeletedResp>(
+      '/api/permissions/presets/' + encodeURIComponent(id),
+      { method: 'DELETE' },
+    ),
+  /** GET /api/sessions/{id}/permission：该会话选中的档位 + 已过封顶的生效快照。 */
+  sessionPermission: (id: string) =>
+    requestJson<SessionPermissionResp>('/api/sessions/' + encodeURIComponent(id) + '/permission'),
+  /** PUT /api/sessions/{id}/permission {preset}：422 = 未知档位（调用方回滚徽标并说明）。 */
+  setSessionPermission: (id: string, preset: string) =>
+    putJson<SessionPermissionResp>('/api/sessions/' + encodeURIComponent(id) + '/permission', {
+      preset,
+    }),
   // ---- 会话权限 / 提权通道（W701；能力位未就绪时调用方不显示入口） ----
   /**
    * GET /api/sessions/{id}/grants：

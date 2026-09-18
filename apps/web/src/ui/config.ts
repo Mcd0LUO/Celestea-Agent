@@ -13,6 +13,7 @@ import { loadToolsSection } from './tools';
 import { loadArchiveSection } from './archive/panel';
 import { initProvidersSection, loadProviders } from './providers';
 import { initPromptsSection, loadPrompts } from './prompts';
+import { loadPermissionsSection } from './permissions';
 
 const page = need<HTMLElement>('#settingsPage');
 const box = need<HTMLElement>('#settingsConfig');
@@ -232,7 +233,7 @@ export async function loadConfig(opts: { refresh?: boolean } = {}): Promise<void
 
 // ---- 左导航 + 右内容 -----------------------------------------------------------
 
-const PANES = ['config', 'tools', 'archive', 'providers', 'prompts'] as const;
+const PANES = ['config', 'tools', 'archive', 'providers', 'prompts', 'permissions'] as const;
 type PaneName = (typeof PANES)[number];
 
 let currentPane: PaneName = 'config';
@@ -261,8 +262,11 @@ function loadPane(name: PaneName): void {
     );
   } else if (name === 'providers') {
     void loadProviders();
-  } else {
+  } else if (name === 'prompts') {
     void loadPrompts();
+  } else {
+    // W858：「权限预设」（内置三档 + 自定义档 + 会话档位选择器的取数口）
+    void loadPermissionsSection();
   }
 }
 

@@ -15,6 +15,7 @@ import './styles/settings.css';
 import './styles/views.css'; // W514 多会话视图容器 / 聚焦会话条 / 插话
 import './styles/sessions.css';
 import './styles/grants.css'; // W701 提权通道（本会话权限盾牌 / 面板 / 二次确认）
+import './styles/permissions.css'; // W858 权限预设（设置页 pane + statusline 档位徽标/菜单）
 import './styles/rail.css'; // 灵动选择条 v3（W238 重做）
 import './styles/hint.css'; // W790 悬浮提示宿主（内置提示插件）
 import './styles/question.css'; // W784 模型提问卡片（选项 / 自由输入 / 倒计时）

@@ -323,7 +323,7 @@
 .sl-grant { height: 28px; border-radius: var(--r-badge); }
 /* W12：容器查询 —— 窄屏（≤360px）徽标只留图标/缩短，避免挤走右端取消键。 */
 @container (max-width: 360px) {
-  .sl-mode-label, .sl-grant-badge { display: none; }
+  .sl-mode-label, .sl-grant-badge, .sl-perm-badge { display: none; }
   .sl-model { max-width: 22ch; }
 }
 

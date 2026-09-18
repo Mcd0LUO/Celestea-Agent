@@ -92,6 +92,7 @@ export const HTML =
   '<circle class="sl-ring-prog"></circle></svg></span><span class="sl-ctx" id="slCtx">—/—</span>' +
   '<button class="sl-model" id="slModel">—</button><button class="sl-effort" id="slEffort">—</button>' +
   '<button class="sl-mode hidden" id="slMode"></button><span class="sl-spacer"></span>' +
+  '<button id="slPerm" class="sl-perm hidden"><span class="sl-perm-badge" id="slPermBadge"></span></button>' +
   '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-badge" id="slGrantBadge"></span>' +
   '<span class="sl-grant-dot" id="slGrantDot"></span></button>' +
   '<button id="slStop" class="sl-stop hidden"></button><span class="sl-hint" id="slHint"></span></div>' +
@@ -99,7 +100,11 @@ export const HTML =
   '<span class="sl-cache" id="slCache">缓存 —</span><span class="sl-steps" id="slSteps">— 步</span></div></div>' +
   '<footer id="statusbar"><span class="dot" id="statusDot"></span><span id="statusText"></span>' +
   '<span id="statusTurn"></span><span id="statusStep"></span><span id="statusTime"></span></footer>' +
-  '<textarea id="input" rows="2"></textarea></main></div></div>';
+  '<textarea id="input" rows="2"></textarea></main></div>' +
+  // W858：设置页「权限预设」pane 的最小宿主（与 index.html 的容器 id/class 一致）
+  '<div id="settingsPage" class="settings-page hidden"><div class="settings-content">' +
+  '<section class="settings-pane" data-pane="permissions">' +
+  '<div class="settings-pane-body" id="settingsPermissions"></div></section></div></div>';
 
 /** 打桩服务端的可调旋钮（真实模块走真实 fetch 路径，这里只提供「服务端事实」与故障注入）。 */
 export interface Stub {
@@ -125,6 +130,41 @@ export const health = { value: { ok: true, capabilities: { grants: true, session
 export const statusBySession: Record<string, unknown> = {};
 export const configStub = { resp: {} as Record<string, unknown>, saveStatus: 200 };
 export const modeStub = { status: 200, payload: {} as unknown };
+
+/** W858：一个权限预设（线格式与 contracts/endpoints.json 的 preset 一致）。 */
+export interface StubPreset {
+  id: string;
+  label: string;
+  network: boolean;
+  workspaceWritable: boolean;
+  toolRootsWritable: boolean;
+  writeRoots: string[];
+  unsandboxed: boolean;
+  toolDeny: string[];
+}
+
+/** W858：内置三档（与服务端 store/permissions.ts 的常量同值）。 */
+export const PERM_BUILTIN: StubPreset[] = [
+  { id: 'read-only', label: 'Read only', network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], unsandboxed: false, toolDeny: ['write_file'] },
+  { id: 'write-read', label: 'Write + read (workspace)', network: false, workspaceWritable: true, toolRootsWritable: false, writeRoots: [], unsandboxed: false, toolDeny: [] },
+  { id: 'full-access', label: 'Full access', network: true, workspaceWritable: true, toolRootsWritable: true, writeRoots: [], unsandboxed: true, toolDeny: [] },
+];
+
+/** W858：权限预设 / 会话档位端点的旋钮与故障注入。 */
+export const permStub = {
+  custom: [] as StubPreset[],
+  max: 'full-access',
+  sessionPreset: 'full-access',
+  createStatus: 200,
+  createError: "invalid preset: bad",
+  updateStatus: 200,
+  updateError: 'no custom preset',
+  deleteStatus: 200,
+  deleteError: 'no custom preset',
+  putStatus: 200,
+  putError: "unknown preset 'read-only'",
+  tools: ['read_file', 'write_file', 'bash'] as string[],
+};
 
 export const reply = (status: number, payload: unknown): unknown => ({
   ok: status >= 200 && status < 300,
@@ -152,6 +192,18 @@ export function resetHarness(): void {
   configStub.saveStatus = 200;
   modeStub.status = 200;
   modeStub.payload = { ok: true, session: "ws/s1", mode: "execution", effective: "next_turn" };
+  permStub.custom = [];
+  permStub.max = 'full-access';
+  permStub.sessionPreset = 'full-access';
+  permStub.createStatus = 200;
+  permStub.createError = "invalid preset: bad";
+  permStub.updateStatus = 200;
+  permStub.updateError = 'no custom preset';
+  permStub.deleteStatus = 200;
+  permStub.deleteError = 'no custom preset';
+  permStub.putStatus = 200;
+  permStub.putError = "unknown preset 'read-only'";
+  permStub.tools = ['read_file', 'write_file', 'bash'];
   doc.body.innerHTML = HTML;
   vi.resetModules(); // 模块级单例（statusline / grants 状态）每个用例重建
   vi.stubGlobal("TextEncoder", TextEncoder); // scopeHashOf 需要（jsdom 环境不保证有）
@@ -167,6 +219,13 @@ export function resetHarness(): void {
     if (u.startsWith("/api/status")) return reply(200, statusBySession[sessionOf(u)] ?? { ok: true });
     if (u.startsWith("/api/config")) return configRoute(method, body);
     if (u.endsWith("/mode")) return reply(modeStub.status, modeStub.payload);
+    // W858：工具清单（档位编辑器的 toolDeny 多选）+ 权限预设 / 会话档位
+    if (u.startsWith("/api/tools")) {
+      return reply(200, { ok: true, tools: permStub.tools.map((name) => ({ name })) });
+    }
+    if (u.startsWith("/api/permissions/presets") || /\/permission$/.test(u)) {
+      return permissionRoute(u, method, body);
+    }
     if (u.startsWith("/api/sessions")) return reply(200, { ok: true, sessions: [] });
     return reply(404, { ok: false });
   });
@@ -194,6 +253,62 @@ function grantsRoute(method: string, body: string): unknown {
     effective: {},
     max_ttl_sec: {},
   });
+}
+
+/** W858：权限预设 CRUD + 会话档位（GET/PUT）的打桩实现。 */
+function permissionRoute(url: string, method: string, body: string): unknown {
+  const parsed = (): Record<string, unknown> => {
+    try {
+      return JSON.parse(body === '' ? '{}' : body) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  };
+  if (url.startsWith('/api/permissions/presets')) {
+    const id = decodeURIComponent(url.slice('/api/permissions/presets'.length).replace(/^\//, ''));
+    if (method === 'POST') {
+      if (permStub.createStatus !== 200) {
+        return reply(permStub.createStatus, { ok: false, error: permStub.createError });
+      }
+      const preset = parsed()['preset'] as StubPreset;
+      permStub.custom = [...permStub.custom, preset];
+      return reply(200, { ok: true, preset });
+    }
+    if (method === 'PUT') {
+      if (permStub.updateStatus !== 200) {
+        return reply(permStub.updateStatus, { ok: false, error: permStub.updateError });
+      }
+      const preset = parsed()['preset'] as StubPreset;
+      permStub.custom = permStub.custom.map((p) => (p.id === id ? preset : p));
+      return reply(200, { ok: true, preset });
+    }
+    if (method === 'DELETE') {
+      if (permStub.deleteStatus !== 200) {
+        return reply(permStub.deleteStatus, { ok: false, error: permStub.deleteError });
+      }
+      permStub.custom = permStub.custom.filter((p) => p.id !== id);
+      return reply(200, { ok: true, deleted: id });
+    }
+    return reply(200, { ok: true, builtin: PERM_BUILTIN, custom: permStub.custom, max: permStub.max });
+  }
+  const m = /^\/api\/sessions\/(.+)\/permission$/.exec(url);
+  if (m) {
+    if (method === 'PUT') {
+      if (permStub.putStatus !== 200) {
+        return reply(permStub.putStatus, { ok: false, error: permStub.putError });
+      }
+      const preset = String(parsed()['preset'] ?? '');
+      permStub.sessionPreset = preset;
+      return reply(200, { ok: true, preset, effective: {} });
+    }
+    return reply(200, {
+      ok: true,
+      session: decodeURIComponent(m[1] ?? ''),
+      preset: permStub.sessionPreset,
+      effective: {},
+    });
+  }
+  return reply(404, { ok: false });
 }
 
 function configRoute(method: string, body: string): unknown {

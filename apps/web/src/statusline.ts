@@ -42,6 +42,10 @@ import {
   type ModeHost,
 } from './statusline/mode';
 import {
+  createPermissionController,
+  type PermissionController,
+} from './statusline/permission';
+import {
   RING_C,
   renderCacheCell,
   renderContextCell,
@@ -76,6 +80,8 @@ export class Statusline implements PickerHost, ModeHost {
   private hintEl: HTMLElement;
   /** W788：会话工作方式徽标（只读；点击弹层切换）。 */
   private modeEl: HTMLElement;
+  /** W858：会话权限档位入口（徽标 + 弹层，状态自持；页面无 #slPerm 时为无入口）。 */
+  private perm: PermissionController;
 
   // ---- 快速切换（W227 / W750）：弹层状态由 ./statusline/picker.ts 读写（PickerHost） ----
   /** W514: 当前聚焦会话 id（'' = 未解析/旧单会话）；轮询与快照按会话缓存。 */
@@ -111,6 +117,8 @@ export class Statusline implements PickerHost, ModeHost {
     this.stepsEl = need<HTMLElement>('#slSteps', this.el);
     this.hintEl = need<HTMLElement>('#slHint', this.el);
     this.modeEl = need<HTMLElement>('#slMode', this.el);
+    // W858：档位入口（徽标可选：其它骨架/老页面没有 #slPerm 时安静地不装入口）
+    this.perm = createPermissionController(this.el, () => this.session, (t, ms) => this.setNote(t, ms));
     this.ringProg.style.strokeDasharray = String(RING_C);
     this.el.title = '上下文占用 · 模型 · 思考强度 · 吞吐 · 缓存命中';
 
@@ -130,6 +138,7 @@ export class Statusline implements PickerHost, ModeHost {
     this.effortEl.addEventListener('click', () => togglePopup(this, 'effort'));
     // W788：工作方式徽标（只读）→ 弹层切换
     this.modeEl.addEventListener('click', () => toggleModePopup(this));
+    this.perm.attach(); // W858：档位徽标 → 选择弹层
     // Esc 关闭统一由 utils/overlays 层级栈处理（任务 3：唯一 document Esc 监听）
     document.addEventListener('click', (e) => {
       // W795：一律用**事件路径**判定「点在不在里面」——乐观渲染会当帧重绘弹层内容，
@@ -140,6 +149,7 @@ export class Statusline implements PickerHost, ModeHost {
       if (this.popup && !hit(this.popup, this.modelEl, this.effortEl)) closePopup(this);
       // W788：工作方式弹层同款——点自己/徽标不开倒，点别处关掉
       if (!modePopupHit(e) && !this.modeEl.contains(e.target as Node)) closeModePopup();
+      this.perm.onOutsideClick(e); // W858：档位弹层同款（点自己/徽标不关，点别处关掉）
     });
   }
 
@@ -206,6 +216,7 @@ export class Statusline implements PickerHost, ModeHost {
       ...(cached ?? {}),
     };
     this.render();
+    this.perm.onSession(this.session); // W858：换会话 → 换一份档位视图
     void this.poll();
   }
 
