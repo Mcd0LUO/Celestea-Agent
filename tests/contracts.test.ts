@@ -86,6 +86,17 @@ describe("contracts/endpoints.json", () => {
     expect(JSON.stringify(fieldNames)).not.toContain("api_key");
   });
 
+  // W887: the version is derived from git (single source = scripts/version.mjs) and
+  // exposed as a PURE ADDITION on the existing health endpoint — no new endpoint.
+  it("declares the W887 derived health version field", () => {
+    const health = c.endpoints.find((e) => e.id === "get_health");
+    const field = health?.response.fields.find((f) => f.name === "version");
+    expect(field?.type).toBe("string");
+    expect(String(field?.note)).toContain("git tag");
+    expect(health?.notes?.some((n) => n.includes("W887"))).toBe(true);
+    expect(c.count).toBe(61);
+  });
+
   it("freezes the W804 per-model modality bits with the optimistic default", () => {
     const doc = loadDataFileSchema("providers.schema.json");
     const schema = doc["schema"] as {

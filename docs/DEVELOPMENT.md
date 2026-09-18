@@ -158,7 +158,7 @@ Gen                                          src/main.rs:355-364
 | `ui/toolcards.ts` | 174 | 工具调用卡（折叠态即显示粗略内容） |
 | `ui/sidebar.ts` / `ui/inputbar.ts` / `ui/statusbar.ts` / `ui/tools.ts` / `ui/confirm.ts` / `ui/view.ts` | 29-110 | 侧栏布局 / 输入栏 / 底部状态栏 / 工具表格 / 二次确认 / 视图句柄合同 |
 | `utils/dom.ts` / `utils/hljs.ts` / `utils/overlays.ts` | 50-108 | DOM 与格式化 / highlight.js 精简语言集 / **浮层 Esc 层级栈**（Esc 唯一入口） |
-| `version.ts` | 11 | `APP_VERSION` / `BUILD_TIME`，**手动 bump**，需与 `package.json` 同步 |
+| `version.ts` | 45 | 构建期注入的版本标签（`versionLabel` / `describeLabel`）；真源 = git tag（`scripts/version.mjs` 经 vite `define` 注入），**不再手写**（W887） |
 
 ### 2.4 一次 turn 的完整时序
 
@@ -281,7 +281,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 - 静态根是 `frontend/dist`（`STATIC_ROOT`，`src/main.rs:83`）；`dist/` 不存在时返回"先构建前端"提示页（`src/main.rs:826-847`）。
 - `dist/` 与 `node_modules/` 都在 `.gitignore` 里，**不要提交构建产物**。
 - `pnpm build` 是 `tsc --noEmit && vite build`（`frontend/package.json:8`），`tsconfig.json` 开了 `strict` / `noUnusedLocals` / `noUncheckedIndexedAccess` / `verbatimModuleSyntax`。
-- 版本号：`frontend/src/version.ts` 的 `APP_VERSION` / `BUILD_TIME` **手动维护**，需与 `frontend/package.json` 的 `version` 同步（`frontend/src/version.ts:1-11`）。
+- 版本号（W887）：**单一真源 = git tag**。`scripts/version.mjs` 的 `computeVersion()` 跑 `git describe --tags --always --dirty`（无 git / 无 tag 回落 `apps/web/package.json` 的 `version`），`apps/web/vite.config.ts` 经 `define` 注入 `__APP_VERSION__` / `__APP_COMMITS__` / `__APP_SHA__` / `__APP_DIRTY__` / `__BUILD_TIME__`，`apps/web/src/version.ts` 只读注入值（裸 vite 未注入时回落 `'dev'`）。后端 `GET /api/health.version` 用同一个脚本计算。防漂移门禁见 `tests/w887-version.test.ts`；`pnpm version:sync` 可把 `apps/web/package.json` 的 `version` 写回派生值（**刻意不挂进 `pnpm check`**，门禁不应依赖工作树 git 状态）。
 - 主题：**只有 `mono` 单主题**（`frontend/src/theme.ts:12-14`）；旧 `localStorage` 里的已删主题 id 会自动回落 `mono`。
 
 部署（systemd / nginx / 环境变量 / 重启命令）的旧后端文档已于 W881 清理出公开仓；TS 部署见 [`scripts/run-studio-ts.sh`](../scripts/run-studio-ts.sh)。
@@ -340,7 +340,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 | P5 | `reasoning_effort` | **自由字符串**，Studio 不得折叠/重命名（`max` 就是 `max`）；空串/`off` 表示清除 |
 | P6 | `/compact` | 409 守卫 → 摘要轮 + 最近 K=4 轮重编号 → 原子写 + `.precompact` → 引擎重绑；重绑失败不回滚日志 |
 | P7 | SSE 信封 | `turn` 字段必须随事件传递（`sse.ts` 只发 payload 会丢 `turn`） |
-| P8 | 主题/版本 | 只有 `mono` 单主题；`version.ts` 需**手动 bump** 并与 `package.json` 同步 |
+| P8 | 主题/版本 | 只有 `mono` 单主题；版本号 W887 起由 git tag 构建期派生（`scripts/version.mjs`），`version.ts` 不再手写 |
 | P9 | 前端铁律 | 见 `apps/web/FRONTEND-RULES.md`：禁止"先清空后加载"、禁止整树 `innerHTML` 重建、切换必须防竞态 |
 | P10 | session id 编码 | 路径参数里的 `/` 必须 `%2F`，否则会被当成两段路径 → 404 |
 

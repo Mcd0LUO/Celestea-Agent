@@ -36,7 +36,7 @@ import { initGrants } from './ui/grants'; // W701 提权通道（能力位未就
 import { restoreActiveHistory } from './ui/restore';
 import { initRail } from './ui/rail';
 import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
-import { APP_VERSION, BUILD_TIME } from './version'; // 灵动选择条 v3（W238 重做）
+import { versionLabel, describeLabel, BUILD_TIME, APP_DIRTY } from './version'; // W887 构建期版本标签
 import { initSidebar } from './ui/sidebar';
 import { initChatCol } from './ui/chatcol'; // W867：正文列宽（两侧留白）可拖动调节
 import { statusline } from './statusline';
@@ -91,11 +91,11 @@ function init(): void {
   // 5.1) W701：本会话权限盾牌（能力位未就绪 → 入口保持隐藏，不报错不崩溃）
   initGrants();
 
-  // 6) 版本标识（原「v2 · TS」位置，第 22 轮改为构建版本）
+  // 6) 版本标识（W887：构建期从 git tag 派生，见 version.ts）
   const verEl = document.getElementById('brandVersion');
   if (verEl) {
-    verEl.textContent = 'Studio v' + APP_VERSION;
-    verEl.title = 'Celestea Studio · 构建于 ' + BUILD_TIME;
+    verEl.textContent = versionLabel();
+    verEl.title = 'Celestea Studio · 构建于 ' + BUILD_TIME + ' · ' + describeLabel() + (APP_DIRTY ? ' · 工作区有未提交改动' : '');
   }
 
   // 7) 消息 rail（左侧灵动长条）+ 聊天主循环 + 启动恢复（按活跃会话） + SSE

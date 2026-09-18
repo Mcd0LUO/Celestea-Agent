@@ -20,7 +20,7 @@
 | P5 | `reasoning_effort` | 自由字符串，不得折叠/重命名 |
 | P6 | `/compact` | 409 守卫 + K=4 重编号 + 原子写 + 重绑 |
 | P7 | SSE 信封 `turn` | 只发 payload 会丢 `turn` |
-| P8 | 主题与版本号 | 只有 `mono`；`version.ts` 手动 bump |
+| P8 | 主题与版本号 | 只有 `mono`；版本号 W887 起由 git tag 构建期派生 |
 | P9 | 前端渲染铁律 | 见 `apps/web/FRONTEND-RULES.md` |
 | P10 | session id 编码 | 路径参数必须 `%2F` |
 | P11 | `/api/clear` | 无备份、无 409 守卫 |
@@ -166,7 +166,7 @@ originalId: p?.id                         // 打开编辑器时记录
 ## P8 · 主题与版本号
 
 - **只有 `mono` 单主题**（黑白）：`THEMES` 只有一个元素，`night` 已删除；`localStorage` 里残留的旧主题 id 会自动回落到 `mono`（`frontend/src/theme.ts:1-14`、`44-52`）。新增主题要同时改 `THEMES` 与 CSS `[data-theme]` 块。
-- **版本号手动 bump**：`frontend/src/version.ts` 的 `APP_VERSION` 必须与 `frontend/package.json` 的 `version` 同步，`BUILD_TIME` 是发布日（`frontend/src/version.ts:1-11`）。没有自动化，别忘。
+- **版本号（W887 起自动派生）**：真源是 git tag，构建期由 `scripts/version.mjs` 派生后经 vite `define` 注入 `apps/web/src/version.ts`（无 git / 无 tag 回落 `apps/web/package.json`）。**不要再往 `version.ts` 写版本字面量**——`tests/w887-version.test.ts` 会机械失败；`pnpm version:sync` 同步 `package.json`。
 
 **修复提交**：`ddaa3f8`、`7ed60c7`。
 
