@@ -72,15 +72,15 @@
 .bubble {
   width: fit-content;
   max-width: 72%;
-  border-radius: var(--r-md);
-  padding: 10px 14px;
-  background: var(--c-surface);
+  border-radius: var(--r-bubble);
+  padding: 10px 16px;
+  background: var(--bubble-bg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 .msg.user .bubble {
   margin-left: auto; /* 右对齐 */
-  background: var(--c-accent);
-  color: var(--c-accent-fg);
+  background: var(--bubble-user-bg);
+  color: var(--bubble-user-fg);
 }
 .msg.user .bubble .content { color: inherit; }
 .msg.user .bubble a { color: var(--c-accent-fg); text-decoration: underline; }
@@ -108,7 +108,7 @@
      变量决定，任何一处改 margin 都不会把它们拆开（TerminalBlock 的教训） */
   padding-left: var(--card-gutter);
   background: var(--c-code-bg);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-card);
   overflow: hidden;
   font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
 }
@@ -117,8 +117,8 @@
   cursor: pointer; user-select: none; list-style: none;
   margin-left: calc(-1 * var(--card-gutter));
   padding: 9px 14px 9px var(--card-gutter);
-  border-top-left-radius: var(--card-radius);
-  border-top-right-radius: var(--card-radius);
+  border-top-left-radius: var(--r-card);
+  border-top-right-radius: var(--r-card);
   max-height: 150px; overflow-y: auto;
 }
 .toolcard > summary.toolcard-head::-webkit-details-marker { display: none; }
@@ -173,7 +173,7 @@
 .toolcard-state {
   margin-left: auto; flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: 4px;
-  height: var(--row-h); padding: 0 8px; border-radius: var(--r-lg);
+  height: var(--row-h); padding: 0 8px; border-radius: var(--r-badge);
   font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
   color: var(--c-text-2); background: var(--c-layer-2);
 }
@@ -185,6 +185,14 @@
    ::details-content 的 content-visibility 才天然免疫）——不补这条，工具卡在部分
    引擎里「明明没 open 却把参数/结果全文摊开」。权重 (0,3,0) > (0,1,0)，稳赢。 */
 .toolcard:not([open]) > .toolcard-body { display: none; }
+/* W12：运行中工具卡 = DisclosureRow 行头 300px 淡扫光（reduced-motion 全局关闭）。 */
+.toolcard.running > .toolcard-head { position: relative; overflow: hidden; }
+.toolcard.running > .toolcard-head::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -300px; width: 300px;
+  background: linear-gradient(90deg, transparent 0%, var(--c-sweep) 55%, transparent 100%);
+  animation: think-row-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
 /* 参数 / 结果正文：等宽 pre、不换行、横向滚动（TerminalBlock .output）；
    滚动条浮在圆角外侧：transparent 2px border + padding-box */
 .tool-args, .tool-out {
@@ -385,7 +393,7 @@
 .msg.info .msg-caption .who { color: var(--c-text-3); }
 .info-bubble {
   width: 100%; max-width: 100%;
-  padding: 8px 12px; border-radius: var(--r-lg);
+  padding: 8px 12px; border-radius: var(--r-card);
   border-left: 2px solid var(--c-warn);
   background: var(--c-layer-2); box-shadow: none;
 }

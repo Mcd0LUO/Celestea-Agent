@@ -8,6 +8,9 @@
 import { el } from '../../utils/dom';
 import type { SessionPane } from '../viewctx';
 
+/** W12：距底阈值（NN/G：只在真正接近底部时跟随，避免把读者拉回）。 */
+export const AT_BOTTOM_PX = 25;
+
 // ---- scrolling ----------------------------------------------------------------
 /**
  * 粘性自动滚动：仅在用户接近底部时跟随；force 用于完成/新消息时。
@@ -19,7 +22,7 @@ export function autoscroll(ctx: SessionPane, force = false): void {
     if (force) ctx.stickBottom = true;
     return;
   }
-  const nearBottom = ctx.el.scrollTop + ctx.el.clientHeight >= ctx.el.scrollHeight - 200;
+  const nearBottom = ctx.el.scrollTop + ctx.el.clientHeight >= ctx.el.scrollHeight - AT_BOTTOM_PX;
   if (force || nearBottom) ctx.el.scrollTop = ctx.el.scrollHeight;
 }
 

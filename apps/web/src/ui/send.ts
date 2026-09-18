@@ -30,7 +30,6 @@ import { updateSessionBar } from './sessionbar';
 import {
   flashStatus,
   setStatus,
-  setStatusStep,
   setStatusTurn,
   startElapsedTimer,
   stopElapsedTimer,
@@ -91,7 +90,6 @@ function startTurn(ctx: SessionPane, t: string): void {
     S.t0 = ctx.t0;
     setBusy(true);
     setStatus('启动中…', 'busy');
-    setStatusStep(null);
     startElapsedTimer();
   }
   updateSessionBar();

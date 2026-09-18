@@ -1,5 +1,5 @@
 // ============================================================================
-// ui/statusbar.ts — 底部状态栏（单一职责）：连接/阶段文本、turn/step、耗时计时。
+// ui/statusbar.ts — 底部状态栏（单一职责）：连接/阶段文本、turn、耗时计时。
 // 不感知 turn 生命周期——由 chat.ts 在合适时机调用本模块。
 // ============================================================================
 import { S } from '../state';
@@ -8,7 +8,6 @@ import { fmtTime, need } from '../utils/dom';
 const StatusText = need<HTMLElement>('#statusText');
 const StatusDot = need<HTMLElement>('#statusDot');
 const StatusTurn = need<HTMLElement>('#statusTurn');
-const StatusStep = need<HTMLElement>('#statusStep');
 const StatusTime = need<HTMLElement>('#statusTime');
 
 export function setStatus(text: string, cls?: string): void {
@@ -18,10 +17,6 @@ export function setStatus(text: string, cls?: string): void {
 
 export function setStatusTurn(n: number | null): void {
   StatusTurn.textContent = typeof n === 'number' && n >= 1 ? '第 ' + n + ' 轮' : '第 — 轮';
-}
-
-export function setStatusStep(n: number | string | null): void {
-  StatusStep.textContent = '第 ' + (n && String(n) !== '' ? String(n) : '—') + ' 步';
 }
 
 function tickTimer(): void {

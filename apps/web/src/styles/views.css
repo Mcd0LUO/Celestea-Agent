@@ -14,11 +14,13 @@
 .sess-pane {
   flex: 1 1 auto;
   min-height: 0;
+  /* W12：唯一滚动容器 + 稳定滚动条槽；正文列 = clamp(680, 64%, 920) 居中，侧余量 16。 */
   overflow-y: auto;
-  padding: 22px 18px;
+  scrollbar-gutter: stable;
+  padding: var(--sp-flow) max(var(--sp-composer-side), calc((100% - var(--chat-col)) / 2));
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--sp-flow);
 }
 .sess-pane[hidden] { display: none; }
 .sess-pane:focus { outline: none; }

@@ -56,10 +56,10 @@
         <!-- ---------- statusline（模型 / 上下文环 / 吞吐，发送栏正上方） ---------- -->
         <div id="statusline" class="statusline" title="上下文占用 · 模型 · 思考强度 · 吞吐 · 缓存命中">
           <div class="sl-row sl-row-main">
-            <span class="sl-ring" id="slRing" title="上下文占用">
+            <span class="sl-ring" id="slRing" role="button" tabindex="0" aria-haspopup="dialog" title="上下文占用">
               <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
-                <circle class="sl-ring-track" cx="7" cy="7" r="5.2" transform="rotate(-90 7 7)"></circle>
-                <circle class="sl-ring-prog" cx="7" cy="7" r="5.2" transform="rotate(-90 7 7)"></circle>
+                <circle class="sl-ring-track" cx="7" cy="7" r="5.5" transform="rotate(-90 7 7)"></circle>
+                <circle class="sl-ring-prog" cx="7" cy="7" r="5.5" transform="rotate(-90 7 7)"></circle>
               </svg>
             </span>
             <span class="sl-ctx" id="slCtx">—/—</span>
@@ -118,8 +118,6 @@
           </div>
           <div class="sb-right">
             <span id="statusTurn">第 — 轮</span>
-            <span class="sb-sep">·</span>
-            <span id="statusStep">— 步</span>
             <span class="sb-sep">·</span>
             <span id="statusTime">00:00</span>
           </div>

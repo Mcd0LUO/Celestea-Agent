@@ -11,7 +11,7 @@ import { modelIconFor } from '../utils/model-icon';
 import type { ContextUsage, UsageSnapshot } from '../types';
 import { clamp01, iconNode } from './icons';
 
-const RING_R = 5.2;
+const RING_R = 5.5;
 /** 环周长（构造时写进 strokeDasharray，渲染时按占用比算 dashoffset）。 */
 export const RING_C = 2 * Math.PI * RING_R;
 /** context ring turns warning color at/above this ratio */
@@ -47,6 +47,8 @@ export function renderContextCell(
     ring.classList.remove('warn');
     ring.title = '上下文占用（点击查看完整上下文）';
   }
+  // W12：aria-label 带完整值（可见的 used/window 可能被省略号截断）。
+  ring.setAttribute('aria-label', (ring.title ?? '').replace('（点击查看完整上下文）', ''));
 }
 
 /**
@@ -82,6 +84,7 @@ export function renderCacheCell(cacheEl: HTMLElement, u: UsageSnapshot | undefin
   if (!u || !(u.prompt_tokens > 0)) {
     cacheEl.textContent = '缓存 —';
     cacheEl.title = '暂无缓存命中数据';
+    cacheEl.setAttribute('aria-label', cacheEl.title);
     return;
   }
   const pct = Math.round(clamp01(u.cache_hit_ratio) * 100);
@@ -96,4 +99,5 @@ export function renderCacheCell(cacheEl: HTMLElement, u: UsageSnapshot | undefin
     (t
       ? '（累计 ' + (clamp01(t.cache_hit_ratio) * 100).toFixed(1) + '%，命中 ' + t.cache_read + ' / 输入 ' + t.prompt_tokens + ' tokens）'
       : '');
+  cacheEl.setAttribute('aria-label', cacheEl.title);
 }

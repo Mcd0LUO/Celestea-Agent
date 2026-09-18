@@ -11,6 +11,8 @@ export interface ThemeDef {
 
 export const THEMES: readonly ThemeDef[] = [
   { id: 'mono', label: '黑白', hint: '黑白 ins 风 · 纯灰阶浅色，零彩色点缀' },
+  // W12：深色主题 —— 只覆盖 static/alias token（见 styles/tokens.css），组件零改动。
+  { id: 'dark', label: '暗色', hint: '深灰多层级 · 语义 token 覆盖' },
 ];
 
 const STORAGE_KEY = 'celestea-studio.theme';

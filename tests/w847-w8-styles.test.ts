@@ -6,7 +6,7 @@
  *   ③ 双 tooltip 防回归：hint 引擎认领后必须清掉原生 title —— 同一元素不得同时有
  *      data-hint 与 title（否则原生 1s 提示 + 150ms 卡片双弹）。
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,5 +88,58 @@ describe('W847 W8 · 双 tooltip 防回归', () => {
     expect(leaf?.getAttribute('data-hint') ?? '').toContain('点击打开');
     expect(leaf?.getAttribute('title')).toBeNull();
     expect(Array.from(doc.querySelectorAll('[data-hint][title]')).length).toBe(0);
+  });
+});
+
+describe('W847 W8/W12 · token 契约（三层 + 深色成对 + 语义圆角/间距）', () => {
+  const tokens = (): string => readFileSync(join(STYLES, 'tokens.css'), 'utf8');
+  it('存在语义圆角/间距/列宽/hairline token', () => {
+    const t = tokens();
+    for (const k of [
+      '--r-bubble: 22px', '--r-dialog: 24px', '--r-menu: 20px', '--r-tip: 8px',
+      '--sp-flow: 16px', '--sp-composer-side: 16px',
+      '--chat-col: clamp(680px, 64%, 920px)', '--hairline: 0.5px',
+    ]) {
+      expect(t).toContain(k);
+    }
+  });
+  it('深色 alias 成对覆盖（surface + foreground 都在 dark 块里）', () => {
+    const t = tokens();
+    const i = t.indexOf('[data-theme="dark"]');
+    expect(i).toBeGreaterThan(-1);
+    const block = t.slice(i, t.indexOf('}', i));
+    expect(block).toContain('color-scheme: dark');
+    expect(block).toContain('--s-gray-25:');
+    expect(block).toContain('--s-gray-900:');
+  });
+  it('三层 token 齐备：static(--s-*) / alias(--bg-*/--label-*) / specific(--bubble-*)', () => {
+    const t = tokens();
+    for (const k of ['--s-gray-900', '--bg-base', '--label-primary', '--bubble-bg', '--tip-bg', '--input-bg']) {
+      expect(t).toContain(k);
+    }
+  });
+});
+
+describe('W847 W12 · 「第 N 步」只有一个渲染点', () => {
+  const SRC = join(STYLES, '..');
+  const WEB_INDEX = join(STYLES, '..', '..', 'index.html');
+  function walkTs(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir).sort()) {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) walkTs(full, out);
+      else if (name.endsWith('.ts')) out.push(full);
+    }
+    return out;
+  }
+  it('底部 statusbar 的 statusStep 已删；只留 statusline #slSteps', () => {
+    const html = readFileSync(WEB_INDEX, 'utf8');
+    expect(html).not.toContain('statusStep');
+    expect(html).toContain('slSteps');
+    const offenders: string[] = [];
+    for (const f of walkTs(SRC)) {
+      const t = readFileSync(f, 'utf8');
+      if (t.includes('statusStep') || t.includes('setStatusStep')) offenders.push(f);
+    }
+    expect(offenders).toEqual([]);
   });
 });

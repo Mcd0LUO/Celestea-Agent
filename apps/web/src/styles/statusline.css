@@ -9,7 +9,7 @@
 .statusline {
   display: flex; flex-direction: column; gap: 1px;
   padding: 5px 14px 4px;
-  background: var(--c-surface);
+  background: var(--composer-bg);
   font-family: var(--mono);
   font-size: 11.5px;
   color: var(--c-text-2);
@@ -47,6 +47,8 @@
 .sl-model {
   color: var(--c-text-1);
   max-width: 46ch;
+  height: 28px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: var(--r-badge);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sl-effort {
@@ -58,9 +60,11 @@
   line-height: 14px;
 }
 .sl-effort:empty { display: none; }
-.sl-tps { font-variant-numeric: tabular-nums; }
-.sl-steps { font-variant-numeric: tabular-nums; }
-.sl-cache { font-variant-numeric: tabular-nums; }
+.sl-tps, .sl-steps, .sl-cache {
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px; border-radius: var(--r-badge);
+  background: var(--c-layer-2);
+}
 /* W789：提示是运行态才出现的「新栏」，必须可压缩（否则 nowrap 下会把右端盾牌/停止挤出去） */
 .sl-hint {
   color: var(--c-warn); font-size: 10.5px;
@@ -97,7 +101,15 @@
  * W227：模型 / 推理档位快速切换（按钮 + 紧凑下拉面板）
  * ============================================================================ */
 
-#statusline { position: relative; }
+#statusline { position: relative; container-type: inline-size; }
+/* W12：composer 底部 36px 渐变遮罩（消息从该遮罩下滚过）。 */
+#statusline::before {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 100%;
+  height: 36px;
+  background: linear-gradient(to top, var(--bg-base), transparent);
+  pointer-events: none;
+}
 
 .sl-model, .sl-effort, .sl-mode {
   background: transparent;
@@ -118,10 +130,10 @@
 .sl-mode {
   color: var(--c-text-2);
   border: 1px solid var(--c-border-subtle);
-  border-radius: var(--r-sm);
-  padding: 0 6px;
-  font-size: 10.5px;
-  line-height: 14px;
+  border-radius: var(--r-badge);
+  padding: 0 8px;
+  font-size: 11px;
+  height: 28px; line-height: 26px;
 }
 .sl-effort:empty, .sl-mode:empty { display: none; }
 /* W788：执行模式给一点强调（标准模式保持默认灰阶） */
@@ -148,7 +160,7 @@
   width: min(360px, calc(100vw - 40px));
   background: var(--c-surface-raised);
   border: 1px solid var(--c-border-strong);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-menu);
   box-shadow: var(--shadow-panel);
   overflow: hidden;
   display: flex; flex-direction: column;
@@ -307,6 +319,13 @@
 }
 .sl-popup-textrow { display: flex; gap: 6px; padding: 2px; }
 .sl-popup-input { flex: 1; min-width: 0; }
+
+.sl-grant { height: 28px; border-radius: var(--r-badge); }
+/* W12：容器查询 —— 窄屏（≤360px）徽标只留图标/缩短，避免挤走右端取消键。 */
+@container (max-width: 360px) {
+  .sl-mode-label, .sl-grant-badge { display: none; }
+  .sl-model { max-width: 22ch; }
+}
 
 /* ============================================================================
  * W846：statusline 第 1 行右端的「提交车道」切换键（插话 / 排队）。

@@ -215,7 +215,7 @@ function writeInputValue(v: string): void {
 
 /** 是否「贴底」（4px 容差）：贴底者切回后继续跟随最新，否则原样恢复滚动位。 */
 function atBottom(paneEl: HTMLElement): boolean {
-  return paneEl.scrollTop + paneEl.clientHeight >= paneEl.scrollHeight - 4;
+  return paneEl.scrollTop + paneEl.clientHeight >= paneEl.scrollHeight - 25; // W12：与 scroll.ts 同口径
 }
 
 /** 当前聚焦容器（init 前为 null）。 */

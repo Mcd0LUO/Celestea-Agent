@@ -117,6 +117,7 @@ export class Statusline implements PickerHost, ModeHost {
     // W726：点上下文圆环 → 只读完整上下文浮层
     this.ring.setAttribute('role', 'button');
     this.ring.setAttribute('tabindex', '0');
+    this.ring.setAttribute('aria-haspopup', 'dialog');
     this.ring.addEventListener('click', () => void this.openContext());
     this.ring.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -332,11 +333,13 @@ export class Statusline implements PickerHost, ModeHost {
 
     renderModelCell(this.modelEl, s.model || '', this.modelCell);
     this.modelEl.title = '当前模型：' + (s.model || '—') + '（点击快速切换）';
+    this.modelEl.setAttribute('aria-label', '当前模型 ' + (s.model || '—'));
 
     // 思考强度：'max' 直接显示；空/null 表示标准档
     const effort = s.reasoning_effort;
     this.effortEl.textContent = effort ? String(effort) : '—';
     this.effortEl.title = '思考强度：' + (effort ? String(effort) : '标准') + '（点击快速切换）';
+    this.effortEl.setAttribute('aria-label', '思考强度 ' + (effort ? String(effort) : '标准'));
 
     // W789：吞吐 —— 有效采样原样显示；服务端给 0/缺省（会话 inactive）时显示最近
     // N 次采样的均值并带 `≈` 前缀，不再从「42.5 tok/s」直接跳成「0.0 tok/s」。
@@ -345,6 +348,7 @@ export class Statusline implements PickerHost, ModeHost {
     const tps = tpsDisplay(samples, s.tokens_per_sec, s.busy === true, fixed1);
     this.tpsEl.textContent = tps.text;
     this.tpsEl.title = tps.title;
+    this.tpsEl.setAttribute('aria-label', '吞吐 ' + tps.text);
 
     // W263 缓存命中率：只改文本（铁律 1/2/5——不重建 DOM，不重渲染背景）
     renderCacheCell(this.cacheEl, s.usage);
@@ -354,6 +358,7 @@ export class Statusline implements PickerHost, ModeHost {
 
     const steps = s.steps;
     this.stepsEl.textContent = typeof steps === 'number' && steps >= 1 ? '第 ' + steps + ' 步' : '— 步';
+    this.stepsEl.setAttribute('aria-label', this.stepsEl.textContent);
 
     // W514：后端 busy 字段（多会话状态显示）——只切 class，不改布局
     this.el.classList.toggle('sl-live', s.busy === true);

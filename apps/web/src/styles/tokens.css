@@ -15,10 +15,42 @@
   --r-sm: 6px;
   --r-md: 10px;
   --r-lg: 14px;
+  /* W12：语义级圆角 —— 气泡/输入卡、弹窗、菜单、卡片、徽标、胶囊、提示 */
+  --r-bubble: 22px;
+  --r-dialog: 24px;
+  --r-menu: 20px;
+  --r-card: var(--r-lg);
+  --r-badge: 24px;
+  --r-pill: 999px;
+  --r-tip: 8px;
   --radius: var(--r-md);
   /* W786：表单两列网格的左列（标签）宽度 —— 设置页各 pane 与弹窗共用同一值，
      避免切页时右列控件起点左右跳动。 */
   --field-label-w: 148px;
+  /* W12：间距 / 尺寸（composer 堆叠 gap、侧余量、dock 内缩、正文列宽、发丝线）。 */
+  --sp-flow: 16px;
+  --sp-flow-answer: 8px;
+  --sp-composer-gap: 6px;
+  --sp-composer-side: 16px;
+  --sp-dock-inset: 8px;
+  --composer-text-max-h: 336px;
+  --chat-col: clamp(680px, 64%, 920px);
+  --hairline: 0.5px;
+
+  /* W12：static 原始色板（唯一写死颜色处；alias 见下，深色只覆盖它）。 */
+  --s-white: #ffffff;
+  --s-gray-25: #fafafa;
+  --s-gray-50: #f4f4f4;
+  --s-gray-100: #e8e8e8;
+  --s-gray-300: #b8b8b8;
+  --s-gray-500: #999999;
+  --s-gray-600: #6a6a6a;
+  --s-gray-700: #555555;
+  --s-gray-900: #111111;
+  --s-black: #000000;
+  --s-green-500: #16a34a;
+  --s-orange-500: #c2410c;
+  --s-red-600: #b91c1c;
 }
 
 /* ------------------------------------------------ mono：黑白 ins 风（唯一主题） */
@@ -109,4 +141,122 @@
   --hl-literal: #222;
   --hl-meta: #666;
   --hl-type: #333;
+
+  /* ==========================================================================
+   * W12 三层 token：static（--s-*，见 :root）→ alias（本段）→ specific（本段末）。
+   *   组件只引用 --c-* / --r-* / --sp-*，不写死颜色；深色只覆盖 alias/static。
+   * ======================================================================== */
+  --bg-base: var(--s-gray-25);
+  --bg-layer-1: var(--s-white);
+  --bg-layer-2: rgba(0, 0, 0, 0.04);
+  --bg-layer-3: var(--s-gray-50);
+  --bg-surface-raised: var(--s-white);
+  --bg-code: var(--s-gray-50);
+  --border-l1: var(--s-gray-100);
+  --border-l2: var(--s-gray-100);
+  --border-l3: var(--s-gray-300);
+  --border-l4: var(--s-gray-900);
+  --label-primary: var(--s-gray-900);
+  --label-secondary: var(--s-gray-700);
+  --label-tertiary: var(--s-gray-500);
+  --label-caption: var(--s-gray-500);
+  --state-ok: #3a3a3a;
+  --state-warn: var(--s-gray-600);
+  --state-err: var(--s-black);
+  --state-live: var(--s-green-500);
+  --state-grant: var(--s-orange-500);
+  --interactive-accent: var(--s-gray-900);
+  --interactive-accent-strong: var(--s-black);
+  --interactive-accent-soft: rgba(0, 0, 0, 0.055);
+  --interactive-accent-ring: rgba(0, 0, 0, 0.28);
+  --interactive-accent-fg: var(--s-white);
+  --interactive-bg-hover: var(--s-gray-50);
+  --overlay: rgba(17, 17, 17, 0.4);
+  --scroll-thumb: #d0d0d0;
+
+  /* specific 具体层：气泡 / 输入卡 / 菜单 / 侧栏 / 提示 */
+  --bubble-bg: var(--bg-layer-1);
+  --bubble-fg: var(--label-primary);
+  --bubble-user-bg: var(--interactive-accent);
+  --bubble-user-fg: var(--interactive-accent-fg);
+  --input-bg: var(--bg-code);
+  --menu-bg: var(--bg-surface-raised);
+  --sidebar-fill: var(--bg-layer-1);
+  --tip-bg: var(--bg-surface-raised);
+  --composer-bg: var(--bg-layer-1);
+  --topbar-bg: var(--bg-layer-1);
+
+  /* 向后兼容别名：--c-* 全部指向 alias（组件零改动，深色随之切换）。 */
+  --c-accent: var(--interactive-accent);
+  --c-accent-strong: var(--interactive-accent-strong);
+  --c-accent-soft: var(--interactive-accent-soft);
+  --c-accent-ring: var(--interactive-accent-ring);
+  --c-accent-fg: var(--interactive-accent-fg);
+  --c-bg: var(--bg-base);
+  --c-surface: var(--bg-layer-1);
+  --c-surface-raised: var(--bg-surface-raised);
+  --c-border-subtle: var(--border-l1);
+  --c-border-strong: var(--border-l3);
+  --c-text-1: var(--label-primary);
+  --c-text-2: var(--label-secondary);
+  --c-text-3: var(--label-tertiary);
+  --c-code-bg: var(--bg-code);
+  --c-scroll-thumb: var(--scroll-thumb);
+  --c-overlay: var(--overlay);
+  --c-ok: var(--state-ok);
+  --c-warn: var(--state-warn);
+  --c-err: var(--state-err);
+  --c-live: var(--state-live);
+  --c-grant: var(--state-grant);
+  --c-layer-2: var(--bg-layer-2);
+  --c-hairline-l2: var(--border-l2);
 }
+
+/* ------------------------------------------------ 深色主题（W12）
+   只覆盖 static + alias；--c-* 是 alias 的兼容别名，组件零改动。 */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --s-white: #1c1c1c;
+  --s-gray-25: #131313;
+  --s-gray-50: #232323;
+  --s-gray-100: #343434;
+  --s-gray-300: #5a5a5a;
+  --s-gray-500: #8a8a8a;
+  --s-gray-600: #a0a0a0;
+  --s-gray-700: #bdbdbd;
+  --s-gray-900: #ededed;
+  --s-black: #ffffff;
+  --s-green-500: #4ade80;
+  --s-orange-500: #fb923c;
+  --s-red-600: #f87171;
+  --bg-layer-2: rgba(255, 255, 255, 0.06);
+  --bg-code: #1a1a1a;
+  --interactive-accent: #ededed;
+  --interactive-accent-strong: #ffffff;
+  --interactive-accent-soft: rgba(255, 255, 255, 0.08);
+  --interactive-accent-ring: rgba(255, 255, 255, 0.32);
+  --interactive-accent-fg: #131313;
+  --interactive-bg-hover: #2a2a2a;
+  --overlay: rgba(0, 0, 0, 0.55);
+  --scroll-thumb: #3a3a3a;
+  --state-ok: #bdbdbd;
+  --state-warn: #a0a0a0;
+  --state-err: #ffffff;
+  --c-ok-dim: rgba(255, 255, 255, 0.08);
+  --c-err-dim: rgba(255, 255, 255, 0.12);
+  --c-warn-dim: rgba(255, 255, 255, 0.06);
+  --c-live-dim: rgba(74, 222, 128, 0.2);
+  --c-grant-soft: rgba(251, 146, 60, 0.14);
+  --c-sweep: rgba(255, 255, 255, 0.09);
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* W12：prefers-reduced-motion —— 关闭扫光 / 旋转 / 脉冲等装饰动画。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+

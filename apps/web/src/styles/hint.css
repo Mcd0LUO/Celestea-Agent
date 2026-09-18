@@ -7,10 +7,10 @@
 .hint-card {
   position: absolute;
   z-index: 60;
-  max-width: min(320px, calc(100vw - 24px));
-  background: var(--c-surface-raised);
+  max-width: min(50vw, calc(100vw - 24px));
+  background: var(--tip-bg);
   border: 1px solid var(--c-border-strong);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-tip);
   box-shadow: var(--shadow-panel);
   padding: 6px 9px;
   color: var(--c-text-1);

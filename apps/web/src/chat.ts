@@ -33,7 +33,7 @@ import {
   renderInboxMessage,
   renderInfoBlock,
 } from './ui/messages';
-import { applyToolResult, getToolStep, pushToolCard, resetTurnStep } from './ui/toolcards';
+import { applyToolResult, pushToolCard, resetTurnStep } from './ui/toolcards';
 // W784：模型向用户提问（提问卡片 + 断线重连的未决列表重建）接线
 import { registerQuestionSse } from './ui/question';
 import { onCompact } from './ui/compact';
@@ -54,7 +54,6 @@ import {
   cancelStatusFlash,
   finishElapsedTimer,
   setStatus,
-  setStatusStep,
   setStatusTurn,
   startElapsedTimer,
   stopElapsedTimer,
@@ -110,9 +109,7 @@ function syncChrome(pane: SessionPane): void {
   S.t0 = pane.t0;
   S.turn = pane.turn;
   S.assistant = pane.assistant;
-  const step = getToolStep(pane);
   setStatusTurn(pane.turn);
-  setStatusStep(step > 0 ? String(step) : null);
   setBusy(pane.streaming);
   refreshInputMode(pane);
   statusline.setSession(pane.id);
@@ -183,7 +180,6 @@ function onStatus(ctx: SessionPane, p: StatusPayload): void {
       setBusy(true);
       setStatus('运行中…', 'busy');
       setStatusTurn(ctx.turn);
-      setStatusStep(null);
       startElapsedTimer();
     }
     updateSessionBar();
@@ -233,7 +229,6 @@ function onTool(ctx: SessionPane, p: ToolPayload): void {
   // 连续流：文本段先收尾，工具卡按事件顺序排在文本段之后
   flushTextSegment(ctx);
   pushToolCard(ctx, p); // 消息流级条目：按事件时间内联在消息流中
-  if (isActivePane(ctx)) setStatusStep(getToolStep(ctx) > 0 ? String(getToolStep(ctx)) : null);
   autoscroll(ctx);
 }
 
@@ -241,7 +236,6 @@ function onToolResult(ctx: SessionPane, p: ToolResultPayload): void {
   if (ctx.turn === null) ctx.turn = p.turn ?? null;
   if (p.turn !== undefined && ctx.turn !== null && p.turn !== ctx.turn) return;
   applyToolResult(ctx, p);
-  if (isActivePane(ctx)) setStatusStep(getToolStep(ctx) > 0 ? String(getToolStep(ctx)) : null);
   autoscroll(ctx);
 }
 
