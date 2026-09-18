@@ -32,46 +32,88 @@ import { USERSPACE_SANDBOX_META } from "@celestea/core";
 import { wrapChild } from "./child.js";
 import { shellInvocation, sanitizedEnv, buildSandboxConfig, sandboxConfigFromEnv, type SandboxConfigOverrides } from "./config.js";
 import { captureRun, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
+import { limitsForCpu, limitsFromEnv, resolveCpuSec, rlimitsEnabled, type SandboxLimits } from "./limits.js";
+import { probeHost, type HostProbe } from "./probe.js";
+import { applyLimits } from "./rlimit.js";
 import { resolveWorkdir } from "./workdir.js";
+
+/** W6: the same rlimit layer the bwrap path uses (best-effort here). */
+export interface UserspaceSandboxOptions {
+  probe?: HostProbe;
+  limits?: SandboxLimits;
+  /** false disables every rlimit (operator escape hatch). */
+  rlimits?: boolean;
+}
 
 /** The effective mode every result reports (never inferred by the caller). */
 export const USERSPACE_META: SandboxMeta = USERSPACE_SANDBOX_META;
 
 export class UserspaceSandbox implements Sandbox {
   readonly config: SandboxConfig;
+  readonly probe: HostProbe;
+  readonly limits: SandboxLimits;
+  private readonly rlimits: boolean;
 
-  constructor(config: SandboxConfig = sandboxConfigFromEnv()) {
+  constructor(config: SandboxConfig = sandboxConfigFromEnv(), options: UserspaceSandboxOptions = {}) {
     this.config = config;
+    this.probe = options.probe ?? probeHost();
+    this.limits = options.limits ?? limitsFromEnv(process.env, this.probe.uidThreads);
+    this.rlimits = options.rlimits ?? rlimitsEnabled(process.env);
   }
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): UserspaceSandbox {
-    return new UserspaceSandbox(sandboxConfigFromEnv(env));
+    return new UserspaceSandbox(sandboxConfigFromEnv(env), {
+      probe: probeHost({ env }),
+      rlimits: rlimitsEnabled(env),
+    });
   }
 
   async run(request: SandboxRunRequest): Promise<SandboxRunResult> {
     validateSandboxConfig(this.config);
     const timeoutMs = resolveTimeout(this.config, request.timeoutMs);
-    const child = await this.launch(request.command, request.workdir, false);
-    return captureRun(this.config, child, timeoutMs, USERSPACE_META);
+    const { child, meta } = await this.launch(request.command, request.workdir, false, this.limitsFor(request.cpuSec));
+    return captureRun(this.config, child, timeoutMs, meta);
   }
 
   async spawn(request: SandboxSpawnRequest): Promise<SandboxSpawned> {
     validateSandboxConfig(this.config);
-    const child = await this.launch(request.command, request.workdir, true);
-    return { child: wrapChild(child, { detached: true }), sandbox: USERSPACE_META };
+    const { child, meta } = await this.launch(request.command, request.workdir, true, this.limitsFor(request.cpuSec));
+    return { child: wrapChild(child, { detached: true }), sandbox: meta };
   }
 
-  private async launch(command: string, requestedWorkdir: string | undefined, withStdin: boolean): Promise<ChildProcess> {
+  /** W6: the base limits with the per-call `cpu_sec` merged in (clamped). */
+  private limitsFor(cpuSec: number | undefined): SandboxLimits {
+    return limitsForCpu(this.limits, resolveCpuSec(this.limits.cpuSec, cpuSec, this.config.maxCpuSec));
+  }
+
+  private async launch(
+    command: string,
+    requestedWorkdir: string | undefined,
+    withStdin: boolean,
+    limits: SandboxLimits,
+  ): Promise<{ child: ChildProcess; meta: SandboxMeta }> {
     const workdir = await resolveWorkdir(this.config, requestedWorkdir);
     const { program, args } = shellInvocation(command);
-    return spawnPlan({
-      program,
-      args,
+    let plan = { program, args };
+    if (this.rlimits) {
+      try {
+        const limited = applyLimits(program, args, limits, this.probe, true);
+        plan = { program: limited.program, args: limited.args };
+      } catch {
+        // W6: userspace is the DEGRADED fallback: unlike the fail-closed bwrap
+        // path, a host with no rlimit mechanism must still run (best effort).
+        process.stderr.write("[celestea-tools] userspace sandbox: no rlimit mechanism; running without limits\n");
+      }
+    }
+    const child = await spawnPlan({
+      program: plan.program,
+      args: plan.args,
       workdir,
       env: sanitizedEnv(this.config),
       withStdin,
       label: command,
     });
+    return { child, meta: { ...USERSPACE_META, cpu_sec: limits.cpuSec } };
   }
 }
 

@@ -3,9 +3,10 @@
  * (`crates/tools/src/process.rs`).
  *
  * Handles live in the session-scoped registry and survive across turns; a
- * process that exits is removed from the registry automatically. Failures are
- * results (`{ok:false, error}`), not rejections: "unknown handle" is a normal
- * answer to a stale handle, and callers branch on `ok`.
+ * process that exits stays pollable from a bounded tombstone (most recent 32, or
+ * 10 minutes), then the handle is unknown. Failures are results
+ * (`{ok:false, error}`), not rejections: "unknown handle" is a normal answer to
+ * a stale handle, and callers branch on `ok`.
  */
 
 import type { ProcessRegistry } from "../process/registry.js";
@@ -19,7 +20,7 @@ export function processControlSpec(): ToolSpec {
   return {
     name: "process_control",
     description:
-      "Control a background process started by run_shell(background=true). Handles live in the session-scoped process registry and survive across turns; a process that exits is removed from the registry automatically. action=poll returns {running, stdout_tail(<=4KB), stderr_tail, exit_code?}; action=kill sends SIGTERM, waits a grace period, then SIGKILL and returns {killed:true}; action=stdin writes one line (content + newline) to the process stdin.",
+      "Control a background process started by run_shell(background=true). Handles live in the session-scoped process registry and survive across turns; a process that exits stays pollable from a bounded tombstone (most recent 32, or 10 minutes), so poll AFTER exit returns {running:false, exit_code, signal, stdout_tail(<=4KB), stderr_tail, cpu_exceeded?} instead of an unknown handle. action=poll reads the current or terminal state; action=kill sends SIGTERM, waits a grace period, then SIGKILL and returns {killed:true}; action=stdin writes one line (content + newline) to the process stdin.",
     parameters: {
       type: "object",
       properties: {

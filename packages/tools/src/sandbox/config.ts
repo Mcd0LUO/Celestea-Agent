@@ -19,6 +19,8 @@ import { envInt, envString } from "../env.js";
 export const ENV_SHELL_TIMEOUT_MS = "CELAESTEA_RUN_SHELL_TIMEOUT_MS";
 /** Env var: upper bound accepted for a per-call `timeout_ms`. */
 export const ENV_SHELL_MAX_TIMEOUT_MS = "CELESTEA_SHELL_MAX_TIMEOUT_MS";
+/** W6: env var for the upper bound accepted for a per-call `cpu_sec`. */
+export const ENV_SHELL_MAX_CPU_SEC = "CELESTEA_SHELL_MAX_CPU_SEC";
 /** Env var: per-stream output cap in bytes. */
 export const ENV_SHELL_MAX_OUTPUT_BYTES = "CELAESTEA_RUN_SHELL_MAX_OUTPUT_BYTES";
 /** Env var: fixed default workdir. */
@@ -28,6 +30,8 @@ export const ENV_SHELL_ROOT = "CELAESTEA_RUN_SHELL_ROOT";
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const DEFAULT_MAX_TIMEOUT_MS = 300_000;
+/** W6: `cpu_sec` above this is CLAMPED to it (not rejected). */
+export const DEFAULT_MAX_CPU_SEC = 600;
 export const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
 
 /** Host env vars passed through to the child (whitelist, not blacklist). */
@@ -63,6 +67,7 @@ export interface SessionFsScope {
 export interface SandboxConfigOverrides {
   timeoutMs?: number;
   maxTimeoutMs?: number;
+  maxCpuSec?: number;
   maxOutputBytes?: number;
   workdir?: string;
   root?: string;
@@ -82,6 +87,7 @@ export function sandboxConfigFromEnv(env: NodeJS.ProcessEnv = process.env, overr
   return buildSandboxConfig({
     timeoutMs: positive(envInt(env, ENV_SHELL_TIMEOUT_MS), DEFAULT_TIMEOUT_MS),
     maxTimeoutMs: positive(envInt(env, ENV_SHELL_MAX_TIMEOUT_MS), DEFAULT_MAX_TIMEOUT_MS),
+    maxCpuSec: positive(envInt(env, ENV_SHELL_MAX_CPU_SEC), DEFAULT_MAX_CPU_SEC),
     maxOutputBytes: positive(envInt(env, ENV_SHELL_MAX_OUTPUT_BYTES), DEFAULT_MAX_OUTPUT_BYTES),
     workdir,
     root: resolveOrCwd(overrides.root ?? envString(env, ENV_SHELL_ROOT) ?? gitToplevelOr(workdir)),
@@ -103,6 +109,7 @@ export function buildSandboxConfig(overrides: SandboxConfigOverrides = {}): Sand
   return {
     timeoutMs: overrides.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxTimeoutMs: overrides.maxTimeoutMs ?? DEFAULT_MAX_TIMEOUT_MS,
+    maxCpuSec: overrides.maxCpuSec ?? DEFAULT_MAX_CPU_SEC,
     maxOutputBytes: overrides.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
     workdir,
     root: resolveOrCwd(overrides.root ?? gitToplevelOr(workdir)),

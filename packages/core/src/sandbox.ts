@@ -28,6 +28,8 @@ import type { Readable, Writable } from "node:stream";
 export interface SandboxMeta {
   /** Provider that actually executed the command. */
   provider: string;
+  /** W6: effective `RLIMIT_CPU` in seconds for this run (absent = not reported). */
+  cpu_sec?: number;
   /** true when the child ran in an isolated network namespace. */
   net_isolated: boolean;
   /** true when /tmp was a sandbox-private tmpfs. */
@@ -50,6 +52,8 @@ export interface SandboxConfig {
   timeoutMs: number;
   /** Upper bound accepted for a per-call `timeoutMs`. */
   maxTimeoutMs: number;
+  /** W6: upper bound accepted for a per-call `cpuSec` (env `CELESTEA_SHELL_MAX_CPU_SEC`). */
+  maxCpuSec: number;
   /** Per-stream (stdout / stderr) capture cap in bytes. */
   maxOutputBytes: number;
   /** Fixed workdir: the default cwd of every command. */
@@ -89,11 +93,15 @@ export interface SandboxRunRequest {
   workdir?: string;
   /** Optional per-call kill deadline, bounded by `config.maxTimeoutMs`. */
   timeoutMs?: number;
+  /** W6: optional per-call `RLIMIT_CPU` in seconds, clamped to `config.maxCpuSec`. */
+  cpuSec?: number;
 }
 
 export interface SandboxSpawnRequest {
   command: string;
   workdir?: string;
+  /** W6: optional per-call `RLIMIT_CPU` in seconds, clamped to `config.maxCpuSec`. */
+  cpuSec?: number;
 }
 
 /** Result of a foreground run: capped streams + exit code + effective mode. */
@@ -101,6 +109,8 @@ export interface SandboxRunResult {
   stdout: string;
   stderr: string;
   exit_code: number | null;
+  /** W6: terminating signal when the child was killed (SIGXCPU/SIGKILL on a CPU cap). */
+  signal?: string | null;
   stdout_truncated: boolean;
   stderr_truncated: boolean;
   sandbox: SandboxMeta;

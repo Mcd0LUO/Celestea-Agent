@@ -36,7 +36,7 @@ import {
   type BwrapOptions,
 } from "./bwrap-argv.js";
 import { captureRun, preview, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
-import { limitsFromEnv, type SandboxLimits } from "./limits.js";
+import { limitsForCpu, limitsFromEnv, resolveCpuSec, type SandboxLimits } from "./limits.js";
 import { probeHost, type HostProbe } from "./probe.js";
 import { applyLimits, type RlimitVia } from "./rlimit.js";
 import { openSeccompBlob } from "./seccomp.js";
@@ -50,6 +50,8 @@ export interface BwrapMeta {
   seccomp: boolean;
   /** true: the child saw a read-only host root. */
   readonly_root: boolean;
+  /** W6: effective `RLIMIT_CPU` for this run (seconds). */
+  cpu_sec: number;
   /** Which mechanism enforced the rlimits. */
   rlimit_via: RlimitVia;
   /** Effective `RLIMIT_NPROC` (derived from the UID thread count). */
@@ -95,14 +97,21 @@ export class BwrapSandbox implements Sandbox {
   async run(request: SandboxRunRequest): Promise<SandboxRunResult> {
     validateSandboxConfig(this.config);
     const timeoutMs = resolveTimeout(this.config, request.timeoutMs);
-    const { child, meta } = await this.launch(request.command, request.workdir, false);
+    const limits = this.limitsFor(request.cpuSec);
+    const { child, meta } = await this.launch(request.command, request.workdir, false, limits);
     return captureRun(this.config, child, timeoutMs, meta);
   }
 
   async spawn(request: SandboxSpawnRequest): Promise<SandboxSpawned> {
     validateSandboxConfig(this.config);
-    const { child, meta } = await this.launch(request.command, request.workdir, true);
+    const limits = this.limitsFor(request.cpuSec);
+    const { child, meta } = await this.launch(request.command, request.workdir, true, limits);
     return { child: wrapChild(child, { detached: true }), sandbox: meta };
+  }
+
+  /** W6: the base limits with this call's `cpu_sec` merged in (clamped). */
+  private limitsFor(cpuSec: number | undefined): SandboxLimits {
+    return limitsForCpu(this.limits, resolveCpuSec(this.limits.cpuSec, cpuSec, this.config.maxCpuSec));
   }
 
   /** Isolation actually in force, without running anything (logs / health). */
@@ -114,6 +123,7 @@ export class BwrapSandbox implements Sandbox {
     command: string,
     requestedWorkdir: string | undefined,
     withStdin: boolean,
+    limits: SandboxLimits,
   ): Promise<{ child: ChildProcess; meta: BwrapMeta }> {
     this.assertUsable();
     const workdir = await resolveWorkdir(this.config, requestedWorkdir);
@@ -123,7 +133,7 @@ export class BwrapSandbox implements Sandbox {
       const limited = applyLimits(
         binary,
         buildBwrapCommand(workdir, this.options, command),
-        this.limits,
+        limits,
         this.probe,
         this.rlimits,
       );
@@ -136,7 +146,7 @@ export class BwrapSandbox implements Sandbox {
         withStdin,
         label: `${bwrapLabel(this.options)} ${preview(command, 128)}`,
       });
-      return { child, meta: runtimeMeta(this.options, this.limits, this.probe, limited.via) };
+      return { child, meta: runtimeMeta(this.options, limits, this.probe, limited.via) };
     } finally {
       blob?.dispose();
     }
@@ -167,6 +177,7 @@ function runtimeMeta(options: BwrapOptions, limits: SandboxLimits, probe: HostPr
     seccomp: options.seccomp,
     readonly_root: true,
     rlimit_via: via,
+    cpu_sec: limits.cpuSec,
     nproc: limits.nproc,
     uid_threads: probe.uidThreads,
     bwrap_version: probe.bwrapVersion,

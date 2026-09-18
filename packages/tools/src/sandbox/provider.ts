@@ -111,7 +111,7 @@ export function selectSandboxDetailed(options: SelectOptions = {}): SandboxSelec
     // the user explicitly asked (by clicking) for this session to run anyway.
     if (grants.unsandboxed === true) {
       return {
-        sandbox: new UserspaceSandbox(config),
+        sandbox: new UserspaceSandbox(config, { probe, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
         provider: "userspace",
         degraded: true,
         reason: `${reason} — degraded by the 'unsandboxed' session grant`,
@@ -125,7 +125,14 @@ export function selectSandboxDetailed(options: SelectOptions = {}): SandboxSelec
       { provider: BWRAP_PROVIDER, reason, mode },
     );
   }
-  return { sandbox: new UserspaceSandbox(config), provider: "userspace", degraded: true, reason, mode, degradedByGrant: false };
+  return {
+    sandbox: new UserspaceSandbox(config, { probe, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
+    provider: "userspace",
+    degraded: true,
+    reason,
+    mode,
+    degradedByGrant: false,
+  };
 }
 
 /** Fallback policy; an unknown value is rejected (fail-closed, see module docs). */

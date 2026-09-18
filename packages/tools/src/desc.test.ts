@@ -27,7 +27,7 @@ function builtinSpecs(): ToolSpec[] {
 
 /** A sandbox that never runs: only the specs are read here. */
 function stubSandbox(): Sandbox {
-  const config = { timeoutMs: 1000, maxTimeoutMs: 1000, maxOutputBytes: 1024, workdir: "/tmp", root: "/tmp", extraEnv: [] as ReadonlyArray<readonly [string, string]> };
+  const config = { timeoutMs: 1000, maxTimeoutMs: 1000, maxCpuSec: 600, maxOutputBytes: 1024, workdir: "/tmp", root: "/tmp", extraEnv: [] as ReadonlyArray<readonly [string, string]> };
   const refuse = (): Promise<never> => Promise.reject(new Error("W779: the desc check never executes a command"));
   return { config, run: refuse, spawn: refuse };
 }

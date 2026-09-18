@@ -112,3 +112,30 @@ export function limitsFromEnv(
 export function rlimitsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return envFlag(env[ENV_SANDBOX_RLIMITS], true);
 }
+
+/** W6: the resolved per-call CPU limit plus whether it was clamped. */
+export interface CpuResolution {
+  cpuSec: number;
+  clamped: boolean;
+  /** The raw request (null = the caller passed nothing). */
+  requested: number | null;
+}
+
+/**
+ * Resolve the effective `RLIMIT_CPU` for ONE call.
+ * - absent `requested` keeps `base` (the default, `DEFAULT_LIMITS.cpuSec` = 20);
+ * - above `max` is CLAMPED to `max` (`clamped: true`, documented, not an error);
+ * - a non-integer/below-1 value keeps `base` (the arg schema rejects it first).
+ */
+export function resolveCpuSec(base: number, requested: number | undefined, max: number): CpuResolution {
+  if (requested === undefined) return { cpuSec: base, clamped: false, requested: null };
+  const raw = Math.trunc(requested);
+  if (!Number.isFinite(raw) || raw < 1) return { cpuSec: base, clamped: false, requested };
+  if (raw > max) return { cpuSec: max, clamped: true, requested: raw };
+  return { cpuSec: raw, clamped: false, requested: raw };
+}
+
+/** The base limits with the resolved CPU limit merged in (identity when equal). */
+export function limitsForCpu(base: SandboxLimits, resolution: CpuResolution): SandboxLimits {
+  return resolution.cpuSec === base.cpuSec ? base : { ...base, cpuSec: resolution.cpuSec };
+}

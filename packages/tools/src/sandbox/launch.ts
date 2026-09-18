@@ -92,6 +92,7 @@ export async function captureRun(
     stdout: stdout.text,
     stderr: stderr.text,
     exit_code: exit.code,
+    signal: exit.signal,
     stdout_truncated: stdout.truncated,
     stderr_truncated: stderr.truncated,
     sandbox: meta,
