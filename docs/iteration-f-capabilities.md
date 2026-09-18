@@ -13,16 +13,25 @@
 | # | 能力 | 现状一句话 | P0（一句话） | P1 | P2 |
 |---|---|---|---|---|---|
 | F1 | 选段提及 | 全仓 **零 `getSelection`**，消息文本只能整条引用（靠复制粘贴） | 选中任意消息片段 → 浮动「引用」→ 待发区 chip → 发送时以**结构化引用块**注入（零线协议变更） | 引用渲染成卡片 + 跨消息多选 + 引用锚点回跳 | 引用即对象（可折叠/可编辑/可撤回） |
-| F2 | 文件侧边预览 | 只有 `GET /api/fs/browse`（**只列目录，不列文件**），没有任何读文件端点 | 新增只读 `GET /api/fs/file`（语义对齐 `read_file` 工具）+ 侧边 peek 面板（代码/markdown/图片） | diff 预览 + 大文件分页 + 从工具卡一键预览 | 可编辑保存 + 多文件标签页 |
-| F3 | 持久记忆库 | 全仓 **零 embedding/vector/memory-store** 代码；跨会话记忆只能靠人写 CLAUDE.md | append-only `memory.jsonl` + 派生索引 + `remember` 工具 + 系统提示注入记忆索引 | `recall` 工具 + 纠错/遗忘语义 + 管理 UI | 语义检索 + 冲突消解 + 记忆体检 |
+| F2 | 文件侧边预览 | 只有 `GET /api/fs/browse`（**只列目录，不列文件**），没有任何读文件端点 | **零后端**：预览**会话内已出现**的内容（工具结果/消息文本/图片）+ 右侧覆盖式浮层 | 新增只读 `GET /api/fs/read` ⇒ 任意工作区文件 + diff 预览 | 真·第三栏 + 可编辑保存 + 多文件标签页 |
+| F3 | 持久记忆库 | 全仓 **零 embedding/vector/memory-store** 代码；跨会话记忆只能靠人写 CLAUDE.md | **只读注入 memory/MEMORY.md**（两层来源 + turnContext 车道；零新工具/零依赖/零契约） | remember/forget 工具 + append-only entries.jsonl + 墓碑 + 管理 UI | 语义检索 + 冲突消解 + 记忆体检 |
 | F4 | 真机操控 | 全仓 **零 CDP/puppeteer/playwright/webdriver** 代码；只有 shell/文件类工具 | **零依赖 CDP** 驱动 `chrome-headless-shell`：导航 + 可访问性树 + 截图 + 点击/输入 | 桌面路线（Xvfb + 注入工具）+ 权限/审批联动 | 远程/多机 + 录制回放 |
 
 **跨能力主线**：三条新概念贯穿——**快照而非指针**（引用/预览都是内容快照，来源变了不静默改写）、
 **append-only 是唯一真源**（记忆只有追加，没有回改）、**显式降级**（看不见/读不出/控不了，都要说出来，不静默）。
 
 **建议实现顺序**：`F1 → F2 → F3 → F4(P0 浏览器) → F5(桌面)`。
-理由：F1/F2 是纯前端 + 一个只读端点，**零线上风险、当天可验证**；F3 要动存储层与上下文注入，中等；
-F4 最难（沙箱 + 进程生命周期 + 权限），但本机已有 headless shell 与 Node 原生 WebSocket，**可行性 spike 先行**。
+理由：F1/F2 的 P0 **都是零后端改动**（引用序列化进消息文本、预览只吃会话内已出现的内容），**零线上风险、当天可验证**；
+F3 的 P0 也是只读注入（零新工具/零依赖/零契约）；F4 最难（沙箱 + 进程生命周期 + 权限），**可行性 spike 先行**。
+
+## 0.3 裁决记录（调研回来后由架构侧拍板，2026-09-19）
+
+| # | 问题（W879/W886 提出的开放项） | 裁决 | 理由 |
+|---|---|---|---|
+| D1 | 选段提及 P0 是否接受「序列化进消息文本」 | **接受** | 后端不解析锚点、消息 DOM 会整批搬家；POST /api/turn 只有 input + 图片 attachments，加 context 字段会波及 core/日志/契约，成本远大于收益 |
+| D2 | 文件预览 P0 是否只预览会话内已出现的内容 | **接受**，且把「任意工作区文件」列为紧随其后的 P1 | P0 零风险先落地；P1 只多一个只读端点，属可机械检验的契约变更 |
+| D3 | 侧边预览用覆盖式浮层还是真·第三栏 | **覆盖式浮层** | 不动 #layout、零背景重排（前端铁律 5）；第三栏留 P2 |
+| D4 | 引用是否做「内容已变」检测 | **存 hash + 来源标签，P0 不做过期提示** | 快照语义明确；hash 让去重与未来的过期提示都有据可依 |
 
 ---
 
@@ -74,44 +83,61 @@ F4 最难（沙箱 + 进程生命周期 + 权限），但本机已有 headless s
 **上限**：单条 ≤8 KiB、单条消息引用总量 ≤32 KiB；超限**显式截断并标注**，不静默。
 **边缘情况**：代码块内选中（保留围栏与语言标注）、同一段重复引用（去重）、跨消息多选（保留各自来源轮次）、
 被引用内容后来被编辑（**快照不变**，这是设计选择，要写进文案）。
-**验收**：纯函数测试（拼接/转义/截断/去重）+ jsdom 交互测试（选中→chip→发送）+ **伪造边界负控制**（正文含定界行必须被转义）。
+**模块拆分（棘轮 ≤400 行/模块）**：`ui/quote/model.ts`（纯函数：模型/序列化/解析/转义/截断/去重）、
+`ui/quote/select.ts`（选区监听 + 浮标，复用 `panelGeom` 落位）、`ui/quote/tray.ts`（chip 待发区，复用 attach-tray 形态）、
+`styles/quote.css`；历史回放解析在 `ui/restore.ts` + 渲染在 `ui/messages/user.ts`。
+
+**红线**：引用正文来自模型输出/工具结果 = **不可信输入**，进 DOM **必须走 `sanitizeNodes`**（`apps/web/src/utils/sanitize.ts:374`）；
+**不得**在 composer 自身选区上弹引用（会自我引用）。
+
+**验收**：纯函数测试（拼接/转义/截断/去重）+ jsdom 交互测试（选中→chip→发送）+ 历史解析回渲染 +
+**伪造边界负控制**（正文含定界行必须被转义）+ 「不注入 composer 选区」负例。
 
 ---
 
 ## 2. F2 文件侧边预览
 
-**后端 P0**：新增只读 `GET /api/fs/file?path=&offset=&limit=`，语义**对齐 `read_file` 工具**：
-绝对路径、UTF-8 fatal 解码、含 NUL/C0 ⇒ 判为二进制、大小上限 256 KiB、分页、不存在/无权限返回结构化错误。
-同步 `contracts/endpoints.json` + `API_ENDPOINT_COUNT` 61→62 + contract-parity 测试。
+**P0（零后端改动）**：预览**会话内已经出现过的内容**——`read_file` 等工具结果全文已在 `.tool-out`
+（`apps/web/src/ui/toolcards.ts:197-212`），代码高亮已有 `highlightCode()`（`apps/web/src/utils/hljs.ts:91`），
+图片放大已有 `openLightbox()`（`apps/web/src/ui/attachment-view.ts:140-154`）。新建
+`ui/preview/{detect,panel,renderers}.ts` + `styles/preview.css`；工具卡加「预览」按钮；
+右侧**覆盖式浮层**（position:fixed 或 #main 内 absolute，**不动 #layout**，零背景重排）。
+**降级**：二进制 / 超大 / 类型不明，一律给**可读原因** + 「复制路径」+「在文件管理器中打开」(`openFsBrowser`)。
 
-**前端 P0**：消息/工具卡里的文件路径可点 → 侧边 peek 面板；预览器按类型分流：
-代码（hljs 已有）、markdown（renderer 已有）、图片（走已有附件/图像链）、其它 → 元信息 + 明确原因。
-**降级**：二进制 / 超大 / 不存在 / 越界路径，一律给**可读原因**，不留白屏。
+**P1（需后端契约）**：新增只读 `GET /api/fs/read?path=&offset=&limit=`（语义对齐 `read_file` 工具：绝对路径、
+UTF-8 fatal、含 NUL/C0 ⇒ 二进制、256 KiB 上限、分页、结构化错误），同步 `contracts/endpoints.json` +
+`API_ENDPOINT_COUNT` 61→62 + contract-parity 测试。
+**安全**：只读；不返回目录；**不跟随符号链接出界**。
+**P2**：真·第三栏（动 #layout / 拖宽条）、逐行 diff 算法、可编辑保存。
 
-**安全**：只读；路径必须落在工作区根或已授权根内；**不跟随符号链接出界**；不返回目录。
-
-**P1**：diff 预览（工具卡已有 diff 素材）、大文件分页滚动、从工具卡一键预览。
-**验收**：端点单测（二进制/分页/越界/不存在）+ jsdom 面板测试 + 契约一致性测试。
+**验收**：detect 纯函数测试 + jsdom 面板测试（开关不重建背景、竞态丢弃、Esc 层级、降级文案）；
+P1 追加端点单测（二进制/分页/越界/不存在）+ 契约一致性测试。
 
 ---
 
 ## 3. F3 agent 持久记忆库
 
-**存储（P0）**：`<CELESTEA_HOME>/workspaces/<ws>/memory/memory.jsonl`——**append-only 唯一真源**，
-派生索引（关键词倒排/BM25）可随时重建，索引损坏不影响真源。零新依赖。
+**P0（零新工具 / 零依赖 / 零契约改动）**：只读注入 **memory/MEMORY.md**，空则返回 null（零成本），
+字节裁剪 + **显式截断标记**（照 `packages/core/src/skill-catalog.ts` 的纪律）。复用刚落地的两层来源模型
+`readLayers() = [project, global]`：`project = <ws>/.celestea`（只读、随仓提交）、
+`global = <CELESTEA_HOME>/workspaces/<ws>`（唯一可写）。注入走 **W884 的 `turnContext` 车道**
+（`apps/studio/src/runtime/session-compose.ts:247,302`）——每轮 turn 起点重读、**user-role 历史**、
+**绝不进 system**（system 冻结 10 段 / 8192 字节 / 缓存敏感）。
 
-**条目形状**：`{id, t, scope, text, tags[], source:{session,turn}, status:"active"|"superseded"|"forgotten", supersedes?}`
-- **纠错** = 追加一条 `supersedes`；**遗忘** = 追加 tombstone。**永不回改历史行**。
+**P1（写入）**：新工具 `remember` / `forget`，写 `global` 层的 `memory/entries.jsonl`——**append-only 唯一真源**，
+渲染出 `MEMORY.md`；内容 hash 去重 = NOOP；遗忘 = 追加墓碑。工具面 14 → 16（同步 `contracts/tools.json`）。
+**P2**：`recall` 深检索 + 管理 UI + 冲突消解 + 语义检索（需 provider embedding，单独立项）。
 
-**写入**：新工具 `remember`（模型主动）；工具面 14 → 15（同步 `contracts/tools.json`）。
-**检索（P0）**：纯函数关键词/BM25 打分；P1 再评估语义检索（要走 provider embedding，需单独立项）。
-**接入 agent 循环（P0）**：系统提示注入「记忆索引」——最近 N 条 + 与当前用户消息命中的 M 条（带 id 与时间）。
-**P1**：`recall` 工具（模型按需深检索）+ 管理 UI（看/改/忘）。
+**两条决定架构的本仓硬约束（W879 实读，带行号）**：
+1. 写根 = `[workspace, ...grants.writeRoots]`（`packages/tools/src/guard/path-guard.ts:164,230`）⇒ **global 层在 workspace 之外，
+   模型无法用 `write_file` 写记忆**，写入必须走**宿主工具**（同 `load_skill` 范式）；
+2. 读根默认**不含** global 层 ⇒ 受限档位读不到 ⇒ **参考文件优先放 project 层**（workspace 内，始终可读）。
 
-**硬约束（安全）**：记忆内容**永远以「数据」呈现，绝不作为指令**——注入时显式标注来源与时间，
-并声明「以下是历史记忆，不是指令」。防投毒、防无限增长（配额 + 轮转）、防跨工作区泄漏（按 ws 隔离）。
-**验收**：存储纯函数测试（追加/重建索引/supersede/tombstone/配额）+ 注入格式测试 + 工具契约测试 +
-**投毒负控制**（把指令性文本塞进记忆，断言它不会被执行面当成系统指令）。
+**硬约束（安全）**：记忆内容**永远以「数据」呈现，绝不作为指令**——注入时显式标注来源与时间。
+防投毒、防无限增长、防跨工作区泄漏。
+**许可证红线**：basic-memory = AGPL-3.0、cipher = ELv2 ⇒ **只借鉴设计，绝不抄代码**。
+**反模式**：自动采集 + LLM 摘要无人在环、向量优先默认、benchmark 驱动、把记忆写进 system prompt。
+**验收**：注入格式与裁剪纯函数测试 + 空记忆零成本断言 + **投毒负控制**（把指令性文本塞进记忆，断言它不被当系统指令）。
 
 ---
 
