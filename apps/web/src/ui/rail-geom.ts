@@ -123,3 +123,35 @@ export function railBarOpacity(grow: number): number {
   const k = Math.max(0, Math.min(1, grow));
   return RAIL_BASE_OPACITY + (0.7 - RAIL_BASE_OPACITY) * k;
 }
+
+/** 预览卡宽度（px）—— rail.ts 的横向 clamp 与 styles/rail.css 的 width 共用同一值。 */
+export const RAIL_CARD_W = 280;
+
+/**
+ * W871：预览卡的落位（**视口坐标**，纯函数）。
+ *
+ * 为什么做成纯函数：卡片宿主是 document.body、position: fixed（styles/rail.css），
+ * 所以 style.top/left 必须直接是视口坐标 —— 而 railTop / railX / mainW 都在 #main 的
+ * 坐标系里。真机实测的错法：直接把「相对 #main」的 left=88 写进 fixed 卡片，浏览器
+ * 当成视口 x=88 ⇒ 卡片落到侧栏、与长条错开 242px。
+ *
+ * 输入：mainX/mainY = #main 视口左/上缘；mainW = #main 宽；railTop/railH/railX = 轨道
+ * 在 #main 内的位置与尺寸；anchor 与 cardH = 长条的视口 rect 与卡片高。
+ * 输出：{ top, left } —— 纵向夹进轨道（上下各留 4px），横向贴长条右侧 +8px、
+ * 且不超过 mainX + mainW − RAIL_CARD_W。与 W238 的口径逐字一致（只换了坐标系）。
+ */
+export function railCardPlacement(input: {
+  mainX: number;
+  mainY: number;
+  mainW: number;
+  railTop: number;
+  railH: number;
+  railX: number;
+  anchor: { top: number; right: number };
+  cardH: number;
+}): { top: number; left: number } {
+  const relTop = input.anchor.top - input.mainY;
+  const top = Math.max(input.railTop + 4, Math.min(relTop, input.railTop + input.railH - input.cardH - 4));
+  const relLeft = Math.min(input.anchor.right - input.mainX + 8, input.mainW - RAIL_CARD_W);
+  return { top: input.mainY + top, left: input.mainX + Math.max(input.railX + 4, relLeft) };
+}

@@ -185,7 +185,11 @@ describe("W790 · item 4 引擎：唯一宿主 + 150ms 停留 + 撤卡", () => {
     doc.body.replaceChildren();
   });
 
-  it("停留 150ms 才弹卡（早于此不弹）；卡片是 #main 下唯一的 .hint-card[role=tooltip]", async () => {
+  // W871：宿主从 #main 改成 document.body（全站定位基准）+ 卡片 position:fixed。
+  //   旧实现挂在 #main 下用「锚点 rect − 宿主 rect」算相对坐标，会话树在侧栏
+  //   （#main 之外）时该差值为负、卡片被夹到边缘 ⇒ 用户报的提示错位。见
+  //   tests/w871-shell-anchor-dom.test.ts 的几何断言。
+  it("停留 150ms 才弹卡（早于此不弹）；卡片是 body 下唯一的 .hint-card[role=tooltip]", async () => {
     const hint = (await import(/* @vite-ignore */ at("ui/hint/index.ts"))) as HintMod;
     hint.initHints();
     const t = el("span");
@@ -201,7 +205,7 @@ describe("W790 · item 4 引擎：唯一宿主 + 150ms 停留 + 撤卡", () => {
     expect(card?.className).toContain("hint-card");
     expect(card?.getAttribute("role")).toBe("tooltip");
     expect(card?.textContent).toContain("运行中");
-    expect(card?.parentElement?.id).toBe("main");
+    expect(card?.parentElement?.tagName).toBe("BODY");
     expect(Array.from(doc.querySelectorAll(".hint-card"))).toHaveLength(1);
 
     // 移到别的目标：旧卡立即撤、新目标重新计 150ms

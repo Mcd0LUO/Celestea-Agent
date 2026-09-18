@@ -5,7 +5,12 @@
  *   为什么单独一个文件：注册缝（src/ui/hint/）自带样式，业务模块不再各写一套。
  * ============================================================================ */
 .hint-card {
-  position: absolute;
+  /* W871：宿主 = document.body（全站定位基准）+ fixed ⇒ style.left/top 与卡片
+     getBoundingClientRect() 同为**视口坐标**，ui/hint/card.ts 的 place() 可直接写
+     锚点 rect。旧实现是 absolute + #main 宿主 + 相对坐标：会话树在侧栏（#main 之外）
+     时 a.left − h.left 为负，卡片被夹到边缘 ⇒ 用户报的提示错位。
+     先例：ui/grants/panel/position.ts 的盾牌面板（fixed + rect 现算）。 */
+  position: fixed;
   z-index: 60;
   max-width: min(50vw, calc(100vw - 24px));
   background: var(--tip-bg);

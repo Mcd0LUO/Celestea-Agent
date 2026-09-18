@@ -102,7 +102,9 @@
  * ============================================================================ */
 
 #statusline { position: relative; container-type: inline-size; }
-/* W12：composer 底部 36px 渐变遮罩（消息从该遮罩下滚过）。 */
+/* W12：composer 底部 36px 渐变遮罩（消息从该遮罩下滚过）。
+   W871：这 36px 画在 .chat-shell **之外**（发送栏上方那段，底下是页面背景
+   --bg-base）⇒ 收尾色仍取 --bg-base，与改动前逐字一致。 */
 #statusline::before {
   content: '';
   position: absolute; left: 0; right: 0; bottom: 100%;
@@ -151,7 +153,19 @@
   outline-offset: 1px;
 }
 
-/* ---- 下拉面板（自 statusline 向上弹出，覆盖消息区底部） ---- */
+/* ---- 下拉面板（自触发键向上弹出，覆盖消息区底部） ----
+   W871 修正（用户报「点 Full Access 弹出的面板错位到左边」）：
+     · 旧口径只有 `left: 14px` 一条 —— 它是相对**发送栏左缘**的死坐标。这对左端的
+       模型/档位/工作方式键没问题，但触发档位弹层的 #slPerm 徽标在发送栏**右端**：
+       1280×800 实测面板左缘 345 对徽标左缘 1125.45（横向差 −780.45px），
+       即「面板弹到了发送栏另一头」。W867 的 .chat-shell（margin 8 + border 0.5）又
+       把这套死坐标整体推移，用户看到的就是「错位到左边」。
+     · 现在**水平锚点由触发键所在的那一端决定**：左端键用 left:14px
+       （= #statusline 的 padding-left ⇒ 与发送栏正文左缘对齐），右端键用 .right-anchored
+       的 right:14px（右缘与正文右缘对齐）。纵向仍是 bottom: calc(100% - 2px)
+       （面板下沿贴发送栏上沿 − 2px，实测恒定 2px）。
+     · 本层不写 overflow: hidden，#statusline 也不是裁切祖先 ⇒ 面板向上弹出不会被
+       发送栏/外框切掉（W867 的 .chat-shell 曾有 overflow: hidden，W871 已去掉）。 */
 .sl-popup {
   position: absolute;
   bottom: calc(100% - 2px);

@@ -49,15 +49,18 @@
       <div id="sidebarScrim" class="sidebar-scrim hidden" aria-hidden="true"></div>
 
       <!-- ---------- 主区 ---------- -->
-      <!-- W867（追加）：.chat-shell = 对话页的**唯一圆角外框** —— statusline /
-           #messages / #statusbar / #inputbar 全部收进这一个框里（同一表面色 + 发丝线 +
-           --r-lg 圆角）。它只是 <main> 里的一个普通 flex 子项，滚动容器仍然是
-           .sess-pane（本层不滚、不裁剪消息）。 -->
       <main id="main">
-        <section class="chat-shell">
         <!-- W514：多会话视图宿主——每个会话一个 .sess-pane 容器（hidden 切换，零重渲染） -->
         <div id="messages" tabindex="-1"></div>
 
+        <!-- W867（W871 修正）：.chat-shell = **底部那一条 composer** 的圆角外框 ——
+             statusline / #statusbar / #inputbar 是一体的发送栏（同一表面色 + 发丝线 +
+             --r-shell 圆角）。#messages 在本层**之外**：保持屏幕边缘、保持唯一滚动容器
+             .sess-pane 的几何逐像素不变（W867 曾把消息区一起框住）。
+             本层不设 overflow:hidden —— 三个 .sl-popup 都从 statusline 向上弹出
+             （bottom: calc(100% - 2px)），裁剪会切掉面板；圆角改由首/末子元素各自带
+             （子元素自带不透明的 --composer-bg，不带角会盖住外框的圆角）。 -->
+        <section class="chat-shell">
         <!-- ---------- statusline（模型 / 上下文环 / 吞吐，发送栏正上方） ---------- -->
         <div id="statusline" class="statusline" title="上下文占用 · 模型 · 思考强度 · 吞吐 · 缓存命中">
           <div class="sl-row sl-row-main">

@@ -26,7 +26,7 @@ import { activePane, type SessionPane } from './viewctx';
 // 棘轮上限内）。纯搬家：取值与算式逐字未变，只把常量改由 rail-geom 统一导出。
 import {
   RAIL_PAD_Y, RAIL_PITCH_NATURAL, railBarHeight, railBarOpacity, railBarWidth,
-  railFitsAll, railGrow, railGutterWidth, railHitRadius, railLane, railPitch,
+  railCardPlacement, railFitsAll, railGrow, railGutterWidth, railHitRadius, railLane, railPitch,
 } from './rail-geom';
 // W867：命中半径（hover 命中与点击命中共用同一口径；测试直接断言这个纯函数）。
 export { railHitRadius };
@@ -285,17 +285,17 @@ function buildCard(it: RailItem): HTMLElement {
   return card;
 }
 
-/** 落位：贴在长条右侧，纵向夹在轨道范围内（与 W238 的几何逐字一致）。 */
+/** 落位：贴长条右侧、纵向夹在轨道内（W871：算式见 ./rail-geom.ts 的 railCardPlacement）。 */
 function positionCard(box: HTMLElement, anchor: HTMLElement): void {
   if (!mainEl) return;
   const m = mainEl.getBoundingClientRect();
   const r = anchor.getBoundingClientRect();
-  const ch = box.offsetHeight;
-  let top = r.top - m.top;
-  top = Math.max(railTop + 4, Math.min(top, railTop + railH - ch - 4));
-  const left = Math.min(r.right - m.left + 8, m.width - 288);
-  box.style.top = top + 'px';
-  box.style.left = Math.max(railX + 4, left) + 'px';
+  const at = railCardPlacement({
+    mainX: m.left, mainY: m.top, mainW: m.width, railTop, railH, railX,
+    anchor: { top: r.top, right: r.right }, cardH: box.offsetHeight,
+  });
+  box.style.top = at.top + 'px';
+  box.style.left = at.left + 'px';
 }
 
 /** W790：预览卡提供者（普通插件，无特权；注销即退回内置纯文本卡）。 */

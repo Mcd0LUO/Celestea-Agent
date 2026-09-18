@@ -98,7 +98,7 @@ button,
      `#input` 必须单列：layout.css 的 `#input{font-size:14px}` 是 id 选择器，类型选择器压不过它 */
   #input, input, select, textarea { font-size: 16px; }
 
-  /* W867（追加）：触摸档把圆角外框的边距收到 4px（屏幕本来就窄，8px 是浪费）。 */
+  /* W867（追加）：触摸档把发送栏圆角外框的边距收到 4px（屏幕本来就窄，8px 是浪费）。 */
   .chat-shell { margin: 4px; }
   .sess-pane { padding: 16px 14px; }
   /* W867：这一档正文列宽固定 16/14（用户列宽不生效）→ 列宽手柄一并隐藏，
@@ -189,7 +189,9 @@ button,
   .input-side { gap: 6px; }
 
   /* ---- 2.5 消息 / 工具卡：占满宽度、长内容自己滚、长路径省略 ---- */
-  .chat-shell { margin: 2px; border-radius: var(--r-md); } /* W867（追加）：手机档再收一档 */
+  /* W867（追加）：手机档再收一档；圆角刻度同步降到 --r-md（子元素读同一个
+     --r-shell，不会出现「外框 r-md、子元素还留 r-lg」的角差）。 */
+  .chat-shell { margin: 2px; border-radius: var(--r-md); --r-shell: var(--r-md); }
   .sess-pane { padding: 12px 10px; }
   .msg.user .bubble { max-width: 100%; } /* 桌面 78% 的窄气泡在手机上浪费宽度 */
   .toolcard { --card-gutter: 22px; }
@@ -210,8 +212,11 @@ button,
   .sl-popup-textrow { flex-wrap: wrap; }
   .sl-popup-input { flex: 1 1 100%; min-height: var(--tap-min); }
 
-  /* 权限面板：小屏改底部抽屉式（用 !important 覆盖 ui/grants/panel.ts 写入的内联坐标） */
-  .sl-popup.grant-popup {
+  /* 权限面板 / 会话档位弹层：小屏改底部抽屉式（用 !important 覆盖
+     ui/grants/panel/position.ts 与 statusline/permission.ts 写入的内联坐标）。
+     W871：档位弹层与盾牌面板共用同一套落位（ui/anchor-popup.ts），小屏同样收进抽屉。 */
+  .sl-popup.grant-popup,
+  .sl-popup.perm-popup {
     left: 0 !important; right: 0 !important;
     top: auto !important; bottom: 0 !important;
     width: auto !important; max-width: none !important;

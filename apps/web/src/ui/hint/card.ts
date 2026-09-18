@@ -22,6 +22,8 @@ export const HINT_DELAY_MS = 150;
 const EDGE = 8;
 const GAP = 12;
 
+// W871：宿主 = document.body（全站定位基准）。卡片 position:fixed（hint.css），
+// 故 style.left/top 与 getBoundingClientRect() 同坐标系 = 视口坐标。
 let host: HTMLElement | null = null;
 let card: HTMLElement | null = null;
 let timer: number | null = null;
@@ -92,26 +94,37 @@ function show(target: HTMLElement): void {
   card = built;
   card.classList.add('hint-card');
   card.setAttribute('role', 'tooltip');
-  if (!host || !host.isConnected) host = document.getElementById('main') ?? document.body;
+  // W871：宿主 = document.body + 卡片 position: fixed（见 place() 的坐标口径）。
+  //   旧实现把卡片挂进 #main，再用「锚点 rect − 宿主 rect」算相对坐标 —— 那只在
+  //   「锚点落在 #main 内」时成立。会话树在**侧栏**里（#main 之外），实测锚点行
+  //   在 (12, 218.94)–(303, 249.56)、#main 从 322 起 ⇒ a.left − h.left = −310 < 0，
+  //   卡片被夹到 EDGE=8 后画在 (330, 255.56)：横向落在主区、纵向骑在行外，
+  //   用户看到的就是「提示错位」（fly out）。改成全站定位基准后侧栏与主区同坐标系。
+  if (!host || !host.isConnected) host = document.body;
   host.appendChild(card);
   place(card, target, handle);
 }
 
-/** 缺省落位：锚点右下 GAP；越界则左/上回退，永不出宿主。 */
+/** 缺省落位：锚点右下 GAP；越界则左/上回退，永不出视口。 */
 function place(box: HTMLElement, anchor: HTMLElement, handle: HintHandle): void {
   if (!host) return;
   if (handle.position) {
     handle.position(box, anchor);
     return;
   }
+  // W871：宿主 = document.body（初始包含块）⇒ position:fixed（hint.css）下
+  //   style.left/top 与 getBoundingClientRect() **同为视口坐标**，可以直接写锚点的
+  //   rect，不必也不该再减宿主 rect（页面有滚动时那套相对坐标会漂）。
+  //   先例：ui/grants/panel/position.ts 的盾牌面板（fixed + rect 现算）。
   const a = anchor.getBoundingClientRect();
-  const h = host.getBoundingClientRect();
   const w = box.offsetWidth || 0;
   const bh = box.offsetHeight || 0;
-  let left = a.left - h.left + GAP;
-  let top = a.bottom - h.top + 6;
-  if (w > 0 && left + w > h.width - EDGE) left = Math.max(EDGE, a.right - h.left - w);
-  if (bh > 0 && top + bh > h.height - EDGE) top = Math.max(EDGE, a.top - h.top - bh - 6);
+  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  let left = a.left + GAP;
+  let top = a.bottom + 6;
+  if (w > 0 && left + w > vw - EDGE) left = a.right - w; // 右越界 → 右缘回退到锚点右缘
+  if (bh > 0 && top + bh > vh - EDGE) top = a.top - bh - 6; // 下越界 → 翻到锚点上方
   box.style.left = Math.max(EDGE, left) + 'px';
   box.style.top = Math.max(EDGE, top) + 'px';
 }
@@ -150,7 +163,7 @@ function onFocusIn(e: Event): void {
 export function mountHints(): void {
   if (mounted) return;
   mounted = true;
-  host = document.getElementById('main') ?? document.body;
+  host = document.body; // W871：全站定位基准（侧栏锚点也在同一坐标系里）
   document.addEventListener('pointerover', onOver, true);
   document.addEventListener('pointerout', onOut, true);
   document.addEventListener('focusin', onFocusIn, true);

@@ -46,7 +46,22 @@
 }
 
 /* ---- 2) 档位选择弹层 ------------------------------------------------------- */
-.sl-popup.perm-popup { width: min(420px, calc(100vw - 40px)); }
+/* W871：与 .sl-popup.grant-popup 同一套落位（**复用** ui/grants/panel/position.ts 的
+   panelGeom：视口坐标 + position: fixed + JS 内联 top/left/max-height）。
+   用户报「点 Full Access 弹出的面板错位到左边」的根因是：它有触发键（#slPerm 在发送栏
+   **右端**）却被 .sl-popup 基类的 left:14px（相对发送栏**左**缘）钉在另一头 ——
+   1280×800 实测面板左缘 345 对徽标左缘 1125.45（横向差 −780.45px）。
+   这里把 bottom/left/right 全部 auto 掉，位置一律由 JS 现算。
+   width 保持 (0,2,0)：压过 responsive.css 窄屏档的 .sl-popup{width:auto}，
+   保证 offsetWidth 就是面板真实宽度（panelGeom 的输入）。 */
+.sl-popup.perm-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: auto;
+  width: min(420px, calc(100vw - 40px));
+}
 .sl-popup-note.perm-risk { color: var(--c-warn); }
 
 /* ---- 3) 设置页 pane -------------------------------------------------------- */

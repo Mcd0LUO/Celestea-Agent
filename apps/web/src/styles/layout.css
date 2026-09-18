@@ -83,21 +83,40 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* ---- 主区 ---- */
 #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* W867（追加）：对话页圆角外框 —— statusline / 消息区 / 状态栏 / 输入栏同属一个表面。
-   只加外边距、圆角与发丝线：**不改任何子项的 flex 尺寸**，所以消息区高度、输入框
-   宽度、滚动容器语义（滚动仍归 .sess-pane）逐项不变。窄屏在 responsive.css 里收边距。 */
+/* W867（W871 修正）：底部 composer 的圆角外框 —— 只圈 #statusline + #statusbar +
+   #inputbar（**发送栏那一条**）。#messages 在本层之外：保持贴屏幕边缘，且 .sess-pane
+   仍是唯一滚动容器、几何逐像素不变（W867 曾把消息区一起框住，margin/border/overflow
+   把滚动容器几何整体改掉 —— 用户澄清「我说的是 statusline 和下面的会话发送栏是一体
+   圆角，你直接给整个会话页圆角了」）。
+   两条硬约束：
+     1) **不写 overflow: hidden** —— 三个 .sl-popup 都从 #statusline 向上弹出
+        （statusline.css 的 bottom: calc(100% - 2px)），裁剪会把面板切掉；
+     2) 圆角由**首/末子元素各自带**（.chat-shell > :first-child / :last-child）——
+        子元素自带不透明的 --composer-bg，不带角会盖住外框的圆角。
+   只加外边距、圆角与发丝线，不改任何子项的 flex 尺寸；窄屏在 responsive.css 里收边距。 */
 .chat-shell {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
+  /* 0 0 auto：本层只包内容（composer 恒为内容高）。若在这里 grow，多出来的高度会把
+     发送栏拉高（#messages 已把剩余空间全吃掉，见下面的 flex: 1）。 */
+  flex: 0 0 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
   margin: var(--sp-dock-inset);
   background: var(--bg-layer-1);
   border: var(--hairline) solid var(--border-l1);
-  border-radius: var(--r-lg);
-  overflow: hidden;
+  border-radius: var(--r-shell);
+  /* 圆角刻度只在**本层**定义一次：首/末子元素读同一个变量，窄屏改 --r-md 时
+     两边同步（子元素若不是同刻度就会露出角差）。 */
+  --r-shell: var(--r-lg);
+}
+.chat-shell > :first-child {
+  border-top-left-radius: var(--r-shell);
+  border-top-right-radius: var(--r-shell);
+}
+.chat-shell > :last-child {
+  border-bottom-left-radius: var(--r-shell);
+  border-bottom-right-radius: var(--r-shell);
 }
 
 #messages {

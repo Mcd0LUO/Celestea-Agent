@@ -77,7 +77,11 @@
 
 /* ---- 预览卡片（锚定悬停长条右侧；内容取自已渲染消息 DOM，零请求） ---- */
 .railv3-card {
-  position: absolute;
+  /* W871：与 .hint-card 同宿主（document.body）+ fixed ⇒ 自定义落位 positionCard()
+     的 style.top/left 与 rect 同坐标系（视口坐标）。它整段用的是 #main 的 rect 差，
+     两者同为视口坐标 ⇒ 差值不变，rail 预览卡的落位逐像素不变；
+     改 fixed 后也不再受 #main（overflow/变换）与后代滚动影响。 */
+  position: fixed;
   width: 280px;
   z-index: 40;
   background: var(--c-surface-raised);

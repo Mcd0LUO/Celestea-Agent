@@ -98,25 +98,42 @@ describe('W867（追加）· ①对话页圆角外框（.chat-shell）', () => {
     doc.body.replaceChildren();
   });
 
-  it('真实 index.html：statusline / 消息区 / 状态栏 / 输入栏同属一个 .chat-shell，且仍在 #main 内', () => {
+  // W871 修正：用户澄清「我说的是 statusline 和下面的会话发送栏是一体圆角，你直接给
+  //   整个会话页圆角了」⇒ 外框只圈底部那一条，#messages 必须留在框**外**（保持贴屏幕
+  //   边缘、保持唯一滚动容器 .sess-pane 的几何）。W871 新增的 tests/w871-shell-anchor-dom
+  //   .test.ts 用真实浏览器量到的 rect 数字把这条钉死。
+  it('真实 index.html：.chat-shell 只圈发送栏三条（statusline/状态栏/输入栏）；#messages 在框外', () => {
     const raw = indexHtml();
     doc.body.innerHTML = raw.slice(raw.indexOf('<body>') + 6, raw.indexOf('</body>'));
     const shell = doc.querySelector('.chat-shell');
     expect(shell, '#main 里必须有 .chat-shell').not.toBeNull();
     expect(shell?.closest('#main'), '外框不得跑出 #main').not.toBeNull();
-    for (const sel of ['#messages', '#statusline', '#statusbar', '#inputbar']) {
+    for (const sel of ['#statusline', '#statusbar', '#inputbar']) {
       const node = doc.querySelector(sel);
       expect(node, sel + ' 必须在').not.toBeNull();
       expect(node?.closest('.chat-shell'), sel + ' 必须收进同一个圆角外框').not.toBeNull();
     }
-    // 滚动容器语义不变：.sess-pane 仍是唯一的 overflow-y:auto（外框只裁剪圆角）
+    const msgs = doc.querySelector('#messages');
+    expect(msgs, '#messages 必须在').not.toBeNull();
+    expect(msgs?.closest('.chat-shell'), '#messages 必须留在圆角外框**之外**（消息区不圆角）').toBeNull();
+    // 外框的**全部**子元素就是这三条（父子关系，不是「class 存在」）
+    const kids = shell === null ? [] : (Array.from(shell.querySelectorAll(':scope > *')) as ElLike[]);
+    expect(kids.map((c) => c.id)).toEqual(['statusline', 'statusbar', 'inputbar']);
+    expect(shell?.parentElement?.id).toBe('main');
+    // 滚动容器语义不变：.sess-pane 仍是唯一的 overflow-y:auto；外框既不滚也不裁
     expect(rule(css('views.css'), '.sess-pane')).toContain('overflow-y: auto');
     expect(rule(css('layout.css'), '.chat-shell')).not.toContain('overflow-y: auto');
+    expect(rule(css('layout.css'), '.chat-shell'), '外框不得 overlay:hidden（会切掉向上弹的 .sl-popup）').not.toContain('overflow: hidden');
   });
 
   it('外框：圆角走 --r-*、发丝线、同一表面色；窄屏有降级', () => {
     const shell = rule(css('layout.css'), '.chat-shell');
-    expect(shell).toContain('border-radius: var(--r-lg)');
+    // W871：圆角经本层自定义属性 --r-shell（= --r-lg）同时给外框与首/末子元素，
+    // 窄屏在 responsive.css 里改 --r-md 时两边同步（子元素若不是同刻度会露出角差）。
+    expect(shell).toContain('border-radius: var(--r-shell)');
+    expect(shell, '--r-shell 的刻度真源仍是 --r-lg').toContain('--r-shell: var(--r-lg)');
+    expect(rule(css('layout.css'), '.chat-shell > :first-child')).toContain('border-top-left-radius: var(--r-shell)');
+    expect(rule(css('layout.css'), '.chat-shell > :last-child')).toContain('border-bottom-left-radius: var(--r-shell)');
     expect(shell).toContain('border: var(--hairline) solid var(--border-l1)');
     expect(shell).toContain('background: var(--bg-layer-1)');
     expect(shell, '外框不参与滚动（滚动仍是 .sess-pane）').not.toContain('overflow-y');

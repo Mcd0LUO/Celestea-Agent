@@ -173,10 +173,14 @@ describe("W789 · CSS 真源（标签左对齐 / 运行态不换行 / 按钮横�
     expect(body).toContain("overflow-y: auto");
     expect(body).toContain("min-height: 0"); // flex 收缩的前提，缺了它就滚不动
     expect(body).toContain("max-height: none"); // 内层不再自带上限，交给外层夹
-    // 回归护栏：positionPanel 绝不能再清空内联 max-height（那是唯一的可滚动高度来源）
+    // 回归护栏：落位算式绝不能再清空内联 max-height（那是唯一的可滚动高度来源）。
+    // W871：算式搬到 ui/anchor-popup.ts 的 placeAnchoredPopup（盾牌面板与档位弹层共用
+    // 同一套 panelGeom 适配器），护栏跟着算式走 —— position.ts 只保留锚点选择。
+    const anchorPopup = readFileSync(join(WEB, "src", "ui", "anchor-popup.ts"), "utf8");
+    expect(anchorPopup).not.toContain("style.maxHeight = ''");
+    expect(anchorPopup).toContain("panelNaturalHeight");
     const pos = readFileSync(join(WEB, "src", "ui", "grants", "panel", "position.ts"), "utf8");
-    expect(pos).not.toContain("style.maxHeight = ''");
-    expect(pos).toContain("panelNaturalHeight");
+    expect(pos, "盾牌面板走同一个适配器，不自己写算式").toContain("placeAnchoredPopup");
   });
 });
 

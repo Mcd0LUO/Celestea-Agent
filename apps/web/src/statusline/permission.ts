@@ -17,6 +17,7 @@
 // ============================================================================
 import { ApiError, api, userErrorText } from '../api';
 import type { PermissionPreset } from '../types/permission';
+import { anchorOf, placeAnchoredPopup } from '../ui/anchor-popup';
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
 import { maxNote, riskNote } from '../ui/permissions/copy';
@@ -62,6 +63,50 @@ let popup: HTMLElement | null = null;
 let overlay: OverlayHandle | null = null;
 let host: PermissionHost | null = null;
 let onChanged: (() => void) | null = null;
+/** 触发键（#slPerm）：弹层落位的锚点。 */
+let anchorEl: HTMLElement | null = null;
+/** 跟随重排（resize / 滚动）的解绑器。 */
+let detachFollow: (() => void) | null = null;
+
+/**
+ * W871：把弹层摆到触发键 #slPerm 的**上方**（panelGeom 现算，视口坐标 + fixed）。
+ * 旧口径是相对 statusline 的固定左边距 14px —— 徽标在发送栏右端，面板必然弹到另一头。
+ */
+function placePopup(): void {
+  if (popup === null) return;
+  const anchor = anchorOf(anchorEl);
+  if (anchor) placeAnchoredPopup(popup, anchor);
+}
+
+/** resize / 滚动（捕获：内层滚动容器也能收到）都重新落位；关闭时解绑。 */
+function attachFollow(): void {
+  detachFollow?.();
+  let raf = 0;
+  const onMove = (e: Event): void => {
+    // 弹层**自身内部**的滚动不重新落位（与盾牌面板同口径：会打断用户正在进行的滚动）。
+    if (popup && e.target instanceof Node && popup.contains(e.target)) return;
+    if (raf !== 0) return;
+    raf = window.requestAnimationFrame(() => {
+      raf = 0;
+      placePopup();
+    });
+  };
+  window.addEventListener('resize', onMove);
+  document.addEventListener('scroll', onMove, true);
+  detachFollow = () => {
+    if (raf !== 0) {
+      window.cancelAnimationFrame(raf);
+      raf = 0;
+    }
+    window.removeEventListener('resize', onMove);
+    document.removeEventListener('scroll', onMove, true);
+  };
+}
+
+function detachFollowNow(): void {
+  detachFollow?.();
+  detachFollow = null;
+}
 
 /** 只改文本 / class / 标题，不重建 DOM（铁律 1/2/5）。 */
 function paintBadge(button: HTMLElement | null, badge: HTMLElement | null, view: PermissionView | null): void {
@@ -154,6 +199,7 @@ export function closePermissionPopup(): void {
     window.removeEventListener(PERMISSIONS_CHANGED, onChanged);
     onChanged = null;
   }
+  detachFollowNow();
   if (overlay !== null) {
     popOverlay(overlay);
     overlay = null;
@@ -187,19 +233,31 @@ export function openPermissionPopup(h: PermissionHost): void {
   p.setAttribute('role', 'menu');
   popup = p;
   host = h;
+  anchorEl = document.getElementById('slPerm');
   h.root.appendChild(p);
   overlay = pushOverlay(() => closePermissionPopup());
   p.appendChild(el('div', 'sl-popup-title', '会话权限档位'));
   const body = el('div', 'sl-popup-body');
   p.appendChild(body);
   renderPermissionMenu(body, h);
+  // W871：落位在**挂载之后**现算（panelGeom 要量面板的 offsetWidth/offsetHeight；
+  // 清单是当帧画出来的 ⇒ 这里量到的就是真实尺寸）。窄屏不改 JS 分支：触屏档由
+  // responsive.css 的 .sl-popup.perm-popup 贴底抽屉规则（!important）覆盖内联坐标 ——
+  // 与盾牌面板（ui/grants/panel/body.ts 无条件 positionPanel）逐字同口径，
+  // 免得窗口在临界宽度改变时留下「算过/没算过」两种状态。
+  placePopup();
+  attachFollow();
   onChanged = () => {
-    if (popup === p) renderPermissionMenu(body, h);
+    if (popup !== p) return;
+    renderPermissionMenu(body, h);
+    placePopup(); // 重画后高度变了，跟着重新落位
   };
   window.addEventListener(PERMISSIONS_CHANGED, onChanged);
   void ensurePresets()
     .then(() => {
-      if (popup === p) renderPermissionMenu(body, h);
+      if (popup !== p) return;
+      renderPermissionMenu(body, h);
+      placePopup();
     })
     .catch(() => {
       /* 取不到清单：正文留空，不做占位文案 */
