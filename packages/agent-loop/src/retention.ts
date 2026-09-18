@@ -30,9 +30,10 @@ export const RETENTION_SERVICE = "celestea.agent-loop.ToolResultRetention";
  * result into another "read_file <locator>" notice would invite a
  * read -> spill -> read loop (`dsh-spill-policy` skips the same tool). The
  * skipped result does NOT debit the step budget: those bytes are outside the
- * retention budget by policy. Tradeoff: `read_file` has no pagination yet (a
- * single read is capped at 256 KiB by the tool), so a read stays inline up to
- * that cap instead of spilling.
+ * retention budget by policy. W846: `read_file` now paginates with
+ * `offset`/`limit`, but each page is still bounded by the tool's 256 KiB
+ * budget, so the skip stays correct — a page stays inline up to that cap and
+ * the model advances with `nextOffset` instead of a retention locator.
  */
 export const RETENTION_SKIP_TOOLS: ReadonlySet<string> = new Set(["read_file"]);
 

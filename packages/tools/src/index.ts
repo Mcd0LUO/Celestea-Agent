@@ -146,7 +146,7 @@ export { HTTP_ERROR_PREFIX, classifyTransportError, httpFailure, TransportError 
 export { MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from "./tools/http-request.js";
 
 // --- fs limits ----------------------------------------------------------------
-export { BINARY_SNIFF_BYTES, isProbablyBinary, listDirNames, MAX_DIR_ENTRIES, MAX_READ_BYTES, readTextFile, truncationNote, writeTextFile } from "./fs/file-io.js";
+export { BINARY_SNIFF_BYTES, DEFAULT_READ_LIMIT, isProbablyBinary, listDirNames, MAX_DIR_ENTRIES, MAX_READ_BYTES, readTextFile, readTextLines, truncationNote, writeTextFile } from "./fs/file-io.js";
 
 // --- process registry ---------------------------------------------------------
 export {

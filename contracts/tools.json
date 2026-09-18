@@ -250,13 +250,23 @@
     },
     {
       "name": "read_file",
-      "description": "Read a UTF-8 text file and return its contents as a string.",
+      "description": "Read a UTF-8 text file and return its contents as a string. A whole read is capped at 256 KiB; pass offset (0-based line) and/or limit (line count) to page through a larger file — a paged result is an object {text, offset, limit, lineCount, totalLines, hasMore, nextOffset, truncated, totalBytes}.",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
             "type": "string",
             "description": "Filesystem path of the file to read."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional 0-based line index to start from (pagination). Omit to read from the top."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional maximum number of lines to return (pagination). Omit to use the default window."
           },
           "desc": {
             "type": "string",
