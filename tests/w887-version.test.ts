@@ -5,7 +5,7 @@
  *   · parseDescribe 的四种 describe 形态（恰好 tag / 带提交数 / dirty / 无 tag）；
  *   · 无 git（PATH 里没有 git）与无 tag（不在仓库里）时回落 package.json；
  *   · apps/web/src/version.ts 不再出现硬编码的 x.y.z 字面量；
- *   · 构建产物（dist/assets/*.js）里是当前派生值，不是旧常量；
+ *   · 构建元数据只进 index.html 的 meta（JS 产物不再携带，保证构建可复现）；
  *   · /api/health.version 非空且与脚本计算一致。
  */
 import { execFileSync } from "node:child_process";
@@ -91,20 +91,23 @@ describe("W887 anti-drift", () => {
     expect(versionSrc).not.toMatch(/\d+\.\d+\.\d+/);
   });
 
-  it("reads the injected globals and degrades to dev, never undefined", () => {
-    expect(versionSrc).toContain("__APP_VERSION__");
-    expect(versionSrc).toContain("__APP_COMMITS__");
-    expect(versionSrc).toContain("__APP_SHA__");
-    expect(versionSrc).toContain("__APP_DIRTY__");
-    expect(versionSrc).toContain("__BUILD_TIME__");
+  it("reads the injected global and degrades to dev, never undefined", () => {
+    expect(versionSrc).toContain("__CELESTEA_BUILD__");
+    expect(versionSrc).toContain("globalThis");
     expect(versionSrc).toContain("'dev'");
+    // W887 修正：构建元数据不再经 define 注入 JS（否则构建不可复现）。
+    expect(versionSrc).not.toContain("__APP_VERSION__");
+    expect(versionSrc).not.toContain("__BUILD_TIME__");
   });
 
-  it("vite.config.ts injects the derived values via define (no hardcoded version)", () => {
+  it("vite.config.ts injects the metadata into index.html, never into the JS bundle", () => {
     const vite = readFileSync(join(REPO_ROOT, "apps", "web", "vite.config.ts"), "utf8");
     expect(vite).toContain("computeVersion");
+    expect(vite).toContain("transformIndexHtml");
+    expect(vite).toContain("__CELESTEA_BUILD__");
+    // 5 个旧 define 键必须消失（墙钟进 JS 会让同一提交的两次构建字节不同）。
     for (const key of ["__APP_VERSION__", "__APP_COMMITS__", "__APP_SHA__", "__APP_DIRTY__", "__BUILD_TIME__"]) {
-      expect(vite).toContain(key);
+      expect(vite).not.toContain(key);
     }
     expect(vite).not.toMatch(/'2\.\d+\.\d+'/);
   });

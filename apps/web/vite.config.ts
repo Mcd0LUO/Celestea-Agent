@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { computeVersion } from '../../scripts/version.mjs';
 
 /**
@@ -6,19 +6,44 @@ import { computeVersion } from '../../scripts/version.mjs';
  * Output: frontend/dist/{index.html, assets/*.js, assets/*.css}
  * The backend serves frontend/dist/ as its static root (shared contract).
  *
- * W887：版本在构建期由 scripts/version.mjs（真源 = git tag）派生，经 define 注入，
- * 不再有手写的版本常量。注入值同时进 /api/health.version（同一个脚本）。
+ * W887 修正（构建可复现）：构建元数据不再经 define 进 JS bundle —— 墙钟
+ * buildTime 进 JS 会让**同一提交**的两次构建字节不同（文件名哈希都变），把
+ * 精确字节的产物体积棘轮变成随机门禁。元数据改为在 index.html 里以
+ * window.__CELESTEA_BUILD__ 注入（module script 之前的经典脚本）；version.ts
+ * 从该全局读，读不到回落。JS/CSS 产物因此只由源码决定（可复现）。
  */
 const version = computeVersion();
 
+/** The build metadata the app reads from the DOM (never inlined into JS). */
+const BUILD_META = {
+  version: version.version,
+  commits: version.commitsSinceTag ?? 0,
+  sha: version.sha,
+  dirty: version.dirty,
+  buildTime: version.buildTime,
+};
+
+/**
+ * W887: inject the metadata as a global in index.html, BEFORE the module script
+ * (a classic script runs during parsing; the module script is deferred, so it
+ * always sees the global). The payload never enters the JS bundle.
+ */
+function buildMetaPlugin(): Plugin {
+  const payload = 'window.__CELESTEA_BUILD__ = ' + JSON.stringify(BUILD_META) + ';';
+  return {
+    name: 'celestea-build-meta',
+    transformIndexHtml: {
+      order: 'pre',
+      handler: (html) => ({
+        html,
+        tags: [{ tag: 'script', children: payload, injectTo: 'head-prepend' }],
+      }),
+    },
+  };
+}
+
 export default defineConfig({
-  define: {
-    __APP_VERSION__: JSON.stringify(version.version),
-    __APP_COMMITS__: JSON.stringify(version.commitsSinceTag ?? 0),
-    __APP_SHA__: JSON.stringify(version.sha),
-    __APP_DIRTY__: JSON.stringify(version.dirty),
-    __BUILD_TIME__: JSON.stringify(version.buildTime),
-  },
+  plugins: [buildMetaPlugin()],
   base: '/',
   build: {
     outDir: 'dist',
