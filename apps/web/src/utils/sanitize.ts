@@ -53,8 +53,7 @@ const ALLOWED_TAGS = new Set<string>([
   'a', 'img', 'strong', 'b', 'em', 'i', 'u', 's', 'del', 'ins', 'mark',
   'small', 'sub', 'sup', 'kbd', 'samp', 'var', 'abbr', 'cite', 'q', 'dfn',
   'code', 'time', 'bdi', 'bdo', 'wbr', 'ruby', 'rt', 'rp',
-  // W846/W847 A1：MathML 子集（KaTeX output:mathml 实测产物；只渲染、无交互）。
-  //   A1 依 katex 0.18.7 重测：补 mpadded（此前被解包）；无上表标签在 0.18.7 消失。
+  // W846/W847 A1/A1b：MathML 子集（katex 0.18.7 output:mathml 实测产物；只渲染、无交互）。
   'math', 'semantics', 'annotation',
   'mrow', 'mi', 'mn', 'mo', 'mtext',
   'msup', 'msub', 'msubsup',
@@ -97,20 +96,23 @@ const TAG_ATTRS: Record<string, string[]> = {
   time: ['datetime'],
   details: ['open'],
   input: ['type', 'checked', 'disabled'],
-  // W846/W847 A1：MathML 属性（以 KaTeX output:mathml 实测为准；href 对任何 math 元素都不列入）。
-  //   A1 重测补：munder@accentunder、mspace@height|mathbackground、mpadded@*（style 仍不在列）。
+  // W846/W847 A1/A1b：MathML 属性（以 katex 0.18.7 output:mathml 实测为准；href 对任何 math 元素不列入）。
+  //   A1 补 mpadded/munder/mspace 等；A1b 补 mo@lspace|rspace|minsize、mtext@mathvariant、
+  //   mtable/mtd@width、length 的 width 伪单位。style 是**有意**剔除的渲染降级，不是遗漏。
   math: ['display', 'xmlns'],
   annotation: ['encoding'],
   menclose: ['notation'],
   mfrac: ['linethickness'],
   mi: ['mathvariant'],
-  mo: ['fence', 'mathvariant', 'stretchy'],
+  mo: ['fence', 'mathvariant', 'stretchy', 'lspace', 'rspace', 'minsize'],
   mover: ['accent'],
   mspace: ['width', 'height', 'mathbackground'],
   munder: ['accentunder'],
   mpadded: ['depth', 'height', 'lspace', 'mathbackground', 'voffset', 'width'],
+  mtext: ['mathvariant'],
   mstyle: ['displaystyle', 'mathcolor', 'scriptlevel'],
-  mtable: ['columnalign', 'columnlines', 'columnspacing', 'rowlines', 'rowspacing'],
+  mtable: ['columnalign', 'columnlines', 'columnspacing', 'rowlines', 'rowspacing', 'width'],
+  mtd: ['width'],
 };
 
 /** URL 属性只允许的 scheme（其余显式 scheme 一律拒绝；相对路径放行）。 */
@@ -135,7 +137,7 @@ const MATH_VARIANTS = new Set<string>([
   'sans-serif-italic', 'sans-serif-bold-italic', 'monospace', 'initial', 'tailed', 'looped', 'stretched',
 ]);
 const MATH_COLOR_RE = /^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]{1,24}|rgba?\([0-9.,%\s]{1,32}\)|hsla?\([0-9.,%\s]{1,32}\))$/;
-const MATH_LENGTH_RE = /^(?:thin|medium|thick|[+-]?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)$/;
+const MATH_LENGTH_RE = /^(?:thin|medium|thick|[+-]?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%|width)?)$/;
 const MATH_ALIGN_RE = /^(?:left|center|right)(?: (?:left|center|right))*$/;
 const MATH_LINES_RE = /^(?:none|solid|dashed)(?: (?:none|solid|dashed))*$/;
 const MATH_SPACING_RE = /^(?:-?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)(?: -?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)*$/;
@@ -208,13 +210,15 @@ function scrubAttrs(el: Element, tag: string): void {
       case 'width':
       case 'height': {
         // img: 纯数字像素；mspace: MathML 长度（如 1em / 0.2778em）
-        const ok = tag === 'mspace' || tag === 'mpadded' ? MATH_LENGTH_RE.test(value) : SIZE_ATTR_RE.test(value);
+        const ok = tag === 'mspace' || tag === 'mpadded' || tag === 'mtable' || tag === 'mtd' ? MATH_LENGTH_RE.test(value) : SIZE_ATTR_RE.test(value);
         if (!ok) el.removeAttribute(attr.name);
         break;
       }
       case 'depth':
       case 'linethickness':
       case 'lspace':
+      case 'rspace':
+      case 'minsize':
       case 'voffset': {
         if (!MATH_LENGTH_RE.test(value)) el.removeAttribute(attr.name);
         break;
