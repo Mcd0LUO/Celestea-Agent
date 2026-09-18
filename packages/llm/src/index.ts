@@ -179,5 +179,5 @@ export {
   resolvedImagesOf,
   wireMessagesFor,
 } from "./wire.js";
-export type { ImageDowngradeInfo, ImageDowngradeLlmOptions } from "./image-fallback.js";
+export type { ImageDowngradeCause, ImageDowngradeInfo, ImageDowngradeLlmOptions } from "./image-fallback.js";
 export { createImageDowngradeLlm, imagePlaceholderText, withImagePlaceholders } from "./image-fallback.js";

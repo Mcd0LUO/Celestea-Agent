@@ -368,6 +368,14 @@ export class SessionComposer {
     return createImageDowngradeLlm({
       inner: resolved as unknown as ProviderLlm,
       onDowngrade: (info) => this.opts.onModelDowngrade?.(sessionId, info),
+      // W855: the SAME per-model modality gate that feeds read_image. It is
+      // evaluated against the request's own req.model (inside the decorator),
+      // so a model switch is never stale. null (unconfigured) = optimistic:
+      // images allowed; only an EXPLICIT list without "image" is text-only.
+      isTextOnly: (requestModel) => {
+        const modalities = this.opts.modelInputModalities?.(requestModel) ?? null;
+        return modalities !== null && !modalities.includes("image");
+      },
     }) as unknown as Llm;
   }
 

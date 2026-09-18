@@ -377,7 +377,21 @@ live("W805 · 多模态附件对真实 3777 的端到端", () => {
         "必须收到 IMAGE_UNSUPPORTED 状态帧（会话 " + id + "，已收 " + stream.frames.length + " 帧；本回合终态：" + detail + "）",
       ).not.toBeNull();
       expect(payload?.["reason"]).toBe("IMAGE_UNSUPPORTED");
-      expect(String(payload?.["message"] ?? "")).toContain("拒绝了图像输入");
+      // W855: this ONE frame now covers two upstream outcomes for this model.
+      // The upstream may reject fast (upstream_rejected, sub-second) OR be slow
+      // to reject and hit the client response-header timeout (timeout, ~60s).
+      // Both MUST surface as IMAGE_UNSUPPORTED with an honest, cause-specific
+      // message. Matching the message AGAINST the cause is stricter, not looser.
+      const cause = String(payload?.["cause"] ?? "upstream_rejected");
+      const message = String(payload?.["message"] ?? "");
+      if (cause === "timeout") {
+        expect(message, "timeout 降级文案必须如实说未在超时时间内响应图像输入").toContain("未在超时时间内响应图像输入");
+      } else if (cause === "configured_text_only") {
+        expect(message, "配置纯文本降级文案必须如实说已按配置声明为纯文本").toContain("已按配置声明为纯文本");
+      } else {
+        expect(cause).toBe("upstream_rejected");
+        expect(message, "上游 400 降级文案必须说拒绝了图像输入").toContain("拒绝了图像输入");
+      }
       expect(String(payload?.["hint"] ?? "")).toContain("input_modalities");
       expect(String(payload?.["placeholder"] ?? "")).toContain("图片已省略");
     } finally {
