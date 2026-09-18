@@ -20,6 +20,10 @@ fi
 export CELESTEA_API_KEY="$CKEY"
 
 # --- 运行数据（仓外，见 /var/lib/celestea-agent；providers.json / studio-auth.secret 为 0600） ---
+# W880：会话/归档/回收站/run-code/prompts 全部落在 $CELESTEA_HOME 下，
+# 按工作区分桶（<home>/workspaces/<ws>/…），workspace 里不再有任何 celestea 产物。
+# 必须在这里显式设置：否则解析会落到 ~/.celestea（celestea-home.ts 的四档顺序）。
+export CELESTEA_HOME="${CELESTEA_HOME:-$DATA}"
 export CELESTEA_WORKSPACES_FILE="${CELESTEA_WORKSPACES_FILE:-$DATA/workspaces.json}"
 export CELESTEA_PROVIDERS_FILE="${CELESTEA_PROVIDERS_FILE:-$DATA/providers.json}"
 export CELESTEA_PROMPTS_FILE="${CELESTEA_PROMPTS_FILE:-$DATA/prompts.json}"
