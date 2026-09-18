@@ -21,6 +21,7 @@ import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { E2E_OPT_IN, reachable, requireOptIn } from "./lib/real-backend-gate.js";
 
 // ---- 最小 DOM 接口（根 tsconfig 不含 DOM lib；真实运行时仍是 jsdom） ----------------
 interface ClassList {
@@ -222,23 +223,9 @@ function buildTree(leafIds: string[]): TreeBox {
 const confirmDanger = (): El | null => doc.body.querySelector(".modal-card-actions .btn-danger");
 const confirmOk = (): El | null => doc.body.querySelector(".modal-card-actions .btn-accent");
 
-// ---- 可达性探测（不可达 ⇒ 整体跳过，绝不伪造） --------------------------------------
-let LIVE = false;
-try {
-  const h = await req("/api/health");
-  LIVE = h.status === 200;
-} catch {
-  LIVE = false;
-}
-// W839 (R3 B9 / W818-P2-5): LIVE=required (or CELESTEA_E2E_REQUIRED=1) turns an
-// unreachable real service into a hard failure; locally it stays a VISIBLE skip
-// (this banner + vitest's skipped count).
-const LIVE_REQUIRED = process.env["LIVE"] === "required" || process.env["CELESTEA_E2E_REQUIRED"] === "1";
-if (!LIVE) {
-  const banner = "[W792] 真实服务不可达，端到端用例整体 SKIPPED（不是通过）：" + BASE;
-  if (LIVE_REQUIRED) throw new Error(banner);
-  console.warn(banner);
-}
+// ---- 可达性探测（W862 显式选入：未选入零 HTTP + 可见跳过；门禁真源见 lib/real-backend-gate） ----
+requireOptIn("W792");
+const LIVE = await reachable(() => req("/api/health").then((h) => h.status === 200), "W792", BASE);
 
 /** 本轮创建的会话 id（收尾清理用）。 */
 const created: string[] = [];
@@ -253,7 +240,8 @@ async function createSession(suffix: string, archive = false): Promise<string> {
 const listedIds = async (path: string): Promise<string[]> =>
   (((await req(path)).body?.["sessions"] ?? []) as Row[]).map((r) => String(r.id ?? ""));
 
-const live = LIVE ? describe : describe.skip;
+// 兜底门禁：只有显式选入才收集执行；未选入时整文件 VISIBLE skip（不是静默消失）。
+const live = describe.skipIf(!E2E_OPT_IN);
 
 afterAll(async () => {
   if (!LIVE) return;

@@ -29,6 +29,7 @@ import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { E2E_OPT_IN, reachable, requireOptIn } from "./lib/real-backend-gate.js";
 
 const BASE = process.env["CELESTEA_E2E_BASE"] ?? "http://127.0.0.1:3777";
 const WS = "celestea_harness";
@@ -83,23 +84,14 @@ interface ApiMod {
 const apiMod = (await import(/* @vite-ignore */ at("api.ts"))) as unknown as { api: ApiMod };
 const api = apiMod.api;
 
-let LIVE = false;
-try {
-  LIVE = (await realFetch(BASE + "/api/health")).ok;
-} catch {
-  LIVE = false;
-}
-// W839 (R3 B9 / W818-P2-5): LIVE=required (or CELESTEA_E2E_REQUIRED=1) turns an
-// unreachable real service into a hard failure; locally it stays a VISIBLE skip
-// (this banner + vitest's skipped count).
-const LIVE_REQUIRED = process.env["LIVE"] === "required" || process.env["CELESTEA_E2E_REQUIRED"] === "1";
-if (!LIVE) {
-  const banner = "[W805] 真实服务不可达，端到端用例整体 SKIPPED（不是通过）：" + BASE;
-  if (LIVE_REQUIRED) throw new Error(banner);
-  console.warn(banner);
-}
+// W862（显式选入 · 真人事故）：默认门禁绝不碰在线服务 —— 未设 CELESTEA_E2E=1 时
+// **不探测、不发任何 HTTP**，整文件以可见的 skip 结束并打印选入口令。门禁真源见
+// tests/lib/real-backend-gate.ts；设了才真跑（服务不可达也不静默跳过）。
+requireOptIn("W805");
+const LIVE = await reachable(() => realFetch(BASE + "/api/health").then((r) => r.ok), "W805", BASE);
 
-const live = LIVE ? describe : describe.skip;
+// 兜底门禁：只有显式选入才收集执行；未选入时整文件 VISIBLE skip（不是静默消失）。
+const live = describe.skipIf(!E2E_OPT_IN);
 const created: string[] = [];
 let WS_PATH = "";
 /** 进入本套件时的共享 active_session（收尾拨回；W792 同款纪律）。 */

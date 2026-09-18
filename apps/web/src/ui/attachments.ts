@@ -66,9 +66,17 @@ export function loadAttachmentCapabilities(): Promise<void> {
     try {
       const p = await api.providers();
       const ids: string[] = [];
+      // W862：同一个 id 会在多个 provider 下重复出现（Celestea 网关 / 基元各一条
+      // deepseek-flash），降级提示的「可切换到」清单因此出现过重复项。清单按 id
+      // **去重并保留首次出现顺序**；能力位写入仍发生在每一次出现上，后出现的同 id
+      // provider 照旧覆盖 modalities（既有语义不变，不引入能力位回退）。
+      const seen = new Set<string>();
       for (const prov of p.providers ?? []) {
         for (const m of prov.models ?? []) {
-          ids.push(m.id);
+          if (!seen.has(m.id)) {
+            seen.add(m.id);
+            ids.push(m.id);
+          }
           if (m.input_modalities) modalities.set(m.id, m.input_modalities);
         }
       }

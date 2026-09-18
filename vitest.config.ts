@@ -23,12 +23,28 @@ const alias = {
  * same time the slower one restores an active that the faster one already deleted
  * (404) and the "active_session must be null" assertion is clobbered by the other
  * file's activate. Run them one at a time; keep everything else parallel.
+ *
+ * W862 (explicit opt-in — a real incident): running the root `pnpm check` used to hit
+ * the LIVE 3777 service, and the multimodal file's deliberate IMAGE_UNSUPPORTED case
+ * (a text-only test model fed an image) broadcast a bogus downgrade notice into the
+ * user's Studio window. Therefore the default gate must NEVER touch the online service:
+ * the real-backend suite only runs when CELESTEA_E2E=1 is set explicitly.
+ *
+ * - Opted in: the three files run here, serial (fileParallelism=false), assertions intact.
+ * - Not opted in: this project collects no files; the three files are instead collected
+ *   by the `unit` project and end as a VISIBLE skip (never silently disappear), each
+ *   printing the opt-in command. A missing/empty project is not an error as long as the
+ *   run has tests, and the in-file `describe.skipIf` gate is the belt-and-braces backstop
+ *   so no code path — probe included — can reach 3777 without the switch.
  */
+const E2E = process.env.CELESTEA_E2E === "1";
 const REAL_BACKEND = [
   "tests/archive-panel-real-backend.test.ts",
   "tests/multimodal-attachments-real-backend.test.ts",
   "tests/session-gone-real-backend.test.ts",
 ];
+/** 未选入时的占位：文件不存在 ⇒ real-backend project 零文件（选入才装载真实套件）。 */
+const REAL_BACKEND_OFF = ["tests/__real-backend-disabled-until-CELESTEA_E2E__.test.ts"];
 
 export default defineConfig({
   test: {
@@ -41,7 +57,9 @@ export default defineConfig({
         test: {
           name: "unit",
           include: ["packages/**/*.test.ts", "apps/studio/**/*.test.ts", "tests/**/*.test.ts"],
-          exclude: ["**/node_modules/**", "**/dist/**", ...REAL_BACKEND],
+          // 未选入 E2E 时把三个真实后端文件收在这里（它们自我 skip 并打印选入口令），
+          // 于是默认跑看到的是**可见的 skip**；选入后才交还给 real-backend project。
+          exclude: ["**/node_modules/**", "**/dist/**", ...(E2E ? REAL_BACKEND : [])],
           testTimeout: 30_000,
         },
       },
@@ -49,7 +67,9 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: "real-backend",
-          include: [...REAL_BACKEND],
+          // W862：只有显式选入（CELESTEA_E2E=1）才装载这三个文件；默认零文件，
+          // 文件在 unit project 里可见跳过（见上方 REAL_BACKEND 注释）。
+          include: E2E ? [...REAL_BACKEND] : [...REAL_BACKEND_OFF],
           // One live server, one active_session: fileParallelism=false runs the
           // three files one at a time (everything else keeps the parallel pool).
           pool: "forks",
