@@ -44,6 +44,19 @@
 .railv3-item.is-reply {
   background: var(--c-accent);
 }
+/* W872 · 中间判定：命中「视口中间」的那一根 —— 只改色 + 外描边（box-shadow 不占布局），
+   **几何一字不动**（不写 width/height/top）⇒ 与 fisheye 的宽度动画完全解耦。
+   声明在 .is-hover 之前：同一条既居中又被悬停时，悬停态仍然胜出。 */
+.railv3-item.is-center {
+  background: var(--c-text-1);
+  box-shadow: 0 0 0 1px var(--c-accent-ring);
+}
+.railv3-item.railv3-fold.is-center {
+  background: var(--c-accent-soft);
+  box-shadow: 0 0 0 1px var(--c-accent-ring);
+  color: var(--c-text-1);
+}
+
 /* 命中条：仅变色/微亮 + 高亮描边（不改变尺寸） */
 .railv3-item.is-hover {
   opacity: 1;
@@ -74,6 +87,29 @@
 /* 细条化档（留白 24–64px）：更低调 */
 .railv3-thin .railv3-item { opacity: .4; }
 .railv3-thin .railv3-item.is-hover { opacity: 1; }
+/* W872：细条化档里「居中」条与指示线一起压一档，不抢长条本身的亮度 */
+.railv3-thin .railv3-item.is-center { opacity: .8; }
+
+/* ---- W872 · 中间判定：视口中间的横向发丝指示线 -------------------------------
+ * 语义：视口垂直中央落在相邻两根长条之间的那一点（端点之外则夹在首/末条心）。
+ * 形态：一条实线发丝（全站禁虚线，有机械门禁：tests/w847-w8-styles.test.ts 扫
+ * styles 下任何虚线关键字）。
+ * 位置由 ui/rail.ts 每帧写 transform（单值，不重建 DOM、不触发重排）；
+ * 长度跟着轨道宽度走（--mid-w 由 layout() 写一次，见 rail-center.railMidWidth）。 */
+.railv3-mid {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--mid-w, 26px);
+  height: 1px;
+  border-radius: var(--r-sm);
+  background: var(--c-text-1);
+  opacity: .5;
+  pointer-events: none;  /* 与长条一致：交互统一走 #main 级监听 + 命中判定 */
+  transition: opacity 120ms ease;
+}
+/* 端点兜底（视口中央在第一轮之前 / 最后一轮之后）：线仍在，只降一档对比 */
+.railv3-mid.is-out { opacity: .22; }
 
 /* ---- 预览卡片（锚定悬停长条右侧；内容取自已渲染消息 DOM，零请求） ---- */
 .railv3-card {
