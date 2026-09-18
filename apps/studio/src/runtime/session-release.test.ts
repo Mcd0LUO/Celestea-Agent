@@ -70,8 +70,10 @@ describe("W794 releaseSessionOf", () => {
 
   it("waits for the aborted turn, but the wait is bounded", async () => {
     const session = entry(true);
-    // 结算在 10ms 后到达：release 必须等它，且顺序仍在 cancel 之后。
-    const b = make({ session, settleMs: 500, onCancel: () => setTimeout(() => void (session.inFlight = false), 10) });
+    // 结算在 50ms 后到达：release 必须等它，且顺序仍在 cancel 之后。
+    // （10ms 与下方 `>= 10` 的断言同界，整机满负载时会量到 9ms 的假红；
+    //   把结算时刻抬到 50ms 留出明确余量，断言本身不放宽。）
+    const b = make({ session, settleMs: 500, onCancel: () => setTimeout(() => void (session.inFlight = false), 50) });
     const started = Date.now();
     expect(await releaseSessionOf(b.deps, "ws/s1")).toBe(true);
     expect(Date.now() - started).toBeGreaterThanOrEqual(10);
