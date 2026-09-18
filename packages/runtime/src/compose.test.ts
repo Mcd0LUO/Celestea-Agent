@@ -25,7 +25,7 @@ function markerPlugin(name: string, token: string, value: unknown, log: string[]
   });
 }
 
-const WORKER_NAMES = ["spawn_worker", "session_send_message", "worker_status"];
+const WORKER_NAMES = ["spawn_worker", "send_message", "stop_worker", "worker_status"];
 
 describe("compose", () => {
   it("mounts plugins in order and lets the last provider win the token", () => {

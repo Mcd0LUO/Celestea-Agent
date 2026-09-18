@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea engine tool specs (12 tools)",
+  "title": "Celestea engine tool specs (13 tools)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
     "liveEndpoint": "http://127.0.0.1:3777/api/tools (descriptions taken verbatim from the running engine)",
@@ -36,9 +36,18 @@
       "why": "The model needs to look at a local image (or a user-uploaded attachment by id) and have a vision-capable model actually see it; read_file is UTF-8 text only and rejects binary.",
       "optionalMount": "builtinTools mounts read_image only when the host supplies a session attachment store; the default registry of record stays the 7 contract tools.",
       "endpoints": "P0 adds ZERO endpoints: uploads ride POST /api/turn as inline base64 (attachment refs only in the log), so API_ENDPOINT_COUNT stays 51."
+    },
+    "w7Delta": {
+      "renamedTool": "session_send_message -> send_message",
+      "addedTool": "stop_worker",
+      "count": "12 -> 13",
+      "sourceRef": "packages/workers/src/tools.ts (W7; no Rust counterpart)",
+      "why": "The orchestration face needs a relay named for what it does (send_message) and a stop switch that halts a worker without deleting it (STOPPED terminal; row + session kept for audit).",
+      "notInRust": "The retired engine had neither the rename nor stop_worker.",
+      "endpoints": "W7 adds ZERO endpoints: stop_worker rides the existing worker tool dispatch, so API_ENDPOINT_COUNT stays 51."
     }
   },
-  "count": 12,
+  "count": 13,
   "tools": [
     {
       "name": "ask_user_question",
@@ -385,7 +394,7 @@
       "sourceRef": "crates/tools/src/builtin.rs:232-258"
     },
     {
-      "name": "session_send_message",
+      "name": "send_message",
       "description": "向 harness 内另一个会话发送消息（会话间通讯，用于多 worker 联调、交叉审计、分工协作）。target 可用会话地址（session id）或会话命名（标题/项目/工作区名；按命名指定先解析到唯一地址，命中多个返回候选清单）。content 是发送给目标会话的正文；投递的消息会成为目标会话新一轮的用户输入（唤醒语义：引擎会驱动目标会话就这条消息跑新一轮处理），因此也是 worker 回执与跨会话协作的通道。需要对方回复时在 content 里写明要求，并告诉对方用本工具 target=<你的会话地址> 发回。发送者信息自动附带。",
       "parameters": {
         "type": "object",
@@ -471,8 +480,34 @@
       "sourceRef": "crates/workers/src/tools.rs:53-74"
     },
     {
+      "name": "stop_worker",
+      "description": "停止一个正在运行的 worker：把它的 registry 行写成 STOPPED 终态（中止 driver、保留会话与行，不删除）——与 spawn_worker 配对，供人工/主 agent 叫停。wid 是 worker 编号（如 W101）；reason 是可选的一行原因，落到行的 stop=<reason> token，worker_status 可见。只对处于 RUNNING 且属于本进程/host 的行生效；找不到或已终态返回 {ok:false,step:\"lookup\",error}。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "wid": {
+            "type": "string",
+            "description": "要停止的 worker 编号（如 W101）"
+          },
+          "reason": {
+            "type": "string",
+            "description": "可选的一行原因，落成行的 stop=<reason> token；worker_status 可见。Keep it short."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "required": [
+          "wid"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "packages/workers/src/tools.ts (W7; no Rust counterpart)"
+    },
+    {
       "name": "worker_status",
-      "description": "查询 harness 侧 worker registry（registry.tsv）：返回 RUNNING/DONE/FAILED 汇总（RUNNING 行再按 state 标注细分 in-turn=正在跑 turn / idle=等待 mailbox 消息）；可选按 wid 过滤查看单个 worker 的会话与状态。",
+      "description": "查询 harness 侧 worker registry（registry.tsv）：返回 RUNNING/DONE/FAILED/STOPPED 汇总（RUNNING 行再按 state 标注细分 in-turn=正在跑 turn / idle=等待 mailbox 消息）；可选按 wid 过滤查看单个 worker 的会话与状态。",
       "parameters": {
         "type": "object",
         "properties": {

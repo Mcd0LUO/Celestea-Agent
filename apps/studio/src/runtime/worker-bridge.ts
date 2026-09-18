@@ -136,7 +136,7 @@ export async function sendWorkerThrough(
   let last: Record<string, unknown> | null = null;
   for (const entry of entries) {
     const body = sendBodyOf(
-      await dispatchWorkerTool(entry.runtime.tools, "session_send_message", { target: req.target, content: req.content }, callId()),
+      await dispatchWorkerTool(entry.runtime.tools, "send_message", { target: req.target, content: req.content }, callId()),
     );
     if (body["ok"] === true) return body;
     last = body;
@@ -169,7 +169,7 @@ export function spawnOutcomeOf(value: Record<string, unknown> | null): WorkerSpa
   return { ok: true, sessionId: String(value["sessionId"]), title: String(value["title"]), wid: String(value["wid"]) };
 }
 
-/** `session_send_message` value envelope -> the response body (verbatim). */
+/** `send_message` value envelope -> the response body (verbatim). */
 export function sendBodyOf(value: Record<string, unknown> | null): Record<string, unknown> {
   return value ?? { ok: false, delivered: false, error: "worker registry is not wired" };
 }

@@ -55,12 +55,26 @@ describe("WorkerRegistry tsv state", () => {
     reg.upsert({ wid: "W2", started_at: "t", status: "DONE", extra: "sess=session-1" });
     const all = reg.status();
     expect(all["total"]).toBe(2);
-    expect(all["by_status"]).toEqual({ RUNNING: 1, DONE: 1, FAILED: 0 });
+    expect(all["by_status"]).toEqual({ RUNNING: 1, DONE: 1, FAILED: 0, STOPPED: 0 });
     expect(all["by_state"]).toEqual({ "in-turn": 1, idle: 0, running: 0 });
     const one = reg.status("W2");
     expect(one["ok"]).toBe(true);
     expect((one["worker"] as Record<string, unknown>)["sess"]).toBe("session-1");
     expect(reg.status("W404")).toEqual({ ok: false, step: "lookup", error: "no worker W404 in registry" });
+  });
+
+  it("W7: finalize honours an explicit terminal status and freezes exactly once", () => {
+    const reg = registry(null);
+    reg.upsert({ wid: "W1", started_at: "t", status: "RUNNING", extra: "sess=session-0" });
+    const stopped = reg.finalize("W1", { ok: false, status: "STOPPED", reason: "operator halt" });
+    expect(stopped?.status).toBe("STOPPED");
+    expect(getExtra(reg.getEntry("W1")!, "stop")).toBe("operator-halt");
+    expect(getExtra(reg.getEntry("W1")!, "fail")).toBeNull();
+    expect(getExtra(reg.getEntry("W1")!, "state")).toBe("idle");
+    expect(getExtra(reg.getEntry("W1")!, "ended_at")).not.toBeNull();
+    // the single terminal write point freezes: a second verdict is a no-op.
+    expect(reg.finalize("W1", { ok: true })).toBeNull();
+    expect(reg.getEntry("W1")!.status).toBe("STOPPED");
   });
 
   it("annotates the state token of a RUNNING row and freezes DONE rows", () => {
@@ -231,7 +245,7 @@ describe("WorkerRegistry state machine (W736)", () => {
 
     const all = reg.status();
     expect(all["total"]).toBe(3);
-    expect(all["by_status"]).toEqual({ RUNNING: 1, DONE: 1, FAILED: 1 });
+    expect(all["by_status"]).toEqual({ RUNNING: 1, DONE: 1, FAILED: 1, STOPPED: 0 });
     expect(all["by_state"]).toEqual({ idle: 0, "in-turn": 0, running: 1 });
     expect((reg.status("W2")["worker"] as Record<string, unknown>)["fail"]).toBe("boom");
   });

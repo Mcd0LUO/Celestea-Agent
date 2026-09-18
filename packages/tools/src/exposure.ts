@@ -53,7 +53,8 @@ export const EXECUTION_TOOL_NAMES: readonly string[] = [
   "http_request",
   "process_control",
   "spawn_worker",
-  "session_send_message",
+  "send_message",
+  "stop_worker",
   "worker_status",
 ];
 

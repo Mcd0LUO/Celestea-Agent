@@ -12,7 +12,7 @@ describe("workersPlugin", () => {
     ctx.provide(WORKER_REGISTRY_SERVICE, new WorkerRegistry({ tsvPath: null }));
     workersPlugin({ name: "w1" }).mount(ctx);
     expect(ctx.get(WORKER_REGISTRY_SERVICE)).toBeInstanceOf(WorkerRegistry);
-    expect(tools.order).toEqual(["spawn_worker", "session_send_message", "worker_status"]);
+    expect(tools.order).toEqual(["spawn_worker", "send_message", "stop_worker", "worker_status"]);
   });
 
   it("mounts over an earlier registry (last provider wins)", () => {

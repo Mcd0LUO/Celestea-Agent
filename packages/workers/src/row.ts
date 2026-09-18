@@ -44,15 +44,20 @@ export function withTokens(entry: WorkerEntry, values: Record<string, string>): 
 }
 
 /**
- * W736: the terminal row of a verdict — status, `ended_at`, the `fail=<reason>`
- * token of a failure and `state=idle` (the driver's mailbox loop is at rest; a
- * stale `in-turn` on a frozen row would read as a turn still running). Pure, so
- * every terminal writer produces byte-identical rows.
+ * W736/W7: the ONE terminal row constructor — status (`verdict.status` or the
+ * legacy `ok ? DONE : FAILED`), `ended_at`, the `fail=<reason>`/`stop=<reason>`
+ * token and `state=idle` (the driver's mailbox loop is at rest; a stale
+ * `in-turn` on a frozen row would read as a turn still running). Pure, so every
+ * terminal writer produces byte-identical rows.
  */
 export function terminalEntry(entry: WorkerEntry, verdict: WorkerVerdict, nowMs: number): WorkerEntry {
-  const status: WorkerStatus = verdict.ok ? "DONE" : "FAILED";
+  const status: WorkerStatus = verdict.status ?? (verdict.ok ? "DONE" : "FAILED");
   const tokens: Record<string, string> = { ended_at: utcNow(nowMs), state: "idle" };
-  if (!verdict.ok) tokens["fail"] = oneToken(truncateChars(sanitizeExtra(verdict.reason ?? "unspecified failure"), 200));
+  const reason = verdict.reason;
+  if (status === "FAILED") tokens["fail"] = oneToken(truncateChars(sanitizeExtra(reason ?? "unspecified failure"), 200));
+  if (status === "STOPPED" && reason !== undefined && reason !== null && reason !== "") {
+    tokens["stop"] = oneToken(truncateChars(sanitizeExtra(reason), 200));
+  }
   return { ...entry, status, extra: setTokens(entry.extra, tokens) };
 }
 

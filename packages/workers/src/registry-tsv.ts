@@ -220,14 +220,14 @@ export function workerSess(entry: WorkerEntry): string | null {
 export interface WorkerSummary {
   ok: boolean;
   total: number;
-  by_status: { RUNNING: number; DONE: number; FAILED: number };
+  by_status: { RUNNING: number; DONE: number; FAILED: number; STOPPED: number };
   by_state: { idle: number; "in-turn": number; running: number };
   workers: WorkerEntry[];
 }
 
 /** Mirror of WorkerRegistry::summarize for the given (already process-filtered) rows. */
 export function summarize(entries: readonly WorkerEntry[]): WorkerSummary {
-  const by_status = { RUNNING: 0, DONE: 0, FAILED: 0 };
+  const by_status = { RUNNING: 0, DONE: 0, FAILED: 0, STOPPED: 0 };
   const by_state = { idle: 0, "in-turn": 0, running: 0 };
   for (const e of entries) {
     by_status[e.status] += 1;

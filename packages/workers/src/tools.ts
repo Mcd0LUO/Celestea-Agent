@@ -1,6 +1,6 @@
 /**
- * The three worker-orchestration tools (W185, `crates/workers/src/tools.rs`):
- * `spawn_worker` / `session_send_message` / `worker_status`.
+ * The four worker-orchestration tools (W185; W7 renamed the relay and added
+ * `stop_worker`): `spawn_worker` / `send_message` / `stop_worker` / `worker_status`.
  *
  * Contract discipline:
  *   - **specs come from `contracts/tools.json`** (via core's `loadTools`), not
@@ -26,8 +26,8 @@ export function contractError(step: string, error: string): Record<string, unkno
   return { ok: false, step, error };
 }
 
-/** The three tool names, in contract order. */
-export const WORKER_TOOL_NAMES = ["spawn_worker", "session_send_message", "worker_status"] as const;
+/** The four tool names, in contract order. */
+export const WORKER_TOOL_NAMES = ["spawn_worker", "send_message", "stop_worker", "worker_status"] as const;
 
 /** Spec straight out of the frozen contract (throws when the contract lost it). */
 export function workerToolSpec(name: string): ToolSpec {
@@ -41,7 +41,8 @@ export function workerTools(registry: WorkerRegistry): Tool[] {
   const ref = new WeakRef(registry);
   return [
     registryTool(workerToolSpec("spawn_worker"), ref, spawnWorker),
-    registryTool(workerToolSpec("session_send_message"), ref, sendMessage),
+    registryTool(workerToolSpec("send_message"), ref, sendMessage),
+    registryTool(workerToolSpec("stop_worker"), ref, stopWorker),
     registryTool(workerToolSpec("worker_status"), ref, workerStatus),
   ];
 }
@@ -173,7 +174,7 @@ export function deriveShort(brief: string, wid: string): string {
   return cleaned === "" ? wid : cleaned;
 }
 
-// --- session_send_message -------------------------------------------------
+// --- send_message (W7: renamed from session_send_message) -----------------
 
 async function sendMessage(registry: WorkerRegistry, args: Record<string, unknown>): Promise<unknown> {
   const target = stringArg(args, "target");
@@ -208,6 +209,21 @@ function resolveFailure(error: ResolveError): unknown {
     target: error.target,
     candidates: error.candidates.map((m) => ({ id: m.id, title: m.title, workspace: m.workspace, model: m.model })),
   };
+}
+
+// --- stop_worker ----------------------------------------------------------
+
+async function stopWorker(registry: WorkerRegistry, args: Record<string, unknown>): Promise<unknown> {
+  const wid = stringArg(args, "wid");
+  if (wid === "") return contractError("validate", "wid required");
+  const reason = optionalArg(args, "reason");
+  // W7: the STOPPED terminal goes through the ONE terminal write point
+  // (registry.finalize), so the isMine + RUNNING guard and the freeze both apply.
+  const stopped = registry.finalize(wid, { ok: false, status: "STOPPED", reason });
+  if (stopped === null) return contractError("lookup", `no RUNNING worker ${wid} in registry`);
+  const sid = getExtra(stopped, "sess");
+  if (sid !== null && sid !== "") registry.stopDriver(sid);
+  return { ok: true, wid, status: stopped.status, sessionId: sid ?? "", reason };
 }
 
 // --- worker_status --------------------------------------------------------

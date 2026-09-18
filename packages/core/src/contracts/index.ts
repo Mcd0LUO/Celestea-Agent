@@ -160,7 +160,7 @@ export interface DataFilesIndex {
 export const FROZEN_COUNTS = {
   endpoints: 51,
   sseEvents: 9,
-  tools: 12,
+  tools: 13,
 } as const;
 
 /** One frozen-count divergence, with everything an operator needs to act. */

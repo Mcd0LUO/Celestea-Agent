@@ -122,9 +122,9 @@ describe("composed watchdog", () => {
     expect(watchdog!.current.intervalMs).toBe(1_000);
 
     // The sweep is the TIMER's doing: nobody ticks it in this test.
-    expect(byStatus(f.registry)).toEqual({ RUNNING: 1, DONE: 0, FAILED: 0 });
+    expect(byStatus(f.registry)).toEqual({ RUNNING: 1, DONE: 0, FAILED: 0, STOPPED: 0 });
     vi.advanceTimersByTime(1_000);
-    expect(byStatus(f.registry)).toEqual({ RUNNING: 0, DONE: 0, FAILED: 1 });
+    expect(byStatus(f.registry)).toEqual({ RUNNING: 0, DONE: 0, FAILED: 1, STOPPED: 0 });
     expect(f.registry.getEntry("W1")!.status).toBe("FAILED");
 
     // ... and it keeps sweeping (a second period is a second round).
@@ -176,14 +176,14 @@ describe("terminal verdict reaches the registry view (W740 §2)", () => {
   it("settles an ended worker to DONE when the deliverable shows up, and the status view follows", async () => {
     const f = fixture();
     const runtime = composeWithWatchdog(f, { intervalMs: 60_000, graceMs: 0, maxRetries: 0 });
-    expect(byStatus(f.registry)).toEqual({ RUNNING: 1, DONE: 0, FAILED: 0 });
+    expect(byStatus(f.registry)).toEqual({ RUNNING: 1, DONE: 0, FAILED: 0, STOPPED: 0 });
 
     mkdirSync(f.results, { recursive: true });
     writeFileSync(join(f.results, "W1-report.md"), "r", "utf8");
     const actions = runtime.watchdog!.tick();
     expect(actions).toEqual([{ kind: "done", wid: "W1" }]);
 
-    expect(byStatus(f.registry)).toEqual({ RUNNING: 0, DONE: 1, FAILED: 0 });
+    expect(byStatus(f.registry)).toEqual({ RUNNING: 0, DONE: 1, FAILED: 0, STOPPED: 0 });
     const entry = f.registry.getEntry("W1")!;
     expect(entry.status).toBe("DONE");
     expect(entry.extra).toContain("ended_at=");

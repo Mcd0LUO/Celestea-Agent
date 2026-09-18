@@ -9,7 +9,7 @@
  * file plus a one-line receipt, settle each row's lifecycle state (W736: DONE /
  * FAILED are written, they are no longer a permanent RUNNING), keep the liveness
  * verdict in an independent watchdog plugin, and expose the three orchestration
- * tools (`spawn_worker` / `session_send_message` / `worker_status`).
+ * tools (`spawn_worker` / `send_message` / `stop_worker` / `worker_status`).
  *
  * Dependency direction: workers -> core only. The driver seams (`Llm`,
  * `ToolRegistry`, `AgentLoop`) and the worker session log are injected by the

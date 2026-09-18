@@ -38,7 +38,7 @@ describe("registry.tsv", () => {
   it("summarizes by_status and by_state", () => {
     const s = summarize(r.entries);
     expect(s.total).toBe(3);
-    expect(s.by_status).toEqual({ RUNNING: 1, DONE: 1, FAILED: 1 });
+    expect(s.by_status).toEqual({ RUNNING: 1, DONE: 1, FAILED: 1, STOPPED: 0 });
     expect(s.by_state).toEqual({ idle: 1, "in-turn": 0, running: 0 });
   });
 });

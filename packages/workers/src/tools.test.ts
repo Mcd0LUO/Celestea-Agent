@@ -24,7 +24,10 @@ describe("worker tool specs", () => {
     expect(spawn.parameters["required"]).toEqual(["wid", "brief"]);
     expect(spawn.parameters["additionalProperties"]).toBe(false);
     expect(workerToolSpec("worker_status").parameters["required"]).toEqual([]);
-    expect(workerToolSpec("session_send_message").name).toBe("session_send_message");
+    expect(workerToolSpec("send_message").name).toBe("send_message");
+    expect(workerToolSpec("stop_worker").parameters["required"]).toEqual(["wid"]);
+    // W7 red-on-old-code: the pre-W7 name is GONE from the frozen contract.
+    expect(() => workerToolSpec("session_send_message")).toThrow(/contracts\/tools.json/);
   });
 
   it("W779: every spec carries the optional desc UI label from the contract", () => {
@@ -137,18 +140,18 @@ describe("spawn_worker", () => {
   });
 });
 
-describe("session_send_message", () => {
+describe("send_message", () => {
   it("validates target and content", async () => {
     const { tools } = harness();
-    expect(await call(tools, "session_send_message", { content: "hi" })).toMatchObject({ step: "validate", error: "target required" });
-    expect(await call(tools, "session_send_message", { target: "cli-main" })).toMatchObject({ step: "validate", error: "content required" });
+    expect(await call(tools, "send_message", { content: "hi" })).toMatchObject({ step: "validate", error: "target required" });
+    expect(await call(tools, "send_message", { target: "cli-main" })).toMatchObject({ step: "validate", error: "content required" });
   });
 
   it("resolves an id and queues the message on the target mailbox", async () => {
     const { registry, tools } = harness();
     registry.setSourceLabel("cli-main");
     registry.sessions.create({ title: "W1·t" });
-    const result = await call(tools, "session_send_message", { target: "session-0", content: "please report" });
+    const result = await call(tools, "send_message", { target: "session-0", content: "please report" });
     expect(result).toMatchObject({ ok: true, delivered: true, queued: true, target: "session-0", sourceSession: "cli-main" });
     const queued = registry.mailbox.poll("session-0");
     expect(queued.map((m) => m.content)).toEqual(["please report"]);
@@ -158,8 +161,8 @@ describe("session_send_message", () => {
   it("resolves a unique title and reports a missing target", async () => {
     const { registry, tools } = harness();
     registry.sessions.create({ title: "W2·audit" });
-    expect(await call(tools, "session_send_message", { target: "W2·audit", content: "x" })).toMatchObject({ ok: true, target: "session-0" });
-    expect(await call(tools, "session_send_message", { target: "ghost", content: "x" })).toEqual({
+    expect(await call(tools, "send_message", { target: "W2·audit", content: "x" })).toMatchObject({ ok: true, target: "session-0" });
+    expect(await call(tools, "send_message", { target: "ghost", content: "x" })).toEqual({
       ok: false,
       step: "resolve",
       error: "no session matches target: ghost",
@@ -170,10 +173,60 @@ describe("session_send_message", () => {
     const { registry, tools } = harness();
     registry.sessions.create({ title: "dup" });
     registry.sessions.create({ title: "dup" });
-    const result = await call(tools, "session_send_message", { target: "dup", content: "x" });
+    const result = await call(tools, "send_message", { target: "dup", content: "x" });
     expect(result["ok"]).toBe(false);
     expect(result["step"]).toBe("resolve");
     expect((result["candidates"] as unknown[]).length).toBe(2);
+  });
+});
+
+describe("stop_worker", () => {
+  it("validates wid", async () => {
+    const { tools } = harness();
+    expect(await call(tools, "stop_worker", {})).toMatchObject({ step: "validate", error: "wid required" });
+  });
+
+  it("writes STOPPED, aborts the driver, and keeps the row + session (只停不删)", async () => {
+    const { registry, tools } = harness();
+    await call(tools, "spawn_worker", { wid: "W1", brief: "b1" });
+    const sid = registry.sessionFor("W1");
+    expect(sid).not.toBe("");
+    const result = await call(tools, "stop_worker", { wid: "W1", reason: "operator halt" });
+    expect(result).toMatchObject({ ok: true, wid: "W1", status: "STOPPED", sessionId: sid });
+    const row = registry.getEntry("W1")!;
+    expect(row.status).toBe("STOPPED");
+    expect(getExtra(row, "stop")).toBe("operator-halt");
+    expect(getExtra(row, "state")).toBe("idle");
+    expect(registry.getEntry("W1")).toBeDefined();
+    expect(registry.sessions.get(sid)).toBeDefined();
+  });
+
+  it("rejects an unknown or already-terminal worker with a lookup failure", async () => {
+    const { registry, tools } = harness();
+    await call(tools, "spawn_worker", { wid: "W1", brief: "b1" });
+    expect(await call(tools, "stop_worker", { wid: "W9" })).toMatchObject({ ok: false, step: "lookup" });
+    await call(tools, "stop_worker", { wid: "W1" });
+    expect(await call(tools, "stop_worker", { wid: "W1" })).toMatchObject({ ok: false, step: "lookup" });
+  });
+
+  it("freezes STOPPED and refuses to rewrite a DONE/FAILED row", async () => {
+    const { registry, tools } = harness();
+    await call(tools, "spawn_worker", { wid: "W1", brief: "b1" });
+    await call(tools, "stop_worker", { wid: "W1", reason: "halt" });
+    expect(registry.getEntry("W1")!.status).toBe("STOPPED");
+    // a second stop is a lookup no-op and must NOT rewrite the frozen row.
+    expect(await call(tools, "stop_worker", { wid: "W1", reason: "again" })).toMatchObject({ ok: false, step: "lookup" });
+    expect(getExtra(registry.getEntry("W1")!, "stop")).toBe("halt");
+    expect(getExtra(registry.getEntry("W1")!, "ended_at")).not.toBeNull();
+    // DONE and FAILED are terminal too.
+    await call(tools, "spawn_worker", { wid: "W2", brief: "b2" });
+    registry.finalize("W2", { ok: true });
+    expect(await call(tools, "stop_worker", { wid: "W2" })).toMatchObject({ ok: false, step: "lookup" });
+    expect(registry.getEntry("W2")!.status).toBe("DONE");
+    await call(tools, "spawn_worker", { wid: "W3", brief: "b3" });
+    registry.finalize("W3", { ok: false, reason: "boom" });
+    expect(await call(tools, "stop_worker", { wid: "W3" })).toMatchObject({ ok: false, step: "lookup" });
+    expect(registry.getEntry("W3")!.status).toBe("FAILED");
   });
 });
 

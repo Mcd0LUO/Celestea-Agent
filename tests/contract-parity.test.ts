@@ -41,7 +41,7 @@ const CONTRACT = loadTools();
  * supplies a user-question service — see `REGISTRY_TOOLS_WITH_QUESTIONS`).
  */
 const REGISTRY_TOOLS = ["http_request", "list_dir", "process_control", "read_file", "run_code", "run_shell", "write_file"];
-const WORKER_TOOLS = ["session_send_message", "spawn_worker", "worker_status"];
+const WORKER_TOOLS = ["send_message", "spawn_worker", "stop_worker", "worker_status"];
 /** W783: the same registry once the host mounts the user-question capability. */
 const QUESTION_TOOLS = ["ask_user_question"];
 /** W804: mounted only once the host supplies a session attachment store. */
@@ -182,9 +182,9 @@ describe("W744 · all 7 builtin tool specs match the implementation registry", (
   });
 
   it("leaves no contract tool uncovered (worker trio + W783 question tool come from elsewhere)", () => {
-    // W783: 10 -> 11; W804: 11 -> 12. ask_user_question and read_image are each
-    // covered by their own optional-mount check below.
-    expect(CONTRACT.tools).toHaveLength(12);
+    // W783: 10 -> 11; W804: 11 -> 12; W7: 12 -> 13. ask_user_question, read_image
+    // and the W7 worker pair are each covered by their own check below.
+    expect(CONTRACT.tools).toHaveLength(13);
     expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS, READ_IMAGE_TOOL])).toEqual([]);
   });
 

@@ -127,7 +127,7 @@ describe("watchdog tick", () => {
     const row = h.registry.getEntry("W4")!;
     expect(row.status).toBe("FAILED");
     expect(getExtra(row, "fail")).toBe("retries-exhausted-(2)");
-    expect(h.registry.status()["by_status"]).toEqual({ RUNNING: 0, DONE: 0, FAILED: 1 });
+    expect(h.registry.status()["by_status"]).toEqual({ RUNNING: 0, DONE: 0, FAILED: 1, STOPPED: 0 });
   });
 
   it("defers a fresh anomaly inside the grace window", () => {

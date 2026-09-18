@@ -20,7 +20,7 @@ export const RUN_CODE_ERROR_PREFIX = "run_code";
 
 /**
  * The SDK whitelist — the only tool names the parent dispatches for a sub-call.
- * `spawn_worker` / `session_send_message` / `process_control` / `http_request` /
+ * `spawn_worker` / `send_message` / `process_control` / `http_request` /
  * `run_code` are deliberately excluded (eval §6.5).
  */
 export const SDK_TOOLS: readonly string[] = ["read_file", "write_file", "list_dir", "run_shell"];

@@ -448,7 +448,7 @@ export interface SessionsView {
 // Workers (registry.tsv)
 // ---------------------------------------------------------------------------
 
-export const WORKER_STATUSES = ["RUNNING", "DONE", "FAILED"] as const;
+export const WORKER_STATUSES = ["RUNNING", "DONE", "FAILED", "STOPPED"] as const;
 export type WorkerStatus = (typeof WORKER_STATUSES)[number];
 
 export interface WorkerEntry {

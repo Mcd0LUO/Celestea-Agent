@@ -36,11 +36,15 @@ export interface WorkerSession {
 /**
  * W736: the terminal verdict of one worker — the value that drives the
  * `RUNNING -> DONE | FAILED` transition of its `registry.tsv` row. `reason` is
- * only meaningful for a failure and is persisted as the `fail=<reason>` token,
- * so `worker_status` can report WHY a worker stopped, not merely that it did.
+ * persisted as `fail=<reason>` (FAILED) or `stop=<reason>` (STOPPED), so
+ * `worker_status` can report WHY a worker stopped, not merely that it did.
+ *
+ * W7: `status` names the terminal explicitly. Omitted, it stays the legacy
+ * `ok ? DONE : FAILED`; `STOPPED` is the intentional-halt terminal.
  */
 export interface WorkerVerdict {
   ok: boolean;
+  status?: "DONE" | "FAILED" | "STOPPED";
   reason?: string | null;
 }
 
