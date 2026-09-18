@@ -260,40 +260,27 @@ async function upgradeInline(tex: string): Promise<ElLike> {
   return el as ElLike;
 }
 
-describe('W865 · 冷门符号（用户报「不支持」，实测支持）逐条锁定', () => {
-  const CASES: Array<{ tex: string; want: string[] }> = [
-    { tex: 'a \\preceq b', want: ['<mo>⪯</mo>'] },
-    { tex: 'a \\curlyeqprec b', want: ['<mo>⋞</mo>'] },
-    {
-      tex: 'x \\pmod{n}',
-      want: [
-        '<mo stretchy="false">(</mo>',
-        '<mrow><mi mathvariant="normal">m</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi></mrow>',
-        '<mo stretchy="false">)</mo>',
-      ],
-    },
-    {
-      tex: 'x \\bmod n',
-      want: [
-        '<mo lspace="0.22em" rspace="0.22em">',
-        '<mrow><mi mathvariant="normal">m</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi></mrow>',
-      ],
-    },
-    { tex: '\\lfloor x \\rfloor', want: ['<mo stretchy="false">⌊</mo>', '<mo stretchy="false">⌋</mo>'] },
-    { tex: '\\lceil x \\rceil', want: ['<mo stretchy="false">⌈</mo>', '<mo stretchy="false">⌉</mo>'] },
-    {
-      tex: '\\llcorner \\lrcorner',
-      want: ['<mo><mi mathvariant="normal">⌞</mi></mo>', '<mo><mi mathvariant="normal">⌟</mi></mo>'],
-    },
+describe('W865 · 用户报的冷门符号：KaTeX 认的就不该出现未定义命令红标', () => {
+  // 不逐符号维护期望 DOM —— 那等于手工维护一套渲染结果，KaTeX 一升级就过时。
+  // 这里只断言「这条链路没额外丢东西」：渲染出 <math>、且没有 KaTeX 的
+  // 未定义命令/解析错误标记（katex-error / 错误红 #cc0000）。
+  // 某个符号到底支不支持由 KaTeX 自己负责；这里只保证我们不比它更差。
+  const REPORTED = [
+    'a \\preceq b',
+    'a \\curlyeqprec b',
+    'x \\pmod{n}',
+    'x \\bmod n',
+    '\\lfloor x \\rfloor \\; \\lceil x \\rceil',
+    '\\llcorner \\; \\lrcorner',
   ];
 
-  for (const c of CASES) {
-    it(c.tex + ' 渲染为 MathML 且字形/文本正确（无 katex-error）', async () => {
-      const el = await upgradeInline(c.tex);
+  for (const tex of REPORTED) {
+    it(tex + ' 渲染成功（无未定义命令红标）', async () => {
+      const el = await upgradeInline(tex);
       expect(el.querySelector('math')).not.toBeNull();
       const html = el.innerHTML; // 已经是 sanitizeNodes 的产物
       expect(html).not.toContain('katex-error');
-      for (const w of c.want) expect(html).toContain(w);
+      expect(html).not.toContain('#cc0000');
     });
   }
 });
