@@ -45,14 +45,17 @@
 //   「本次新固化的 HTML 增量」与「尾部 HTML」，供 messages.ts 做局部 DOM 替换
 //   （已固化块对应的 DOM 节点原地保留 → 浏览器不重解析、已高亮代码块不重建）。
 //
-// 另一个必须处理的坑：marked 的标题 id 由 Parser 内的 Slugger 递增（同名标题
-//   会得到 `标题`、`标题-1`…）。若分块解析时每块用新 Parser，重复标题的 id 会
-//   漂移。因此这里始终自己 new Parser 并维护跨块 slugger 状态：固化块渲染后
-//   持久化 seen，尾部块渲染时以 seen 为种子但不回写（尾部每 tick 重解析，
-//   回写会造成重复计数）。标题 id 因此与「整段一次解析」完全一致。
+// 标题 id：marked v4→v5 上游移除了 headerIds/Slugger，v18 的 heading() 只产出
+//   `<hN>…</hN>`（无 id）。但本项目 retain 标题 id（sanitize.ts 的 id 白名单、
+//   会话内定位都依赖它），所以这里本地逐字节复刻 v4 的 Slugger 算法，零新依赖
+//   （见 ./markdown-heading-id）。同名标题会得到 `标题`、`标题-1`…
+//   若分块解析时每块各起一套计数，重复标题的 id 会漂移；因此解析器仍共享同一份
+//   跨块 seen：固化块渲染后持久化，尾部块以 seen 为种子但不回写（尾部每 tick
+//   重解析，回写会造成重复计数）。标题 id 因此与「整段一次解析」完全一致。
 // ============================================================================
-import { marked, Parser } from 'marked';
+import { marked } from 'marked';
 import { mathExtension } from './markdown-math';
+import { parseWithHeadingIds, type SluggerSeen } from './markdown-heading-id';
 
 // 与现状一致（breaks/gfm）；renderMarkdown 与分块解析共用同一套默认选项
 marked.setOptions({ breaks: true, gfm: true });
@@ -75,34 +78,19 @@ function escapeHtml(s: string): string {
 // 扩展只产出安全占位；真实 MathML 渲染见 ui/messages/math.ts（懒加载）。
 marked.use(mathExtension(escapeHtml));
 
-/**
- * 用自带 slugger 状态的 Parser 渲染（等价于 marked.parse，但标题 id 计数器
- * 跨块连续）。seen 为标题 slug 计数表；persist=true 时把本次计数回写。
- */
-function parseWith(seen: Record<string, number>, text: string, persist: boolean): string {
-  // 复制默认选项（与 marked.parse 一致）：Parser 构造器会往 options 上写
-  // renderer，直接传 marked.defaults 会污染全局默认值。
-  const opts = { ...marked.defaults };
-  const parser = new Parser(opts);
-  Object.assign(parser.slugger.seen, seen);
-  const html = parser.parse(marked.lexer(text, opts));
-  if (persist) Object.assign(seen, parser.slugger.seen);
-  return html;
-}
-
 /** 一次性全量渲染（历史恢复路径 / done 全文覆盖用）。 */
 export function renderMarkdown(text: string): string {
   try {
-    return marked.parse(text, { async: false }) as string;
+    return parseWithHeadingIds({}, text, true);
   } catch {
     return '<pre>' + escapeHtml(text) + '</pre>';
   }
 }
 
 /** 单块解析（与 renderMarkdown 同管线；固化块/尾部块解析用）。 */
-function md(text: string, seen: Record<string, number>, persist: boolean): string {
+function md(text: string, seen: SluggerSeen, persist: boolean): string {
   try {
-    return parseWith(seen, text, persist);
+    return parseWithHeadingIds(seen, text, persist);
   } catch {
     return '<pre>' + escapeHtml(text) + '</pre>';
   }
@@ -430,7 +418,7 @@ export class MarkdownStream {
   /** 上一次的尾部 HTML（未固化部分） */
   private tailHtml = '';
   /** 已固化前缀的标题 slug 计数（跨块连续，见文件头说明） */
-  private seen: Record<string, number> = {};
+  private seen: SluggerSeen = {};
   /** 已固化前缀里含「无定义时的引用式链接用法」→ 定义行一旦出现必须整体重渲染 */
   private refFrozen = false;
 

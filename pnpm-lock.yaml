@@ -72,12 +72,9 @@ importers:
         specifier: 0.16.47
         version: 0.16.47
       marked:
-        specifier: ^4.3.0
-        version: 4.3.0
+        specifier: ^18.0.13
+        version: 18.0.13
     devDependencies:
-      '@types/marked':
-        specifier: ^4.3.2
-        version: 4.3.2
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
@@ -547,9 +544,6 @@ packages:
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
-
-  '@types/marked@4.3.2':
-    resolution: {integrity: sha512-a79Yc3TOk6dGdituy8hmTTJXjOkZ7zsFYV10L337ttq/rec8lRMDBpV7fL3uLx6TgbFCa5DU/h8FmIBQPSbU0w==}
 
   '@types/node@26.6.1':
     resolution: {integrity: sha512-VqGJBMCtdhqkBUCcBLvywI0NJ+KLuVzgNnlBUNFOQjqVxzo2lxLUNg1DSey8+u2u6ktswSAxg+s68QLzWHNOuA==}
@@ -1055,9 +1049,9 @@ packages:
   magic-string@1.4.1:
     resolution: {integrity: sha512-8lyCu36ErXR0J9uaGKlKQoiLZKmtI63YGLE8G2o9jyRPdr4X47LusSOwgOJOzcVtp81fTAAjxR7BwKz682Jhow==}
 
-  marked@4.3.0:
-    resolution: {integrity: sha512-PRsaiG84bK+AMvxziE/lCFss8juXjNaWzVbN5tXAm4XjeaS9NAHhop+PjQxz2A9h8Q4M/xGmzP8vqNwy6JeK0A==}
-    engines: {node: '>= 12'}
+  marked@18.0.13:
+    resolution: {integrity: sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==}
+    engines: {node: '>= 20'}
     hasBin: true
 
   mdn-data@2.27.1:
@@ -1684,8 +1678,6 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/marked@4.3.2': {}
-
   '@types/node@26.6.1':
     dependencies:
       undici-types: 8.9.0
@@ -2226,7 +2218,7 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  marked@4.3.0: {}
+  marked@18.0.13: {}
 
   mdn-data@2.27.1: {}
 
