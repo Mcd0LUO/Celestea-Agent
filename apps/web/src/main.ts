@@ -39,13 +39,12 @@ import { S } from './state';
 import { initTheme, setupThemeSwitcher } from './theme';
 import { need } from './utils/dom';
 
-/** 健康信息 → 侧栏脚注 + statusline（模型兜底）。 */
+/** 健康信息 → statusline（模型兜底）。#sideFoot 只归操作提示 note()，不再写模型名。 */
 function refreshHealthChip(): void {
   void api
     .health()
     .then((h) => {
-      need<HTMLElement>('#sideFoot').textContent = h.model || '';
-      // /api/status 未上线前，用 health 的模型填补 statusline
+      // /api/status 未上线前，用 health 的模型填补 statusline（模型只在 #slModel 一处）
       if (h.model) statusline.merge({ model: h.model });
       if (!S.streaming) setStatus('就绪 · 在线', 'ok');
     })

@@ -9,7 +9,13 @@
 :root {
   --mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   --sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
-  --radius: 8px;
+  /* W8：统一圆角刻度（取代散落的 1/2/4/5/6/7/8/10/12px 硬编码）。
+     语义：sm=小徽标/chip/控件内小元素；md=按钮/输入框/树行/菜单项；lg=卡片/弹层/浮层。
+     --radius / --card-radius 保留为兼容别名（指向刻度）。 */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --radius: var(--r-md);
   /* W786：表单两列网格的左列（标签）宽度 —— 设置页各 pane 与弹窗共用同一值，
      避免切页时右列控件起点左右跳动。 */
   --field-label-w: 148px;
@@ -79,7 +85,7 @@
   --lead-gap: 6px; /* 图标盒与标题的间距 */
   --fs-secondary: 13px; /* 次级正文：思考正文 / 折叠行标题 */
   --lh-secondary: 20px;
-  --card-radius: 12px; /* 卡片圆角：工具卡 / 信息块 */
+  --card-radius: var(--r-lg); /* 卡片圆角：工具卡 / 信息块（= --r-lg） */
   --card-gutter: 30px; /* 工具卡左侧 gutter：运行状态点独占列 */
   --code-lh: 18px; /* 等宽正文行高 */
 

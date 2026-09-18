@@ -21,7 +21,7 @@
   padding: 0;
   background: transparent;
   border: 1px solid var(--c-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   color: var(--c-grant-idle);
   cursor: pointer;
   line-height: 0;
@@ -61,7 +61,7 @@
   min-width: 11px;
   height: 11px;
   padding: 0 2px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--c-grant);
   color: #fff;
   font-family: var(--mono);
@@ -128,7 +128,7 @@
   flex-direction: column;
   gap: 4px;
   border: 1px solid var(--c-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--c-surface);
   padding: 6px;
   margin: 0 0 8px;
@@ -159,7 +159,7 @@
   text-align: left;
   background: var(--c-surface-raised);
   border: 1px solid var(--c-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 5px 7px;
   color: var(--c-text-1);
   font: inherit;
@@ -184,7 +184,7 @@
   font-size: 9.5px;
   line-height: 14px;
   border: 1px solid var(--c-grant);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   padding: 0 4px;
   color: var(--c-grant);
 }
@@ -206,7 +206,7 @@
 }
 .grant-preview {
   border: 1px solid var(--c-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--c-code-bg);
   padding: 6px 8px;
   margin: 0 0 8px;
@@ -247,7 +247,7 @@
   font-family: var(--mono);
   font-size: 10px;
   border: 1px solid var(--c-border-strong);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   padding: 0 5px;
   line-height: 15px;
   color: var(--c-text-3);
@@ -342,7 +342,7 @@
   overflow: auto;
   background: var(--c-code-bg);
   border: 1px solid var(--c-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--r-md);
   font-family: var(--mono);
   font-size: 11px;
   color: var(--c-text-2);

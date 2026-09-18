@@ -49,7 +49,7 @@
 .sess-bar-kind {
   flex: 0 0 auto;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: 1px;
-  border: 1px solid var(--c-border-strong); border-radius: 4px; padding: 0 5px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); padding: 0 5px;
   color: var(--c-text-2);
 }
 .sess-bar-kind.hidden { display: none; }
@@ -98,7 +98,7 @@
 /* ---- 运行中插话（输入条 + 消息样式 + 轻提示） ---- */
 #inputbar.interject { box-shadow: inset 0 1px 0 var(--c-accent-ring); }
 #inputbar.interject #input {
-  border: 1px dashed var(--c-border-strong);
+  border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
 }
 #inputbar.interject::before {
@@ -109,7 +109,7 @@
 }
 #inputbar.readonly #input { opacity: .85; }
 .msg.user.interject .bubble {
-  border: 1px dashed var(--c-border-strong);
+  border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
 }
 /* 注：`.interject` 是 W514 的旧别名（steering 沿用），样式见文件末尾 W515 分区 */
@@ -145,7 +145,7 @@
 .ws-worker-details:not([open]) .ws-worker-summary::after { transform: rotate(-90deg); }
 .ws-worker-wid {
   flex: 0 0 auto; font-family: var(--mono); font-size: 9.5px;
-  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 4px;
   color: var(--c-text-2);
 }
 .ws-worker-title {
@@ -165,14 +165,14 @@
 /* ---- 转录条目分类：普通用户消息保持原样，插话/排队/回执各有可辨识形态 ---- */
 .msg.user.steering .bubble,
 .msg.user.interject:not(.queued) .bubble {
-  border: 1px dashed var(--c-border-strong);
+  border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
   box-shadow: inset 3px 0 0 var(--c-accent-ring);
 }
 .msg.user.steering .who::after { content: ' · 下一步送达'; color: var(--c-text-3); font-weight: 400; }
 
 .msg.user.queued .bubble {
-  border: 1px dotted var(--c-border-strong);
+  border: 1px solid var(--c-border-strong);
   background: var(--c-bg);
   box-shadow: inset 3px 0 0 var(--c-border-strong);
 }
@@ -184,7 +184,7 @@
   border: 1px solid var(--c-border-strong);
   border-top-width: 3px;
   background: var(--c-surface);
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 .msg.inbox .who {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: .6px;
@@ -192,7 +192,7 @@
 }
 .msg.inbox .inbox-lane {
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .8px;
-  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 4px;
   color: var(--c-text-3);
 }
 .msg.inbox .inbox-content {
@@ -203,7 +203,7 @@
 /* ---- 提交两态切换（#btnMode：插话 / 排队；W846 起落在 statusline 第 1 行右端） ---- */
 #btnMode.queue {
   background: var(--c-bg);
-  border-style: dotted;
+  border-style: solid;
 }
 
 /* ---- W515 谱系缩进（父会话 → worker 子行） ---- */
@@ -222,12 +222,12 @@
 .ws-worker-row.child {
   margin-left: 14px;
   border-left: 1px solid var(--c-border-subtle);
-  border-radius: 0 7px 7px 0;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
 }
 .ws-worker-row.child:hover { border-left-color: var(--c-border-strong); }
 .sess-worker-count {
   flex: 0 0 auto;
   font-family: var(--mono); font-size: 9.5px;
-  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 4px;
   color: var(--c-text-3);
 }

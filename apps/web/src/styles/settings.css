@@ -16,7 +16,7 @@
 .settings-shell {
   width: min(920px, 100%);
   background: var(--c-surface-raised);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   display: flex; flex-direction: column;
   box-shadow: var(--shadow-panel);
   overflow: hidden;
@@ -43,7 +43,7 @@
 .settings-nav-item {
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   padding: 8px 12px;
   color: var(--c-text-2);
   font-size: 13px;
@@ -143,7 +143,7 @@
 .prov-td-ops .btn-mini + .btn-mini { margin-left: 4px; }
 .prov-badge {
   font-size: 10px; color: var(--c-accent); font-family: var(--mono);
-  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 5px;
+  border: 1px solid var(--c-accent-ring); border-radius: var(--r-sm); padding: 0 5px;
   margin-right: 4px;
 }
 .prov-badge.key { color: var(--c-ok); border-color: var(--c-ok); }
@@ -171,13 +171,12 @@
 }
 .prov-inline .prov-form {
   padding: 10px 12px 12px;
-  border-top: 1px dashed var(--c-border-subtle);
   background: var(--c-surface);
 }
 
 /* ---- 默认模型：独立卡片区 ---- */
 .prov-default-card {
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: var(--c-surface-raised);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   margin-top: 16px;
@@ -222,7 +221,7 @@
 
 .prov-model-row {
   display: flex; align-items: center; gap: 6px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 6px 8px;
   margin-bottom: 6px;
   flex-wrap: wrap;
@@ -261,12 +260,12 @@
 .prov-picker { width: min(520px, calc(100vw - 40px)); }
 .prov-picker-list {
   max-height: 320px; overflow-y: auto;
-  border-radius: 8px; background: var(--c-surface); padding: 6px;
+  border-radius: var(--r-lg); background: var(--c-surface); padding: 6px;
   display: flex; flex-direction: column; gap: 2px;
 }
 .prov-picker-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer;
   font-size: 12.5px; color: var(--c-text-1);
 }
 .prov-picker-row:hover { background: var(--c-accent-soft); }
@@ -277,7 +276,7 @@
 .prov-picker-tag {
   margin-left: auto; flex: 0 0 auto;
   font-size: 10px; font-family: var(--mono); color: var(--c-text-3);
-  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 5px;
+  border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 5px;
 }
 .prov-picker-count { font-size: 11.5px; color: var(--c-text-3); font-family: var(--mono); }
 
@@ -317,7 +316,7 @@
 .prompt-name { font-weight: 600; color: var(--c-text-1); }
 .prompt-badge {
   font-size: 10px; font-family: var(--mono);
-  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 5px;
+  border: 1px solid var(--c-accent-ring); border-radius: var(--r-sm); padding: 0 5px;
   color: var(--c-accent); margin-left: 6px;
 }
 .prompt-badge.active { color: var(--c-ok); border-color: var(--c-ok); }
@@ -331,7 +330,7 @@
 /* ---- 编辑弹窗 ---- */
 .prompt-modal { width: min(640px, calc(100vw - 40px)); max-height: 86vh; overflow-y: auto; }
 .prompt-vars {
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--c-code-bg); margin-bottom: 10px;
 }
 .prompt-vars summary {
@@ -348,12 +347,12 @@
 
 .prompt-secs { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .prompt-sec-row {
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--c-surface); padding: 6px 8px;
 }
 .prompt-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .prompt-sec-name { font-size: 12.5px; font-weight: 600; color: var(--c-text-1); }
-.prompt-sec-scope { font-size: 10px; color: var(--c-text-3); font-family: var(--mono); border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px; }
+.prompt-sec-scope { font-size: 10px; color: var(--c-text-3); font-family: var(--mono); border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 4px; }
 .prompt-inherit-label {
   margin-left: auto; display: flex; align-items: center; gap: 4px;
   font-size: 11px; color: var(--c-text-2); cursor: pointer;
@@ -369,7 +368,7 @@
 
 .arc-ws {
   border: 1px solid var(--c-border-subtle);
-  border-radius: var(--radius);
+  border-radius: var(--r-md);
   background: var(--c-surface);
   overflow: hidden;
 }

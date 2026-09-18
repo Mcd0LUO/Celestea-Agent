@@ -22,7 +22,7 @@ body {
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb {
   background: var(--c-scroll-thumb);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   border: 2px solid var(--c-bg);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--c-border-strong); }
@@ -35,7 +35,7 @@ button { font: inherit; }
 .btn {
   padding: 6px 14px;
   border: 1px solid var(--c-border-strong);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--c-surface-raised);
   color: var(--c-text-1);
   cursor: pointer;
@@ -66,7 +66,7 @@ button { font: inherit; }
 
 .btn-mini {
   border: none; background: transparent; color: var(--c-text-3);
-  font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 5px;
+  font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: var(--r-sm);
 }
 .btn-mini:hover { color: var(--c-text-2); background: var(--c-surface-raised); }
 
@@ -76,7 +76,7 @@ button { font: inherit; }
 input, textarea, select {
   background: var(--c-code-bg);
   border: 1px solid var(--c-border-subtle);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   color: var(--c-text-1);
   padding: 6px 10px;
   font: inherit;

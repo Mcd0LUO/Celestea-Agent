@@ -21,7 +21,7 @@
   flex: 1 1 auto; min-width: 0;
   display: flex; align-items: center; gap: 5px;
   border: 1px solid var(--c-border-subtle);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--c-code-bg);
   padding: 4px 8px;
   color: var(--c-text-3);
@@ -36,7 +36,7 @@
   display: flex; align-items: center; gap: 4px;
   flex: 0 0 auto;
   background: transparent; border: 1px solid var(--c-border-subtle);
-  border-radius: 7px; color: var(--c-text-2);
+  border-radius: var(--r-md); color: var(--c-text-2);
   padding: 5px 7px; cursor: pointer;
   font-family: var(--mono); font-size: 10.5px;
 }
@@ -46,7 +46,7 @@
 
 /* ---- 工作区/会话树 ---- */
 .ws-tree { display: flex; flex-direction: column; gap: 6px; }
-.ws-node { border-radius: 8px; background: var(--c-surface-raised); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+.ws-node { border-radius: var(--r-md); background: var(--c-surface-raised); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
 .ws-head {
   display: flex; align-items: center; gap: 7px;
   padding: 6px 8px; cursor: pointer; user-select: none; list-style: none;
@@ -62,7 +62,7 @@
 .ws-count {
   flex: 0 0 auto;
   font-family: var(--mono); font-size: 10px; color: var(--c-text-3);
-  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 4px;
 }
 /* 折叠/展开动画：max-height 过渡（不清除重建 DOM；第 10 轮） */
 .ws-body {
@@ -101,7 +101,7 @@
   flex: 0 0 auto;
   background: transparent; border: none; cursor: pointer;
   color: var(--c-text-3); font-size: 13px; line-height: 1; padding: 0 3px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
 }
 .sess-kebab:hover { color: var(--c-text-1); background: var(--c-surface); }
 
@@ -111,7 +111,7 @@
 .sess-batchbar {
   display: none; align-items: center; gap: 8px;
   background: var(--c-accent-soft);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 6px 10px;
   margin-top: 8px;
 }
@@ -128,7 +128,7 @@
   min-width: 168px;
   background: var(--c-surface-raised);
   border: 1px solid var(--c-border-strong);
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-panel);
   padding: 4px;
   display: flex; flex-direction: column;
@@ -136,7 +136,7 @@
 .sess-menu-item {
   background: transparent; border: none; text-align: left;
   padding: 7px 10px; font-size: 12.5px; color: var(--c-text-1);
-  border-radius: 5px; cursor: pointer;
+  border-radius: var(--r-sm); cursor: pointer;
   white-space: nowrap;
 }
 .sess-menu-item:hover:not(:disabled) { background: var(--c-accent-soft); }
@@ -153,7 +153,7 @@
 .modal-card {
   width: min(440px, calc(100vw - 40px));
   background: var(--c-surface-raised);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-panel);
   padding: 16px;
   display: flex; flex-direction: column; gap: 10px;
@@ -171,7 +171,7 @@
      弹窗整体高度因此不跳动 */
   display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--c-code-bg);
   padding: 6px 8px;
   min-height: 30px;
@@ -179,7 +179,7 @@
 .ws-fs-crumb {
   background: transparent; border: none; cursor: pointer;
   font-family: var(--mono); font-size: 12px; color: var(--c-accent);
-  padding: 1px 4px; border-radius: 4px;
+  padding: 1px 4px; border-radius: var(--r-sm);
   /* W258 任务 1：面包屑不换行、不压缩（固定单行，横向滚动） */
   flex: 0 0 auto; white-space: nowrap;
 }
@@ -191,7 +191,7 @@
      弹窗（.modal-card 居中）尺寸不随目录数量跳动 */
   height: 340px;
   flex: 0 0 340px;
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   background: var(--c-surface);
   padding: 6px;
   overflow-y: auto;
@@ -201,7 +201,7 @@
 .ws-fs-tree > * { flex: 0 0 auto; }
 .ws-fs-dir {
   display: flex; align-items: center; gap: 8px;
-  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer;
   font-size: 12.5px; color: var(--c-text-1);
   flex: 0 0 auto;
 }
@@ -248,11 +248,11 @@
 }
 .ws-worker-count {
   font-family: var(--mono); font-size: 10px;
-  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 5px;
+  border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 5px;
 }
 .ws-worker-row {
   display: flex; align-items: center; gap: 7px;
-  padding: 5px 8px; border-radius: 7px; cursor: pointer;
+  padding: 5px 8px; border-radius: var(--r-md); cursor: pointer;
   transition: background .12s ease;
 }
 .ws-worker-row:hover { background: var(--c-accent-soft); }

@@ -52,7 +52,7 @@
 .sl-effort {
   color: var(--c-text-2);
   border: 1px solid var(--c-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   padding: 0 6px;
   font-size: 10.5px;
   line-height: 14px;
@@ -112,14 +112,13 @@
   color: var(--c-text-1);
   max-width: 46ch;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  border-bottom: 1px dashed var(--c-border-subtle);
 }
 /* W788：会话工作方式徽标复用档位胶囊的几何（同一行、同一视觉族） */
 .sl-effort,
 .sl-mode {
   color: var(--c-text-2);
   border: 1px solid var(--c-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   padding: 0 6px;
   font-size: 10.5px;
   line-height: 14px;
@@ -149,7 +148,7 @@
   width: min(360px, calc(100vw - 40px));
   background: var(--c-surface-raised);
   border: 1px solid var(--c-border-strong);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-panel);
   overflow: hidden;
   display: flex; flex-direction: column;
@@ -184,7 +183,7 @@
   width: 100%;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 6px 8px;
   color: var(--c-text-1);
   cursor: pointer;
@@ -205,7 +204,7 @@
 .sl-opt-tag {
   flex: 0 0 auto;
   font-size: 10px; color: var(--c-accent);
-  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--c-accent-ring); border-radius: var(--r-sm); padding: 0 4px;
   font-family: var(--mono);
 }
 .sl-popup-sep {
@@ -228,12 +227,12 @@
 .sl-group.cur .sl-group-name { color: var(--c-text-1); }
 .sl-group-id {
   font-family: var(--mono); font-size: 9.5px; color: var(--c-text-3);
-  border: 1px solid var(--c-border-subtle); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); padding: 0 4px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14ch;
 }
 .sl-group-tag {
   font-family: var(--mono); font-size: 9.5px; color: var(--c-accent);
-  border: 1px solid var(--c-accent-ring); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--c-accent-ring); border-radius: var(--r-sm); padding: 0 4px;
 }
 
 /* ============================================================================
@@ -322,7 +321,7 @@
   display: inline-flex; align-items: center;
   height: 16px; padding: 0 6px;
   font-family: var(--mono); font-size: 10.5px; line-height: 15px;
-  background: transparent; border: 1px solid var(--c-border-subtle); border-radius: 4px;
+  background: transparent; border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm);
   color: var(--c-text-2); cursor: pointer;
 }
 .sl-mode-btn:hover {
@@ -349,7 +348,7 @@
   padding: 0;
   background: transparent;
   border: 1px solid var(--c-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   color: var(--c-text-2);
   cursor: pointer;
   line-height: 0;
