@@ -5,6 +5,8 @@
 Celestea Agent 把「一个能读写文件、执行命令、跑代码、并行派子任务的 agent」放进你自己的服务器。
 会话、工作区、模型提供商、权限与沙箱、成本账本**全部自持**，数据不出你的机器。
 
+![Celestea Studio 界面：左侧工作区/会话树，右侧对话区（多模态识别 + LaTeX 公式渲染），底部 statusline 与发送栏](docs/assets/studio-overview.png)
+
 - **会话即工作区** —— 每个会话绑定一个真实目录；agent 的每一步（读文件、改代码、跑命令）都发生在那儿，日志逐行落盘、可回放。
 - **13 个内置工具** —— `read_file` `write_file` `list_dir` `run_shell` `run_code` `read_image` `http_request` `process_control` `ask_user_question` `send_message` `spawn_worker` `stop_worker` `worker_status`。
 - **并行子 agent（worker）** —— 一个会话可派出多个 worker 会话并行干活；主会话能读它们的实时状态，也能**直接和它们对话**。
@@ -17,7 +19,7 @@ Celestea Agent 把「一个能读写文件、执行命令、跑代码、并行�
 - **可选登录门** —— 自带 `/login` + HMAC cookie，可直接对公网暴露（也可只监听环回）。
 
 > 本仓是 Celestea Studio 的**唯一仓**：后端 `apps/studio/` 与前端 `apps/web/` 同仓。
-> 2026-09-14（W781）前它们分属两仓，历史文档在 [`docs/archive/`](docs/archive/)。
+> 2026-09-14（W781）前它们分属两仓；退役后端的归档文档已于 W881 移出公开仓。
 
 ---
 
