@@ -157,13 +157,21 @@ function collectGrants(sessionDir: string | null, env: NodeJS.ProcessEnv, now: n
  */
 function intersectGrants(grants: EffectiveGrants, permission: PermissionBaseline, env: NodeJS.ProcessEnv, sessionDisabled: readonly string[] = []): { grants: EffectiveGrants; warnings: string[] } {
   const warnings: string[] = [];
-  const writesAllowed = permission.workspaceWritable || permission.toolRootsWritable || permission.writeRoots.length > 0;
+  /**
+   * W864: an `allPaths` baseline replaces BOTH root lists with the filesystem
+   * root. Both sides are required: `writeRoots` alone would leave the path
+   * guard denying `read_file`/`list_dir`, and bwrap without the rw bind.
+   * Scoping note: this is the ONLY cap `allPaths` moves — network, net_hosts,
+   * tool_extra, unsandboxed and the W860 toolDeny union keep their own rules.
+   */
+  const allPaths = permission.allPaths === true;
+  const writesAllowed = allPaths || permission.workspaceWritable || permission.toolRootsWritable || permission.writeRoots.length > 0;
   if (!writesAllowed && grants.writeRoots.length > 0) warnings.push("write_roots grant ignored: the session permission is read-only");
   return {
     grants: {
       network: permission.network,
-      readRoots: grants.readRoots,
-      writeRoots: writesAllowed ? [...new Set([...permission.writeRoots, ...grants.writeRoots])] : [],
+      readRoots: allPaths ? ["/"] : grants.readRoots,
+      writeRoots: allPaths ? ["/"] : writesAllowed ? [...new Set([...permission.writeRoots, ...grants.writeRoots])] : [],
       netHosts: grants.netHosts,
       toolExtra: grants.toolExtra,
       unsandboxed: (permission.unsandboxed || grants.unsandboxed) && unsandboxedAvailable(env),

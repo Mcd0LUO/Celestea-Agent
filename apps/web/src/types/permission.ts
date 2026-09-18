@@ -25,6 +25,8 @@ export interface PermissionPreset {
   toolRootsWritable: boolean;
   /** 除工作区与工具根之外的显式绝对路径白名单。 */
   writeRoots: string[];
+  /** 整台机器（所有目录）可读写；只动路径，不改网络与免沙箱。 */
+  allPaths: boolean;
   /** 声明免沙箱；是否真正生效取决于部署侧环境开关。 */
   unsandboxed: boolean;
   /** 从会话工具面移除的工具名（基线过滤，先于 tool_extra）。 */
@@ -48,6 +50,8 @@ export interface PermissionEffective {
   workspaceWritable: boolean;
   toolRootsWritable: boolean;
   writeRoots: string[];
+  /** 生效的整机可读写（被运行时封顶收窄后）。 */
+  allPaths: boolean;
   unsandboxed: boolean;
   toolDeny: string[];
 }

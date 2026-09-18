@@ -139,15 +139,16 @@ export interface StubPreset {
   workspaceWritable: boolean;
   toolRootsWritable: boolean;
   writeRoots: string[];
+  allPaths: boolean;
   unsandboxed: boolean;
   toolDeny: string[];
 }
 
 /** W858：内置三档（与服务端 store/permissions.ts 的常量同值）。 */
 export const PERM_BUILTIN: StubPreset[] = [
-  { id: 'read-only', label: 'Read only', network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], unsandboxed: false, toolDeny: ['write_file'] },
-  { id: 'write-read', label: 'Write + read (workspace)', network: false, workspaceWritable: true, toolRootsWritable: false, writeRoots: [], unsandboxed: false, toolDeny: [] },
-  { id: 'full-access', label: 'Full access', network: true, workspaceWritable: true, toolRootsWritable: true, writeRoots: [], unsandboxed: true, toolDeny: [] },
+  { id: 'read-only', label: 'Read only', network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: ['write_file'] },
+  { id: 'write-read', label: 'Write + read (workspace)', network: false, workspaceWritable: true, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: [] },
+  { id: 'full-access', label: 'Full access', network: true, workspaceWritable: true, toolRootsWritable: true, writeRoots: [], allPaths: true, unsandboxed: true, toolDeny: [] },
 ];
 
 /** W858：权限预设 / 会话档位端点的旋钮与故障注入。 */

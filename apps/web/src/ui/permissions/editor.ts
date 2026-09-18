@@ -1,7 +1,7 @@
 // ============================================================================
 // ui/permissions/editor.ts — 自定义预设编辑器（新建 / 编辑同一表单）。
 //
-//   字段：id（新建必填、编辑锁定）、label、四个开关、writeRoots（手输绝对路径或
+//   字段：id（新建必填、编辑锁定）、label、五个开关、writeRoots（手输绝对路径或
 //   目录选择器逐条添加/移除）、toolDeny（从 GET /api/tools 的当前工具名多选）。
 //   提交走 actions（POST / PUT）：乐观插卡在 actions 里做；失败时把**服务端原因**
 //   就地写在表单旁（.perm-editor-status），并把列表回滚到动作前。
@@ -194,6 +194,7 @@ export function openEditor(
   const net = switchRow('网络访问', preset?.network === true);
   const ws = switchRow('工作区可写', preset?.workspaceWritable === true);
   const tr = switchRow('工具根可写', preset?.toolRootsWritable === true);
+  const ap = switchRow('全部目录可读写', preset?.allPaths === true, '整台机器可读写，风险自担');
   const unsb = switchRow('免沙箱（声明）', preset?.unsandboxed === true, UNSANDBOXED_NOTE);
   const roots = rootsEditor(preset?.writeRoots ?? []);
   const tools = toolsEditor(preset?.toolDeny ?? []);
@@ -218,6 +219,7 @@ export function openEditor(
       workspaceWritable: ws.input.checked,
       toolRootsWritable: tr.input.checked,
       writeRoots: roots.value(),
+      allPaths: ap.input.checked,
       unsandboxed: unsb.input.checked,
       toolDeny: tools.value(),
     };
@@ -242,7 +244,7 @@ export function openEditor(
   form.appendChild(field('预设 id', idCtl, isNew ? ID_HINT : '编辑时 id 不可改'));
   form.appendChild(field('显示名', labelCtl, '留空则用 id 作为显示名'));
   const switches = el('div', 'perm-switches');
-  for (const s of [net, ws, tr, unsb]) switches.appendChild(s.row);
+  for (const s of [net, ws, tr, ap, unsb]) switches.appendChild(s.row);
   form.appendChild(fieldBox('能力开关', switches));
   form.appendChild(fieldBox('额外可写目录', roots.el, ROOTS_HINT));
   form.appendChild(fieldBox('工具禁用', tools.el, TOOLS_HINT));

@@ -22,3 +22,28 @@ describe("W9 bwrap rwRoots", () => {
     expect(s.split("--bind /repo /repo").length - 1).toBe(1);
   });
 });
+
+describe("W864 allPaths — the whole host root goes rw", () => {
+  it("replaces --ro-bind / / with one --bind / / placed before --dev/--proc", () => {
+    const argv = buildBwrapArgv("/ws", { ...DEFAULT_BWRAP_OPTIONS, writeRoots: ["/"] });
+    const whole = argv.filter((part, i) => part === "--bind" && argv[i + 1] === "/" && argv[i + 2] === "/");
+    expect(whole).toHaveLength(1);
+    expect(argv).not.toContain("--ro-bind");
+    // The W274 invariant survives: the rw host root goes on FIRST, the private
+    // devtmpfs/procfs on top of it (measured live in the W864 report: a trailing
+    // --bind / / lets /dev/zero answer EACCES).
+    expect(argv.indexOf("--bind")).toBeLessThan(argv.indexOf("--dev"));
+    expect(argv.indexOf("--dev")).toBeLessThan(argv.indexOf("--proc"));
+    expect(argv).toContain("--chdir");
+  });
+
+  it("leaves every non-'/' configuration byte-identical (still --ro-bind / /)", () => {
+    const argv = buildBwrapArgv("/ws", DEFAULT_BWRAP_OPTIONS);
+    expect(argv.slice(2, 5)).toEqual(["--ro-bind", "/", "/"]);
+    expect(argv.join(" ")).not.toContain("--bind / /");
+    const extra = buildBwrapArgv("/ws", { ...DEFAULT_BWRAP_OPTIONS, writeRoots: ["/repo"] });
+    expect(extra).toContain("--ro-bind");
+    expect(extra.join(" ")).toContain("--bind /repo /repo");
+  });
+});
+

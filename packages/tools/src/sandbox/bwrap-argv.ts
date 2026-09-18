@@ -56,22 +56,31 @@ const SHELL = "/bin/sh";
  */
 export function buildBwrapArgv(workdir: string | null, options: BwrapOptions): string[] {
   const argv: string[] = ["--unshare-all", "--die-with-parent"];
-  // ORDER IS SECURITY SEMANTICS — do not reorder (W274 §2):
-  // the host root goes on first, the private devtmpfs/procfs on top of it.
-  argv.push("--ro-bind", "/", "/");
-  argv.push("--dev", "/dev");
-  argv.push("--proc", "/proc");
-  if (options.shareNet) argv.push("--share-net");
-  if (options.shareTmp) argv.push("--bind", "/tmp", "/tmp");
-  else argv.push("--tmpfs", "/tmp");
-  for (const dir of options.maskDirs) argv.push("--tmpfs", dir);
   // W9: writable mounts. The workspace is bound rw only while the permission
   // allows it (read-only omits it, leaving the `--ro-bind / /` view); the
   // permission's extra roots (deployment tool roots / write_roots) are bound too.
   const rwRoots: string[] = [];
   if (workdir !== null && options.workspaceWritable !== false) rwRoots.push(workdir);
   for (const root of options.writeRoots ?? []) if (!rwRoots.includes(root)) rwRoots.push(root);
-  for (const root of rwRoots) argv.push("--bind", root, root);
+  /**
+   * W864: a write root of `/` (a full-access permission's `allPaths`) makes the
+   * WHOLE host root writable, and it replaces `--ro-bind / /` instead of being
+   * stacked after `--dev`/`--proc`: bwrap applies mounts in argv order, so a
+   * trailing `--bind / /` would bury the private devtmpfs/procfs under the
+   * host's — the W274 regression in reverse. Emitting it first keeps
+   * devtmpfs/procfs on top and still yields exactly one `--bind / /`.
+   */
+  const wholeRootWritable = rwRoots.includes("/");
+  // ORDER IS SECURITY SEMANTICS — do not reorder (W274 §2):
+  // the host root goes on first, the private devtmpfs/procfs on top of it.
+  argv.push(wholeRootWritable ? "--bind" : "--ro-bind", "/", "/");
+  argv.push("--dev", "/dev");
+  argv.push("--proc", "/proc");
+  if (options.shareNet) argv.push("--share-net");
+  if (options.shareTmp) argv.push("--bind", "/tmp", "/tmp");
+  else argv.push("--tmpfs", "/tmp");
+  for (const dir of options.maskDirs) argv.push("--tmpfs", dir);
+  for (const root of rwRoots) if (root !== "/") argv.push("--bind", root, root);
   if (workdir !== null) argv.push("--chdir", workdir);
   if (options.seccomp) argv.push("--seccomp", String(SECCOMP_FD));
   return argv;

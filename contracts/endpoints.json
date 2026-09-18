@@ -3533,12 +3533,12 @@
           },
           {
             "name": "builtin",
-            "type": "array<object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}>",
+            "type": "array<object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],allPaths:boolean,unsandboxed:boolean,toolDeny:string[]}>",
             "required": true
           },
           {
             "name": "custom",
-            "type": "array<object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}>",
+            "type": "array<object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],allPaths:boolean,unsandboxed:boolean,toolDeny:string[]}>",
             "required": true
           },
           {
@@ -3551,7 +3551,8 @@
       },
       "errors": [],
       "notes": [
-        "Built-ins are code constants (read-only/write-read/full-access); custom presets live at <data dir>/permissions.json."
+        "Built-ins are code constants (read-only/write-read/full-access); custom presets live at <data dir>/permissions.json.",
+        "W864: allPaths is the one PATH-only capability. full-access sets it, so a session on that baseline reads and writes the whole filesystem (the effective read/write roots become [/]); CELESTEA_PERMISSION_MAX clamps it like every other boolean and a non-allPaths max narrows it away."
       ],
       "probe": {
         "checked": false,
@@ -3570,7 +3571,7 @@
         "fields": [
           {
             "name": "preset",
-            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],allPaths:boolean,unsandboxed:boolean,toolDeny:string[]}",
             "required": true
           }
         ]
@@ -3586,7 +3587,7 @@
           },
           {
             "name": "preset",
-            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],allPaths:boolean,unsandboxed:boolean,toolDeny:string[]}",
             "required": true
           }
         ]
@@ -3621,7 +3622,7 @@
         "fields": [
           {
             "name": "preset",
-            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],allPaths:boolean,unsandboxed:boolean,toolDeny:string[]}",
             "required": true
           }
         ]
@@ -3637,7 +3638,7 @@
           },
           {
             "name": "preset",
-            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "type": "object{id:string,label:string,network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],allPaths:boolean,unsandboxed:boolean,toolDeny:string[]}",
             "required": true
           }
         ]
@@ -3740,7 +3741,7 @@
           },
           {
             "name": "effective",
-            "type": "object{network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],unsandboxed:boolean,toolDeny:string[]}",
+            "type": "object{network:boolean,workspaceWritable:boolean,toolRootsWritable:boolean,writeRoots:string[],allPaths:boolean,unsandboxed:boolean,toolDeny:string[]}",
             "required": true
           },
           {

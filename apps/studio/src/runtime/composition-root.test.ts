@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
+import { getJson, jsonRequest, pinPathOnly, type StudioHarness } from "../harness.test-util.js";
 import type { OfflineStep } from "./offline-llm.js";
 import { activate, makeEngineHarness, runTurnWithFrames, type FrameRecord } from "./test-util.js";
 
@@ -128,6 +128,9 @@ describe("W743 · the grants boundary is composed in the HTTP-layer engine (W516
     const outside = outsideDir();
     writeFileSync(join(outside, "secret.txt"), "W743-OUTSIDE\n");
     const h = harness(readScript(join(outside, "secret.txt")));
+    // W864: full-access now opens every path, so the denial this test proves
+    // requires a path-limited baseline (network stays on).
+    pinPathOnly(h);
     await activate(h, "sample-ws/s1");
     const res = await runTurnWithFrames(h, "read outside", 10_000);
     expect(res.status).toBe(202);
@@ -141,6 +144,7 @@ describe("W743 · the grants boundary is composed in the HTTP-layer engine (W516
     const outside = outsideDir();
     writeFileSync(join(outside, "secret.txt"), "W743-OUTSIDE\n");
     const h = harness(readScript(join(outside, "secret.txt")));
+    pinPathOnly(h); // W864: observe the GRANT boundary, not the allPaths default
     writeGrants(h, "s1", [grantEntry("read_roots", { roots: [outside] })]);
     await activate(h, "sample-ws/s1");
     const res = await runTurnWithFrames(h, "read outside", 10_000);
@@ -150,9 +154,10 @@ describe("W743 · the grants boundary is composed in the HTTP-layer engine (W516
     expect(result["error"]).toBeNull();
     expect(result["value"]).toBe("W743-OUTSIDE\n");
     // The boundary the HTTP layer reports is the one the engine composed with.
-    // W9: the effective boundary now includes the permission baseline, and the
-    // default preset (full-access) contributes the network cap; the session own
-    // read_roots grant is still the only extra capability in force.
+    // W9: the effective boundary now includes the permission baseline; the
+    // pinned path-limited preset contributes the network cap (W864 keeps
+    // `allPaths` off there), and the session's own read_roots grant is still
+    // the only extra ROOT capability in force.
     expect((await getJson(h.app, "/api/status?session=sample-ws%2Fs1")).body["grants_active"]).toEqual(["network", "read_roots"]);
   });
 
@@ -160,6 +165,7 @@ describe("W743 · the grants boundary is composed in the HTTP-layer engine (W516
     const outside = outsideDir();
     writeFileSync(join(outside, "secret.txt"), "W743-OUTSIDE\n");
     const h = harness(readScript(join(outside, "secret.txt")));
+    pinPathOnly(h); // W864: a rejected grant must leave the path DENIED
     // `root '/'` is rejected by §4.3.3 rule 5: the entry is dropped, the file is not.
     writeGrants(h, "s1", [grantEntry("read_roots", { roots: ["/"] })]);
     await activate(h, "sample-ws/s1");

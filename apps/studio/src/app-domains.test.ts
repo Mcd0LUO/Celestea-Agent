@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakeRuntimeAdapter } from "./fake-runtime-adapter.js";
-import { busyRuntime, getJson, grant, grantToken, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
+import { busyRuntime, getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
 
 const harnesses: StudioHarness[] = [];
 
@@ -184,13 +184,17 @@ describe("session context snapshot endpoint", () => {
 describe("session grants endpoints", () => {
   it("grants with a one-shot token, lists it, revokes it and reports the snapshot", async () => {
     const h = make();
+    // W864: the default full-access baseline now opens EVERY path, which would
+    // subsume every root below; this suite is about the grant boundary, so the
+    // session runs on a path-limited baseline (network stays on).
+    pinPathOnly(h);
     const out = join(h.root, "granted-out");
     mkdirSync(out, { recursive: true });
 
     const empty = await getJson(h.app, `/api/sessions/${S1}/grants`);
     expect(empty.status).toBe(200);
     expect(empty.body).toMatchObject({ ok: true, session: "sample-ws/s1", grants: [], unsandboxed_available: false });
-    expect(empty.body["effective"]).toEqual({ network: true, read_roots: [], write_roots: [], net_hosts: [], tool_extra: [], unsandboxed: false }); // W9: default full-access
+    expect(empty.body["effective"]).toEqual({ network: true, read_roots: [], write_roots: [], net_hosts: [], tool_extra: [], unsandboxed: false }); // W9: preset network; W864: path-limited baseline (no '/')
     expect(empty.body["max_ttl_sec"]).toMatchObject({ network: 3600, write_roots: 86400, unsandboxed: 900 });
 
     const granted = await grant(h, S1, { cap: "write_roots", scope: { roots: [out] }, ttl_sec: 600, note: "batch output", model_says: "please allow" });

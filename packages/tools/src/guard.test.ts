@@ -1,4 +1,4 @@
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { Tool, ToolInput } from "@celestea/core";
@@ -287,3 +287,33 @@ describe("write roots (session grants)", () => {
     expect(await bypass.check(input("write_file", join(granted, "x.txt")))).toMatchObject({ kind: "deny" });
   });
 })
+
+/**
+ * W864: an `allPaths` baseline hands the guard "/" as BOTH the read and the
+ * write root, so every path-bearing call passes; a read-only baseline keeps
+ * denying with the same contract code (nothing is weakened globally).
+ */
+describe("allPaths — the whole filesystem as a root (W864)", () => {
+  it("allows read_file/list_dir and write_file anywhere under '/'", () => {
+    expect(existsSync("/etc/hostname"), "/etc/hostname must exist for this proof").toBe(true);
+    // The exact shape engine-grants.ts composes for an allPaths session:
+    // workspaceWritable:false still leaves the two "/" roots authoritative.
+    const wide = new PathGuardPolicy({ workspace, readRoots: ["/"], writeRoots: ["/"], workspaceWritable: false });
+    expect(wide.checkRead("/etc/hostname")).toEqual({ kind: "allow" });
+    expect(wide.checkRead("/etc")).toEqual({ kind: "allow" });
+    expect(wide.checkWrite("/etc/w864-never-created")).toEqual({ kind: "allow" });
+    expect(wide.checkWrite(join(outside, "new.txt"))).toEqual({ kind: "allow" });
+    // Through the production wiring (grants view -> fromEnv), not only the ctor.
+    const viaEnv = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace }, { readRoots: ["/"], writeRoots: ["/"] });
+    expect(viaEnv.checkRead("/etc/hostname")).toEqual({ kind: "allow" });
+    expect(viaEnv.checkWrite("/var/tmp/w864-never-created")).toEqual({ kind: "allow" });
+  });
+
+  it("keeps a read-only baseline denying (allPaths off)", () => {
+    const ro = new PathGuardPolicy({ workspace, readRoots: [], writeRoots: [], workspaceWritable: false });
+    expect(ro.checkRead("/etc/hostname").kind).toBe("deny");
+    expect(ro.checkWrite("/etc/w864-never-created").kind).toBe("deny");
+    expect(ro.checkWrite(join(outside, "new.txt")).kind).toBe("deny");
+  });
+});
+

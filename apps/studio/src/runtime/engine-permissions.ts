@@ -31,6 +31,8 @@ export interface PermissionBaseline {
   workspaceWritable: boolean;
   toolRootsWritable: boolean;
   writeRoots: readonly string[];
+  /** W864: the whole filesystem is readable + writable (never env-gated). */
+  allPaths: boolean;
   /** The preset capability; the env gate is applied by engine-grants.ts. */
   unsandboxed: boolean;
   toolDeny: readonly string[];
@@ -51,7 +53,7 @@ function presetById(id: string, custom: readonly PermissionPreset[]): Permission
 
 /** Capability-wise clamp by the operator MAX preset (a grant/档 can only narrow). */
 function clampByMax(preset: PermissionPreset, max: PermissionPreset): PermissionPreset {
-  const writesAllowed = max.workspaceWritable || max.toolRootsWritable || max.writeRoots.length > 0;
+  const writesAllowed = max.allPaths || max.workspaceWritable || max.toolRootsWritable || max.writeRoots.length > 0;
   return {
     id: preset.id,
     label: preset.label,
@@ -59,6 +61,7 @@ function clampByMax(preset: PermissionPreset, max: PermissionPreset): Permission
     workspaceWritable: preset.workspaceWritable && max.workspaceWritable,
     toolRootsWritable: preset.toolRootsWritable && max.toolRootsWritable,
     writeRoots: writesAllowed ? preset.writeRoots.filter((root) => max.writeRoots.includes(root)) : [],
+    allPaths: preset.allPaths && max.allPaths,
     unsandboxed: preset.unsandboxed && max.unsandboxed,
     toolDeny: [...new Set([...preset.toolDeny, ...max.toolDeny])],
   };
@@ -104,6 +107,7 @@ export function effectivePermissionOf(
     workspaceWritable: clamped.workspaceWritable,
     toolRootsWritable: clamped.toolRootsWritable,
     writeRoots,
+    allPaths: clamped.allPaths,
     unsandboxed: clamped.unsandboxed,
     toolDeny: clamped.toolDeny,
     warnings,

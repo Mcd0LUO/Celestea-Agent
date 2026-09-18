@@ -6,7 +6,7 @@
 
 import type { Hono } from "hono";
 import type { RouteTable } from "../routes.js";
-import { effectivePermissionOf, permissionDataDir } from "../runtime/engine-permissions.js";
+import { effectivePermissionOf, permissionDataDir, type PermissionBaseline } from "../runtime/engine-permissions.js";
 import { validatePermissionPreset } from "../runtime/engine-grants.js";
 import {
   BUILTIN_PRESETS,
@@ -30,8 +30,22 @@ function presetBody(p: PermissionPreset): Record<string, unknown> {
     workspaceWritable: p.workspaceWritable,
     toolRootsWritable: p.toolRootsWritable,
     writeRoots: [...p.writeRoots],
+    allPaths: p.allPaths,
     unsandboxed: p.unsandboxed,
     toolDeny: [...p.toolDeny],
+  };
+}
+
+/** W864: the resolved baseline, as the two session-permission endpoints report it. */
+function effectiveBody(b: PermissionBaseline): Record<string, unknown> {
+  return {
+    network: b.network,
+    workspaceWritable: b.workspaceWritable,
+    toolRootsWritable: b.toolRootsWritable,
+    writeRoots: [...b.writeRoots],
+    allPaths: b.allPaths,
+    unsandboxed: b.unsandboxed,
+    toolDeny: [...b.toolDeny],
   };
 }
 
@@ -126,14 +140,7 @@ function registerGetSessionPermission(app: Hono, deps: Deps, table: RouteTable):
       ok: true,
       session: resolved.value.id,
       preset: read.preset ?? baseline.preset,
-      effective: {
-        network: baseline.network,
-        workspaceWritable: baseline.workspaceWritable,
-        toolRootsWritable: baseline.toolRootsWritable,
-        writeRoots: [...baseline.writeRoots],
-        unsandboxed: baseline.unsandboxed,
-        toolDeny: [...baseline.toolDeny],
-      },
+      effective: effectiveBody(baseline),
       ...(warnings.length === 0 ? {} : { warnings }),
     });
   });
@@ -162,7 +169,7 @@ function registerPutSessionPermission(app: Hono, deps: Deps, table: RouteTable):
     // W9: recompose the session at the next boundary (same hook grants use).
     deps.runtime.invalidateSession?.(resolved.value.id);
     const baseline = effectivePermissionOf(resolved.value.dir, deps.grants.env);
-    return c.json({ ok: true, preset: preset.value, effective: { network: baseline.network, workspaceWritable: baseline.workspaceWritable, toolRootsWritable: baseline.toolRootsWritable, writeRoots: [...baseline.writeRoots], unsandboxed: baseline.unsandboxed, toolDeny: [...baseline.toolDeny] } });
+    return c.json({ ok: true, preset: preset.value, effective: effectiveBody(baseline) });
   });
   return route.id;
 }

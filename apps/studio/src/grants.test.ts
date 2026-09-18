@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Profile } from "@celestea/runtime";
 import { bwrapOptionsFromEnv, BwrapSandbox, selectSandboxDetailed, ToolRegistryImpl, UserspaceSandbox } from "@celestea/tools";
-import { getJson, grant, grantToken, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
+import { getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
 import { effectiveGrantsOf, grantsActiveCaps } from "./runtime/engine-grants.js";
 import { engineTools } from "./runtime/engine-plugins.js";
 import { createOfflineLlm } from "./runtime/offline-llm.js";
@@ -63,6 +63,19 @@ function writeFile(session: string, grants: unknown[], sessionId = "ws/s1"): voi
   writeFileSync(join(session, "grants.json"), JSON.stringify({ version: 1, session: sessionId, updated_at: 1_700_000_000, grants }));
 }
 
+/**
+ * W864: pin the session to a PATH-LIMITED baseline. The built-in full-access
+ * preset now opens every path (`allPaths`), which subsumes each grant root
+ * this file exists to observe; the pinned preset keeps `network` on and
+ * `allPaths` off so the grant/guard boundary stays observable.
+ */
+const PATH_ONLY = { id: "w864-path-only", label: "path only", network: true, workspaceWritable: true, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: [] };
+
+function pinPathOnlySession(dataDir: string, session: string): void {
+  writeFileSync(join(dataDir, "permissions.json"), JSON.stringify({ version: 1, updated_at: 0, presets: [PATH_ONLY] }));
+  writeFileSync(join(session, "permission.json"), JSON.stringify({ version: 1, session: "ws/s1", preset: PATH_ONLY.id, updated_at: 0 }));
+}
+
 /** The home the rules are evaluated against (exists → `$HOME` is rejected). */
 const HOME = process.env["HOME"] ?? "/home/nobody";
 
@@ -75,6 +88,7 @@ const NOW = 1_700_000_500;
 describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
   it("reads nothing out of a missing or void file and warns about the void one", () => {
     const dir = sessionDir("void");
+    pinPathOnlySession(dir, dir);
     const missing = effectiveGrantsOf(dir, envOf(dir), NOW);
     expect(missing.grants).toEqual({ network: true, readRoots: [], writeRoots: [], netHosts: [], toolExtra: [], unsandboxed: false, workspaceWritable: true, toolDeny: [], sources: [] });
     expect(missing.warnings).toEqual([]);
@@ -91,6 +105,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
   it("ignores an unusable entry instead of voiding the file (§4.3.2/§4.3.3)", () => {
     const dir = sessionDir("rules");
     const dataDir = tempDir("data");
+    pinPathOnlySession(dataDir, dir);
     const good = join(dataDir, "granted");
     mkdirSync(good, { recursive: true });
     writeFile(dir, [
@@ -121,6 +136,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
   it("adopts canonical roots, rejects write/read overlap and never echoes a credential", () => {
     const dir = sessionDir("adopt");
     const dataDir = tempDir("data");
+    pinPathOnlySession(dataDir, dir);
     const shared = join(dataDir, "shared");
     const writable = join(dataDir, "out");
     mkdirSync(shared, { recursive: true });
@@ -186,6 +202,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
   it("widens write_file to the granted root, and only for that grant set", async () => {
     const dir = sessionDir("boundary");
     const dataDir = tempDir("data");
+    pinPathOnlySession(dataDir, dir);
     const out = join(dataDir, "out");
     mkdirSync(out, { recursive: true });
     const env = envOf(dataDir, { CELESTEA_TOOL_WORKDIR: join(dir, "..", "s1") });
@@ -211,6 +228,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
   it("keeps a mid-turn grant out of the running boundary and applies it next turn", async () => {
     const dir = sessionDir("midturn");
     const dataDir = tempDir("data");
+    pinPathOnlySession(dataDir, dir);
     const out = join(dataDir, "out");
     mkdirSync(out, { recursive: true });
     const env = envOf(dataDir, { CELESTEA_TOOL_WORKDIR: dir });
@@ -229,6 +247,7 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
   it("lets the session read an extra root without ever touching the guard chain", () => {
     const dir = sessionDir("read");
     const dataDir = tempDir("data");
+    pinPathOnlySession(dataDir, dir);
     const shared = join(dataDir, "shared");
     mkdirSync(shared, { recursive: true });
     writeFileSync(join(shared, "note.txt"), "shared");
@@ -323,6 +342,7 @@ describe("grants through the live app (§4.2, §4.4, §5.5.5)", () => {
   it("bumps that session's epoch: a grant during a turn rebuilds at the next boundary", async () => {
     const h: StudioHarness = makeEngineHarness({ sessions: { s1: [] } });
     try {
+      pinPathOnly(h); // W864: observe the GRANT caps, not the allPaths default
       expect((await getJson(h.app, `/api/sessions/${S1}/activate`, jsonRequest("POST"))).body).toMatchObject({ ok: true, runtime: "created" });
       const out = join(h.root, "granted-out");
       mkdirSync(out, { recursive: true });
@@ -424,6 +444,7 @@ describe("grants through the live app (§4.2, §4.4, §5.5.5)", () => {
   it("keeps a hand-edited grants.json fail-closed, and ignores model-shaped text", async () => {
     const h = makeHarness({ session: { name: "s1", log: "" } });
     try {
+      pinPathOnly(h); // W864: a path-limited baseline keeps the ignored-root assertions meaningful
       const dir = join(h.workspace, "s1");
       writeFileSync(join(dir, "grants.json"), "{ this is not json");
       const broken = await getJson(h.app, `/api/sessions/${S1}/grants`);

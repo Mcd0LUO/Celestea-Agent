@@ -96,6 +96,9 @@ describe('W858 ① pane：内置三档 + 运行时封顶', () => {
     expect(ro?.textContent ?? '').toContain('禁写文件');
     const fa = doc.querySelector(PANE + ' .perm-card[data-id="full-access"]');
     expect(fa?.textContent ?? '').toContain('CELESTEA_GRANTS_UNSANDBOXED');
+    // W864：整机可读写是 full-access 的显式能力，卡片与只读档都要如实呈现。
+    expect(fa?.textContent ?? '').toContain('全部目录可读写');
+    expect(ro?.textContent ?? '').toContain('限定在授权目录');
   });
 
   it('max 低于所选档时也如实展示（不替用户修正成 full-access）', async () => {
@@ -119,12 +122,13 @@ describe('W858 ②③ 自定义预设编辑器：请求体 + 422 回滚', () => 
     await flush(3); // 工具清单（GET /api/tools）落定
   });
 
-  it('② 新建：POST 请求体的 preset 八个字段齐全', async () => {
+  it('② 新建：POST 请求体的 preset 九个字段齐全（含 W864 allPaths）', async () => {
     setText('预设 id', 'deploy-docs');
     setText('显示名', '部署文档');
     setSwitch('网络访问', true);
     setSwitch('工作区可写', true);
     setSwitch('工具根可写', false);
+    setSwitch('全部目录可读写', true); // W864：开关必须进提交体
     setSwitch('免沙箱（声明）', false);
     const rootInput = doc.querySelector(PANE + ' .perm-addrow input');
     if (rootInput) rootInput.value = '/srv/data';
@@ -141,10 +145,12 @@ describe('W858 ②③ 自定义预设编辑器：请求体 + 422 回滚', () => 
       workspaceWritable: true,
       toolRootsWritable: false,
       writeRoots: ['/srv/data'],
+      allPaths: true,
       unsandboxed: false,
       toolDeny: ['write_file'],
     });
     expect(Object.keys(preset).sort()).toEqual([
+      'allPaths',
       'id',
       'label',
       'network',
@@ -189,6 +195,7 @@ describe('W858 ② 编辑/删除自定义档：乐观替换与回滚', () => {
         workspaceWritable: true,
         toolRootsWritable: false,
         writeRoots: ['/srv/data'],
+        allPaths: false,
         unsandboxed: false,
         toolDeny: [],
       },

@@ -142,6 +142,34 @@ export function makeHarness(opts: HarnessOptions = {}): StudioHarness {
   };
 }
 
+/**
+ * W864: the built-in `full-access` preset now also opens every path
+ * (`allPaths`), so a test that wants to observe the PATH/grants boundary must
+ * pin a baseline that is path-limited. This plants exactly that — network on,
+ * workspace writable, `allPaths` off — as a custom preset in <data dir> and
+ * selects it for the session, through the same two files the engine reads
+ * (`store/permissions.ts`, `runtime/engine-permissions.ts`).
+ */
+export const PATH_ONLY_PRESET = {
+  id: "w864-path-only",
+  label: "path only",
+  network: true,
+  workspaceWritable: true,
+  toolRootsWritable: false,
+  writeRoots: [],
+  allPaths: false,
+  unsandboxed: false,
+  toolDeny: [],
+};
+
+export function pinPathOnly(h: StudioHarness, name = "s1"): void {
+  writeFileSync(join(h.root, "permissions.json"), JSON.stringify({ version: 1, updated_at: 0, presets: [PATH_ONLY_PRESET] }));
+  writeFileSync(
+    join(h.workspace, name, "permission.json"),
+    JSON.stringify({ version: 1, session: `sample-ws/${name}`, preset: PATH_ONLY_PRESET.id, updated_at: 0 }),
+  );
+}
+
 export function jsonRequest(method: string, body?: unknown): RequestInit {
   if (body === undefined) return { method };
   return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };

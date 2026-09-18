@@ -39,6 +39,10 @@ export function presetChips(p: PermissionPreset): PresetChip[] {
       text: p.toolRootsWritable ? '工具根可写' : '工具根只读',
       tone: p.toolRootsWritable ? 'on' : 'off',
     },
+    {
+      text: p.allPaths ? '全部目录可读写' : '限定在授权目录',
+      tone: p.allPaths ? 'on' : 'off',
+    },
   ];
   const roots = p.writeRoots.length;
   chips.push({
@@ -61,6 +65,7 @@ export function riskNote(p: PermissionPreset | null | undefined): string {
   if (p === null || p === undefined) return '';
   const parts: string[] = [];
   if (p.network) parts.push('此档允许网络访问');
+  if (p.allPaths) parts.push('此档对整台机器可读写，风险自担');
   if (p.unsandboxed) parts.push(UNSANDBOXED_NOTE);
   return parts.join(' · ');
 }

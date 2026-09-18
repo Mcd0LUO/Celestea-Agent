@@ -37,15 +37,20 @@ export interface PermissionPreset {
   toolRootsWritable: boolean;
   /** Explicit absolute extra write roots, besides workspace + tool roots. */
   writeRoots: string[];
+  /**
+   * W864: the whole filesystem is readable AND writable ("/" as the one root).
+   * Path-only: network / unsandboxed / toolDeny are untouched by it.
+   */
+  allPaths: boolean;
   unsandboxed: boolean;
   /** Tools removed from the session face (baseline filter, before tool_extra). */
   toolDeny: string[];
 }
 
 export const BUILTIN_PRESETS: readonly PermissionPreset[] = [
-  { id: "read-only", label: "Read only", network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], unsandboxed: false, toolDeny: ["write_file"] },
-  { id: "write-read", label: "Write + read (workspace)", network: false, workspaceWritable: true, toolRootsWritable: false, writeRoots: [], unsandboxed: false, toolDeny: [] },
-  { id: "full-access", label: "Full access", network: true, workspaceWritable: true, toolRootsWritable: true, writeRoots: [], unsandboxed: true, toolDeny: [] },
+  { id: "read-only", label: "Read only", network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: ["write_file"] },
+  { id: "write-read", label: "Write + read (workspace)", network: false, workspaceWritable: true, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: [] },
+  { id: "full-access", label: "Full access", network: true, workspaceWritable: true, toolRootsWritable: true, writeRoots: [], allPaths: true, unsandboxed: true, toolDeny: [] },
 ];
 
 export function isBuiltinPresetId(id: string): id is BuiltinPresetId {
@@ -117,6 +122,7 @@ export function parsePreset(raw: unknown): PermissionPreset | null {
     workspaceWritable: rec["workspaceWritable"] === true,
     toolRootsWritable: rec["toolRootsWritable"] === true,
     writeRoots: stringArray(rec["writeRoots"], MAX_PRESET_ROOTS),
+    allPaths: rec["allPaths"] === true,
     unsandboxed: rec["unsandboxed"] === true,
     toolDeny: stringArray(rec["toolDeny"], MAX_PRESET_TOOLS),
   };
@@ -130,6 +136,7 @@ function sanitizePreset(preset: PermissionPreset): PermissionPreset {
     workspaceWritable: preset.workspaceWritable === true,
     toolRootsWritable: preset.toolRootsWritable === true,
     writeRoots: stringArray(preset.writeRoots, MAX_PRESET_ROOTS),
+    allPaths: preset.allPaths === true,
     unsandboxed: preset.unsandboxed === true,
     toolDeny: stringArray(preset.toolDeny, MAX_PRESET_TOOLS),
   };
