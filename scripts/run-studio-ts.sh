@@ -31,7 +31,8 @@ export CELESTEA_USAGE_LEDGER_FILE="${CELESTEA_USAGE_LEDGER_FILE:-$DATA/usage-led
 export CELESTEA_TOOL_ROOTS="${CELESTEA_TOOL_ROOTS:-$REPO:/src/celestea_harness:/tmp}"
 export CELESTEA_TOOL_WORKDIR="${CELESTEA_TOOL_WORKDIR:-$REPO}"
 export CELAESTEA_RUN_SHELL_WORKDIR="${CELAESTEA_RUN_SHELL_WORKDIR:-$REPO}"
-export CELESTEA_SANDBOX_NET="${CELESTEA_SANDBOX_NET:-0}"
+# W9: the network now follows the session permission (default full-access =>
+# --share-net). Force isolation with CELESTEA_PERMISSION_MAX=write-read instead.
 
 # --- 前端静态根（Vite 产物） ---
 export STUDIO_STATIC_ROOT="${STUDIO_STATIC_ROOT:-$REPO/apps/web/dist}"

@@ -239,7 +239,7 @@ describe("bwrapOptionsFromEnv", () => {
         CELESTEA_SANDBOX_SECCOMP: "on",
         CELESTEA_SANDBOX_MASK: "/home, /root ,",
       }),
-    ).toEqual({ shareNet: true, shareTmp: true, seccomp: true, maskDirs: ["/home", "/root"] });
+    ).toEqual({ shareNet: true, shareTmp: true, seccomp: true, maskDirs: ["/home", "/root"], workspaceWritable: true, writeRoots: [] });
   });
 
   it("rejects a mask entry that would mask the whole root", () => {
@@ -265,7 +265,7 @@ describe("session grants and the provider policy", () => {
       { CELESTEA_SANDBOX_SHARE_TMP: "1", CELESTEA_SANDBOX_SECCOMP: "1", CELESTEA_SANDBOX_MASK: "/home" },
       { network: true, unsandboxed: true },
     );
-    expect(granted).toEqual({ shareNet: true, shareTmp: true, seccomp: true, maskDirs: ["/home"] });
+    expect(granted).toEqual({ shareNet: true, shareTmp: true, seccomp: true, maskDirs: ["/home"], workspaceWritable: true, writeRoots: [] });
   });
 
   it("reports the granted network as a real, non-isolated bwrap session", () => {

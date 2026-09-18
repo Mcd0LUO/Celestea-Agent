@@ -53,6 +53,10 @@ export interface SandboxGrantView {
   network?: boolean;
   /** `unsandboxed`: accept the userspace provider although the mode is `fail`. */
   unsandboxed?: boolean;
+  /** W9: the permission baseline's write capability (false = read-only). */
+  workspaceWritable?: boolean;
+  /** W9: extra absolute write roots to bind rw in the sandbox. */
+  writeRoots?: readonly string[];
 }
 
 export interface SelectOptions {
@@ -156,6 +160,8 @@ export function bwrapOptionsFromEnv(env: NodeJS.ProcessEnv = process.env, grants
     shareTmp: envFlag(env[ENV_SANDBOX_SHARE_TMP], DEFAULT_BWRAP_OPTIONS.shareTmp),
     seccomp: envFlag(env[ENV_SANDBOX_SECCOMP], DEFAULT_BWRAP_OPTIONS.seccomp),
     maskDirs: parseMaskDirs(envString(env, ENV_SANDBOX_MASK)),
+    workspaceWritable: grants.workspaceWritable !== false,
+    writeRoots: [...(grants.writeRoots ?? [])],
   };
 }
 

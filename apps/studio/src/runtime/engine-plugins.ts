@@ -239,7 +239,7 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
     processes,
     env,
     scope,
-    grants: { readRoots: grants.readRoots, writeRoots: grants.writeRoots },
+    grants: { readRoots: grants.readRoots, writeRoots: grants.writeRoots, workspaceWritable: grants.workspaceWritable },
     ...(opts.guard === undefined ? {} : { guard: opts.guard }),
   });
   // W791 (P1, §5.2 #2 — the "关键机关"): the CONTEXT sees the mode's model-visible
@@ -252,10 +252,12 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
   // Present, it withholds part of the disclosable universe and reveals it one
   // turn at a time, appended at the tail (see `disclosure.ts`).
   const mode = opts.mode ?? DEFAULT_SESSION_MODE;
-  const universe = assembly.registry.schemas().map((spec) => spec.name);
+  // W9: the permission baseline removes its denied tools FIRST; the mode fold
+  // and the dynamic-disclosure layer then act on what is left.
+  const universe = assembly.registry.schemas().map((spec) => spec.name).filter((name) => !grants.toolDeny.includes(name));
   const blocked = mode === "execution" ? universe.filter((name) => !EXECUTION_TOOL_NAMES.includes(name)) : [];
   const disclosure = new DisclosurePolicy({ universe, initial: opts.disclosure?.initial ?? universe, blocked });
-  const wrapped = mode === "execution" || opts.disclosure !== undefined;
+  const wrapped = mode === "execution" || opts.disclosure !== undefined || grants.toolDeny.length > 0;
   const exposed: ToolRegistry = wrapped ? exposedRegistry(assembly.registry, disclosureExposure(disclosure)) : assembly.registry;
   const plugin = definePlugin("studio.engine.tools", (ctx: Context) => {
     ctx.provide(TOOL_REGISTRY_SERVICE, exposed);
@@ -387,7 +389,7 @@ function chooseSandbox(
 ): SandboxChoice {
   let selection: SandboxSelection;
   try {
-    const view = { network: grants.network, unsandboxed: grants.unsandboxed };
+    const view = { network: grants.network, unsandboxed: grants.unsandboxed, workspaceWritable: grants.workspaceWritable, writeRoots: grants.writeRoots };
     selection = selectSandboxDetailed({
       env,
       grants: view,

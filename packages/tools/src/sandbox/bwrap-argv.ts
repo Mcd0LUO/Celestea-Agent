@@ -31,6 +31,10 @@ export interface BwrapOptions {
   readonly seccomp: boolean;
   /** Absolute host directories masked with an empty tmpfs (opt-in). */
   readonly maskDirs: readonly string[];
+  /** W9: bind the workspace rw (default true; false = a read-only permission). */
+  readonly workspaceWritable?: boolean;
+  /** W9: extra absolute dirs to bind rw (permission tool roots / write_roots). */
+  readonly writeRoots?: readonly string[];
 }
 
 /** Contract default: network isolated, `/tmp` private, no seccomp, no masks. */
@@ -39,6 +43,8 @@ export const DEFAULT_BWRAP_OPTIONS: BwrapOptions = {
   shareTmp: false,
   seccomp: false,
   maskDirs: [],
+  workspaceWritable: true,
+  writeRoots: [],
 };
 
 const SHELL = "/bin/sh";
@@ -59,7 +65,14 @@ export function buildBwrapArgv(workdir: string | null, options: BwrapOptions): s
   if (options.shareTmp) argv.push("--bind", "/tmp", "/tmp");
   else argv.push("--tmpfs", "/tmp");
   for (const dir of options.maskDirs) argv.push("--tmpfs", dir);
-  if (workdir !== null) argv.push("--bind", workdir, workdir, "--chdir", workdir);
+  // W9: writable mounts. The workspace is bound rw only while the permission
+  // allows it (read-only omits it, leaving the `--ro-bind / /` view); the
+  // permission's extra roots (deployment tool roots / write_roots) are bound too.
+  const rwRoots: string[] = [];
+  if (workdir !== null && options.workspaceWritable !== false) rwRoots.push(workdir);
+  for (const root of options.writeRoots ?? []) if (!rwRoots.includes(root)) rwRoots.push(root);
+  for (const root of rwRoots) argv.push("--bind", root, root);
+  if (workdir !== null) argv.push("--chdir", workdir);
   if (options.seccomp) argv.push("--seccomp", String(SECCOMP_FD));
   return argv;
 }

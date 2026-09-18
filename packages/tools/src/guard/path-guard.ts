@@ -122,6 +122,8 @@ export interface PathGuardPolicyInit {
    * writable root and can never be removed: grants only ADD roots.
    */
   writeRoots?: readonly string[];
+  /** W9: false = a read-only permission; the workspace is NOT a write root. */
+  workspaceWritable?: boolean;
   /** Set when the declared roots were unusable → every path call is denied. */
   failClosedReason?: string | null;
 }
@@ -135,6 +137,8 @@ export interface PathGuardPolicyInit {
 export interface PathGuardGrants {
   readRoots?: readonly string[];
   writeRoots?: readonly string[];
+  /** W9: the permission baseline's write capability (false = read-only). */
+  workspaceWritable?: boolean;
 }
 
 /** Canonical writable workspace + canonical read/write roots (workspace first). */
@@ -148,7 +152,7 @@ export class PathGuardPolicy {
   constructor(init: PathGuardPolicyInit) {
     this.workspace = init.workspace;
     this.readRoots = [init.workspace, ...(init.readRoots ?? [])];
-    this.writeRoots = [init.workspace, ...(init.writeRoots ?? [])];
+    this.writeRoots = init.workspaceWritable === false ? [...(init.writeRoots ?? [])] : [init.workspace, ...(init.writeRoots ?? [])];
     this.failClosedReason = init.failClosedReason ?? null;
   }
 
@@ -168,13 +172,14 @@ export class PathGuardPolicy {
     const grantRead = [...(grants.readRoots ?? [])];
     const writeRoots = [...(grants.writeRoots ?? [])];
     const raw = envString(env, ENV_TOOL_ROOTS);
-    if (raw === undefined) return new PathGuardPolicy({ workspace, readRoots: grantRead, writeRoots });
+    if (raw === undefined) return new PathGuardPolicy({ workspace, readRoots: grantRead, writeRoots, workspaceWritable: grants.workspaceWritable });
     const entries = parseToolRoots(raw);
     if (entries.length === 0) {
       return new PathGuardPolicy({
         workspace,
         readRoots: grantRead,
         writeRoots,
+        workspaceWritable: grants.workspaceWritable,
         failClosedReason: `${ENV_TOOL_ROOTS} is set but lists no directory`,
       });
     }
