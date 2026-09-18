@@ -25,10 +25,11 @@
       "mode": "0644"
     },
     {
-      "file": "<ws>/.celestea-prompts.json",
+      "file": "<CELESTEA_HOME>/workspaces/<ws>/prompts.json",
       "schema": "prompts.schema.json",
       "version": "none",
-      "mode": "0644"
+      "mode": "0644",
+      "note": "W880: the workspace-scoped prompt registry. Legacy <ws>/.celestea/prompts.json and <ws>/.celestea-prompts.json stay readable as fallbacks; the canonical file wins on read and is the only write target."
     },
     {
       "file": "session.json",

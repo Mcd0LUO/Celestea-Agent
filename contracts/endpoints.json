@@ -632,7 +632,7 @@
             "note": "W791: `1` or `true` lists ONLY the archived sessions (each row carries `archived:true`); absent/`0`/`false`/anything else = the default listing, unchanged"
           }
         ],
-        "note": "W791 (B): the archived listing is the `<ws>/.celestea-archived/` source; the default body keeps its frozen shape (no `archived` key)."
+        "note": "W791 (B) / W880: the archived listing is the canonical `<CELESTEA_HOME>/workspaces/<ws>/archive/` source (legacy `<ws>/.celestea/archive/` and `<ws>/.celestea-archived/` are still read); the default body keeps its frozen shape (no `archived` key)."
       },
       "response": {
         "status": 200,
@@ -655,7 +655,7 @@
       "notes": [
         "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending.",
         "W729: every row carries `mode` (worker rows included); a session without session.json.mode reads as \"standard\".",
-        "W791: `?archived=1` reverses the scanner's dot-dir blind spot: the row set becomes the `<ws>/.celestea-archived/` directories holding `cli-main.jsonl`, in the SAME shape and sort order as the default rows plus `archived:true` (id/workspace/title/model/mode/size/modified derive identically, `active` is always false, and worker rows are not part of that listing). Deleting an archived session (`POST /api/sessions/batch-delete`) and restoring it (`POST /api/sessions/{id}/unarchive`) both address it by its unchanged id.",
+        "W791 / W880: `?archived=1` reverses the scanner's dot-dir blind spot: the row set becomes the canonical `<CELESTEA_HOME>/workspaces/<ws>/archive/` directories holding `cli-main.jsonl` (legacy `<ws>/.celestea-archived/` still read), in the SAME shape and sort order as the default rows plus `archived:true` (id/workspace/title/model/mode/size/modified derive identically, `active` is always false, and worker rows are not part of that listing). Deleting an archived session (`POST /api/sessions/batch-delete`) and restoring it (`POST /api/sessions/{id}/unarchive`) both address it by its unchanged id.",
     "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name."
       ],
       "probe": {
@@ -1336,7 +1336,7 @@
         }
       ],
       "notes": [
-        "Moves to <ws>/.celestea-archived/<name> keeping the original name (id stable, unarchivable).",
+        "Moves to the canonical <CELESTEA_HOME>/workspaces/<ws>/archive/<name> keeping the original name (id stable, unarchivable; legacy <ws>/.celestea-archived/<name> still readable).",
         "W794: the ACTIVE session is archived like any other (no 400) — the engine half runs first (the session's in-flight model response is aborted and its instance released, see POST /api/sessions/batch-delete), and `active_session` is set to null so the marker can never name a session that left the default listing."
       ],
       "probe": {
@@ -1475,7 +1475,7 @@
       },
       "errors": [],
       "notes": [
-        "Moves to <ws>/.celestea-trash/<name>-<ts> (recoverable but no longer addressable by id).",
+        "Moves to the canonical <CELESTEA_HOME>/workspaces/<ws>/trash/<name>-<ts> (recoverable but no longer addressable by id; legacy <ws>/.celestea-trash/ still readable).",
         "W794: the ACTIVE session IS deletable (the active marker is a state label, not a protection). Before the directory moves, the session's in-flight model response is aborted through the cooperative cancel path and THAT session's engine instance is released; `active_session` then becomes null (persisted), so it can never keep pointing at the deleted id. Response shape unchanged: one 200 with per-id `failed[]`.",
         "Fields marked optional:true appear only in some response variants."
       ],

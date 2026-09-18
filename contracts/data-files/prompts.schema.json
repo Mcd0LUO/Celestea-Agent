@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "prompts.json + <ws>/.celestea-prompts.json (section registry)",
+  "title": "prompts.json + <CELESTEA_HOME>/workspaces/<ws>/prompts.json (section registry)",
   "source": {
     "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): src/prompts.rs:126-165",
     "doc": "docs/data-files.md §3"
   },
   "path": {
     "global": "<cwd>/prompts.json (CELESTEA_PROMPTS_FILE)",
-    "workspace": "<workspace path>/.celestea-prompts.json",
+    "workspace": "<CELESTEA_HOME>/workspaces/<ws>/prompts.json (W880; legacy <workspace path>/.celestea/prompts.json and <workspace path>/.celestea-prompts.json readable)",
     "mode": "0644 (no key)"
   },
   "notes": [

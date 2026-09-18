@@ -407,7 +407,7 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     expect(sessions?.request.fields.map((f) => f.name)).toEqual(["archived"]);
     // The parameter's OWN note is pinned, so "documented but wrong" fails here.
     expect(String(sessions?.request.fields[0]?.note)).toContain("`1` or `true` lists ONLY the archived sessions");
-    expect(String(sessions?.request.kind === "query" ? sessions?.request.note : "")).toContain(".celestea-archived");
+    expect(String(sessions?.request.kind === "query" ? sessions?.request.note : "")).toContain("workspaces/<ws>/archive/");
     // The row type carries the OPTIONAL flag; the default body stays as it was.
     expect(String(sessions?.response.fields[0]?.type)).toContain("archived?:true");
     expect(String(sessions?.response.fields[0]?.note)).toContain("ONLY on the `?archived=1` listing");

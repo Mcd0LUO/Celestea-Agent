@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakeRuntimeAdapter } from "./fake-runtime-adapter.js";
 import { busyRuntime, getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
+import { workspaceHome } from "./store/celestea-home.js";
 
 const harnesses: StudioHarness[] = [];
 
@@ -426,7 +427,7 @@ describe("prompts endpoints", () => {
     const h = make();
     const ws = await getJson(h.app, "/api/prompts", jsonRequest("POST", { workspace: "sample-ws", id: "ws-p", name: "WS" }));
     expect(ws.body).toEqual({ ok: true, id: "ws-p", scope: "workspace", hot_applied: true });
-    expect(existsSync(join(h.workspace, ".celestea-prompts.json"))).toBe(true);
+    expect(existsSync(join(workspaceHome(h.workspace), "prompts.json"))).toBe(true);
 
     const busy = make({ runtime: busyRuntime() });
     const res = await getJson(busy.app, "/api/prompts", jsonRequest("POST", { id: "p", name: "P" }));

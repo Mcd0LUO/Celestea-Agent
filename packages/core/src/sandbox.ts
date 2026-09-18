@@ -60,6 +60,13 @@ export interface SandboxConfig {
   workdir: string;
   /** Canonical prefix every resolved workdir must stay inside. */
   root: string;
+  /**
+   * W880: absolute directory the `run_code` broker writes its transient program
+   * files into. It lives OUTSIDE the workspace now (under `CELESTEA_HOME`), so
+   * the bwrap provider must bind it into the namespace or the child cannot read
+   * the program it was told to run.
+   */
+  programDir: string;
   /** Deliberate operator env injected on top of the allowlist. */
   extraEnv: ReadonlyArray<readonly [string, string]>;
 }

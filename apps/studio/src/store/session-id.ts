@@ -8,6 +8,7 @@
  */
 
 import { basename, isAbsolute } from "node:path";
+import { workspaceHome } from "./celestea-home.js";
 
 /** Separators / control chars / whitespace -> '_'; CJK and letters survive. */
 export function sanitizeComponent(s: string): string {
@@ -97,35 +98,82 @@ export const ARCHIVED_DIR = ".celestea-archived";
 export const TRASH_DIR = ".celestea-trash";
 
 /**
- * W877 (slice A) — the workspace-level container for NEW-layout session dirs.
+ * W877 (slice A) — the workspace-level `.celestea/` container.
  *
- * Live sessions used to sit directly in the workspace root
- * (`<ws>/<sanitized-title>-<secs>.<nanos>[-N>/`); new ones go into
- * `<ws>/.celestea/sessions/<dir>/` instead. The session ID does NOT change: it is
- * still `<workspace-basename>/<dir>`. Legacy sessions keep being recognized at
- * the old path (dual read), so both layouts must be probed on every path.
- *
- * The archive/trash vocabulary (`ARCHIVED_DIR`/`TRASH_DIR`) is deliberately left
- * untouched by this slice: archiving and trashing still live in the legacy hidden
- * siblings.
+ * Slice A sank NEW session dirs into `<ws>/.celestea/sessions/`; W880 moves the
+ * canonical container OUT of the workspace into `CELESTEA_HOME`, so this path is
+ * now only the MIDDLE read fallback (dual-read compatibility with real data
+ * written by slice A).
  */
 export const CELESTEA_DIR = ".celestea";
 export const SESSIONS_SUBDIR = "sessions";
+/** W880 archive sub-container (under `workspaceHome`). */
+export const ARCHIVE_SUBDIR = "archive";
+/** W880 trash sub-container (under `workspaceHome`). */
+export const TRASH_SUBDIR = "trash";
+/** W880 workspace prompt-registry file name. */
+export const PROMPTS_FILE = "prompts.json";
+/** W880 run_code transient-program sub-container. */
+export const RUN_CODE_SUBDIR = "run-code";
 
-/** The NEW-layout live-session root: `<ws>/.celestea/sessions`. */
+/** W880 canonical live-session root: `<CELESTEA_HOME>/workspaces/<ws>/sessions`. */
 export function sessionsRoot(wsPath: string): string {
+  return `${workspaceHome(wsPath)}/${SESSIONS_SUBDIR}`;
+}
+
+/** W877 transitional root: `<ws>/.celestea/sessions`. */
+export function legacySessionsRoot(wsPath: string): string {
   return `${wsPath}/${CELESTEA_DIR}/${SESSIONS_SUBDIR}`;
 }
 
 /**
- * The physical directories a live session may occupy, NEW layout FIRST.
+ * The physical roots a live session may occupy, canonical FIRST:
+ * `<home>/.../sessions` -> `<ws>/.celestea/sessions` -> `<ws>`.
  *
- * `resolve()` uses the first existing candidate and falls back to the new layout
- * when neither exists (so the write side stays consistent); `list()` scans both.
- * Pure — the caller owns the filesystem side.
+ * Pure — the caller owns the filesystem side. `resolve()` uses the first
+ * existing candidate and falls back to the canonical root when none exists (so
+ * the write side stays consistent); `list()` scans all three and lets the
+ * canonical row shadow a same-named legacy one.
  */
+export function sessionRoots(wsPath: string): string[] {
+  return [sessionsRoot(wsPath), legacySessionsRoot(wsPath), wsPath];
+}
+
+/** `dir` under every live-session root, canonical FIRST. */
 export function liveDirCandidates(wsPath: string, dir: string): string[] {
-  return [`${sessionsRoot(wsPath)}/${dir}`, `${wsPath}/${dir}`];
+  return sessionRoots(wsPath).map((root) => `${root}/${dir}`);
+}
+
+/** Archive roots, canonical FIRST: `home/archive` -> `.celestea/archive` -> `.celestea-archived`. */
+export function archiveRoots(wsPath: string): string[] {
+  return [
+    `${workspaceHome(wsPath)}/${ARCHIVE_SUBDIR}`,
+    `${wsPath}/${CELESTEA_DIR}/${ARCHIVE_SUBDIR}`,
+    `${wsPath}/${ARCHIVED_DIR}`,
+  ];
+}
+
+/** `dir` under every archive root, canonical FIRST. */
+export function archiveDirCandidates(wsPath: string, dir: string): string[] {
+  return archiveRoots(wsPath).map((root) => `${root}/${dir}`);
+}
+
+/** Trash roots, canonical FIRST. */
+export function trashRoots(wsPath: string): string[] {
+  return [
+    `${workspaceHome(wsPath)}/${TRASH_SUBDIR}`,
+    `${wsPath}/${CELESTEA_DIR}/${TRASH_SUBDIR}`,
+    `${wsPath}/${TRASH_DIR}`,
+  ];
+}
+
+/** Workspace prompt-registry candidates, canonical FIRST (write target = `[0]`). */
+export function promptsFileCandidates(wsPath: string): string[] {
+  return [
+    `${workspaceHome(wsPath)}/${PROMPTS_FILE}`,
+    `${wsPath}/${CELESTEA_DIR}/${PROMPTS_FILE}`,
+    `${wsPath}/.celestea-prompts.json`,
+  ];
 }
 
 /** A hidden name can never become a visible session/workspace directory. */

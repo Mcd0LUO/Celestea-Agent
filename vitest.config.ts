@@ -56,6 +56,7 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: "unit",
+          setupFiles: [r("./vitest.setup.ts")],
           include: ["packages/**/*.test.ts", "apps/studio/**/*.test.ts", "tests/**/*.test.ts"],
           // 未选入 E2E 时把三个真实后端文件收在这里（它们自我 skip 并打印选入口令），
           // 于是默认跑看到的是**可见的 skip**；选入后才交还给 real-backend project。
@@ -67,6 +68,7 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: "real-backend",
+          setupFiles: [r("./vitest.setup.ts")],
           // W862：只有显式选入（CELESTEA_E2E=1）才装载这三个文件；默认零文件，
           // 文件在 unit project 里可见跳过（见上方 REAL_BACKEND 注释）。
           include: E2E ? [...REAL_BACKEND] : [...REAL_BACKEND_OFF],

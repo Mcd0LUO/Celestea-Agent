@@ -109,7 +109,7 @@ describe.skipIf(!h.nodeReady)("run_code TypeScript (W774, default language)", ()
     if (!(failure instanceof Error)) throw new Error("expected the program exception to reject");
     expect(failure.message).toMatch(/^RangeError: boom\n\[run_code\] logs:\n/);
     expect(failure.message).toContain("before boom");
-    expect(failure.message).toContain(".celestea/run_code_"); // the stack names the assembled program
+    expect(failure.message).toContain("run-code/run_code_"); // W880: the stack names the assembled program under run-code/
     expect(failure.message).toContain("at main");
   });
 

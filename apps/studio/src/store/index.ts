@@ -10,7 +10,8 @@
  *   validate.ts         model / prompt-id / url / effort validation
  *   builtin-sections.ts frozen 10-row builtin prompt registry (data only)
  *   prompts-template.ts `{{var}}` scan / validate / render
- *   prompts.ts          prompts.json + <ws>/.celestea-prompts.json registry
+ *   celestea-home.ts    CELESTEA_HOME data-root re-export (W880)
+ *   prompts.ts          prompts.json + <CELESTEA_HOME>/.../prompts.json registry
  *   prompts-compose.ts  build_gen assembly + active-prompt chain
  *   workspaces.ts       workspaces.json v2 registry (+ folder rename)
  *   sessions.ts         session scan / resolve / create / transcript

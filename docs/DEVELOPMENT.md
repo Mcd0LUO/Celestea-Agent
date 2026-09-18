@@ -238,7 +238,7 @@ user_override() 有值（POST /api/config 传了 system_prompt）
     → assemble_system_prompt(profile, base_url)
         builtin 段（代码常量 BUILTIN_SECTIONS，10 段）
           ← 全局 prompts.json 覆盖
-          ← 工作区 <ws>/.celestea-prompts.json 覆盖
+          ← 工作区 <CELESTEA_HOME>/workspaces/<ws>/prompts.json 覆盖
           ← 会话绑定的 prompt.section_overrides（session.json 的 "prompt" 字段）
         按 (order, id) 排序 → {{var}} 插值 → 空段丢弃 → 截断到 8192 字节
     → 装配失败时回退 default_system_prompt()
@@ -320,11 +320,11 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 |---|---|---|---|
 | `workspaces.json` | `<cwd>/workspaces.json`（`CELESTEA_WORKSPACES_FILE`） | 普通 | `{"workspaces":[{"path"}],"active_session"}`（无 `version` 字段；"v2" 是命名约定） |
 | `providers.json` | `<cwd>/providers.json`（`CELESTEA_PROVIDERS_FILE`） | **0600** | `{"providers":[{id,name,note,base_url,request_format,api_key,models[]}],"default_model"}`；`api_key` 明文、**永不外泄** |
-| `prompts.json` | `<cwd>/prompts.json`（`CELESTEA_PROMPTS_FILE`） | 普通 | `{"sections":[],"prompts":[],"default_prompt"}`；工作区级是 `<ws>/.celestea-prompts.json` |
+| `prompts.json` | `<cwd>/prompts.json`（`CELESTEA_PROMPTS_FILE`） | 普通 | `{"sections":[],"prompts":[],"default_prompt"}`；工作区级是 `<CELESTEA_HOME>/workspaces/<ws>/prompts.json`（W880） |
 | `celestea.toml` | `<cwd>/celestea.toml` | 普通 | 引擎剖面（model / base_url / api_key_env…），**不含 key** |
-| 会话目录 | `<workspace path>/<session dir>/` | 普通 | `cli-main.jsonl`（引擎 v1 `SessionEvent` 逐行 JSON）+ 可选 `session.json`（`{"model","prompt"}`） |
+| 会话目录 | `<CELESTEA_HOME>/workspaces/<ws>/sessions/<session dir>/`（W880；legacy `<workspace path>/<session dir>/` 只读兼容） | 普通 | `cli-main.jsonl`（引擎 v1 `SessionEvent` 逐行 JSON）+ 可选 `session.json`（`{"model","prompt"}`） |
 | 压缩备份 | 同上目录 | 普通 | `cli-main.jsonl.precompact`（**单副本、覆盖式**，人工回滚通道） |
-| 归档/回收站 | `<ws>/.celestea-archived/`、`<ws>/.celestea-trash/` | 普通 | 归档保持原名（可 unarchive）；回收站加 `-<ts>` 后缀（**不可再按 id 寻址**） |
+| 归档/回收站 | `<CELESTEA_HOME>/workspaces/<ws>/archive/`、`<CELESTEA_HOME>/workspaces/<ws>/trash/`（W880；legacy `<ws>/.celestea-archived/`、`<ws>/.celestea-trash/` 只读兼容） | 普通 | 归档保持原名（可 unarchive）；回收站加 `-<ts>` 后缀（**不可再按 id 寻址**） |
 
 `.gitignore` 已排除 `providers.json` / `workspaces.json` / `sessions/` / `frontend/dist/` / `target/`（`.gitignore:1-14`）。
 
@@ -392,7 +392,7 @@ CELESTEA_API_KEY="$CELESTEA_API_KEY" \
 1. **只创建 scratch 会话，绝不激活**：`POST /api/sessions {"workspace":"<某个 ws>","title":"scratch-e2e-<ts>"}`；
 2. 需要读历史时用 **URL 编码**的 id：`GET /api/sessions/<ws>%2F<dir>/messages`；
 3. **不要** `activate`/`rename`/`archive`/`batch-delete` 用户的活动会话——active 会话被这些端点保护（400），但 `rename` 非 active 会话也会真移目录，别碰；
-4. 跑完**删掉 scratch**：`POST /api/sessions/batch-delete {"ids":["<ws>/scratch-e2e-<ts>"]}`（进 `.celestea-trash`，可恢复）；
+4. 跑完**删掉 scratch**：`POST /api/sessions/batch-delete {"ids":["<ws>/scratch-e2e-<ts>"]}`（进 `<CELESTEA_HOME>/workspaces/<ws>/trash/`，可恢复）；
 5. 结束时确认用户活动会话没被改：`GET /api/status` 的 `session` 字段应与开工前一致；`GET /api/workspaces` 的 `active_session` 同理；
 6. **禁止**在生产实例上跑 `POST /api/clear`（它没有 409 守卫、没有备份，会直接截断活动会话日志，`src/workspaces.rs:1506-1511`）。
 

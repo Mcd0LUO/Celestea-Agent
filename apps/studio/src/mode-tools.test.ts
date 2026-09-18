@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ModelRequest } from "@celestea/core";
 import { getJson, busyRuntime, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
+import { workspaceHome } from "./store/celestea-home.js";
 import { activate, makeEngineHarness, waitIdle } from "./runtime/test-util.js";
 import type { OfflineStep } from "./runtime/offline-llm.js";
 
@@ -133,12 +134,12 @@ describe("W791 P1 mode tool face (real engine)", () => {
     const created = await getJson(h.app, "/api/sessions", jsonRequest("POST", { workspace: "sample-ws", title: "sw", model: "offline-model", prompt: "p-1" }));
     expect(created.body["ok"]).toBe(true);
     const id = String(created.body["id"]);
-    const before = readFileSync(join(h.workspace, ".celestea", "sessions", id.slice(id.indexOf("/") + 1), "session.json"), "utf8");
+    const before = readFileSync(join(workspaceHome(h.workspace), "sessions", id.slice(id.indexOf("/") + 1), "session.json"), "utf8");
     expect(before).toContain('"model": "offline-model"');
 
     const switched = await getJson(h.app, `/api/sessions/${encodeURIComponent(id)}/mode`, jsonRequest("POST", { mode: "execution" }));
     expect(switched.status).toBe(200);
-    const after = JSON.parse(readFileSync(join(h.workspace, ".celestea", "sessions", id.slice(id.indexOf("/") + 1), "session.json"), "utf8")) as Record<string, unknown>;
+    const after = JSON.parse(readFileSync(join(workspaceHome(h.workspace), "sessions", id.slice(id.indexOf("/") + 1), "session.json"), "utf8")) as Record<string, unknown>;
     expect(after).toMatchObject({ title: "sw", model: "offline-model", prompt: "p-1", mode: "execution" });
 
     // Frozen 400 text (the same sentence `POST /api/sessions` freezes).

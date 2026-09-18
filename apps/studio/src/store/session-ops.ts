@@ -2,11 +2,12 @@
  * Session directory moves: rename / branch / archive / trash
  * (`src/workspaces.rs:1228-1311,1506-1650`).
  *
- * All four are plain filesystem moves next to the registry: archiving is
- * `<ws>/.celestea-archived/<name>` (id-preserving and reversible) while
- * deleting moves to `<ws>/.celestea-trash/<name>-<ts>` (NOT addressable by id
- * afterwards). Dot-dirs are invisible to the session scanner, which is the
- * whole reason the archive state needs no field in `workspaces.json`.
+ * All four are plain filesystem moves: archiving is the canonical
+ * `<CELESTEA_HOME>/workspaces/<ws>/archive/<name>` (W880; id-preserving and
+ * reversible) while deleting moves to `<CELESTEA_HOME>/workspaces/<ws>/trash/<name>-<ts>`
+ * (NOT addressable by id afterwards). The legacy `<ws>/.celestea-archived` /
+ * `<ws>/.celestea-trash` siblings stay READABLE. The archive state needs no
+ * field in `workspaces.json` because the default scanner never lists it.
  *
  * W791: "invisible to the scanner" is about the DEFAULT listing only. An
  * archived session keeps its id, so the three operations that address a session
@@ -27,7 +28,7 @@
 import { copyFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
 import { isDirectory, isFile, removeDir } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, type StoreResult } from "./result.js";
-import { ARCHIVED_DIR, sanitizeComponent, timestampSuffix, TRASH_DIR } from "./session-id.js";
+import { archiveDirCandidates, archiveRoots, sanitizeComponent, timestampSuffix, trashRoots } from "./session-id.js";
 import { readSessionMeta, writeSessionMeta } from "./session-meta.js";
 import { SESSION_FILE, type WorkspacesStore } from "./workspaces.js";
 import { displayTitle, type ResolvedSession, type SessionsStore } from "./sessions.js";
@@ -63,7 +64,7 @@ export class SessionOps {
     if (base === "" || base === "." || base === "..") return badRequest("new title must not be empty");
     if (base.startsWith(".")) return badRequest(`title '${title}' sanitizes to the hidden name '${base}'`);
     if (base === res.session) return ok(res.id);
-    const newDir = this.sessions.uniqueDir(res.wsPath, base);
+    const newDir = this.sessions.uniqueDir(res.wsPath, base, parentOf(res.dir));
     try {
       renameSync(res.dir, newDir);
     } catch (e) {
@@ -113,7 +114,7 @@ export class SessionOps {
     const base = sanitizeComponent(display);
     if (base === "" || base === "." || base === "..") return badRequest("title must not be empty");
     if (base.startsWith(".")) return badRequest(`title sanitizes to the hidden name '${base}'`);
-    const newDir = this.sessions.uniqueDir(res.wsPath, `${base}-${timestampSuffix(this.now())}`);
+    const newDir = this.sessions.uniqueDir(res.wsPath, `${base}-${timestampSuffix(this.now())}`, parentOf(res.dir));
     try {
       mkdirSync(newDir, { recursive: false });
     } catch (e) {
@@ -158,8 +159,10 @@ export class SessionOps {
     if (!resolved.ok) return resolved;
     const res = resolved.value;
     if (!isDirectory(res.dir) || !isFile(`${res.dir}/${SESSION_FILE}`)) return notFound(`unknown session '${id}'`);
-    const dst = `${res.wsPath}/${ARCHIVED_DIR}/${res.session}`;
-    if (existsSync(dst)) return conflict(`session '${id}' is already archived`);
+    const dst = `${archiveRoots(res.wsPath)[0]}/${res.session}`;
+    if (archiveDirCandidates(res.wsPath, res.session).some((c) => existsSync(c))) {
+      return conflict(`session '${id}' is already archived`);
+    }
     const moved = this.move(res, res.dir, dst);
     if (!moved.ok) return moved;
     return this.clearActiveIf(id);
@@ -169,8 +172,8 @@ export class SessionOps {
     const resolved = this.sessions.resolve(id);
     if (!resolved.ok) return resolved;
     const res = resolved.value;
-    const src = `${res.wsPath}/${ARCHIVED_DIR}/${res.session}`;
-    if (!isDirectory(src)) return notFound(`session '${id}' is not archived`);
+    const src = archiveDirCandidates(res.wsPath, res.session).find((c) => isDirectory(c));
+    if (src === undefined) return notFound(`session '${id}' is not archived`);
     if (existsSync(res.dir)) return conflict(`a live session already exists at '${id}'`);
     return this.move(res, src, res.dir);
   }
@@ -210,9 +213,8 @@ export class SessionOps {
    */
   private locate(res: ResolvedSession): string | null {
     if (isDirectory(res.dir) && isFile(`${res.dir}/${SESSION_FILE}`)) return res.dir;
-    const archived = `${res.wsPath}/${ARCHIVED_DIR}/${res.session}`;
-    if (isDirectory(archived) && isFile(`${archived}/${SESSION_FILE}`)) return archived;
-    return null;
+    const archived = archiveDirCandidates(res.wsPath, res.session).find((c) => isDirectory(c) && isFile(`${c}/${SESSION_FILE}`));
+    return archived ?? null;
   }
 
   /**
@@ -228,7 +230,7 @@ export class SessionOps {
     const res = resolved.value;
     const from = this.locate(res);
     if (from === null) return notFound(`unknown session '${id}'`);
-    const dst = `${res.wsPath}/${TRASH_DIR}/${res.session}-${timestampSuffix(this.now())}`;
+    const dst = `${trashRoots(res.wsPath)[0]}/${res.session}-${timestampSuffix(this.now())}`;
     const moved = this.move(res, from, dst);
     if (!moved.ok) return moved;
     return this.clearActiveIf(id);

@@ -16,6 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getJson, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
+import { workspaceHome } from "./store/celestea-home.js";
 
 const harnesses: StudioHarness[] = [];
 
@@ -37,7 +38,7 @@ describe("W729 session mode endpoint surface (P0)", () => {
     // M1: an explicit execution session lands on disk and in the list row.
     const exec = await getJson(h.app, "/api/sessions", jsonRequest("POST", { workspace: "sample-ws", title: "exec", mode: "execution" }));
     expect(exec.status).toBe(200);
-    expect(readFileSync(join(h.workspace, ".celestea", "sessions", "exec-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "exec",\n  "mode": "execution"\n}\n');
+    expect(readFileSync(join(workspaceHome(h.workspace), "sessions", "exec-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "exec",\n  "mode": "execution"\n}\n');
     const rows = (await getJson(h.app, "/api/sessions")).body["sessions"] as Array<Record<string, unknown>>;
     expect(rows.find((r) => r["id"] === "sample-ws/exec-1700000000.0")).toMatchObject({ mode: "execution" });
     expect((await getJson(h.app, "/api/status?session=sample-ws%2Fexec-1700000000.0")).body["mode"]).toBe("execution");
@@ -46,13 +47,13 @@ describe("W729 session mode endpoint surface (P0)", () => {
     const bad = await getJson(h.app, "/api/sessions", jsonRequest("POST", { workspace: "sample-ws", title: "fast", mode: "fast" }));
     expect(bad.status).toBe(400);
     expect(bad.body).toEqual({ ok: false, error: "invalid mode: fast" });
-    expect(existsSync(join(h.workspace, ".celestea", "sessions", "fast-1700000000.0"))).toBe(false);
+    expect(existsSync(join(workspaceHome(h.workspace), "sessions", "fast-1700000000.0"))).toBe(false);
 
     // M3: without a mode the session is standard and NO mode key is written.
     // (W779 T2: session.json itself now always exists — it carries the title.)
     const plain = await getJson(h.app, "/api/sessions", jsonRequest("POST", { workspace: "sample-ws", title: "plain" }));
     expect(plain.status).toBe(200);
-    expect(readFileSync(join(h.workspace, ".celestea", "sessions", "plain-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "plain"\n}\n');
+    expect(readFileSync(join(workspaceHome(h.workspace), "sessions", "plain-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "plain"\n}\n');
     const after = (await getJson(h.app, "/api/sessions")).body["sessions"] as Array<Record<string, unknown>>;
     expect(after.find((r) => r["id"] === "sample-ws/plain-1700000000.0")).toMatchObject({ mode: "standard", title: "plain" });
     expect((await getJson(h.app, "/api/status?session=sample-ws%2Fplain-1700000000.0")).body["mode"]).toBe("standard");

@@ -11,7 +11,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { SandboxConfig } from "@celestea/core";
+import { CELESTEA_RUN_CODE_DIR, workspaceSubdir, type SandboxConfig } from "@celestea/core";
 
 import { envInt, envString } from "../env.js";
 
@@ -71,6 +71,8 @@ export interface SandboxConfigOverrides {
   maxOutputBytes?: number;
   workdir?: string;
   root?: string;
+  /** W880: override the run_code program directory (tests / embeddings). */
+  programDir?: string;
   extraEnv?: ReadonlyArray<readonly [string, string]>;
 }
 
@@ -91,6 +93,8 @@ export function sandboxConfigFromEnv(env: NodeJS.ProcessEnv = process.env, overr
     maxOutputBytes: positive(envInt(env, ENV_SHELL_MAX_OUTPUT_BYTES), DEFAULT_MAX_OUTPUT_BYTES),
     workdir,
     root: resolveOrCwd(overrides.root ?? envString(env, ENV_SHELL_ROOT) ?? gitToplevelOr(workdir)),
+    // W880: run_code programs live under CELESTEA_HOME, never in the workspace.
+    programDir: overrides.programDir ?? workspaceSubdir(workdir, CELESTEA_RUN_CODE_DIR, { env }),
   });
 }
 
@@ -113,6 +117,9 @@ export function buildSandboxConfig(overrides: SandboxConfigOverrides = {}): Sand
     maxOutputBytes: overrides.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
     workdir,
     root: resolveOrCwd(overrides.root ?? gitToplevelOr(workdir)),
+    // Explicit construction (tests / embeddings) keeps the historical in-workspace
+    // default; the ENV posture above is the one that uses CELESTEA_HOME.
+    programDir: overrides.programDir ?? join(workdir, ".celestea", "run-code"),
     extraEnv: overrides.extraEnv ?? [],
   };
 }

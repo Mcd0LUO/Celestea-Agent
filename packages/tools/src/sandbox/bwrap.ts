@@ -22,6 +22,7 @@
  */
 
 import type { ChildProcess } from "node:child_process";
+import { mkdir } from "node:fs/promises";
 
 import type { Sandbox, SandboxConfig, SandboxRunRequest, SandboxRunResult, SandboxSpawnRequest, SandboxSpawned } from "@celestea/core";
 import { SandboxError } from "@celestea/core";
@@ -127,12 +128,15 @@ export class BwrapSandbox implements Sandbox {
   ): Promise<{ child: ChildProcess; meta: BwrapMeta }> {
     this.assertUsable();
     const workdir = await resolveWorkdir(this.config, requestedWorkdir);
+    // W880: the program dir must exist before bwrap can bind it; run_code
+    // normally creates it first, but a run_shell-only sandbox must not fail.
+    await mkdir(this.config.programDir, { recursive: true }).catch(() => undefined);
     const binary = this.probe.bwrapPath as string;
     const blob = this.options.seccomp ? openSeccompBlob(this.seccompDir) : null;
     try {
       const limited = applyLimits(
         binary,
-        buildBwrapCommand(workdir, this.options, command),
+        buildBwrapCommand(workdir, { ...this.options, programDir: this.config.programDir }, command),
         limits,
         this.probe,
         this.rlimits,

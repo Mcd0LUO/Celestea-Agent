@@ -35,6 +35,12 @@ export interface BwrapOptions {
   readonly workspaceWritable?: boolean;
   /** W9: extra absolute dirs to bind rw (permission tool roots / write_roots). */
   readonly writeRoots?: readonly string[];
+  /**
+   * W880: the `run_code` program directory. It now lives under CELESTEA_HOME
+   * (outside the workspace), so it must be bound into the namespace — AFTER the
+   * private `/tmp` tmpfs, or a CELESTEA_HOME under `/tmp` would stay hidden.
+   */
+  readonly programDir?: string;
 }
 
 /** Contract default: network isolated, `/tmp` private, no seccomp, no masks. */
@@ -81,6 +87,11 @@ export function buildBwrapArgv(workdir: string | null, options: BwrapOptions): s
   else argv.push("--tmpfs", "/tmp");
   for (const dir of options.maskDirs) argv.push("--tmpfs", dir);
   for (const root of rwRoots) if (root !== "/") argv.push("--bind", root, root);
+  // W880: re-expose the run_code program dir on top of the tmpfs/mask layers.
+  const programDir = options.programDir;
+  if (programDir !== undefined && programDir !== "" && !rwRoots.includes(programDir)) {
+    argv.push("--bind", programDir, programDir);
+  }
   if (workdir !== null) argv.push("--chdir", workdir);
   if (options.seccomp) argv.push("--seccomp", String(SECCOMP_FD));
   return argv;

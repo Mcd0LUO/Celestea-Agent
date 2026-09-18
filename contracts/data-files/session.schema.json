@@ -6,7 +6,7 @@
     "doc": "docs/data-files.md §1.5"
   },
   "path": {
-    "default": "<workspace path>/<session-dir>/session.json (optional)"
+    "default": "<session-dir>/session.json (optional; canonical <CELESTEA_HOME>/workspaces/<ws>/sessions/<session-dir>/, legacy <workspace path>/<session-dir>/ and <workspace path>/.celestea/sessions/<session-dir>/ readable)"
   },
   "notes": [
     "The engine NEVER reads this file; cli-main.jsonl is the conversation history.",
