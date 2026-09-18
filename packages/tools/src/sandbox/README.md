@@ -1,8 +1,7 @@
 # `packages/tools/src/sandbox` — 执行边界（provider 层）
 
 `run_shell` / `process_control` 只依赖 `@celestea/core` 的 `Sandbox` seam；**隔离强度由本目录的 provider 决定**，
-调用点一行不改。P2c 落地的 OS 隔离 provider 是 `bwrap`（bubblewrap），依据 `results/W274-sandbox-spike.md`
-与 `spikes/sandbox/` 的实测结论。
+调用点一行不改。P2c 落地的 OS 隔离 provider 是 `bwrap`（bubblewrap），依据沙箱探索期的实测结论（探索脚本 `spikes/sandbox/` 已于 W881 移出公开仓）。
 
 ## 1. 文件分工
 

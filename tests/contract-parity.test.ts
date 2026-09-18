@@ -101,8 +101,11 @@ describe("W744 · session-event schema EXECUTED against the real event streams",
     expect(describeViolations(unsupported)).toBe("");
   });
 
-  it.skipIf(!HAS_FIXTURES)("accepts every line of every golden session log (real production JSONL)", () => {
-    expect(rows.length).toBeGreaterThan(500);
+  // W881: the real-session fixtures were removed from the public repo; the
+  // retained synthetic golden logs total ~62 rows, so the corpus is no longer
+  // >500 lines but must still be non-trivial.
+  it.skipIf(!HAS_FIXTURES)("accepts every line of every golden session log (golden JSONL)", () => {
+    expect(rows.length).toBeGreaterThan(50);
     const failures = rows
       .map((r) => ({ label: r.label, violations: validateSchema(SCHEMA, r.row) }))
       .filter((r) => r.violations.length > 0)

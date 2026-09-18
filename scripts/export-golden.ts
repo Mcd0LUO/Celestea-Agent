@@ -10,6 +10,12 @@
  *
  * Every byte written is passed through the redactor, and the export fails
  * loudly if any registered secret or generic token shape survives.
+ *
+ * !! NEVER COMMIT REAL-SESSION FIXTURES !!
+ * The sessions this script reads are REAL user conversations (private dialogue,
+ * tool output, internal hostnames). `fixtures/sessions/*` is gitignored except
+ * for the synthetic `test-*` / `scratch-*` fixtures; a fresh export of real
+ * sessions MUST NOT be added to git. See `.gitignore` and W881.
  */
 
 import { createHash } from "node:crypto";
@@ -123,6 +129,9 @@ function classify(stats: ReplayStats, outcomes: Record<string, number>): string[
 }
 
 async function main(): Promise<void> {
+  console.warn(
+    "[export-golden] WARNING: real-session fixtures are PRIVATE and MUST NEVER be committed; only synthetic test-*/scratch-* fixtures may enter git.",
+  );
   console.log(`[export-golden] studio=${STUDIO} out=${OUT}`);
   ensureDir(OUT);
 

@@ -10,6 +10,11 @@ reports/*.tmp
 reports/replay-diff-*.json
 results/
 
+# 真实会话导出的 golden fixture 绝不入库（含私人对话）；合成 fixture 用 ! 例外保留
+fixtures/sessions/*
+!fixtures/sessions/test-*/
+!fixtures/sessions/scratch-*/
+
 # Celestea 会话产物（对话日志/附件/授权/检查点）。
 # 工作区根可能就是一个 git 仓库（本项目自己就是），会话数据绝不能进版本库。
 # W880：canonical 产物已全部移出工作区，落到 $CELESTEA_HOME

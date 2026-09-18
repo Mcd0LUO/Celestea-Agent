@@ -435,7 +435,7 @@ export type Content = TextContent | ToolCallContent | ImageContent;   // ← 唯
 | --- | --- | --- |
 | `tests/contracts.test.ts`（51 处硬断言，另 `:23-25,62,207,223-224,255-256,302-304,361-364,385-387`） | 工具数 11→12、端点数 51→53 | 机械改数字 + 快照重生成，**必须**与新 contract 同步 |
 | `apps/studio/src/replay/replay.test.ts:52-53`（自写 golden） | `projectMessages` / `deriveMessages` 输出多了 `attachments` 字段 | 自动生成产物，重跑即更新 |
-| `scripts/compare-replay.ts:98-102` | 与 `fixtures/sessions/*/{messages,derive-messages}-expected.json` 逐字节对拍 | **只有含附件的会话才会真正不同**；现有 5 个 fixture 都没有附件 → **理论上不变**。但 `StudioMessage.user` 若新增恒在字段（`attachments: []`）就会**全体变红**。**设计约束：可选字段必须「无则完全省略」（serde 风格），不得写 `null`/`[]`。** |
+| `scripts/compare-replay.ts:98-102` | 与 `fixtures/sessions/*/{messages,derive-messages}-expected.json` 逐字节对拍 | **只有含附件的会话才会真正不同**；现有 fixture 都没有附件 → **理论上不变**。但 `StudioMessage.user` 若新增恒在字段（`attachments: []`）就会**全体变红**。**设计约束：可选字段必须「无则完全省略」（serde 风格），不得写 `null`/`[]`。** |
 | `packages/session/src/parity.test.ts` | 与旧实现的字节对拍 | 新增字段的行需要新对拍向量；旧向量应不变（无附件） |
 | `packages/core/src/message.test.ts:54` | `JSON.stringify(assistantText("hi"))` 精确字符串 | 构造器未改则不变；改了构造器签名会红 |
 | `packages/core/src/session-log.test.ts:34-54` | 事件编解码精确形状 | 新增可选字段省略时不变 |
@@ -475,7 +475,7 @@ packages/llm/src/{seam.ts:114-119, wire.ts:17,60,62,66,70, index.ts:32,34}
 
 ### 5.1 位置：每会话 `attachments/`
 
-实测确认会话目录的物理布局是 **`<workspace>/<session-dir>/`**（例如 `/server-center/center-架构师-1788940601.93642104/cli-main.jsonl`；`workspaces.json` 的 workspace 路径 + `session.schema.json` 的 sessionDir）。因此：
+实测确认会话目录的物理布局是 **`<workspace>/<session-dir>/`**（例如 `<workspace>/<session-dir>/cli-main.jsonl`；`workspaces.json` 的 workspace 路径 + `session.schema.json` 的 sessionDir）。因此：
 
 ```
 <workspace>/<session-dir>/

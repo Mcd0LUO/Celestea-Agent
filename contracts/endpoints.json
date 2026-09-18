@@ -8,7 +8,7 @@
     "routes": "frozen from the retired backend implementation (original source file deleted 2026-09-15); kept as contracts/route-table.snapshot.json (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "routeSnapshot": "contracts/route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only). W9 added the six permission endpoints (51 -> 57). W860 added GET|PUT /api/sessions/{id}/tools and GET /api/plugins (57 -> 60). W870 added PUT /api/sessions/{id}/model (60 -> 61; the session-scoped model switch the statusline picker targets, TS-only)."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only). W9 added the six permission endpoints (51 -> 57). W860 added GET|PUT /api/sessions/{id}/tools and GET /api/plugins (57 -> 60). W870 added PUT /api/sessions/{id}/model (60 -> 61; the session-scoped model switch the statusline picker targets, TS-only). W881 removed the retired backend's archived HTTP contract (docs/archive/frontend/api-contract.md) from the public repo, so the endpoints it documented now reference their own frozen entry here."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -36,7 +36,7 @@
       "path": "/api/health",
       "group": "health",
       "rustHandler": "get_health",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apihealth",
+      "docRef": "contracts/endpoints.json#get_health",
       "request": {
         "kind": "none",
         "fields": []
@@ -97,7 +97,7 @@
       "path": "/api/status",
       "group": "health",
       "rustHandler": "api::get_status",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apistatus",
+      "docRef": "contracts/endpoints.json#get_status",
       "request": {
         "kind": "none",
         "fields": []
@@ -195,7 +195,7 @@
       "path": "/api/tools",
       "group": "health",
       "rustHandler": "api::get_tools",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apitools",
+      "docRef": "contracts/endpoints.json#get_tools",
       "request": {
         "kind": "query",
         "fields": [
@@ -237,7 +237,7 @@
       "path": "/api/events",
       "group": "dialog",
       "rustHandler": "get_events",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apievents--sse",
+      "docRef": "contracts/endpoints.json#get_events",
       "request": {
         "kind": "none",
         "fields": []
@@ -279,7 +279,7 @@
       "path": "/api/turn",
       "group": "dialog",
       "rustHandler": "post_turn",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiturn",
+      "docRef": "contracts/endpoints.json#post_turn",
       "request": {
         "kind": "json",
         "fields": [
@@ -355,7 +355,7 @@
       "path": "/api/cancel",
       "group": "dialog",
       "rustHandler": "post_cancel",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apicancel",
+      "docRef": "contracts/endpoints.json#post_cancel",
       "request": {
         "kind": "none",
         "fields": []
@@ -394,7 +394,7 @@
       "path": "/api/clear",
       "group": "dialog",
       "rustHandler": "workspaces::post_clear",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiclear",
+      "docRef": "contracts/endpoints.json#post_clear",
       "request": {
         "kind": "none",
         "fields": []
@@ -435,7 +435,7 @@
       "path": "/api/config",
       "group": "config",
       "rustHandler": "api::get_config",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apiconfig",
+      "docRef": "contracts/endpoints.json#get_config",
       "request": {
         "kind": "none",
         "fields": []
@@ -514,7 +514,7 @@
       "path": "/api/config",
       "group": "config",
       "rustHandler": "api::post_config",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiconfig",
+      "docRef": "contracts/endpoints.json#post_config",
       "request": {
         "kind": "json",
         "fields": [
@@ -621,7 +621,7 @@
       "path": "/api/sessions",
       "group": "sessions",
       "rustHandler": "workspaces::get_sessions",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apisessions",
+      "docRef": "contracts/endpoints.json#get_sessions",
       "request": {
         "kind": "query",
         "fields": [
@@ -670,7 +670,7 @@
       "path": "/api/sessions",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_create",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessions",
+      "docRef": "contracts/endpoints.json#post_sessions",
       "request": {
         "kind": "json",
         "fields": [
@@ -774,7 +774,7 @@
       "path": "/api/sessions/{id}/messages",
       "group": "sessions",
       "rustHandler": "workspaces::get_session_messages",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apisessionsidmessages",
+      "docRef": "contracts/endpoints.json#get_session_messages",
       "request": {
         "kind": "none",
         "fields": []
@@ -835,7 +835,7 @@
       "path": "/api/sessions/{id}/activate",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_activate",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidactivate",
+      "docRef": "contracts/endpoints.json#post_session_activate",
       "request": {
         "kind": "none",
         "fields": []
@@ -888,7 +888,7 @@
       "path": "/api/sessions/{id}/rename",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_rename",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidrename",
+      "docRef": "contracts/endpoints.json#post_session_rename",
       "request": {
         "kind": "json",
         "fields": [
@@ -959,7 +959,7 @@
       "path": "/api/sessions/{id}/branch",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_branch",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidbranch",
+      "docRef": "contracts/endpoints.json#post_session_branch",
       "request": {
         "kind": "json",
         "fields": [
@@ -1023,7 +1023,7 @@
       "path": "/api/sessions/{id}/compact",
       "group": "sessions",
       "rustHandler": "compact::post_session_compact",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidcompact",
+      "docRef": "contracts/endpoints.json#post_session_compact",
       "request": {
         "kind": "none",
         "fields": []
@@ -1301,7 +1301,7 @@
       "path": "/api/sessions/{id}/archive",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_archive",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
+      "docRef": "contracts/endpoints.json#post_session_archive",
       "request": {
         "kind": "none",
         "fields": []
@@ -1350,7 +1350,7 @@
       "path": "/api/sessions/{id}/unarchive",
       "group": "sessions",
       "rustHandler": "workspaces::post_session_unarchive",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsidarchive--post-apisessionsidunarchive",
+      "docRef": "contracts/endpoints.json#post_session_unarchive",
       "request": {
         "kind": "none",
         "fields": []
@@ -1391,7 +1391,7 @@
       "path": "/api/sessions/batch-archive",
       "group": "sessions",
       "rustHandler": "workspaces::post_sessions_batch_archive",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsbatch-archive",
+      "docRef": "contracts/endpoints.json#post_sessions_batch_archive",
       "request": {
         "kind": "json",
         "fields": [
@@ -1440,7 +1440,7 @@
       "path": "/api/sessions/batch-delete",
       "group": "sessions",
       "rustHandler": "workspaces::post_sessions_batch_delete",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apisessionsbatch-delete",
+      "docRef": "contracts/endpoints.json#post_sessions_batch_delete",
       "request": {
         "kind": "json",
         "fields": [
@@ -1490,7 +1490,7 @@
       "path": "/api/workspaces",
       "group": "workspaces",
       "rustHandler": "workspaces::get_workspaces",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apiworkspaces",
+      "docRef": "contracts/endpoints.json#get_workspaces",
       "request": {
         "kind": "none",
         "fields": []
@@ -1528,7 +1528,7 @@
       "path": "/api/workspaces",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspace_create",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspaces",
+      "docRef": "contracts/endpoints.json#post_workspaces",
       "request": {
         "kind": "json",
         "fields": [
@@ -1601,7 +1601,7 @@
       "path": "/api/workspaces/{name}/rename",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspace_rename",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspacesnamerename",
+      "docRef": "contracts/endpoints.json#post_workspace_rename",
       "request": {
         "kind": "json",
         "fields": [
@@ -1684,7 +1684,7 @@
       "path": "/api/workspaces/{name}/delete",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspace_delete",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspacesnamedelete",
+      "docRef": "contracts/endpoints.json#post_workspace_delete",
       "request": {
         "kind": "none",
         "fields": []
@@ -1724,7 +1724,7 @@
       "path": "/api/workspaces/batch-delete",
       "group": "workspaces",
       "rustHandler": "workspaces::post_workspaces_batch_delete",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkspacesbatch-delete",
+      "docRef": "contracts/endpoints.json#post_workspaces_batch_delete",
       "request": {
         "kind": "json",
         "fields": [
@@ -1773,7 +1773,7 @@
       "path": "/api/fs/browse",
       "group": "fs",
       "rustHandler": "workspaces::get_fs_browse",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apifsbrowsepath-绝对路径",
+      "docRef": "contracts/endpoints.json#get_fs_browse",
       "request": {
         "kind": "query",
         "fields": [
@@ -1841,7 +1841,7 @@
       "path": "/api/providers",
       "group": "providers",
       "rustHandler": "providers::get_providers",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apiproviders",
+      "docRef": "contracts/endpoints.json#get_providers",
       "request": {
         "kind": "none",
         "fields": []
@@ -1884,7 +1884,7 @@
       "path": "/api/providers",
       "group": "providers",
       "rustHandler": "providers::post_providers",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiproviders",
+      "docRef": "contracts/endpoints.json#post_providers",
       "request": {
         "kind": "json",
         "fields": [
@@ -1982,7 +1982,7 @@
       "path": "/api/providers/{id}/delete",
       "group": "providers",
       "rustHandler": "providers::post_provider_delete",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiprovidersiddelete",
+      "docRef": "contracts/endpoints.json#post_provider_delete",
       "request": {
         "kind": "none",
         "fields": []
@@ -2022,7 +2022,7 @@
       "path": "/api/providers/test",
       "group": "providers",
       "rustHandler": "providers::post_provider_test",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiproviderstest",
+      "docRef": "contracts/endpoints.json#post_provider_test",
       "request": {
         "kind": "json",
         "fields": [
@@ -2126,7 +2126,7 @@
       "path": "/api/providers/{id}/models/fetch",
       "group": "providers",
       "rustHandler": "providers::post_models_fetch",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiprovidersidmodelsfetch",
+      "docRef": "contracts/endpoints.json#post_provider_models_fetch",
       "request": {
         "kind": "none",
         "fields": []
@@ -2187,7 +2187,7 @@
       "path": "/api/providers/default",
       "group": "providers",
       "rustHandler": "providers::post_provider_default",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiprovidersdefault",
+      "docRef": "contracts/endpoints.json#post_provider_default",
       "request": {
         "kind": "json",
         "fields": [
@@ -2257,7 +2257,7 @@
       "path": "/api/prompts",
       "group": "prompts",
       "rustHandler": "prompts::get_prompts",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apiprompts",
+      "docRef": "contracts/endpoints.json#get_prompts",
       "request": {
         "kind": "query",
         "fields": [
@@ -2336,7 +2336,7 @@
       "path": "/api/prompts",
       "group": "prompts",
       "rustHandler": "prompts::post_prompts_upsert",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiprompts（upsert）",
+      "docRef": "contracts/endpoints.json#post_prompts",
       "request": {
         "kind": "json",
         "fields": [
@@ -2444,7 +2444,7 @@
       "path": "/api/prompts/{id}/delete",
       "group": "prompts",
       "rustHandler": "prompts::post_prompts_delete",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apipromptsiddelete",
+      "docRef": "contracts/endpoints.json#post_prompts_delete",
       "request": {
         "kind": "json",
         "fields": [
@@ -2509,7 +2509,7 @@
       "path": "/api/prompts/{id}/default",
       "group": "prompts",
       "rustHandler": "prompts::post_prompts_default",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apipromptsiddefault",
+      "docRef": "contracts/endpoints.json#post_prompts_default",
       "request": {
         "kind": "json",
         "fields": [
@@ -2575,7 +2575,7 @@
       "path": "/api/worker/spawn",
       "group": "workers",
       "rustHandler": "api::post_worker_spawn",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkerspawn",
+      "docRef": "contracts/endpoints.json#post_worker_spawn",
       "request": {
         "kind": "json",
         "fields": [
@@ -2665,7 +2665,7 @@
       "path": "/api/worker/send",
       "group": "workers",
       "rustHandler": "api::post_worker_send",
-      "docRef": "docs/archive/frontend/api-contract.md#post-apiworkersend",
+      "docRef": "contracts/endpoints.json#post_worker_send",
       "request": {
         "kind": "json",
         "fields": [
@@ -2708,7 +2708,7 @@
       "path": "/api/worker/status",
       "group": "workers",
       "rustHandler": "api::get_worker_status",
-      "docRef": "docs/archive/frontend/api-contract.md#get-apiworkerstatuswid-可选",
+      "docRef": "contracts/endpoints.json#get_worker_status",
       "request": {
         "kind": "query",
         "fields": [

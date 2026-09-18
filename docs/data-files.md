@@ -42,7 +42,7 @@
 ```jsonc
 {
   "workspaces": [ { "path": "/abs/registered/dir" } ],   // #[serde(default)] -> []
-  "active_session": "server-center/center-架构师-1788940601.93642104"  // #[serde(default)] -> null
+  "active_session": "<workspace>/<session>"  // #[serde(default)] -> null
 }
 ```
 

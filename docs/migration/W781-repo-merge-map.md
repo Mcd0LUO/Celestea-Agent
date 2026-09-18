@@ -9,7 +9,7 @@
 | --- | --- |
 | `frontend/` | `apps/web/` |
 | `docs/DEVELOPMENT.md`、`data-files.md`、`pitfalls.md` | `docs/`（README 并入 `docs/README-frontend.md`） |
-| `docs/archive/**` | `docs/archive/frontend/` |
+| `docs/archive/**` | `docs/archive/frontend/`（W881 清理：退役历史文档已移出公开仓） |
 | `tools/**` | `scripts/model-sync/`（本次起被 git 真正跟踪） |
 | `notes/**` | `docs/notes/`（仅一篇 3 行插话测试残留，2026-09-15 清理时删除；内容为 `插话测试：立刻记下这条`） |
 | `README.md` | 并入 Celestea-Agent 的 README「文档与仓库角色」段 |

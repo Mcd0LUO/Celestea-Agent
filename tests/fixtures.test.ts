@@ -26,10 +26,13 @@ interface Manifest {
 const manifest = hasFixtures ? (JSON.parse(readFileSync(MANIFEST, "utf8")) as Manifest) : null;
 
 describe.skipIf(!hasFixtures)("golden fixtures", () => {
-  it("covers at least 3 real sessions and the 3 required behaviours", () => {
+  // W881: the two real-session fixtures were removed from the public repo, so the
+  // committed golden set is the three synthetic fixtures. The dangling-tool-call
+  // role was only ever provided by the deleted harness session; export-golden.ts
+  // still enforces it for a fresh (never-committed) export.
+  it("covers the retained synthetic sessions and their declared behaviours", () => {
     expect(manifest!.sessions.length).toBeGreaterThanOrEqual(3);
     const roles = new Set(manifest!.sessions.flatMap((s) => s.roles));
-    expect(roles.has("dangling-tool-call")).toBe(true);
     expect(roles.has("run_code-parent-id")).toBe(true);
     expect(roles.has("normal-multi-turn")).toBe(true);
   });
@@ -47,10 +50,9 @@ describe.skipIf(!hasFixtures)("golden fixtures", () => {
     }
   });
 
-  it("keeps the dangling tool_call and run_code parent_id evidence", () => {
-    const dangling = manifest!.sessions.filter((s) => s.roles.includes("dangling-tool-call"));
-    expect(dangling.length).toBeGreaterThanOrEqual(1);
-    expect(dangling.some((s) => s.danglingToolCalls > 0)).toBe(true);
+  // W881: the dangling-tool-call evidence lived only in the deleted real-session
+  // fixture; the run_code parent_id evidence survives in the synthetic set.
+  it("keeps the run_code parent_id evidence", () => {
     const nested = manifest!.sessions.filter((s) => s.roles.includes("run_code-parent-id"));
     expect(nested.some((s) => s.subCalls > 0)).toBe(true);
   });
@@ -93,20 +95,13 @@ describe.skipIf(!hasFixtures)("golden fixtures", () => {
     expect(serializeRegistryTsv(parseRegistryTsv(raw).entries)).toBe(raw);
   });
 
-  // W839 (R3 B8 / W818-P2-11): an explicit on-demand allowlist, not a blanket
-  // skip. The old form skipped ANY missing derived transcript, so the case could
-  // pass while covering nothing. Only the two large sessions (regenerated on
-  // demand) may be absent; any other declared slug missing its transcript fails.
-  const ON_DEMAND_TRANSCRIPTS = new Set([
-    "center-架构师-1788940601.93642104",
-    "harness架构哥-1788933931.279221103",
-  ]);
-
+  // W881: the two large real-session fixtures (whose derived transcripts were
+  // regenerated on demand) were removed; every retained synthetic fixture ships
+  // its transcript, so a missing one is always an error.
   it("derived SSE transcripts only use contract event names", () => {
     for (const s of manifest!.sessions) {
       const p = fixturePath("sessions", s.slug, "sse-transcript-derived.jsonl");
       if (!existsSync(p)) {
-        if (ON_DEMAND_TRANSCRIPTS.has(s.slug)) continue;
         throw new Error("fixture " + s.slug + " is missing " + p + "; run pnpm golden:export");
       }
       const lines = readFileSync(p, "utf8").split("\n").filter((l) => l.trim() !== "");
@@ -118,13 +113,5 @@ describe.skipIf(!hasFixtures)("golden fixtures", () => {
         expect(typeof frame.data.payload).toBe("object");
       }
     }
-  });
-});
-
-describe.skipIf(hasFixtures)("golden fixtures (not exported)", () => {
-  it("explains how to export them", () => {
-    expect(hasFixtures).toBe(false);
-    // eslint-disable-next-line no-console
-    console.warn("fixtures/ not found - run `pnpm golden:export` to enable the golden regression tests");
   });
 });

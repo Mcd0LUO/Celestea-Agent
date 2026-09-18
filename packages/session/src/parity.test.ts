@@ -40,8 +40,10 @@ function readSession(slug: string): { raw: string; goldenDerived: unknown[]; gol
 }
 
 describe.skipIf(!hasFixtures)("Golden parity (golden sessions)", () => {
+  // W881: the two real-session fixtures were removed from the public repo, so the
+  // committed golden set is the three synthetic fixtures.
   it("covers the exported sessions", () => {
-    expect(slugs.length).toBeGreaterThanOrEqual(5);
+    expect(slugs.length).toBeGreaterThanOrEqual(3);
   });
 
   for (const slug of hasFixtures ? slugs : []) {
@@ -79,11 +81,4 @@ describe.skipIf(!hasFixtures)("Golden parity (golden sessions)", () => {
       });
     });
   }
-});
-
-describe.skipIf(hasFixtures)("Golden parity (fixtures not exported)", () => {
-  it("explains how to export them", () => {
-    console.warn("fixtures/sessions not found - run `pnpm golden:export` to enable the parity tests");
-    expect(hasFixtures).toBe(false);
-  });
 });

@@ -66,8 +66,8 @@ HTTP handler → runtime.sessionContext(id) → Runtime.contextSnapshot()
 - `usage.total` 是**跨 step 重复计费之和**（每一步都重发整份 prompt），**不是**上下文占用，
   禁止用它除以窗口来画占用；占用只认 `context_usage`。
 - 实测锚：`fixtures/live/status.json` 的 `used: 565437 / ratio: 0.5654` 是旧口径的产物；
-  同一份会话（`fixtures/sessions/harness架构哥-1788933931.279221103`）在新口径下为
-  `used: 155698 / ratio: 0.1557`（见 `packages/runtime/src/status.test.ts` 的夹具重放）。
+  同一份真实会话在新口径下为 `used: 155698 / ratio: 0.1557`（该真实会话 fixture 因含私人对话，
+  已于 W881 移出公开仓，不再随仓提供）。
 
 ## §4 截断（线上体积护栏）
 

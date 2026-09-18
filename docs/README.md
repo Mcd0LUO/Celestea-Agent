@@ -2,7 +2,7 @@
 
 > 本页是 `/src/celestea_studio-ts/docs/` 的**全量索引**：每份文档的状态、一句话定位与权威入口。
 > 状态：**当前** = 与代码/生产同步；**设计** = 目标设计与契约（未必已实现）。
-> 历史归档在 [`archive/`](./archive/)（旧契约、旧部署、旧评估）；上表只登记**当前与设计**。
+> 旧契约/旧部署/旧评估的归档历史文档已于 W881 清理出公开仓；上表只登记**当前与设计**。
 
 ## 索引
 
@@ -20,16 +20,16 @@
 | [`pitfalls.md`](./pitfalls.md) | 当前 | **踩坑档案**：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证（每条来自真实修复）；前端渲染与数据文件类条目仍适用 | 本文 |
 | [`feature-ask-user.md`](./feature-ask-user.md) | 当前（**已实现，W783/W784**） | 特性设计：**模型向用户提问**（`ask_user_question`）——选项 + 自定义输入、挂起等待、答案回传模型、最大等待时间；架构对齐 DSH 官方三层实现（服务 seam / 工具 / UI answerer），本仓增量为异步 waterfall、超时、断线恢复、本地化 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §3.1；`packages/core/src/question.ts`、`apps/web/src/ui/question/` |
 | [`iteration-e-capabilities.md`](./iteration-e-capabilities.md) | 设计 | 迭代方向 E（能力深水区）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | 本文；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
-| [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见 `docs/archive/frontend/harness/archive/dsh-ptc-mode-eval.md` |
+| [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见归档的 DSH 评估（W253/W254，已于 W881 清理出公开仓） |
 | [`ui-copy-tech-notes.md`](./ui-copy-tech-notes.md) | 当前（审计清单） | 共用前端「面向用户可见的技术文案」只读审计：27 个文件 + `index.html` 的问题清单与建议改法 | 本文；前端规则见 `apps/web/FRONTEND-RULES.md` |
 | [`DEPENDENCY-POLICY.md`](./DEPENDENCY-POLICY.md) | 当前（W847 W0） | **依赖与工具链策略**：Node 版本带 + 启动守卫、冻结安装（pnpm-workspace.yaml）、升级验证协议与回滚、为什么 audit 不进门禁、外部运行时依赖清点 | 本文 |
 
 上表覆盖 `docs/` 根的全部**当前与设计**文档（15 篇 + 本索引）；**新增文档必须在上表登记**。
-另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）、[`archive/`](./archive/)（历史，只存史）。
+另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）。
 契约类真源不在 `docs/`，而在
 [`../contracts/`](../contracts/)（`endpoints.json` 47 端点、`sse-events.json`、`tools.json`、`data-files/`）——
-它们的 `docRef` 若指向旧契约，路径已更新为
-`docs/archive/frontend/api-contract.md`（历史文档，仅存史）。
+退役后端的归档 HTTP 契约已于 W881 清理出公开仓，相关端点的 `docRef` 现指向
+`contracts/endpoints.json` 自身的冻结条目。
 
 ## 仓库角色与互链
 
@@ -37,12 +37,12 @@
 | --- | --- | --- |
 | `/src/celestea_studio-ts`（本仓） | Studio 后端（TypeScript，**生产**）+ 线上前端 `apps/web/` + 模型同步脚本 | 本页 / [`../README.md`](../README.md) |
 | `/var/lib/celestea-agent` | 运行数据（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/` / 账本） | [`../scripts/run-studio-ts.sh`](../scripts/run-studio-ts.sh) |
-| `/src/celestea_harness` | 引擎**原址**（2026-09-11 已删除，仅存说明 README；历史文档在 [`archive/frontend/harness/`](./archive/frontend/harness/)） | [`./archive/frontend/harness/README.md`](./archive/frontend/harness/README.md) |
+| `/src/celestea_harness` | 引擎**原址**（2026-09-11 已删除；其历史文档已于 W881 清理出公开仓） | — |
 
 ## 维护约定
 
 - 新增文档 → 在本页登记（文件 / 状态 / 一句话 / 权威入口），并在 [`../README.md`](../README.md) 的「文档与仓库角色」段可见。
 - 设计落地后 → 把状态从 **设计** 改为 **当前**，并回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) 的 seam/例外表；
   设计文档里写作时的「未实现」状态行也应一并订正。
-- 文档过时 → 移入 [`archive/`](./archive/)（`git mv` 保历史）+ 顶部 `📦 历史文档` 横幅 + 更新全仓引用路径；**不删除正文**。
-  属旧前端仓事实的归 [`archive/frontend/`](./archive/frontend/)。
+- 文档过时 → 移入归档目录（`git mv` 保历史）+ 顶部 `📦 历史文档` 横幅 + 更新全仓引用路径；**不删除正文**。
+  公开仓不再保留退役后端/引擎的历史文档（W881 已清理）。
