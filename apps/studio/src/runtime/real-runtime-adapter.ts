@@ -445,19 +445,25 @@ class RealEngine implements RealRuntimeAdapter {
    *   consumed at the running turn's next step boundary (`injected: true`);
    *   owner session IDLE -> `next-turn` lane, QUEUED for the next turn start.
    * The lane is what makes "insert now" and "wake me later" the same mechanism.
+   *
+   * W847 adds the caller's explicit `mode: "queue"`: on a BUSY session it also
+   * picks the next-turn lane, so the running turn is left untouched (placement
+   * `queued`, `injected: false`) and the input is drained at the NEXT turn start.
    */
   inject(req: TurnRequest): InjectOutcome {
     const entry = this.registry.peek(req.session);
     const busy = entry?.inFlight === true;
-    const lane = busy ? "next-step" : "next-turn";
+    // W847: only an explicit "queue" on a busy session diverts the input; the
+    // omitted request and "steer" keep the W513 table byte for byte.
+    const steering = busy && req.mode !== "queue";
     const target = entry ?? this.entryFor(req.session);
-    const message = target.runtime.inject(req.input, lane, { kind: "user", source: { kind: "user", form: "message" } });
+    const message = target.runtime.inject(req.input, steering ? "next-step" : "next-turn", { kind: "user", source: { kind: "user", form: "message" } });
     target.lastActiveAt = this.now();
     return {
       turn: target.turnNo,
-      injected: busy,
-      pending: target.runtime.pendingInjections(lane),
-      placement: busy ? "steering" : "queued",
+      injected: steering,
+      pending: target.runtime.pendingInjections(steering ? "next-step" : "next-turn"),
+      placement: steering ? "steering" : "queued",
       duplicate: message.duplicate,
     };
   }

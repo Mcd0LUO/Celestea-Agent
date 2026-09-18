@@ -384,6 +384,15 @@ export interface TurnResp {
    * false/absent = a new turn was started with `turn` as its id.
    */
   injected?: boolean;
+  /**
+   * W515/W847: the backend echo of where the input LANDED — the authoritative
+   * terminal state. "steering" = 已插话 (drained at the running turn's next step
+   * boundary), "queued" = 已排队 (drained at the next turn start), "context" =
+   * this input IS the new turn. The UI renders from this, NOT from `injected`:
+   * before W847 a busy + mode=queue response still carried injected:true, and
+   * rendering from `injected` overwrote the queued note with "已插话".
+   */
+  placement?: 'queued' | 'steering' | 'context';
   /** W515: true = 已按「排队（下一回合投递）」接收（mode='queue'）。 */
   queued?: boolean;
   /** W515: 后端回声的投递车道（'next-step' | 'next-turn'）。 */

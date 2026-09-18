@@ -284,6 +284,12 @@
             "note": "non-empty after trim UNLESS at least one attachment is present"
           },
           {
+            "name": "mode",
+            "type": "string",
+            "required": false,
+            "note": "W847 optional delivery lane on a BUSY session: \"steer\" (default) = inject into the RUNNING turn at its next step boundary (200, placement \"steering\", injected true); \"queue\" = park for the NEXT turn start (200, placement \"queued\", injected false). Omitted = byte-identical to the pre-W847 request. Any other value is a 400, never silently defaulted. Ignored on the idle path (the input IS the new turn)."
+          },
+          {
             "name": "attachments",
             "type": "array",
             "required": false,
@@ -305,6 +311,12 @@
             "type": "string",
             "required": false,
             "note": "constant \"started\""
+          },
+          {
+            "name": "placement",
+            "type": "\"context\"",
+            "required": false,
+            "note": "W515/W847: the idle turn's own input IS the context, so this 202 body carries placement:\"context\" (the busy-lane 200 answers are described in the notes below)."
           }
         ]
       },
@@ -314,12 +326,17 @@
           "error": "input must not be empty"
         },
         {
+          "status": 400,
+          "error": "invalid mode: {v} (expected \"steer\" or \"queue\")"
+        },
+        {
           "status": 409,
           "error": "a turn is already running"
         }
       ],
       "notes": [
-        "Grabs the busy slot, emits status:start, spawns execute_turn and returns immediately; all results go over SSE."
+        "Grabs the busy slot, emits status:start, spawns execute_turn and returns immediately; all results go over SSE.",
+        "W847: on a BUSY session the optional \"mode\" picks the delivery lane. \"steer\" (default, and the omitted request) injects into the RUNNING turn at its next step boundary and answers 200 {ok:true,injected:true,turn,pending,placement:\"steering\",duplicate:false}; \"queue\" parks the input on the next-turn lane for the NEXT turn start and answers 200 with injected:false and placement:\"queued\" (the running turn is never touched). On an IDLE session mode is ignored: the input becomes the new turn and the 202 body carries placement:\"context\". An invalid mode is a 400 with the explicit message above, never a silent default."
       ],
       "probe": {
         "checked": false,

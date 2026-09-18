@@ -251,6 +251,17 @@ function onDone(ctx: SessionPane, p: DonePayload): void {
   // W847：一步结束 → 思考段收尾。必须在下面 assistant 早退之前（无文本的 step
   // 没有 assistant，早退会让本步的思考段漏收尾、与落盘分段口径错位）。
   flushThinkSegment(ctx);
+  if (ctx.assistant === null && typeof p.text === 'string' && p.text !== '') {
+    // W847（P1）：done 携带本步的权威全文；若一步没有任何 text 帧（provider 只回
+    // 完整文本、或流被掐断后只补 done），此时 ctx.assistant 为空。旧实现的
+    // early return 会把这份唯一正文丢掉。这里补建气泡并走同一条 applyFinalText
+    // 路径；去重语义（finalAssistantDedup）保持在前。
+    if (finalAssistantDedup(ctx, p.text)) return;
+    const fresh = ensureAssistant(ctx);
+    applyFinalText(ctx, fresh, p.text);
+    autoscroll(ctx);
+    return;
+  }
   const a = ctx.assistant;
   if (!a) return;
   if (finalAssistantDedup(ctx, p.text)) {

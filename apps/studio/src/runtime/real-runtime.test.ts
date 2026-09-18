@@ -12,7 +12,18 @@ import { SSE_EVENT_NAMES } from "@celestea/core";
 import { parseSessionJsonl } from "@celestea/session";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
 import type { OfflineStep } from "./offline-llm.js";
-import { activate, asPayload, engineOf, makeEngineHarness, readSessionLog, runTurnWithFrames, turns, waitIdle } from "./test-util.js";
+import {
+  activate,
+  asPayload,
+  collectUntilTerminal,
+  engineOf,
+  type FrameRecord,
+  makeEngineHarness,
+  readSessionLog,
+  runTurnWithFrames,
+  turns,
+  waitIdle,
+} from "./test-util.js";
 
 const harnesses: StudioHarness[] = [];
 
@@ -89,6 +100,43 @@ describe("POST /api/turn over the real engine", () => {
     const end = parsed.events.find((e) => e.type === "turn_end");
     expect(end?.type === "turn_end" ? end.outcome : null).toBe("cancelled");
     expect((await getJson(h.app, "/api/cancel", jsonRequest("POST"))).body).toEqual({ ok: true, cancelled: false });
+  });
+
+  it("W847: busy + mode=queue parks on the next-turn lane and the running turn never sees it", async () => {
+    const h = make({ sessions: { s1: [] }, llm: { script: [{ text: "x".repeat(4000) }], deltaMs: 3, chunkChars: 8 } });
+    await activate(h, "sample-ws/s1");
+    const sub = h.studio.services.bus.subscribe();
+    const frames: FrameRecord[] = [];
+    const first = await h.app.request("/api/turn", jsonRequest("POST", { input: "长任务" }));
+    expect(first.status).toBe(202);
+
+    const queued = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "下一轮才出现", mode: "queue" }));
+    expect(queued.status).toBe(200);
+    expect(queued.body).toEqual({ ok: true, injected: false, turn: 1, pending: 1, placement: "queued", duplicate: false });
+
+    await collectUntilTerminal(sub, frames);
+    sub.close();
+    await waitIdle(h);
+
+    // Acceptance frame: queued on the next-turn lane; this turn was never steered.
+    const accepted = frames.find((f) => f.payload["placement"] === "queued");
+    expect(accepted?.event).toBe("status");
+    expect((accepted?.payload["message"] as Record<string, unknown>)["lane"]).toBe("next-turn");
+    expect(frames.some((f) => f.payload["placement"] === "steering")).toBe(false);
+
+    const userTexts = (log: string): string[] =>
+      parseSessionJsonl(log)
+        .events.filter((e) => e.type === "user_message")
+        .map((e) => (e.type === "user_message" ? e.text : ""));
+
+    // The RUNNING turn is untouched: only its own input is on disk.
+    expect(userTexts(readSessionLog(h, "s1"))).toEqual(["长任务"]);
+
+    // The NEXT turn drains the queue at turn start, before its own input.
+    const second = await h.app.request("/api/turn", jsonRequest("POST", { input: "第二轮输入" }));
+    expect(second.status).toBe(202);
+    await waitIdle(h);
+    expect(userTexts(readSessionLog(h, "s1"))).toEqual(["长任务", "下一轮才出现", "第二轮输入"]);
   });
 
   it("dispatches a real tool call through the guarded registry", async () => {

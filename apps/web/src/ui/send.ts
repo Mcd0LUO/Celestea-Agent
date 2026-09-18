@@ -163,14 +163,28 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
   };
   try {
     const r = await api.turn(t, sid(ctx), mode);
-    if (r.injected === true) {
-      ok('已插话 · 将在下一步送达');
-      return;
-    }
-    if (r.queued === true || mode === 'queue') {
+    // W847：终态以响应里的权威落点 placement 为准，而不是 injected。旧后端在
+    // 运行中收到 mode='queue' 仍会回 injected:true —— 先看 injected 会把「已排队」
+    // 覆盖成「已插话」。缺 placement 的旧服务走下面的兜底分支，一字不放宽。
+    if (r.placement === 'queued') {
       ok(doneText);
       return;
     }
+    if (r.placement === 'steering') {
+      ok('已插话 · 将在下一步送达');
+      return;
+    }
+    if (r.placement === undefined) {
+      if (r.injected === true) {
+        ok('已插话 · 将在下一步送达');
+        return;
+      }
+      if (r.queued === true || mode === 'queue') {
+        ok(doneText);
+        return;
+      }
+    }
+    // placement === 'context'（或旧服务的新轮路径）：本次输入就是新一轮。
     ctx.turn = r.turn ?? ctx.turn;
     setPaneStreaming(ctx, true);
     ctx.phase = '运行中…';

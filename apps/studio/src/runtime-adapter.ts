@@ -148,10 +148,23 @@ export interface SessionContextView {
   messages: ContextMessageView[];
 }
 
+/**
+ * W847: requested delivery lane for a BUSY session (POST /api/turn body
+ * `mode`). `steer` (default) = inject into the RUNNING turn at its next step
+ * boundary; `queue` = park on the next-turn lane for the NEXT turn start. On an
+ * IDLE session the field is ignored (the input IS the new turn).
+ */
+export type TurnDeliveryMode = "steer" | "queue";
+
 export interface TurnRequest {
   input: string;
   /** Active session id, or null when nothing is activated. */
   session: string | null;
+  /**
+   * W847: optional lane request. Omitted behaves exactly like `steer` (the
+   * pre-W847 request byte for byte). Only the host's busy path reads it.
+   */
+  mode?: TurnDeliveryMode;
   /**
    * W804: content-addressed image references for THIS turn's user message
    * (already stored by the host). Omitted = the pre-W804 request byte for byte.

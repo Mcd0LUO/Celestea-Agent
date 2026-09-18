@@ -23,7 +23,7 @@ import { streamSSE } from "hono/streaming";
 import { TurnBusyError } from "@celestea/runtime";
 import { ATTACHMENTS_DIRNAME, createAttachmentStore } from "@celestea/tools";
 import type { ImageRef } from "@celestea/core";
-import { CapacityError } from "../runtime-adapter.js";
+import { CapacityError, type TurnDeliveryMode } from "../runtime-adapter.js";
 import type { RouteTable } from "../routes.js";
 import type { StoreResult } from "../store/result.js";
 import { activeSession, capacityJson, errorOnly, failJson, readJsonBody, storeFail, strField, type Deps } from "./common.js";
@@ -111,6 +111,14 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
     const input = strField(c, read.body, "input");
     const asked = strField(c, read.body, "session");
     for (const field of [input, asked]) if (!field.ok) return field.response;
+    // W847: resolve + validate the delivery lane BEFORE anything is written, so
+    // an illegal mode never leaves an attachment (or a stored turn) behind. An
+    // omitted mode is "steer" — byte-identical to the pre-W847 request.
+    const requestedMode = read.body["mode"];
+    if (requestedMode !== undefined && requestedMode !== null && requestedMode !== "steer" && requestedMode !== "queue") {
+      return failJson(c, 400, 'invalid mode: ' + String(requestedMode) + ' (expected "steer" or "queue")');
+    }
+    const mode: TurnDeliveryMode = requestedMode === "queue" ? "queue" : "steer";
     const text = (input.ok ? (input.value ?? "") : "").trim();
     const target = turnTarget(c, deps, asked.ok ? asked.value : undefined);
     if (!target.ok) return storeFail(c, target);
@@ -133,7 +141,7 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
       // W513 steering lanes carry TEXT only: an image must never be silently
       // dropped, so a busy session refuses rather than pretends.
       if (attachments.length > 0) return busyAttachmentError(c);
-      return injectInto(c, deps, text, session);
+      return injectInto(c, deps, text, session, mode);
     }
     try {
       const started = await deps.runtime.startTurn({
@@ -146,7 +154,7 @@ function registerTurn(app: Hono, deps: Deps, table: RouteTable): string {
     } catch (e) {
       if (e instanceof TurnBusyError) {
         if (attachments.length > 0) return busyAttachmentError(c);
-        return injectInto(c, deps, text, session);
+        return injectInto(c, deps, text, session, mode);
       }
       if (e instanceof CapacityError) return capacityJson(c, e);
       return failJson(c, 500, e instanceof Error ? e.message : String(e));
@@ -161,9 +169,14 @@ function busyAttachmentError(c: Parameters<typeof failJson>[0]): Response {
 }
 
 
-/** W513: the session is busy -> the input joins the RUNNING turn (steering). */
-function injectInto(c: Parameters<typeof failJson>[0], deps: Deps, text: string, session: string | null): Response {
-  const out = deps.runtime.inject({ input: text, session });
+/**
+ * W513/W847: the session is busy -> the input joins a lane. `mode` = "steer"
+ * injects into the RUNNING turn at its next step boundary; "queue" parks it for
+ * the next turn start. The response shape is unchanged (the caller reads
+ * `placement`, not `injected`, to render the terminal state).
+ */
+function injectInto(c: Parameters<typeof failJson>[0], deps: Deps, text: string, session: string | null, mode: TurnDeliveryMode): Response {
+  const out = deps.runtime.inject({ input: text, session, mode });
   return c.json({ ok: true, injected: out.injected, turn: out.turn, pending: out.pending, placement: out.placement, duplicate: out.duplicate });
 }
 

@@ -29,7 +29,13 @@ export function busyRuntime(base: FakeRuntimeAdapter = createFakeRuntimeAdapter(
     get(target, prop, receiver) {
       if (prop === "isBusy") return (): boolean => true;
       if (prop === "ensureSession") return (): { runtime: "created"; busy: boolean; rebuilt: boolean } => ({ runtime: "created", busy: true, rebuilt: false });
-      if (prop === "inject") return (): InjectOutcome => ({ turn: 0, injected: true, pending: 1, placement: "steering", duplicate: false });
+      if (prop === "inject")
+        return (req: { mode?: "steer" | "queue" }): InjectOutcome => {
+          // W847: the proxy mirrors the real/fake decision table so a queue test
+          // can drive the handler; the omitted/default request stays steering.
+          const steering = req.mode !== "queue";
+          return { turn: 0, injected: steering, pending: 1, placement: steering ? "steering" : "queued", duplicate: false };
+        };
       if (prop === "busySessions") return (): string[] => target.liveSessions();
       return Reflect.get(target, prop, receiver) as unknown;
     },

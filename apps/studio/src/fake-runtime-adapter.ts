@@ -135,15 +135,17 @@ class FakeRuntime implements FakeRuntimeAdapter {
     return this.busy;
   }
 
-  /** Same decision table as the real adapter: busy -> steering, idle -> queued. */
+  /** Same decision table as the real adapter: busy+steer -> steering, else queued. */
   inject(req: TurnRequest): InjectOutcome {
     const key = req.session ?? "";
     const queued = this.injected.get(key) ?? [];
     queued.push(req.input);
     this.injected.set(key, queued);
-    const placement = this.busy ? "steering" : "queued";
+    // W847: the same lane split as the real adapter (an explicit "queue" never steers).
+    const steering = this.busy && req.mode !== "queue";
+    const placement = steering ? "steering" : "queued";
     this.emit("status", { phase: "progress", placement, statusline: this.statusline() }, this.turns.get(key) ?? 0, req.session);
-    return { turn: this.turns.get(key) ?? 0, injected: this.busy, pending: queued.length, placement, duplicate: false };
+    return { turn: this.turns.get(key) ?? 0, injected: steering, pending: queued.length, placement, duplicate: false };
   }
 
   /** Messages injected into the given session's turn (test assertion hook). */

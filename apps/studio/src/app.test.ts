@@ -247,6 +247,32 @@ describe("dialog", () => {
     expect(cancel.body).toEqual({ ok: true, cancelled: false });
   });
 
+  it("W847: busy + mode=queue parks on the next-turn lane (injected:false, placement:queued)", async () => {
+    const h = makeHarness({ runtime: busyRuntime() });
+    harnesses.push(h);
+    const res = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "排队输入", mode: "queue" }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, injected: false, turn: 0, pending: 1, placement: "queued", duplicate: false });
+  });
+
+  it("W847: an explicit steer (or omitted mode) keeps the busy response byte for byte", async () => {
+    const omitted = makeHarness({ runtime: busyRuntime() });
+    harnesses.push(omitted);
+    const steer = makeHarness({ runtime: busyRuntime() });
+    harnesses.push(steer);
+    const a = await getJson(omitted.app, "/api/turn", jsonRequest("POST", { input: "hi" }));
+    const b = await getJson(steer.app, "/api/turn", jsonRequest("POST", { input: "hi", mode: "steer" }));
+    expect(a.body).toEqual({ ok: true, injected: true, turn: 0, pending: 1, placement: "steering", duplicate: false });
+    expect(b.body).toEqual(a.body);
+  });
+
+  it("W847: an illegal mode is a 400 before any turn is started", async () => {
+    const h = make();
+    const res = await getJson(h.app, "/api/turn", jsonRequest("POST", { input: "hi", mode: "later" }));
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ ok: false, error: 'invalid mode: later (expected "steer" or "queue")' });
+  });
+
   it("POST /api/clear truncates the active session log", async () => {
     const h = make();
     await getJson(h.app, "/api/sessions/sample-ws%2Fs1/activate", jsonRequest("POST"));
