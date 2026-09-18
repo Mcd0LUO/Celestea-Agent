@@ -13,12 +13,16 @@
  * 变成随机门禁（W887 实测 js 207427/207426 红）。元数据放 index.html 后，
  * JS/CSS 产物只由源码决定，可复现。
  *
- * 断言：
- *   ① dist/index.html 的内联脚本 window.__CELESTEA_BUILD__ 携带派生 version / commits / sha；
- *   ② 该脚本必须在 module script **之前**（version.ts 启动即读）；
- *   ③ dist/assets/*.js **不得**含构建期元数据（buildTime ISO 串 / 短 sha）——
- *      这正是「元数据没有漏回 JS、构建可复现」的机械不变量；
- *   ④ 不在 tag 上时（commitsSinceTag > 0）提交数也要对上——「自动维护」的可见证据。
+ * W887d（比对基准确定性）：本门禁**不再调用 computeVersion()/git**。构建时
+ * vite.config.ts 把同一份 BUILD_META 落盘为 dist/build-meta.json（构建期真值），
+ * 本门禁只读产物：
+ *   ① dist/index.html 的内联脚本 window.__CELESTEA_BUILD__ 携带该 meta，且在
+ *      module script **之前**（version.ts 启动即读）；
+ *   ② dist/assets/*.js **不得**含构建期元数据（buildTime ISO 串 / 短 sha）——
+ *      这是「元数据没漏回 JS、构建可复现」的机械不变量；
+ *   ③ 产物**自洽**：index.html 的 payload 与 dist/build-meta.json 逐字段一致。
+ *
+ * 代价（如实说明，见文件末）：产物与 HEAD 的「落后」不再被本门禁察觉。
  *
  * 用法：node tools/check-version.mjs        # 需要先 build（check:web 保证）
  */
@@ -31,16 +35,25 @@ const WEB = path.resolve(HERE, '..');
 const DIST = path.join(WEB, 'dist');
 const INDEX = path.join(DIST, 'index.html');
 const ASSETS = path.join(DIST, 'assets');
-
-const { computeVersion } = await import(path.resolve(HERE, '..', '..', '..', 'scripts', 'version.mjs'));
-const v = computeVersion({ cwd: path.resolve(HERE, '..', '..', '..') });
+const TRUTH = path.join(DIST, 'build-meta.json');
 
 if (!existsSync(INDEX)) {
   console.error('✗ 版本门禁：dist/index.html 不存在 —— 先 `pnpm --dir apps/web run build`');
   process.exit(1);
 }
+if (!existsSync(TRUTH)) {
+  console.error('✗ 版本门禁：dist/build-meta.json 不存在（构建期真值）—— 先 `pnpm --dir apps/web run build`');
+  process.exit(1);
+}
 
 const html = readFileSync(INDEX, 'utf8');
+let truth;
+try {
+  truth = JSON.parse(readFileSync(TRUTH, 'utf8'));
+} catch (e) {
+  console.error('✗ 版本门禁：dist/build-meta.json 不是 JSON：' + String(e));
+  process.exit(1);
+}
 
 const problems = [];
 const BUILD_RE = /<script>\s*window\.__CELESTEA_BUILD__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/;
@@ -54,22 +67,19 @@ if (match === null) {
   } catch (e) {
     problems.push('window.__CELESTEA_BUILD__ 的 payload 不是 JSON：' + String(e));
   }
-}
-
-if (info !== null) {
-  if (info.version !== v.version) {
-    problems.push(`index.html 的 version '${String(info.version)}' ≠ 派生值 '${v.version}'（describe=${v.describe}）`);
-  }
-  if ((info.commits ?? 0) !== (v.commitsSinceTag ?? 0)) {
-    problems.push(`index.html 的 commits '${String(info.commits)}' ≠ 派生值 '${String(v.commitsSinceTag ?? 0)}'`);
-  }
-  if (info.sha !== v.sha) {
-    problems.push(`index.html 的 sha '${String(info.sha)}' ≠ 派生值 '${v.sha}'`);
-  }
-  const buildAt = match === null ? -1 : html.indexOf(match[0]);
+  const buildAt = html.indexOf(match[0]);
   const moduleAt = html.search(/<script\b[^>]*type="module"/);
   if (buildAt < 0 || moduleAt < 0 || buildAt > moduleAt) {
     problems.push('window.__CELESTEA_BUILD__ 不在 module script 之前（version.ts 启动时读不到）');
+  }
+}
+
+// ③ 产物自洽：index.html 的 payload 必须逐字段等于构建期真值 build-meta.json。
+if (info !== null) {
+  for (const key of ['version', 'commits', 'sha', 'dirty', 'buildTime']) {
+    if (info[key] !== truth[key]) {
+      problems.push(`index.html 的 ${key} '${String(info[key])}' ≠ 构建期真值 '${String(truth[key])}'`);
+    }
   }
 }
 
@@ -80,20 +90,24 @@ if (!existsSync(ASSETS)) {
 const jsFiles = readdirSync(ASSETS).filter((f) => f.endsWith('.js'));
 const jsAll = jsFiles.map((f) => readFileSync(path.join(ASSETS, f), 'utf8')).join('\n');
 
-if (info !== null) {
-  const buildTime = typeof info.buildTime === 'string' ? info.buildTime : '';
-  const sha = typeof info.sha === 'string' ? info.sha : '';
-  if (buildTime !== '' && jsAll.includes(buildTime)) {
-    problems.push(`JS 产物含构建时间串 '${buildTime}'（构建元数据漏回 JS，破坏可复现性）`);
-  }
-  if (sha !== '' && jsAll.includes(sha)) {
-    problems.push(`JS 产物含短 sha '${sha}'（构建元数据漏回 JS）`);
-  }
+// ② JS 产物不得含构建期元数据。
+const buildTime = typeof truth.buildTime === 'string' ? truth.buildTime : '';
+const sha = typeof truth.sha === 'string' ? truth.sha : '';
+if (buildTime !== '' && jsAll.includes(buildTime)) {
+  problems.push(`JS 产物含构建时间串 '${buildTime}'（构建元数据漏回 JS，破坏可复现性）`);
+}
+if (sha !== '' && jsAll.includes(sha)) {
+  problems.push(`JS 产物含短 sha '${sha}'（构建元数据漏回 JS）`);
 }
 
 if (problems.length > 0) {
   for (const p of problems) console.error('✗ ' + p);
-  console.error(`  （扫描 ${jsFiles.length} 个 js 产物；version=${v.version} commits=${v.commitsSinceTag} sha=${v.sha} source=${v.source}）`);
+  console.error(`  （扫描 ${jsFiles.length} 个 js 产物；version=${truth.version} commits=${truth.commits} sha=${truth.sha}）`);
   process.exit(1);
 }
-console.log(`✓ 版本门禁通过：index.html 携带 git 派生版本 ${v.version}${v.commitsSinceTag > 0 ? '+' + v.commitsSinceTag : ''}（describe=${v.describe}，source=${v.source}），JS 产物不含构建期元数据`);
+console.log(`✓ 版本门禁通过：产物自洽（index.html meta === build-meta.json），version ${truth.version}${truth.commits > 0 ? '+' + truth.commits : ''}（sha=${truth.sha}），JS 产物不含构建期元数据`);
+
+// 已知代价（W887d）：本门禁只比对产物内部一致性，不读 git。因此「dist 落后于
+// HEAD」（改了代码/打了 tag 但没重新 build）**不再**由本门禁察觉。`pnpm check`
+// 的 check:web 总是 build 之后立刻 check，所以常规路径不会拿到 stale dist；
+// 但手工对旧 dist 跑本脚本时，它只保证「产物自身自洽」。

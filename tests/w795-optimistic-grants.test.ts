@@ -9,7 +9,7 @@
  * 没有浏览器可跑；真机（headless Blink + CDP 在网络层暂停真实 POST）的同一帧实测见报告。
  * 夹具在 tests/lib/w795-dom.ts。
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   at,
   badgeOf,
@@ -106,13 +106,17 @@ describe("W795 ②③ 权限面板：授予 / 撤销的当帧终态与失败回�
     await grantViaUi("network");
     stub.revokeFail = true;
     click(btnWith("network", "撤销"));
-    await flush(4);
+    // W887d：撤销失败的回滚是异步的（api.revokeCap → catch → setPanelNote）。固定
+    // flush(n) 只是泵 n 个宏任务，不保证这条链已跑完（多一跳就读到旧文本）。等目标
+    // 条件本身成立（事件驱动轮询），而不是猜一个宏任务数。
+    await vi.waitFor(() => {
+      expect(note()).toContain("撤销失败");
+      expect(note()).toContain("服务暂时不可用");
+    });
 
     expect(badgeOf("network")).toBe("已授予 · 永久");
     expect(btnWith("network", "撤销")).not.toBeNull();
     expect(shieldBadge()).toBe("1");
-    expect(note()).toContain("撤销失败");
-    expect(note()).toContain("服务暂时不可用");
   });
 });
 
