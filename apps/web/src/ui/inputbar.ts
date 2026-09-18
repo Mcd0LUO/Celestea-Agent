@@ -19,10 +19,14 @@ import {
   addFiles,
   attachmentsEnabled,
   ATTACHMENT_ACCEPT,
-  clearPending,
+  clearPendingImages,
   imageEntryDisabledReason,
   invalidateAttachmentCapabilities,
+  isAttachmentCandidate,
   loadAttachmentCapabilities,
+  // W869：文本项读成正文后重绘待发条。pendingList/removePending/renderTray 的消费方
+  // 在 W867 拆出的 ./attach-tray.ts（本文件不再直接用）。
+  onTextSettled,
 } from './attachments';
 // W867（追加）：展示夹的落位 / 尺寸 / 渲染接线整段在 ./attach-tray.ts，本文件只调用。
 import { createAttachTray, refreshAttachmentTray } from './attach-tray';
@@ -210,7 +214,8 @@ export function setInputMode(mode: InputMode): void {
   renderSubmitUi();
 }
 
-// ---- W805：图片附件三入口（粘贴 / 拖拽 / 文件选择） --------------------------
+// ---- W805/W869：附件三入口（粘贴 / 拖拽 / 文件选择；图片 + 文本文件） ----------
+//   W869：逐文件判定从「image/*」放宽到「图片或文本」，图片仍按图像能力位拦截。
 
 let noteEl: HTMLElement | null = null;
 let attachBtn: HTMLButtonElement | null = null;
@@ -230,11 +235,13 @@ export function refreshAttachmentEntry(): void {
   const allowed = attachmentsEnabled();
   const reason = imageEntryDisabledReason();
   if (attachBtn) {
-    attachBtn.classList.toggle('hidden', !allowed);
-    attachBtn.disabled = !allowed || reason !== '';
-    attachBtn.title = reason === '' ? '添加图片（可粘贴 / 拖拽 / 选择）' : reason;
+    // W869：入口对「文本文件」始终可用（理由见文件头注释），图像能力位降级为按钮提示。
+    attachBtn.classList.toggle('hidden', false);
+    attachBtn.disabled = false;
+    attachBtn.title = reason === '' ? '添加附件（图片 / 文本文件，可粘贴 / 拖拽 / 选择）' : reason;
   }
-  if (!allowed) clearPending();
+  // 旧服务未声明多模态：只清图片，不清本就可用的文本项（W869）。
+  if (!allowed) clearPendingImages();
   refreshAttachmentTray();
 }
 
@@ -251,18 +258,34 @@ function noteAttachment(text: string): void {
   noteEl.classList.toggle('hidden', text === '');
 }
 
+/**
+ * W869：图片仍按**图像能力位**在入口拦截（W805 语义不变：不制造必然失败的请求）；
+ * 文本文件与能力位无关 —— 任何模型都能读文本，同一批里文本照收、图片给出可执行原因。
+ */
 function acceptFiles(files: ArrayLike<File>): void {
   const reason = imageEntryDisabledReason();
-  if (reason !== '') {
-    noteAttachment(reason);
-    return;
+  const kept: File[] = [];
+  let droppedImages = 0;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (!f) continue;
+    if (reason !== '' && f.type.indexOf('image/') === 0) droppedImages += 1;
+    else kept.push(f);
   }
-  const rejected = addFiles(files);
+  const rejected = addFiles(kept);
   refreshAttachmentTray();
-  if (rejected > 0) noteAttachment('有 ' + rejected + ' 个文件不符合要求，已在待发区标红');
+  if (droppedImages > 0) noteAttachment(reason);
+  else if (rejected > 0) noteAttachment('有 ' + rejected + ' 个文件不符合要求，已在待发区标红');
 }
 
-function clipboardImages(e: Event): File[] {
+/** 入口是否收下这个文件：文本文件不看能力位；图片仍要图像能力位可用（W805）。 */
+function entryAllows(file: { name: string; type: string }): boolean {
+  if (!isAttachmentCandidate(file)) return false;
+  return file.type.indexOf('image/') !== 0 || imageEntryDisabledReason() === '';
+}
+
+/** 剪贴板里的附件文件（W869：图片或文本文件；MIME 缺失时看扩展名，最终以读出内容为准）。 */
+function clipboardFiles(e: Event): File[] {
   const cd = (e as unknown as { clipboardData?: DataTransfer | null }).clipboardData;
   if (!cd) return [];
   const out: File[] = [];
@@ -270,7 +293,7 @@ function clipboardImages(e: Event): File[] {
   if (items) {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (it && it.kind === 'file' && it.type.indexOf('image/') === 0) {
+      if (it && it.kind === 'file' && entryAllows({ name: '', type: it.type })) {
         const f = it.getAsFile();
         if (f) out.push(f);
       }
@@ -279,7 +302,7 @@ function clipboardImages(e: Event): File[] {
   if (out.length === 0 && cd.files) {
     for (let i = 0; i < cd.files.length; i++) {
       const f = cd.files[i];
-      if (f && f.type.indexOf('image/') === 0) out.push(f);
+      if (f && entryAllows(f)) out.push(f);
     }
   }
   return out;
@@ -293,11 +316,9 @@ function dragHasFiles(e: DragEvent): boolean {
 }
 
 function acceptFileDialog(): void {
+  // W869：选择框始终可点开（文本文件与图像能力位无关）；是否收下由逐文件校验决定。
   const reason = imageEntryDisabledReason();
-  if (reason !== '') {
-    noteAttachment(reason);
-    return;
-  }
+  if (reason !== '') noteAttachment(reason);
   fileInput?.click();
 }
 
@@ -312,8 +333,8 @@ function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): v
   attachBtn.type = 'button';
   attachBtn.className = 'btn btn-soft btn-icon attach-inline';
   attachBtn.innerHTML = ATTACH_CLIP_SVG; // 内联回形针（常量字面量，无注入面）
-  attachBtn.title = '添加图片（可粘贴 / 拖拽 / 选择）';
-  attachBtn.setAttribute('aria-label', '添加图片'); // 图标按钮的无障碍名（原「图片」文字）
+  attachBtn.title = '添加附件（图片 / 文本文件，可粘贴 / 拖拽 / 选择）';
+  attachBtn.setAttribute('aria-label', '添加附件'); // 图标按钮的无障碍名（W869：不再只收图片）
   attachBtn.addEventListener('click', () => acceptFileDialog());
   // W847：优先注入 .input-box（框内左下角、绝对定位）；旧夹具无 .input-box → 回退 .input-side。
   if (box) box.appendChild(attachBtn);
@@ -327,21 +348,30 @@ function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): v
   fileInput.multiple = true;
   fileInput.className = 'attach-file hidden';
   fileInput.addEventListener('change', () => {
-    if (fileInput && fileInput.files && fileInput.files.length > 0) acceptFiles(fileInput.files);
+    // W869：选择框里的文件逐项判定（文本不看图像能力位，图片由 acceptFiles 按能力位拦截并说明）。
+    if (fileInput && fileInput.files) {
+      const picked: File[] = [];
+      for (let i = 0; i < fileInput.files.length; i++) {
+        const f = fileInput.files[i];
+        if (f && isAttachmentCandidate(f)) picked.push(f);
+      }
+      if (picked.length > 0) acceptFiles(picked);
+    }
     if (fileInput) fileInput.value = '';
   });
 
   host.insertBefore(noteEl, host.firstChild);
   host.appendChild(fileInput);
 
-  // 粘贴：有图片就收；**不** preventDefault —— 同一次粘贴里的文字照常落进输入框。
+  // 粘贴：有附件文件（图片 / 文本）就收；**不** preventDefault —— 同一次粘贴里的文字照常落进输入框。
   input.addEventListener('paste', (e) => {
-    const files = clipboardImages(e);
+    const files = clipboardFiles(e);
     if (files.length > 0) acceptFiles(files);
   });
 
   document.addEventListener('dragover', (e) => {
-    if (!dragHasFiles(e) || imageEntryDisabledReason() !== '') return;
+    // W869：拖拽入口不再按图像能力位整体关闭（文本文件照收）；逐文件校验在 addFiles。
+    if (!dragHasFiles(e)) return;
     e.preventDefault();
     barEl()?.classList.add('drop-active');
   });
@@ -351,11 +381,15 @@ function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): v
   document.addEventListener('drop', (e) => {
     barEl()?.classList.remove('drop-active');
     const dt = e.dataTransfer;
-    if (!dt || imageEntryDisabledReason() !== '') return;
+    if (!dt) return;
     if (!dt.files || dt.files.length === 0) return;
     e.preventDefault();
     acceptFiles(dt.files);
   });
+
+  // W869：文本项读成正文（或判为二进制）后重绘待发条 —— 二进制伪装成 .txt 的那一项
+  // 就地标红并给出可见原因，不静默丢弃；图片摘要不改外观，无需重绘。
+  onTextSettled(refreshAttachmentTray);
 
   refreshAttachmentEntry();
   void loadAttachmentCapabilities().then(refreshAttachmentEntry);

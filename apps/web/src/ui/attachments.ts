@@ -8,14 +8,19 @@ import { api } from '../api';
 import { activePane, onPaneChange } from './viewctx';
 import { fmtBytes, type AttachmentView } from './attachment-view';
 import type { AttachmentRef, ImageMediaType, TurnAttachmentInput } from '../types/attachment';
+import { TEXT_ACCEPT, notifyTextSettled, settleTextItem, textPendingItem, textRejectReason } from './text-attach';
 
 export { renderAttachmentGrid, renderTray } from './attachment-view';
 export type { AttachmentView } from './attachment-view';
+// W869：文本附件的公开面（判定 / 上限 / 注入 / 落定通知）从本模块统一再导出，
+// 入口（inputbar）与发送编排（send）只需认这一处。
+export { MAX_TEXT_FILE_BYTES, TEXT_BLOCK_DELIMITER, isAttachmentCandidate, onTextSettled } from './text-attach';
 
 /** P0 自限（设计 §5.3；前端先拦必然失败的请求）。 */
 export const MAX_ATTACHMENTS = 20;
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-export const ATTACHMENT_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
+/** W805 的四个图片项**原样保留**，W869 只在其后追加常见文本（选择框提示；判定仍逐文件走）。 */
+export const ATTACHMENT_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,' + TEXT_ACCEPT;
 const MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif)$/i;
 const DOWNGRADE_REASON = 'IMAGE_UNSUPPORTED';
@@ -29,6 +34,13 @@ export interface PendingAttachment {
   /** sha256(原始字节) 的十六进制；P0 不做规范化，故与 attachment_id 一致。 */
   id: string;
   error: string;
+  /**
+   * W869：'text' = 文本文件项（发送时读成正文、注入消息文本，不进 attachments 数组）；
+   * 缺省 'image' = 既有图片项（逐字节语义不变）。
+   */
+  kind?: 'image' | 'text';
+  /** 文本项读出的 UTF-8 正文（异步落定；undefined = 尚未读完或读取失败）。 */
+  text?: string;
 }
 
 // ---- 能力位（部署级 + 逐模型） --------------------------------------------------
@@ -213,8 +225,8 @@ function looksImage(file: File): boolean {
 }
 
 function rejectReason(file: File, validCount: number, batch: number): string {
-  if (validCount + batch > MAX_ATTACHMENTS) return '最多 ' + MAX_ATTACHMENTS + ' 张图片';
-  if (!looksImage(file)) return '仅支持 PNG / JPEG / WebP / GIF';
+  if (validCount + batch > MAX_ATTACHMENTS) return '最多 ' + MAX_ATTACHMENTS + ' 个附件（图片与文本合计）';
+  if (!looksImage(file)) return textRejectReason(file);
   if (file.size > MAX_ATTACHMENT_BYTES) return '单张不超过 ' + fmtBytes(MAX_ATTACHMENT_BYTES);
   return '';
 }
@@ -232,7 +244,12 @@ async function attachId(item: PendingAttachment, session: string): Promise<void>
   }
 }
 
-/** 三入口公共落点：先校验、再**当帧**入列（异步摘要不阻塞渲染）。返回被拒条数。 */
+/**
+ * 三入口公共落点：先校验、再**当帧**入列（异步摘要 / 文本读取都不阻塞渲染）。返回被拒条数。
+ * W869：图片走既有校验、文本走新校验，**同一批上限共用**；
+ *   图片项、图片项的 url/id 与异步摘要路径逐字节不变；
+ *   文本项 url 留空、正文读到之前 text 为 undefined（发送前若仍读不出即中止发送）。
+ */
 export function addFiles(files: ArrayLike<File>): number {
   const key = sessionKey();
   const list = drafts.get(key) ?? [];
@@ -246,8 +263,16 @@ export function addFiles(files: ArrayLike<File>): number {
     const error = rejectReason(file, accepted, 1);
     if (error !== '') rejected += 1;
     else accepted += 1;
-    list.push({ file, name: file.name || '图片', url: objectUrl(file), bytes: file.size, id: '', error });
-    void attachId(list[list.length - 1] as PendingAttachment, key);
+    const text = error === '' && !looksImage(file);
+    const item = text
+      ? textPendingItem(file, error)
+      : { file, name: file.name || '图片', url: objectUrl(file), bytes: file.size, id: '', error };
+    list.push(item);
+    if (text) {
+      if (error === '') void settleTextItem(item).then(notifyTextSettled);
+    } else {
+      void attachId(item, key);
+    }
   }
   drafts.set(key, list);
   return rejected;
@@ -298,21 +323,52 @@ export function clearPending(): void {
   releasePreviewsOf(key);
 }
 
-/** R3 W838-F2：有附件根本没读出来 —— 抛错中止发送，绝不发一个缺图的请求。 */
+/**
+ * W869：只清图片项（旧服务未声明多模态时的入口回收）—— 文本文件不需要多模态能力位，
+ * 不再跟着被清掉。返回值 = 被清掉的项数（0 = 本次没有图片可清）。
+ */
+export function clearPendingImages(): number {
+  const key = sessionKey();
+  const list = drafts.get(key) ?? [];
+  const kept: PendingAttachment[] = [];
+  let dropped = 0;
+  for (const p of list) {
+    if (p.kind === 'text') {
+      kept.push(p);
+      continue;
+    }
+    dropped += 1;
+    revokeUrl(p.url);
+    releasePreviewIf(p.id, p.url);
+  }
+  drafts.set(key, kept);
+  return dropped;
+}
+
+/** R3 W838-F2：有附件根本没读出来 —— 抛错中止发送，绝不发一个缺内容的请求。 */
 export class AttachmentReadError extends Error {
   readonly names: readonly string[];
   constructor(names: readonly string[]) {
-    super('图片读取失败（' + (names.join('、') || '未知文件') + '），已中止本轮发送');
+    super('附件读取失败（' + (names.join('、') || '未知文件') + '），已中止本轮发送');
     this.name = 'AttachmentReadError';
     this.names = names;
   }
 }
 
-/** 待发 → 连线格式（内联 base64；与 POST /api/turn 的 attachments 同形）。 */
+/**
+ * 待发 → 连线格式（内联 base64；与 POST /api/turn 的 attachments 同形）。
+ * W869：**只收图片项**（kind 缺省即图片）；文本项不进 attachments 数组，
+ * 其正文由 injectTextAttachments 注入消息文本 —— 图片路径因此逐字节不变。
+ * 文本项若到发送时仍没有正文（读取失败），与读图失败同一条路径中止发送。
+ */
 export async function toWire(items: readonly PendingAttachment[]): Promise<TurnAttachmentInput[]> {
   const out: TurnAttachmentInput[] = [];
   const failed: string[] = [];
   for (const item of items) {
+    if (item.kind === 'text') {
+      if (item.text === undefined) failed.push(item.name);
+      continue;
+    }
     const data = await readBase64(item.file);
     if (data === '') failed.push(item.name);
     else out.push({ data, name: item.name });
@@ -320,6 +376,7 @@ export async function toWire(items: readonly PendingAttachment[]): Promise<TurnA
   if (failed.length > 0) throw new AttachmentReadError(failed);
   return out;
 }
+
 
 function readBase64(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -339,7 +396,7 @@ function readBase64(file: File): Promise<string> {
 }
 
 export function pendingViews(items: readonly PendingAttachment[]): AttachmentView[] {
-  return items.map((it) => ({ name: it.name, url: it.url, bytes: it.bytes }));
+  return items.map((it) => ({ name: it.name, url: it.url, bytes: it.bytes, kind: it.kind }));
 }
 
 // ---- 引用 ↔ 视图 ---------------------------------------------------------------

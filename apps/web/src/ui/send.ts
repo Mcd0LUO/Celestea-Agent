@@ -4,6 +4,8 @@
 //   worker 会话（W866）→ 送入该 worker 的收件箱（同一句 POST /api/turn，后端按
 //   `worker:<sid>` 路由到 send_message 那条投递）；
 //   失败 → 带附件时**完整回滚**（气泡/输入框/待发附件），不带附件时保持原行为。
+//   W869：文本文件附件（.md/.txt/…）在此读成正文并**注入消息文本**（不进 attachments
+//   数组）；图片仍走内联 base64 的 attachments，两条路径互不影响。
 // ============================================================================
 import { api } from '../api';
 import { S } from '../state';
@@ -16,6 +18,7 @@ import {
   toWire,
   type PendingAttachment,
 } from './attachments';
+import { settleTextItems, withTextAttachments } from './text-attach';
 import {
   clearInput,
   refreshAttachmentTray,
@@ -63,7 +66,7 @@ export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
   }
   if (ctx.streaming && pending > 0) {
     // 后端在运行中拒绝带附件的请求（插话只支持文字）—— 前端先拦，不制造必然 409。
-    const hint = '本轮还没结束：图片附件需等本轮结束后发送（插话只支持文字）';
+    const hint = '本轮还没结束：附件需等本轮结束后发送（插话只支持文字）';
     flashStatus(hint, 'err', 6_000);
     note(hint);
     return;
@@ -97,8 +100,11 @@ function startTurn(ctx: SessionPane, t: string): void {
     startElapsedTimer();
   }
   updateSessionBar();
-  void toWire(items)
-    .then((wire) => api.turn(t, sid(ctx), undefined, wire))
+  // W869：文本附件在发送前读成正文，**注入本条消息文本**（不进 attachments 数组）；
+  // 文本读取失败走与读图失败同一条路（AttachmentReadError → failTurn 完整回滚）。
+  void settleTextItems(items)
+    .then(() => toWire(items))
+    .then((wire) => api.turn(withTextAttachments(t, items), sid(ctx), undefined, wire))
     .then((r) => {
       if (r.session) adoptLocalIfUnbound(r.session);
       if (ctx.turn === null && r.turn !== undefined) ctx.turn = r.turn;
@@ -174,7 +180,7 @@ function failTurn(
     refreshAttachmentTray();
   }
   const hint =
-    '发送失败：' + msgOf(err) + (withAttachments ? '；图片已放回待发区，可重试' : '');
+    '发送失败：' + msgOf(err) + (withAttachments ? '；附件已放回待发区，可重试' : '');
   if (isActivePane(ctx)) {
     setBusy(false);
     stopElapsedTimer();

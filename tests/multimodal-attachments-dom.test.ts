@@ -222,10 +222,13 @@ describe("W805 · 三入口 + 当帧渲染（不发请求）", () => {
   it("非图片 / 超大被当场标红并写明原因（不发请求）", async () => {
     await bootInputbar();
     await flush(10); // 能力位落定后再选择（否则入口尚未开放）
-    select([makeFile("notes.txt", "text/plain")]);
+    // W869：.txt 已受支持（走「读文本 + 注入消息」），本用例改用**真二进制**内容
+    // （含 NUL）伪装成 .txt —— 判定标准是内容能不能按 UTF-8 解出来，不是扩展名。
+    select([makeFile("notes.txt", "text/plain", [0x41, 0x00, 0x42, 0x43])]);
     expect(trayItems()).toBe(1);
+    await flush(20); // 文本读取是异步的：标红发生在落定之后
     expect(Array.from(doc.querySelectorAll(".attach-tray .attach-item.err")).length).toBe(1);
-    expect((doc.querySelector(".attach-tray .attach-sub")?.textContent ?? "")).toContain("仅支持");
+    expect((doc.querySelector(".attach-tray .attach-sub")?.textContent ?? "")).toContain("UTF-8");
   });
 });
 
@@ -257,7 +260,10 @@ describe("W805 · 能力位（部署级 + 逐模型乐观默认）", () => {
     const { bar } = await bootInputbar();
     bar.refreshAttachmentEntry();
     const btn = doc.getElementById("btnAttach") as ElLike;
-    expect(btn.disabled).toBe(true);
+    // W869：入口按钮对**文本文件**仍然可用（图像能力位管不到文本），故不再整体禁用；
+    // 图像能力位降级为按钮提示，图片本身照旧在入口被拦（下一行断言）。
+    expect(btn.disabled).toBe(false);
+    expect(btn.title).toContain("不含图像");
     paste(doc.getElementById("input") as ElLike, [makeFile("x.png", "image/png")]);
     expect(trayItems()).toBe(0); // 被显式排除：不静默收下
   });

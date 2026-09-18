@@ -17,6 +17,8 @@ export interface AttachmentView {
   name?: string;
   url?: string;
   bytes?: number;
+  /** W869：'text' = 文本文件（气泡里只给文件名 chip + 大小，全文不进气泡）。 */
+  kind?: 'image' | 'text';
 }
 
 export function renderAttachmentGrid(views: readonly AttachmentView[]): HTMLElement {
@@ -68,14 +70,17 @@ function foldButton(
 
 function pendingItem(item: PendingAttachment, onRemove: (p: PendingAttachment) => void): HTMLElement {
   const node = el('div', 'attach-item' + (item.error !== '' ? ' err' : ''));
-  node.appendChild(thumb(item.url, item.name, item.name));
+  // W869：文本待发项给「文」字形（与历史附件网格同一形态），图片走空 url ⇒ 原占位。
+  node.appendChild(thumb(item.url, item.name, item.name, item.kind === 'text' ? '文' : undefined));
   const meta = el('div', 'attach-meta');
   meta.appendChild(el('div', 'attach-name', item.name));
-  meta.appendChild(el('div', 'attach-sub', item.error !== '' ? item.error : fmtBytes(item.bytes)));
+  const sub = item.error !== '' ? item.error : (item.kind === 'text' ? fmtBytes(item.bytes) + ' · 文本' : fmtBytes(item.bytes));
+  meta.appendChild(el('div', 'attach-sub', sub));
   node.appendChild(meta);
   const rm = el('button', 'attach-remove', '×') as HTMLButtonElement;
   rm.type = 'button';
-  rm.title = '移除这个附件';
+  // W867 的 aria-label（指名到具体文件） + W869 的分类文案，两边都保留。
+  rm.title = item.kind === 'text' ? '移除这个文本文件' : '移除这张图片';
   rm.setAttribute('aria-label', rm.title + '：' + item.name);
   rm.addEventListener('click', () => onRemove(item));
   node.appendChild(rm);
@@ -83,11 +88,14 @@ function pendingItem(item: PendingAttachment, onRemove: (p: PendingAttachment) =
 }
 
 function attachmentItem(v: AttachmentView): HTMLElement {
+  const isText = v.kind === 'text';
+  const label = v.name ?? (isText ? '文本文件' : '图片');
   const node = el('div', 'attach-item');
-  node.appendChild(thumb(v.url ?? '', v.name ?? '图片', v.name ?? '图片'));
+  // W869：文本项没有图可放，用与历史占位同形的方块（'文'）—— 不动几何、不动 CSS。
+  node.appendChild(thumb(isText ? '' : (v.url ?? ''), label, label, isText ? '文' : '图'));
   const meta = el('div', 'attach-meta');
-  meta.appendChild(el('div', 'attach-name', v.name ?? '图片'));
-  meta.appendChild(el('div', 'attach-sub', subLabel(v)));
+  meta.appendChild(el('div', 'attach-name', label));
+  meta.appendChild(el('div', 'attach-sub', isText ? fmtBytes(v.bytes ?? 0) + ' · 文本' : subLabel(v)));
   node.appendChild(meta);
   return node;
 }
@@ -104,7 +112,8 @@ function looksLikeImage(name: string): boolean {
   return /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(name);
 }
 
-function thumb(url: string, alt: string, title: string): HTMLElement {
+/** glyph：显式指定占位字形（W869 的文本项传 '文'）；缺省时按扩展名判图片。 */
+function thumb(url: string, alt: string, title: string, glyph?: string): HTMLElement {
   if (url !== '') {
     const img = el('img', 'attach-thumb') as HTMLImageElement;
     img.src = url;
@@ -116,7 +125,8 @@ function thumb(url: string, alt: string, title: string): HTMLElement {
   // 无预览地址：图片显示「图」占位（P0 无字节回读端点，设计 §7.4）；
   // 非图片显示文件名首字 —— 两条路径都**不假装有图**。
   const ph = el('div', 'attach-thumb attach-thumb-meta');
-  ph.textContent = looksLikeImage(title) ? '图' : genericMark(title);
+  // W869：显式 glyph 优先（文本项 '文'）；否则按扩展名 —— 非图片显示文件名首字。
+  ph.textContent = glyph ?? (looksLikeImage(title) ? '图' : genericMark(title));
   ph.title = title;
   return ph;
 }

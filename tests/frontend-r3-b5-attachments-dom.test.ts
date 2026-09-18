@@ -325,7 +325,7 @@ describe("R3 W838-F4 · config-saved 重算能力位", () => {
   beforeEach(() => { doc.body.innerHTML = HTML; vi.resetModules(); installGlobals(); });
   afterEach(() => { vi.unstubAllGlobals(); doc.body.replaceChildren(); });
 
-  it("保存配置把模型换成 text-only → 图片入口禁用且文案更新", async () => {
+  it("保存配置把模型换成 text-only → 图片被拦且文案更新（文本文件仍可用）", async () => {
     await bootInputbar();
     await flush(10);
     const btn = doc.getElementById("btnAttach") as ElLike;
@@ -334,8 +334,15 @@ describe("R3 W838-F4 · config-saved 重算能力位", () => {
     net.providers = { ok: true, providers: [{ id: "p", models: [{ id: "textonly", input_modalities: ["text"] }] }] };
     (globalThis as unknown as { dispatchEvent(e: unknown): boolean }).dispatchEvent(new Ev("studio:config-saved"));
     await flush(14);
-    expect(btn.disabled).toBe(true);
+    // W869：「图片入口禁用」的判据由「按钮 disabled」改为「图片进不来 + 原因可见」——
+    // 同一个入口现在也收文本文件，而文本与图像能力位无关（见 tests/w869-text-file-attach.test.ts ⑥）。
     expect(btn.title).toContain("不含图像");
+    // 图片仍被显式排除：粘贴一张图，待发区必须为空（不静默收下）。
+    const paste = new Ev("paste") as { clipboardData?: unknown };
+    const png = makeFile("a.png", "image/png");
+    paste.clipboardData = { items: [{ kind: "file", type: "image/png", getAsFile: () => png }], files: [png] };
+    (doc.getElementById("input") as ElLike).dispatchEvent(paste);
+    expect(trayItems()).toBe(0);
   });
 });
 
