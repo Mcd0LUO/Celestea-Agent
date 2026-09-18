@@ -307,32 +307,56 @@ live("W792 · 真实服务：归档「正在看的活动会话」之后的收尾
   });
 });
 
+/** 把 active_session 拨回 target：重试 3 次；失败抛出（不是只断言），让清理继续跑再统一上报。 */
+async function restoreActiveWithRetry(target: string): Promise<void> {
+  let last = "";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const r = await post("/api/sessions/" + enc(target) + "/activate", {});
+      if (r.status === 200 && (await activeOnServer()) === target) {
+        console.log("[W792] 活动会话已拨回：" + target);
+        return;
+      }
+      last = "status=" + r.status + " body=" + JSON.stringify(r.body);
+    } catch (e) {
+      last = e instanceof Error ? e.message : String(e);
+    }
+    await wait(300);
+  }
+  throw new Error("active_session 拨回失败（重试 3 次）：target=" + target + " last=" + last);
+}
+
+/** 真删本套件建的临时会话，并复核两个列表都不再包含它们；删不干净就抛出。 */
+async function deleteCreatedSessions(): Promise<void> {
+  const alive = new Set([...(await listedIds("/api/sessions")), ...(await listedIds("/api/sessions?archived=1"))]);
+  const left = created.filter((id) => alive.has(id));
+  if (left.length > 0) await post("/api/sessions/batch-delete", { ids: left });
+  const after = new Set([...(await listedIds("/api/sessions")), ...(await listedIds("/api/sessions?archived=1"))]);
+  const stuck = created.filter((id) => after.has(id));
+  if (stuck.length > 0) throw new Error("临时会话未删干净：" + stuck.join(", "));
+}
+
+function cleanTrash(): void {
+  try {
+    for (const name of readdirSync(TRASH)) {
+      if (/^w792-/.test(name)) rmSync(join(TRASH, name), { recursive: true, force: true });
+    }
+  } catch {
+    /* 回收目录可能不存在 */
+  }
+}
+
 afterAll(async () => {
   if (!LIVE) return;
+  const target = capturedActive !== "" ? capturedActive : WANT_ACTIVE;
+  const problems: string[] = [];
   try {
-    // 1) W839 (R3 B9 / W818-P2-2): this suite ACTIVATES its own sessions, so the
-    // shared active_session must be put back and the restore ASSERTED. The old
-    // afterAll only console.warn'd on failure and swallowed cleanup errors, so a
-    // failed restore looked green while it polluted every other session.
-    const target = capturedActive !== "" ? capturedActive : WANT_ACTIVE;
-    const restored = await post("/api/sessions/" + enc(target) + "/activate", {});
-    expect(restored.status, "active_session restore failed: " + JSON.stringify(restored.body)).toBe(200);
-    expect(await activeOnServer(), "active_session 必须等于测试开始时的值").toBe(target);
-    console.log("[W792] 活动会话已断言拨回：" + target);
-    // 2) 我建的会话若还在（缺省或归档列表）⇒ 真删掉
-    for (const id of created) {
-      const alive = [...(await listedIds("/api/sessions")), ...(await listedIds("/api/sessions?archived=1"))];
-      if (alive.includes(id)) await post("/api/sessions/batch-delete", { ids: [id] });
-    }
-    // 3) 回收目录里我产生的条目
-    try {
-      for (const name of readdirSync(TRASH)) {
-        if (/^w792-/.test(name)) rmSync(join(TRASH, name), { recursive: true, force: true });
-      }
-    } catch {
-      /* 回收目录可能不存在 */
-    }
+    // 每步独立 catch：一步失败不许跳过后面的清理；最后统一上报（绝不绿色掩盖）。
+    try { await restoreActiveWithRetry(target); } catch (e) { problems.push(e instanceof Error ? e.message : String(e)); }
+    try { await deleteCreatedSessions(); } catch (e) { problems.push(e instanceof Error ? e.message : String(e)); }
+    try { cleanTrash(); } catch (e) { problems.push(e instanceof Error ? e.message : String(e)); }
   } finally {
     vi.unstubAllGlobals();
   }
+  if (problems.length > 0) throw new Error("[W792] real-backend cleanup failed: " + problems.join(" | "));
 });

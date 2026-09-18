@@ -289,30 +289,63 @@ live("W805 · 多模态附件对真实 3777 的端到端", () => {
     }
   });
 
-  afterAll(async () => {
-    // 本套件会 activate 自己建的会话，收尾必须把共享 active 拨回进入时的值并断言
-    // （W792 同款纪律：失败的拨回不许装绿）。
-    if (LIVE && activeBefore !== "") {
+  /** 把共享 active 拨回进入时的值：重试 3 次；失败抛出，由 afterAll 统一上报。 */
+  async function restoreActive(attempts = 3): Promise<void> {
+    if (!LIVE || activeBefore === "") return;
+    let last = "";
+    for (let i = 1; i <= attempts; i += 1) {
       try {
         await api.activateSession(activeBefore);
         const restored = String((await api.sessions()).active_session ?? "");
-        expect(restored, "active_session 必须拨回测试开始时的值").toBe(activeBefore);
-        console.log("[W805] 活动会话已断言拨回：" + activeBefore);
+        if (restored === activeBefore) {
+          console.log("[W805] 活动会话已拨回：" + activeBefore);
+          return;
+        }
+        last = "active=" + restored;
       } catch (e) {
-        console.warn("[W805] active_session 拨回失败：" + (e instanceof Error ? e.message : String(e)));
+        last = e instanceof Error ? e.message : String(e);
       }
+      await new Promise((r) => setTimeout(r, 300));
     }
+    throw new Error("active_session 拨回失败（重试 " + attempts + " 次）：want=" + activeBefore + " last=" + last);
+  }
+
+  /** 真删本套件建的临时会话，并复核缺省/归档两个列表都不再包含它们。 */
+  async function deleteCreated(): Promise<void> {
+    if (created.length === 0) return;
+    await api.batchDeleteSessions(created);
+    const afterDefault = ((await api.sessions()).sessions ?? []) as Array<{ id?: string }>;
+    const afterArchived = ((await api.sessions({ archived: true })).sessions ?? []) as Array<{ id?: string }>;
+    const alive = new Set([...afterDefault, ...afterArchived].map((r) => String(r.id ?? "")));
+    const stuck = created.filter((id) => alive.has(id));
+    if (stuck.length > 0) throw new Error("临时会话未删干净：" + stuck.join(", "));
+  }
+
+  /** 一步清理：失败记入 problems（不吞、不阻断后续步骤）。 */
+  async function cleanupStep(problems: string[], label: string, work: () => Promise<void> | void): Promise<void> {
     try {
-      if (created.length > 0) await api.batchDeleteSessions(created);
-    } catch {
-      /* 清理尽力而为 */
+      await work();
+    } catch (e) {
+      problems.push(label + ": " + (e instanceof Error ? e.message : String(e)));
     }
-    vi.unstubAllGlobals();
+  }
+
+  function cleanTrash805(): void {
+    if (!LIVE) return;
     const trash = join(WS_PATH, ".celestea-trash");
     if (!existsSync(trash)) return;
     for (const name of readdirSync(trash)) {
       if (/^w805-/.test(name)) rmSync(join(trash, name), { recursive: true, force: true });
     }
+  }
+
+  afterAll(async () => {
+    const problems: string[] = [];
+    await cleanupStep(problems, "restore active", () => restoreActive());
+    await cleanupStep(problems, "delete temp sessions", () => (LIVE ? deleteCreated() : Promise.resolve()));
+    await cleanupStep(problems, "clean w805 trash", () => cleanTrash805());
+    vi.unstubAllGlobals();
+    if (problems.length > 0) throw new Error("[W805] real-backend cleanup failed: " + problems.join(" | "));
   });
 
   it("真发小图（走前端 api.turn）：请求被接受、消息里出现附件、日志只存引用", { timeout: 180000 }, async () => {

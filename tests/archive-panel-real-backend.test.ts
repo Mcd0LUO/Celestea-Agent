@@ -257,25 +257,24 @@ const live = LIVE ? describe : describe.skip;
 
 afterAll(async () => {
   if (!LIVE) return;
-  // 我建的会话若还在（缺省或归档列表里）⇒ 真删掉；随后清掉回收目录里我的条目。
+  const problems: string[] = [];
   try {
-    const alive = new Set([
-      ...(await listedIds("/api/sessions")),
-      ...(await listedIds("/api/sessions?archived=1")),
-    ]);
-    const left = created.filter((id) => alive.has(id));
+    const before = new Set([...(await listedIds("/api/sessions")), ...(await listedIds("/api/sessions?archived=1"))]);
+    const left = created.filter((id) => before.has(id));
     if (left.length > 0) await post("/api/sessions/batch-delete", { ids: left });
-  } catch {
-    /* 清理尽力而为：失败不影响验收结论 */
+    const after = new Set([...(await listedIds("/api/sessions")), ...(await listedIds("/api/sessions?archived=1"))]);
+    const stuck = created.filter((id) => after.has(id));
+    if (stuck.length > 0) problems.push("临时会话未删干净：" + stuck.join(", "));
+  } catch (e) {
+    problems.push("临时会话清理失败：" + (e instanceof Error ? e.message : String(e)));
   }
   try {
-    for (const name of readdirSync(TRASH)) {
-      if (/^w792-/.test(name)) rmSync(join(TRASH, name), { recursive: true, force: true });
-    }
+    for (const n of readdirSync(TRASH)) if (/^w792-/.test(n)) rmSync(join(TRASH, n), { recursive: true, force: true });
   } catch {
     /* 回收目录可能不存在 */
   }
   vi.unstubAllGlobals();
+  if (problems.length > 0) throw new Error("[W792-archive] real-backend cleanup failed: " + problems.join(" | "));
 });
 
 live("W792 · 真实服务：归档面板（item 1 前端半边）", () => {
