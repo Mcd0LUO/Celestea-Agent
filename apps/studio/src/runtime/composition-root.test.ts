@@ -150,7 +150,10 @@ describe("W743 · the grants boundary is composed in the HTTP-layer engine (W516
     expect(result["error"]).toBeNull();
     expect(result["value"]).toBe("W743-OUTSIDE\n");
     // The boundary the HTTP layer reports is the one the engine composed with.
-    expect((await getJson(h.app, "/api/status?session=sample-ws%2Fs1")).body["grants_active"]).toEqual(["read_roots"]);
+    // W9: the effective boundary now includes the permission baseline, and the
+    // default preset (full-access) contributes the network cap; the session own
+    // read_roots grant is still the only extra capability in force.
+    expect((await getJson(h.app, "/api/status?session=sample-ws%2Fs1")).body["grants_active"]).toEqual(["network", "read_roots"]);
   });
 
   it("stays fail-closed on a hand-edited bad grant AND audits the denial (reader is wired)", async () => {
