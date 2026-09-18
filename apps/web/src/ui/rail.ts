@@ -16,7 +16,9 @@
 //   后台会话新增消息只写进它自己的 holder（离线容器），不触碰当前轨道。
 // ============================================================================
 import { el } from '../utils/dom';
-import { hideHint, hoverHint, registerHintPlugin, setHint, type HintHandle, type HintPlugin } from './hint';
+import { hideHint, hoverHint, setHint } from './hint/card';
+import type { HintHandle, HintPlugin } from './hint/registry';
+import { registerHintPlugin } from '../plugins/register'; // W859：经插件模块记账（注销器保存，可热开关）
 import { activePane, type SessionPane } from './viewctx';
 
 // ---- 紧凑几何（细条 —— 自然高 5px、间隙 4px） ----
@@ -417,9 +419,8 @@ function queueSync(): void {
 }
 
 /**
- * 注册一根轮条（addUserMessage / ensureAssistant 调用；一问一答合并）。
- * role='user' → 新轮起点；'assistant' → 合并进最近一轮并标记已有回复；
- * 'interject' → 运行中插话：并入当前轮（不新起长条）。
+ * 注册一根轮条（addUserMessage / ensureAssistant 调用；一问一答合并）。role='user' → 新轮起点；
+ * 'assistant' → 合并进最近一轮并标记已有回复；'interject' → 运行中插话：并入当前轮（不新起长条）。
  */
 export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assistant' | 'interject'): void {
   if (!mainEl) return;
@@ -472,8 +473,7 @@ export function railSync(ctx: SessionPane): void {
 }
 
 /**
- * 会话切换：把旧会话的长条搬回它自己的 holder，再把新会话的长条搬进轨道。
- * 只做节点搬家（零重建）；几何由 layout() 依据新容器重算。
+ * 会话切换：把旧长条搬回原 holder、把新会话的长条搬进轨道；只做节点搬家（零重建），几何由 layout() 重算。
  */
 export function railActivate(ctx: SessionPane): void {
   if (cur === ctx) {
@@ -498,7 +498,7 @@ export function initRail(): void {
   if (mainEl) return;
   mainEl = document.getElementById('main');
   if (!mainEl) return;
-  registerHintPlugin(railHintPlugin()); // W790：预览卡 = 注册缝里的一个提供者
+  registerHintPlugin(railHintPlugin()); // W790 注册缝 / W859 经 plugins 记账（可热开关）
   cur = activePane();
   msgsEl = cur ? cur.el : null;
   ensureTrack();

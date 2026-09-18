@@ -14,6 +14,7 @@ import { loadArchiveSection } from './archive/panel';
 import { initProvidersSection, loadProviders } from './providers';
 import { initPromptsSection, loadPrompts } from './prompts';
 import { loadPermissionsSection } from './permissions';
+import { loadPluginsSection } from './plugins'; // W859 设置页「插件」（客户端热开关 + 宿主只读）
 
 const page = need<HTMLElement>('#settingsPage');
 const box = need<HTMLElement>('#settingsConfig');
@@ -233,7 +234,7 @@ export async function loadConfig(opts: { refresh?: boolean } = {}): Promise<void
 
 // ---- 左导航 + 右内容 -----------------------------------------------------------
 
-const PANES = ['config', 'tools', 'archive', 'providers', 'prompts', 'permissions'] as const;
+const PANES = ['config', 'tools', 'archive', 'providers', 'prompts', 'permissions', 'plugins'] as const;
 type PaneName = (typeof PANES)[number];
 
 let currentPane: PaneName = 'config';
@@ -264,9 +265,12 @@ function loadPane(name: PaneName): void {
     void loadProviders();
   } else if (name === 'prompts') {
     void loadPrompts();
-  } else {
+  } else if (name === 'permissions') {
     // W858：「权限预设」（内置三档 + 自定义档 + 会话档位选择器的取数口）
     void loadPermissionsSection();
+  } else {
+    // W859：「插件」（客户端插件热开关 + 服务端插件只读清单）
+    void loadPluginsSection();
   }
 }
 

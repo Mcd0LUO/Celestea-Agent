@@ -165,6 +165,7 @@
           <button class="settings-nav-item" type="button" data-page="providers">模型提供商</button>
           <button class="settings-nav-item" type="button" data-page="prompts">提示词</button>
           <button class="settings-nav-item" type="button" data-page="permissions">权限预设</button>
+          <button class="settings-nav-item" type="button" data-page="plugins">插件</button>
         </nav>
         <div class="settings-content">
           <section class="settings-pane active" data-pane="config">
@@ -213,6 +214,13 @@
               <span class="settings-sec-note">默认 Full Access；可自组合预设，运行时封顶会收窄</span>
             </header>
             <div class="settings-pane-body" id="settingsPermissions"></div>
+          </section>
+          <section class="settings-pane" data-pane="plugins">
+            <header class="settings-pane-head">
+              <h4>插件</h4>
+              <span class="settings-sec-note">客户端插件即时生效；服务端插件只读</span>
+            </header>
+            <div class="settings-pane-body" id="settingsPlugins"></div>
           </section>
         </div>
       </div>

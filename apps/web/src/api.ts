@@ -42,6 +42,8 @@ import type {
   TurnResp,
   WorkspacesResp,
 } from './types';
+// W859：宿主插件清单类型（端点尚未发布；整包按 unknown 校验，见 ./types/plugin）
+import type { PluginsResp } from './types/plugin';
 // W858：权限族类型整族在 ./types/permission（types.ts 有模块体积棘轮，本轮不追加行数；
 // 先例：ui/attachments.ts 直接 import ./types/attachment）。
 import type {
@@ -159,6 +161,11 @@ export const api = {
       '/api/status' + (session ? '?session=' + encodeURIComponent(session) : ''),
     ),
   tools: () => requestJson<ToolsResp>('/api/tools'),
+  /**
+   * W859：GET /api/plugins —— 宿主（服务端）插件清单，设置页「插件」一格的取数口。
+   * 端点尚未发布：404/405/网络不可达 → ApiError，调用方显示如实空态，不伪造清单。
+   */
+  plugins: () => requestJson<PluginsResp>('/api/plugins'),
   /** 当前运行配置（安全剖面，不含密钥）。 */
   config: () => requestJson<ConfigInfo>('/api/config'),
   /** 热调保存：POST /api/config {patch}（成功响应 = 消毒后完整配置）。 */

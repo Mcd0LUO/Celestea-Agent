@@ -1,0 +1,159 @@
+/* ============================================================================
+ * W859 · 设置页「插件」一格（客户端插件热开关 + 宿主插件只读清单）
+ *
+ *   颜色只引用 tokens.css 的三层 token（--bg-* / --label-* / --state-* /
+ *   --interactive-* / --bubble-* / --tip-* 及其 --c-* 兼容别名）；圆角只走
+ *   --r-*（开关轨道是胶囊，用 999px）；发丝线用 --hairline；虚线一律不用
+ *   （W12 机械门禁）。
+ *   1) 两段式布局（客户端插件 / 服务端插件）
+ *   2) 只读行与开关行共用 .plug-row-* 骨架
+ *   3) 开关：真开关的样子（轨道 + 滑块），不是装饰
+ * ============================================================================ */
+
+/* ---- 1) 两段式布局 --------------------------------------------------------- */
+.plug-sec + .plug-sec {
+  margin-top: var(--sp-flow);
+  border-top: var(--hairline) solid var(--border-l1);
+  padding-top: var(--sp-flow);
+}
+.plug-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-flow-answer);
+  margin-bottom: var(--sp-flow-answer);
+}
+.plug-sec-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label-primary, var(--c-text-1));
+}
+.plug-sec-note {
+  font-size: 11.5px;
+  color: var(--c-text-3);
+}
+
+/* ---- 2) 行骨架（开关行 / 只读行共用） -------------------------------------- */
+.plug-list,
+.plug-host-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plug-row,
+.plug-host {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-flow-answer);
+  background: var(--bg-layer-1);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-card);
+  padding: 10px 12px;
+}
+.plug-row-main {
+  min-width: 0;
+  flex: 1;
+}
+.plug-row-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+.plug-row-hint {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--c-text-3);
+}
+.plug-host-ver {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--c-text-3);
+}
+.plug-badge {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--c-text-2);
+  background: var(--bg-layer-3);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-badge);
+  padding: 1px 8px;
+}
+.plug-empty {
+  font-size: 12px;
+  color: var(--c-text-3);
+  padding: 6px 2px;
+}
+
+/* ---- 3) 开关 --------------------------------------------------------------- */
+.plug-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 18px;
+  cursor: pointer;
+}
+.plug-switch-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.plug-switch-track {
+  position: absolute;
+  inset: 0;
+  border: var(--hairline) solid var(--border-l3);
+  border-radius: 999px;
+  background: var(--bg-layer-3);
+  transition: background 0.12s ease, border-color 0.12s ease;
+  pointer-events: none;
+}
+.plug-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--bg-layer-1);
+  border: var(--hairline) solid var(--border-l1);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.plug-switch-input:checked + .plug-switch-track {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+.plug-switch-input:checked + .plug-switch-track::after {
+  transform: translateX(16px);
+  background: var(--interactive-accent-fg);
+  border-color: var(--interactive-accent);
+}
+.plug-switch-input:focus-visible + .plug-switch-track {
+  outline: 1px solid var(--interactive-accent-ring);
+  outline-offset: 1px;
+}
+.plug-switch-input:disabled + .plug-switch-track {
+  opacity: 0.5;
+}
+
+/* ---- 切换结果 / 失败说明（就地，不弹窗） ----------------------------------- */
+.plug-status {
+  min-height: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+  color: var(--label-secondary, var(--c-text-2));
+}
+.plug-status.ok {
+  color: var(--state-ok, var(--c-ok));
+}
+.plug-status.err {
+  color: var(--state-err, var(--c-err));
+}
