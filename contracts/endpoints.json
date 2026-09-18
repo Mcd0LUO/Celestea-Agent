@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (60 endpoints)",
+  "title": "Celestea Studio HTTP API contract (61 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -8,7 +8,7 @@
     "routes": "frozen from the retired backend implementation (original source file deleted 2026-09-15); kept as contracts/route-table.snapshot.json (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "routeSnapshot": "contracts/route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only). W9 added the six permission endpoints (51 -> 57). W860 added GET|PUT /api/sessions/{id}/tools and GET /api/plugins (57 -> 60)."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only). W9 added the six permission endpoints (51 -> 57). W860 added GET|PUT /api/sessions/{id}/tools and GET /api/plugins (57 -> 60). W870 added PUT /api/sessions/{id}/model (60 -> 61; the session-scoped model switch the statusline picker targets, TS-only)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 60,
+  "count": 61,
   "endpoints": [
     {
       "id": "get_health",
@@ -148,6 +148,12 @@
             "type": "\"standard\"|\"execution\"",
             "required": false,
             "note": "W729: mode of the QUERIED session (absent key on disk = \"standard\")"
+          },
+          {
+            "name": "model_covered",
+            "type": "boolean",
+            "required": false,
+            "note": "W870: true = the \"model\" above is THIS session's own session.json.model override (so the session does NOT follow the global default); false = the global default is in force. A PURE ADDITION — the statusline's model picker reads it to say 「本会话已固定模型」; a client that does not see the key shows no such line."
           },
           {
             "name": "cost",
@@ -1198,6 +1204,91 @@
       "notes": [
         "P1 (docs/modes-standard-vs-execution.md §3.1/§5.2 #6): rewrites `session.json.mode` through the W729 writer (title/model/prompt are kept), then drops the session's instance so the NEXT turn recomposes it (W516's `invalidateSession` path). The 409 guard is `/compact`'s, in semantics and wording.",
         "TS-only (U8): the retired backend has no counterpart — see contracts/route-table.snapshot.json `tsOnlyRoutes`. Frontends gate the switch on `GET /api/health.capabilities.session_mode_tools === true`."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "put_session_model",
+      "method": "PUT",
+      "path": "/api/sessions/{id}/model",
+      "group": "sessions",
+      "rustHandler": "(none - TypeScript-only, W870)",
+      "docRef": "docs/modes-standard-vs-execution.md#31-api（端点与字段）",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "note": "A model id (same alphabet as POST /api/config). The EMPTY string CLEARS the session override, so the session falls back to the global default model."
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "model",
+            "type": "string",
+            "required": false,
+            "note": "the model this session will run on its NEXT turn: the session override when one is in force, else the global default"
+          },
+          {
+            "name": "covered",
+            "type": "boolean",
+            "required": false,
+            "note": "true = the session has its OWN session.json.model (so it does NOT follow the global default); false = the global default is in force"
+          },
+          {
+            "name": "effective",
+            "type": "object{model:string,base_model:string,source:'session'|'global',next_turn:true}",
+            "required": false,
+            "note": "base_model is the global default at answer time; source names where model came from; next_turn says when the switch takes effect."
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "invalid model name '{v}': ..."
+        },
+        {
+          "status": 404,
+          "error": "unknown session '{id}'"
+        },
+        {
+          "status": 409,
+          "error": "turn 进行中，无法切换模型"
+        },
+        {
+          "status": 422,
+          "error": "field 'model' must be a string"
+        },
+        {
+          "status": 500,
+          "error": "meta write failed: {e}"
+        }
+      ],
+      "notes": [
+        "W870: rewrites session.json.model through the W729 writer (title / mode / prompt are kept), then drops THIS session's instance so its NEXT turn recomposes on the new model (W516 invalidateSession, the same hook PUT /api/sessions/{id}/tools and PUT /api/sessions/{id}/permission use). model:\"\" DELETES the key (K8: absent = no override).",
+        "W870 product semantic: the statusline's model badge shows GET /api/status?session=, whose model is the SESSION instance's profile (global base + session.json.model, see runtime/session-compose.ts profileFor). The picker therefore targets THIS endpoint; POST /api/config still means the GLOBAL default and is what the settings page 通用配置 writes. Before W870 the picker wrote only the global default, so a session carrying an override bounced back to it on the next 2s status poll.",
+        "The 409 guard is /compact's and POST /api/sessions/{id}/mode's, in semantics and wording: a switch inside a running turn would silently half-apply (this turn on the old model, the next on the new one).",
+        "TS-only: the retired backend has no counterpart — see contracts/route-table.snapshot.json tsOnlyRoutes."
       ],
       "probe": {
         "checked": false,

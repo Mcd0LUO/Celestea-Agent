@@ -25,6 +25,7 @@
  *   usage.ts         W785: GET /api/usage/ledger (the ledger's aggregate view)
  *   permissions.ts   W9: /api/permissions/presets (+{id}) | /api/sessions/{id}/permission
  *   session-tools.ts W860: GET+PUT /api/sessions/{id}/tools (the session's disabled list)
+ *   session-model.ts W870: PUT /api/sessions/{id}/model (the session-level model switch)
  *   plugins.ts       W860: GET /api/plugins (the host startup plugin inventory)
  *   auth.ts          W767: GET /login | POST /auth/login | GET /auth/check
  *
@@ -46,6 +47,7 @@ import { registerPrompts } from "./prompts.js";
 import { registerProviders } from "./providers.js";
 import { registerQuestions } from "./questions.js";
 import { registerSessionMoves } from "./session-move.js";
+import { registerSessionModel } from "./session-model.js";
 import { registerSessionTools } from "./session-tools.js";
 import { registerSessions } from "./sessions.js";
 import { registerUsage } from "./usage.js";
@@ -77,6 +79,9 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     // W860: session-level tool switches (57 -> 59) + the host plugin inventory (59 -> 60).
     ...registerSessionTools(app, deps, table),
     ...registerPlugins(app, deps, table),
+    // W870: the session-scoped model switch (60 -> 61) — the statusline picker's
+    // target; POST /api/config keeps meaning "the global default".
+    registerSessionModel(app, deps, table),
   ];
 }
 

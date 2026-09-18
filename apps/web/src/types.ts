@@ -83,6 +83,12 @@ export interface StatusSnapshot {
    * cache: Map<session, StatusSnapshot>）；缺省 = 老服务不返回该字段，徽标隐藏。
    */
   mode?: SessionMode;
+  /**
+   * W870（只读附加字段，GET /api/status）：本快照的 `model` 是否来自该会话自己的
+   * `session.json.model` 覆盖。选择器据此如实标「本会话已固定模型」—— 这样的会话
+   * 本来就不跟全局默认走。缺省 = 老服务不返回该字段，不显示该行。
+   */
+  model_covered?: boolean;
 }
 
 /**
@@ -416,63 +422,9 @@ export interface TurnResp {
   error?: string;
 }
 
-// ---- 配置（GET /api/config · POST /api/config） ----------------------------
-
-/** available.models 条目：id=引擎模型标识，name=展示名（未定义时后端取 id）。 */
-export interface ModelInfo {
-  id: string;
-  name: string;
-  /** W262：提供商显示名；静态兜底目录的条目为空串（前端归入「其他」组）。 */
-  provider?: string;
-  /**
-   * W750：提供商稳定 id（切换时回传用）。与 `provider`（显示名）是两回事：
-   * 显示名可能被改、也可能与 id 不同，切 provider 必须用 id。
-   */
-  provider_id?: string;
-  /**
-   * W750：该 (provider, model) 组合就是当前生效项（后端按「同模型 + 同端点」判定）。
-   * 旧服务无此字段 → 前端退回按模型 id 匹配。
-   */
-  active?: boolean;
-  reasoning?: boolean;
-}
-
-/** 可选清单（后端发布时携带；缺失则前端降级为手输/预置档位）。 */
-export interface ConfigAvailable {
-  models?: ModelInfo[];
-  efforts?: string[];
-}
-
-/** GET /api/config 返回的安全 Profile（永不携带 api_key 明文）。 */
-export interface ConfigInfo {
-  model?: string;
-  base_url?: string;
-  /** 后端通过 env/file 配密钥时返回 null；前端永不显示/回传真实值。 */
-  api_key?: string | null;
-  context_window?: number | null;
-  context_window_tokens?: number | null;
-  max_steps?: number | null;
-  max_parallel_tool_calls?: number | null;
-  reasoning_effort?: string | null;
-  max_output_tokens?: number | null;
-  system_prompt?: string | null;
-  available?: ConfigAvailable;
-}
-
-/** POST /api/config 热调补丁：只携带用户改动的键（空值=不改）。 */
-export interface ConfigPatch {
-  model?: string;
-  base_url?: string;
-  api_key?: string;
-  context_window?: number | null;
-  max_steps?: number | null;
-  reasoning_effort?: string | null;
-  max_output_tokens?: number | null;
-  system_prompt?: string;
-}
-
-/** POST /api/config 成功响应 = 消毒后的完整配置（同 GET 体型）。 */
-export type ConfigSaveResp = ConfigInfo & OkResp;
+// W870：配置族（ModelInfo / ConfigAvailable / ConfigInfo / ConfigPatch /
+// ConfigSaveResp）整段搬到 ./types/config，这里原样再导出 —— 调用方零改动。
+export type { ConfigAvailable, ConfigInfo, ConfigPatch, ConfigSaveResp, ModelInfo } from './types/config';
 
 // ---- 会话权限（W701 提权通道；契约见 feature-session-grants.md §6） -------------
 
@@ -603,3 +555,5 @@ export type { AttachmentRef, ImageMediaType, TurnAttachmentInput } from './types
 export type { HistoryMsg, HistoryRole, MessagesResp } from './types/history';
 
 export type { SessionMode, SessionModeResp } from './types/mode';
+/** W870：会话级模型切换的线格式（PUT /api/sessions/{id}/model）。 */
+export type { SessionModelResp } from './types/session-model';

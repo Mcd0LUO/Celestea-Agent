@@ -6,8 +6,8 @@
 //   W262：模型清单按提供商分组的树状清单。
 //   W750：跨提供商选择器——清单按 provider_id 分组（显示名可能重复/被改，用 id
 //     做键）；跨 provider 先 POST /api/providers/default（带稳定 id 消歧，模型 id
-//     跨 provider 会撞名），再 POST /api/config {model}；同 provider 只发后者
-//     （与旧行为逐字一致）。409 挂起经 pendingPick 走同一条路径重试。
+//     跨 provider 会撞名），再落库模型；同 provider 只发后者。409 挂起经 pendingPick
+//     走同一条路径重试。
 //
 //   W778：清单改走配置缓存（statusline/cfg-cache.ts）——缓存命中时**同步**渲染
 //     清单，随后后台 revalidateConfig() 校验一次，仅当弹层仍是同一个 popup 且
@@ -20,60 +20,57 @@
 //     · 切换（模型/档位）：点下去**同一帧**把状态栏画成已切到目标值（终态），
 //       请求后台跑；失败回滚到原值 + 「已恢复原设置」说明，409 挂起则不留在错的显示上。
 //
-//   宿主契约 PickerHost（= Statusline）：根元素 + 弹层状态 + merge/setNote 回调，
-//   模块自身零状态。拆分只搬位置：DOM 结构、类名、文案、事件、请求顺序均未改。
+//   W870（会话级模型切换 —— 用户报案「切换模型后几秒又弹回原状」）：
+//     徽标每 2s 轮询 GET /api/status?session=<聚焦会话>，其 model 来自**会话实例**
+//     的 profile（全局 base + session.json.model 覆盖，见
+//     apps/studio/src/runtime/session-compose.ts 的 profileFor）；而 W750 的选择器
+//     只写**全局** POST /api/config。于是带覆盖的会话：乐观显示新模型 → 全局配置也
+//     真改了 → ≤2s 后轮询按会话覆盖把徽标打回旧值。
+//     产品语义（本轮裁决）：**statusline 的模型选择器切的是「当前聚焦会话」的模型**
+//     —— 它显示在哪个会话的 statusline 上，用户点的就是「这个会话用哪个模型」；
+//     全局默认留给设置页「通用配置」（POST /api/config 语义不变）。
+//     实现落在 ./session-model.ts（纯逻辑，零 DOM）：有聚焦会话 ⇒
+//     PUT /api/sessions/{id}/model；无聚焦会话（旧单会话容器）⇒ 回落 POST /api/config。
+//     W795 的乐观显示 / 失败回滚 / 409 挂起重试结构**原样保留**，只换目标端点与文案。
+//
+//   W870（拆分）：清单渲染整段搬到 ./picker-list.ts、共享契约搬到
+//     ./picker-shared.ts（本文件因此回到 400 行门禁以内）。本文件保留弹层生命周期
+//     与请求编排；对 statusline.ts 与测试**原样再导出**原有名字，调用方零改动。
 // ============================================================================
-import { api, ApiError, userErrorText } from '../api';
+import { api, userErrorText } from '../api';
 import { el } from '../utils/dom';
-import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
-import type { ConfigInfo, ConfigPatch, ModelInfo, StatusSnapshot } from '../types';
-import { modelIconEl } from './icons';
+import { popOverlay, pushOverlay } from '../utils/overlays';
+import type { ConfigInfo, ConfigPatch } from '../types';
 import { loadConfigCached, peekConfig, revalidateConfig } from './cfg-cache';
 import { optimisticPatchView, revertPointOf } from './optimistic';
+import { listChanged, renderEffortList, renderList, renderModelList } from './picker-list';
+import {
+  EFFORT_OPTIONS,
+  OTHER_GROUP,
+  type ListHooks,
+  type ModelPick,
+  type PickerHost,
+  type SwitchKind,
+} from './picker-shared';
+import {
+  failureText,
+  modelTargetOf,
+  requestGlobalModel,
+  requestSessionModel,
+  switchedNote,
+  type SessionModelOutcome,
+} from './session-model';
 
-/** W262：没有 provider 字段的模型（静态兜底目录 / 旧数据）归入的树状分组。 */
-export const OTHER_GROUP = '其他';
+// W870：契约与常量仍在 ./picker-shared.ts（渲染器也要用它们，放这里会成环）；
+// 这里原样再导出，statusline.ts 与测试的既有 import 路径一个都不用改。
+export { EFFORT_OPTIONS, OTHER_GROUP };
+export type { ModelPick, PickerHost, SwitchKind };
 
-export const EFFORT_OPTIONS: readonly { value: string | null; label: string }[] = [
-  { value: null, label: '标准（清除）' },
-  { value: 'low', label: 'low' },
-  { value: 'high', label: 'high' },
-  { value: 'max', label: 'max' },
-];
-
-export type SwitchKind = 'model' | 'effort';
-
-/**
- * W750：一次「切到 (provider, model)」。
- * `providerId` 非空 = 需要先切默认 provider（`provider_id` 是稳定 id，
- * 不是显示名）；空串 = 同一 provider 内换模型，直接改配置即可。
- */
-export interface ModelPick {
-  model: string;
-  providerId: string;
-}
-
-/** 弹层宿主（Statusline 实现）：根元素、弹层状态与应用后的副作用回调。 */
-export interface PickerHost {
-  /** 弹层挂载点（#statusline 元素）。 */
-  readonly root: HTMLElement;
-  /** 当前快照里的模型（cfg.model 缺失时的兜底；全局配置，跨会话保留）。 */
-  readonly snapshotModel: string;
-  /**
-   * W795：当前快照里的推理档位（null = 标准档/未设置）。
-   * 两处用途：冷启动时乐观渲染档位清单的「当前」项；切换失败时的回滚基准。
-   */
-  readonly snapshotEffort: string | null;
-  popup: HTMLElement | null;
-  popupKind: SwitchKind | null;
-  /** 弹层在全局层级栈中的句柄（Esc 只关栈顶一层）。 */
-  popupOverlay: OverlayHandle | null;
-  pendingPatch: ConfigPatch | null;
-  /** W750：409 挂起的模型/提供商切换（SSE done 后按同一路径重试一次）。 */
-  pendingPick: ModelPick | null;
-  merge(partial: StatusSnapshot): void;
-  setNote(text: string, ms: number): void;
-}
+/** 渲染器的点击行为：请求编排留在本文件（渲染器不 import 本文件，零环）。 */
+const HOOKS: (host: PickerHost) => ListHooks = (host) => ({
+  apply: (patch) => void apply(host, patch),
+  pick: (pick) => void pickModel(host, pick),
+});
 
 export function togglePopup(host: PickerHost, kind: SwitchKind): void {
   if (host.popup && host.popupKind === kind) {
@@ -112,11 +109,12 @@ export async function openPopup(host: PickerHost, kind: SwitchKind): Promise<voi
   //   · 推理档位：候选是静态常量 + 当前值 ⇒ 缓存有没有都同一帧画出来；
   //   · 模型清单：缓存命中 → 同步渲染；冷启动 → 正文先留空（本地确无真源，
   //     不写任何占位文案），首次拉取回来再一次换入（铁律 1：单次替换）。
+  const hooks = HOOKS(host);
   const seeded = peekConfig();
   if (kind === 'effort') {
-    renderEffortList(body, seeded?.reasoning_effort ?? host.snapshotEffort ?? '', host);
+    renderEffortList(body, seeded?.reasoning_effort ?? host.snapshotEffort ?? '', hooks);
   } else if (seeded !== null) {
-    renderModelList(body, seeded, host);
+    renderModelList(body, seeded, host, hooks);
   }
 
   let cfg: ConfigInfo;
@@ -134,217 +132,68 @@ export async function openPopup(host: PickerHost, kind: SwitchKind): Promise<voi
   }
   if (host.popup !== popup) return; // 期间被关闭/切换
   // 冷启动：首次结果直接渲染；命中缓存：内容真的变了才原地替换（否则零重建）。
-  if (seeded === null || listChanged(kind, seeded, cfg)) renderList(body, kind, cfg, host);
+  if (seeded === null || listChanged(kind, seeded, cfg)) renderList(body, kind, cfg, host, hooks);
 }
 
 /**
- * 渲染清单（离屏构建 + 单次替换，铁律 1）。
- * `cfg` 可以来自配置缓存（同步首屏）或一次真实拉取，渲染结果与来源无关。
+ * W750/W870：切到 (provider, model)。provider 不同 → 先 `POST /api/providers/default`
+ * （带 provider_id 消歧：模型 id 跨 provider 会撞名）。
+ *
+ * W870：随后**按目标**落库 —— 有聚焦会话 ⇒ `PUT /api/sessions/{id}/model`
+ * （会话级，徽标下一次轮询读到新值，不再被打回）；无聚焦会话 ⇒ 旧的
+ * `POST /api/config {model}`（全局默认）。两条路径都走 ./session-model.ts。
  */
-function renderList(body: HTMLElement, kind: SwitchKind, cfg: ConfigInfo, host: PickerHost): void {
-  if (kind === 'effort') {
-    renderEffortList(body, cfg.reasoning_effort ?? '', host);
-    return;
-  }
-  renderModelList(body, cfg, host);
+export async function runPick(host: PickerHost, pick: ModelPick): Promise<SessionModelOutcome> {
+  if (pick.providerId !== '') await api.setDefaultModel(pick.model, pick.providerId);
+  const target = modelTargetOf(host.sessionId);
+  const outcome =
+    target === 'session'
+      ? await requestSessionModel(host.sessionId, pick.model)
+      : await requestGlobalModel(pick.model);
+  if (outcome.kind !== 'ok') return outcome;
+  host.merge({ model: outcome.model });
+  window.dispatchEvent(new Event('studio:config-saved'));
+  return outcome;
 }
 
-/**
- * 推理档位清单（W795 抽出）：候选全是静态常量 + 一个「当前」值 ⇒ 不依赖任何请求，
- * 冷启动也能同一帧画出来（乐观渲染），所以它与模型清单分成两个渲染器。
- */
-function renderEffortList(body: HTMLElement, current: string, host: PickerHost): void {
-  const off = document.createElement('div');
-  const options = [...EFFORT_OPTIONS];
-  const cur = current;
-  if (cur && !options.some((o) => o.value === cur)) {
-    options.push({ value: cur, label: cur + '（当前）' });
-  }
-  for (const o of options) {
-    off.appendChild(optButton(o.label, o.value ?? '', cur, () => void apply(host, { reasoning_effort: o.value })));
-  }
-  body.replaceChildren(...off.childNodes);
+/** W795：乐观切换的回滚基准（宿主字段 → 纯函数 ./optimistic.revertPointOf）。 */
+function revertPoint(host: PickerHost): ReturnType<typeof revertPointOf> {
+  return revertPointOf({ model: host.snapshotModel, effort: host.snapshotEffort });
 }
 
-function renderModelList(body: HTMLElement, cfg: ConfigInfo, host: PickerHost): void {
-  const off = document.createElement('div');
-
-  // ---- model：按提供商分组的树状清单（W262） ----
-  const models = Array.isArray(cfg.available?.models) ? cfg.available.models : [];
-  const cur = cfg.model ?? host.snapshotModel;
-  if (!models.length) {
-    // 清单缺失 → 内联文本输入降级
-    const row = el('div', 'sl-popup-textrow');
-    const input = el('input', 'sl-popup-input') as HTMLInputElement;
-    input.placeholder = '模型名称';
-    input.value = cur;
-    row.appendChild(input);
-    const applyBtn = el('button', 'btn btn-accent btn-mini', '应用') as HTMLButtonElement;
-    applyBtn.addEventListener('click', () => {
-      const v = input.value.trim();
-      if (v !== '' && v !== cur) void apply(host, { model: v });
-    });
-    row.appendChild(applyBtn);
-    off.appendChild(row);
-    off.appendChild(el('div', 'sl-popup-note', '请输入模型名称'));
-    body.replaceChildren(...off.childNodes);
-    return;
-  }
-  const known = models.some((m) => m.id === cur);
-  if (cur && !known) {
-    // 当前模型不在清单里（自定义端点）→ 置顶一行，仍可点回
-    off.appendChild(optButton(cur + '（当前）', cur, cur, () => void apply(host, { model: cur })));
-    const sep = el('div', 'sl-popup-sep');
-    sep.textContent = '候选模型';
-    off.appendChild(sep);
-  }
-  // W750：当前生效项 = 后端标注的 active 行（同模型 + 同端点）。旧服务没有该
-  // 字段时退回「按模型 id 匹配」；两者都没有 → 没有选中态，也不虚标。
-  const activeRow = models.find((m) => m.active === true) ?? null;
-  const sameId = models.find((m) => m.id === cur) ?? null;
-  const currentProviderId = (activeRow?.provider_id ?? '').trim();
-  const isCurrent = (m: ModelInfo): boolean =>
-    activeRow !== null ? m.active === true : sameId !== null && m === sameId;
-  // 树状一级 = provider 显示名（后端已保证模型名未定义时取 id）。
-  // W750：同一 provider id 的记录聚成一组（显示名可能重复/被改，用 id 做键），
-  // 缺 provider 字段的记录（静态兜底目录 / 旧数据）归入「其他」组。
-  const groups: { pid: string; name: string; list: ModelInfo[] }[] = [];
-  const byPid = new Map<string, { pid: string; name: string; list: ModelInfo[] }>();
-  for (const m of models) {
-    const pid = (m.provider_id ?? '').trim();
-    const name = (m.provider ?? '').trim() || (pid !== '' ? pid : OTHER_GROUP);
-    const key = pid !== '' ? pid : name;
-    let group = byPid.get(key);
-    if (!group) {
-      group = { pid, name, list: [] };
-      byPid.set(key, group);
-      groups.push(group);
-    }
-    group.list.push(m);
-  }
-  for (const group of groups) {
-    off.appendChild(groupRow(group.name, group.pid, group.list.some(isCurrent)));
-    for (const m of group.list) {
-      const pick: ModelPick = {
-        model: m.id,
-        // 显示名不是 id：只有拿到稳定 id 且与当前 provider 不同才需要先切 provider。
-        providerId: (() => {
-          const pid = (m.provider_id ?? '').trim();
-          return pid !== '' && pid !== currentProviderId ? pid : '';
-        })(),
-      };
-      off.appendChild(
-        optButton(m.name || m.id, m.id, isCurrent(m) ? m.id : '', () => void pickModel(host, pick), true),
-      );
-    }
-  }
-  body.replaceChildren(...off.childNodes);
-}
-
-/**
- * W778：缓存清单与后台校验结果是否一致（不一致才允许原地替换）。
- * 只比对本渲染器真正用到的字段：档位看 reasoning_effort，模型看当前模型 + 清单。
- */
-function listChanged(kind: SwitchKind, a: ConfigInfo, b: ConfigInfo): boolean {
-  if (kind === 'effort') return (a.reasoning_effort ?? '') !== (b.reasoning_effort ?? '');
-  return (
-    (a.model ?? '') !== (b.model ?? '') ||
-    JSON.stringify(a.available?.models ?? []) !== JSON.stringify(b.available?.models ?? [])
-  );
-}
-
-/**
- * W262：树状分组标题行 —— 提供商显示名，不可点击（无 button/无监听）。
- * W750：组内含当前生效项时标一个「当前」；display name 与稳定 id 不同名时
- * 把 id 一并淡显，免得两个 provider 显示名相似时看不出切的是哪一个。
- */
-function groupRow(provider: string, providerId: string, cur: boolean): HTMLElement {
-  const row = el('div', 'sl-group' + (cur ? ' cur' : ''));
-  row.appendChild(el('span', 'sl-group-name', provider));
-  if (providerId !== '' && providerId !== provider) {
-    row.appendChild(el('span', 'sl-group-id', providerId));
-  }
-  if (cur) row.appendChild(el('span', 'sl-group-tag', '当前'));
-  return row;
-}
-
-/** 模型/档位一行；`sub=true` = 树状缩进一级（provider 组下的模型行）。 */
-function optButton(
-  label: string,
-  value: string,
-  current: string,
-  onPick: () => void,
-  sub = false,
-): HTMLElement {
-  const cls =
-    'sl-opt' +
-    (sub ? ' sub' : '') +
-    (value !== '' && value === current ? ' current' : '');
-  const b = el('button', cls) as HTMLButtonElement;
-  // W750：模型行前置家族图标（未识别 → 不加节点，不占位）。
-  const icon = modelIconEl(value);
-  if (icon !== null) b.appendChild(icon);
-  b.appendChild(el('span', 'sl-opt-name', label));
-  if (value !== '') b.appendChild(el('span', 'sl-opt-val', value));
-  if (value !== '' && value === current) b.appendChild(el('span', 'sl-opt-tag', '当前'));
-  b.addEventListener('click', onPick);
-  return b;
-}
-
-/**
- * W750：切到 (provider, model)。provider 不同 → 先 `POST /api/providers/default`
- * （带 provider_id 消歧：模型 id 跨 provider 会撞名），再 `POST /api/config {model}`；
- * 同一 provider → 只发后者（与旧行为逐字一致）。
- */
 export async function pickModel(host: PickerHost, pick: ModelPick): Promise<void> {
   if (!host.popup) return;
   const popup = host.popup;
   const prev = revertPoint(host);
   // W795 乐观：点下去**同一帧**就把状态栏画成已切到该模型（终态），请求在后台跑。
   host.merge({ model: pick.model });
-  try {
-    await runPick(host, pick);
-    host.setNote('已切换', 5000);
+  const outcome = await runPick(host, pick);
+  if (outcome.kind === 'ok') {
+    // W870 如实：切的是本会话还是全局默认，说的就是哪一句（不混为一谈）。
+    host.setNote(switchedNote(outcome.target), 5000);
     closePopup(host);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 409) {
-      // 轮次进行中 ⇒ 这一轮**没有**切过去：先把乐观显示退回原值，本轮结束后再重试同一路径
-      host.merge(prev);
-      host.pendingPick = pick;
-      host.setNote('轮次进行中，将在本轮结束后生效', 0);
-      closePopup(host);
-    } else {
-      // 失败回滚：把模型显示退回原值 + 就地说明原因（绝不假装切成功）
-      host.merge(prev);
-      const msg = '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）';
-      if (host.popup === popup) {
-        popup.appendChild(el('div', 'sl-popup-status err', msg));
-      } else {
-        host.setNote(msg, 6000);
-      }
-    }
+    return;
   }
+  // 失败/挂起一律先回滚乐观显示：绝不留在错的显示上（W795 口径原样保留）。
+  host.merge(prev);
+  if (outcome.kind === 'busy') {
+    // 轮次进行中 ⇒ 这一轮**没有**切过去：挂起，本轮结束后按**同一条路径**重试。
+    host.pendingPick = pick;
+    host.setNote('轮次进行中，将在本轮结束后生效', 0);
+    closePopup(host);
+    return;
+  }
+  const msg = failureText(outcome);
+  if (host.popup === popup) popup.appendChild(el('div', 'sl-popup-status err', msg));
+  else host.setNote(msg, 6000);
 }
 
-/** W795：乐观切换的回滚基准（宿主字段 → 纯函数 ./optimistic.revertPointOf）。 */
-function revertPoint(host: PickerHost): StatusSnapshot {
-  return revertPointOf({ model: host.snapshotModel, effort: host.snapshotEffort });
-}
-
-/** 切换的实际动作（先 provider 后模型）；任一步失败即抛出，不吞错。 */
-export async function runPick(host: PickerHost, pick: ModelPick): Promise<void> {
-  if (pick.providerId !== '') await api.setDefaultModel(pick.model, pick.providerId);
-  const d = await api.saveConfig({ model: pick.model });
-  host.merge({ model: d.model, reasoning_effort: d.reasoning_effort });
-  window.dispatchEvent(new Event('studio:config-saved'));
-}
-
-/** POST /api/config 应用切换：成功→合并响应；409→挂起待 SSE done；其他→内联报错。 */
+/** POST /api/config 应用档位切换：204/200 → 合并响应；409 → 挂起；其他 → 内联报错。 */
 export async function apply(host: PickerHost, patch: ConfigPatch): Promise<void> {
   if (!host.popup) return;
   const popup = host.popup;
   const prev = revertPoint(host);
-  // W795 乐观：同一帧内先按补丁画出终态（档位胶囊/模型格立即变），请求在后台跑。
+  // W795 乐观：同一帧内先按补丁画出终态（档位胶囊立即变），请求在后台跑。
   host.merge(optimisticPatchView(patch));
   try {
     const d = await api.saveConfig(patch);
@@ -354,7 +203,7 @@ export async function apply(host: PickerHost, patch: ConfigPatch): Promise<void>
     closePopup(host);
   } catch (err) {
     const msg = '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）';
-    if (err instanceof ApiError && err.status === 409) {
+    if (isBusy(err)) {
       // 本轮不生效：退回原值 + 挂起，等本轮结束后重试（那时再乐观应用一次）
       host.merge(prev);
       host.pendingPatch = patch;
@@ -362,13 +211,15 @@ export async function apply(host: PickerHost, patch: ConfigPatch): Promise<void>
       closePopup(host);
     } else {
       host.merge(prev);
-      if (host.popup === popup) {
-        popup.appendChild(el('div', 'sl-popup-status err', msg));
-      } else {
-        host.setNote(msg, 6000);
-      }
+      if (host.popup === popup) popup.appendChild(el('div', 'sl-popup-status err', msg));
+      else host.setNote(msg, 6000);
     }
   }
+}
+
+/** 409 判定（./api 的 ApiError；只在这里 import 一次，避免每个调用点重复判）。 */
+function isBusy(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { status?: unknown }).status === 409;
 }
 
 /**
@@ -384,16 +235,13 @@ export function retryPendingPick(host: PickerHost): boolean {
   // W795：本轮已结束 ⇒ 同一帧内先把状态栏画成已切到目标（不再有「正在应用切换…」占位），
   // 请求在后台跑；失败则退回原值并说明原因。
   host.merge({ model: pick.model });
-  void runPick(host, pick)
-    .then(() => {
-      host.setNote('已切换', 5000);
-    })
-    .catch((err: unknown) => {
-      host.merge(prev);
-      host.setNote(
-        '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）',
-        6000,
-      );
-    });
+  void runPick(host, pick).then((outcome) => {
+    if (outcome.kind === 'ok') {
+      host.setNote(switchedNote(outcome.target), 5000);
+      return;
+    }
+    host.merge(prev);
+    host.setNote(failureText(outcome), 6000);
+  });
   return true;
 }

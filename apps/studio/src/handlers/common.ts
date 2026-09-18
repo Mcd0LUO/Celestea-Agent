@@ -120,3 +120,21 @@ export function modeOfSession(deps: Deps, session: string | null): string {
   const resolved = deps.sessions.resolve(session);
   return effectiveMode(resolved.ok ? readSessionMeta(resolved.value.dir)?.mode : null);
 }
+
+/**
+ * W870: does ONE session carry its OWN `session.json.model` override?
+ *
+ * `/api/status.model` is the session instance's profile model (global base +
+ * this override, see `runtime/session-compose.ts` `profileFor`), so a client
+ * cannot tell "the global default happens to equal this session's model" from
+ * "this session is pinned" by looking at `model` alone. The statusline's model
+ * picker needs exactly that distinction to say 「本会话已固定模型」 instead of
+ * silently switching something the user cannot see. An unresolvable id (and the
+ * detached/absent session) answers false — the endpoint that asked owns the 404.
+ */
+export function sessionModelCovered(deps: Deps, session: string | null): boolean {
+  if (session === null || session === "") return false;
+  const resolved = deps.sessions.resolve(session);
+  if (!resolved.ok) return false;
+  return (readSessionMeta(resolved.value.dir)?.model ?? "") !== "";
+}

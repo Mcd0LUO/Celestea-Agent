@@ -184,9 +184,18 @@ export class Statusline implements PickerHost, ModeHost {
     this.render();
   }
 
-  /** PickerHost：当前快照里的模型（全局配置，跨会话保留显示）。 */
+  /** PickerHost：当前快照里的模型（该会话的状态线真源，按会话缓存保留显示）。 */
   get snapshotModel(): string {
     return this.snapshot.model ?? '';
+  }
+
+  /**
+   * PickerHost（W870）：当前快照里的模型是否来自**该会话自己的** `session.json.model`
+   * 覆盖（`GET /api/status` 的 `model_covered`）。选择器用它如实标一行
+   * 「本会话已固定模型」。字段缺失（老服务 / 首次轮询未回）⇒ false，不虚标。
+   */
+  get sessionModelFixed(): boolean {
+    return this.snapshot.model_covered === true;
   }
 
   /** PickerHost（W795）：当前快照里的推理档位；乐观渲染与失败回滚都要用它。 */

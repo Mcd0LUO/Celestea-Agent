@@ -62,8 +62,8 @@ describe("W729/W791 endpoint invariants", () => {
     // questions to 49, W785's usage-ledger view to 50 — W729 itself adds none, and
     // W791 (P1) adds `POST /api/sessions/{id}/mode` (50 -> 51). W9's permission
     // CRUD took it to 57 and W860's session-tool switches + plugin inventory to 60.
-    expect(API_ENDPOINT_COUNT).toBe(60);
-    expect(loadEndpoints().count).toBe(60);
+    expect(API_ENDPOINT_COUNT).toBe(61);
+    expect(loadEndpoints().count).toBe(61);
     expect(loadEndpoints().endpoints.map((e) => e.id)).toContain("post_session_mode");
   });
 });
@@ -93,7 +93,9 @@ describe("health / status / tools / config", () => {
     // 3's `cost` key only exists when the adapter HAS a ledger (this harness runs
     // the fake adapter, which has none — the real adapter's key set is asserted in
     // `runtime/real-runtime.test.ts`). W787: capability 1-P1 always adds
-    // `recovery`. The SET is asserted, so an undeclared field still fails here.
+    // `recovery`. W870 adds `model_covered` (is `model` this session's own
+    // session.json override? — the picker's 「本会话已固定模型」 line). The SET is
+    // asserted, so an undeclared field still fails here.
     expect(Object.keys(body).sort()).toEqual([
       "busy",
       "context_usage",
@@ -102,6 +104,7 @@ describe("health / status / tools / config", () => {
       "grants_active",
       "mode",
       "model",
+      "model_covered",
       "reasoning_effort",
       "recovery",
       "session",

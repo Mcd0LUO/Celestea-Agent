@@ -1,7 +1,7 @@
 /**
  * Route table derived from the frozen contract.
  *
- * 60 endpoints (64 method+path combos minus the 4 static routes).
+ * 61 endpoints (65 method+path combos minus the 4 static routes).
  * The contract path params use `{id}`; Hono uses `:id`, so paths are translated here
  * once and the translation is asserted in tests.
  *
@@ -13,7 +13,9 @@
  * `GET /api/usage/ledger` (49 -> 50). W791 added
  * `POST /api/sessions/{id}/mode` (50 -> 51; the P1 session working mode). W9
  * added the six permission endpoints (51 -> 57). W860 added
- * `GET|PUT /api/sessions/{id}/tools` and `GET /api/plugins` (57 -> 60). All of
+ * `GET|PUT /api/sessions/{id}/tools` and `GET /api/plugins` (57 -> 60). W870
+ * added `PUT /api/sessions/{id}/model` (60 -> 61; the statusline picker's
+ * session-scoped model switch). All of
  * them have NO counterpart in the legacy backend:
  * `contracts/route-table.snapshot.json` keeps the frozen extraction intact and
  * lists the TypeScript-only additions separately.
@@ -53,7 +55,7 @@ export function studioRoutes(): RegisteredRoute[] {
   }));
 }
 
-export const API_ENDPOINT_COUNT = 60;
+export const API_ENDPOINT_COUNT = 61;
 export const STATIC_ROUTE_COUNT = 4;
 
 /** Id-keyed view of the contract routes: a handler asks for its id, never a path. */

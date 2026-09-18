@@ -130,6 +130,12 @@ export const health = { value: { ok: true, capabilities: { grants: true, session
 export const statusBySession: Record<string, unknown> = {};
 export const configStub = { resp: {} as Record<string, unknown>, saveStatus: 200 };
 export const modeStub = { status: 200, payload: {} as unknown };
+/**
+ * W870：会话级模型切换端点（`PUT /api/sessions/{id}/model`）的旋钮。
+ * 有聚焦会话时 picker 走这条路径（不再是 `POST /api/config`），所以「写入失败 /
+ * 409 挂起」的故障注入必须打在这里，W795 的回滚断言才有东西可回滚。
+ */
+export const sessionModelStub = { status: 200, covered: true };
 
 /** W858：一个权限预设（线格式与 contracts/endpoints.json 的 preset 一致）。 */
 export interface StubPreset {
@@ -193,6 +199,8 @@ export function resetHarness(): void {
   configStub.saveStatus = 200;
   modeStub.status = 200;
   modeStub.payload = { ok: true, session: "ws/s1", mode: "execution", effective: "next_turn" };
+  sessionModelStub.status = 200;
+  sessionModelStub.covered = true;
   permStub.custom = [];
   permStub.max = 'full-access';
   permStub.sessionPreset = 'full-access';
@@ -220,6 +228,9 @@ export function resetHarness(): void {
     if (u.startsWith("/api/status")) return reply(200, statusBySession[sessionOf(u)] ?? { ok: true });
     if (u.startsWith("/api/config")) return configRoute(method, body);
     if (u.endsWith("/mode")) return reply(modeStub.status, modeStub.payload);
+    // W870：会话级模型切换（PUT /api/sessions/{id}/model）——必须先于下面的
+    // /api/sessions 兜底分支判定，否则会被当成会话列表 200 掉。
+    if (u.endsWith("/model")) return sessionModelRoute(method, body);
     // W858：工具清单（档位编辑器的 toolDeny 多选）+ 权限预设 / 会话档位
     if (u.startsWith("/api/tools")) {
       return reply(200, { ok: true, tools: permStub.tools.map((name) => ({ name })) });
@@ -319,6 +330,28 @@ function configRoute(method: string, body: string): unknown {
     return reply(200, configStub.resp);
   }
   return reply(200, configStub.resp);
+}
+
+/**
+ * W870：`PUT /api/sessions/{id}/model` 的打桩实现（含 409 / 写入失败两种注入）。
+ * 写入成功后把`configStub.resp.model` 一起改掉 —— 徽标下一次 `/api/status` 轮询读的是
+ * **会话**的值，这条桩只是让「配置快照」与之一致，避免测试自身制造出 W870 那个 bug。
+ */
+function sessionModelRoute(method: string, body: string): unknown {
+  if (method !== "PUT") return reply(405, { ok: false });
+  if (sessionModelStub.status !== 200) {
+    return reply(sessionModelStub.status, { ok: false, error: "turn 进行中，无法切换模型" });
+  }
+  const asked = String((JSON.parse(body === "" ? "{}" : body) as { model?: unknown }).model ?? "");
+  const model = asked !== "" ? asked : String(configStub.resp["model"] ?? "");
+  configStub.resp = { ...configStub.resp, model };
+  return reply(200, {
+    ok: true,
+    session: "ws/s1",
+    model,
+    covered: sessionModelStub.covered,
+    effective: { model, base_model: model, source: sessionModelStub.covered ? "session" : "global", next_turn: true },
+  });
 }
 
 // ---- 权限面板查询助手（断言留在 *.test.ts） -------------------------------------

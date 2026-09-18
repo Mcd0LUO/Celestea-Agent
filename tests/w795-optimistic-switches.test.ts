@@ -21,6 +21,7 @@ import {
   flush,
   modeStub,
   resetHarness,
+  sessionModelStub,
   statusBySession,
   type ElLike,
   type SlMod,
@@ -97,7 +98,8 @@ describe("W795 ②③ statusline：工作方式 / 模型 / 推理档位", () => 
     );
     expect(row, "m-new 行必须渲染出来").toBeTruthy();
 
-    cfg.saveStatus = 500; // 写入失败
+    // W870：有聚焦会话 ⇒ 模型切换打会话级端点，故障注入也打在那里（断言不变）。
+    sessionModelStub.status = 500; // 写入失败
     click(row ?? null);
     // —— 同一帧（同步、未 await 网络）：模型格已经是新模型 ——
     expect(el("slModel").textContent).toBe("m-new");
@@ -294,7 +296,8 @@ describe("W795 ②③ SSE done 后的挂起重试：当帧画终态，失败回�
 
   it("② pendingPick（409 挂起的模型切换）：本轮结束时当帧就画上新模型；失败回滚", async () => {
     expect(el("slModel").textContent).toBe("m-old");
-    configStub.saveStatus = 500;
+    // W870：会话级路径的故障注入（断言不变）。
+    sessionModelStub.status = 500;
     sl.statusline.pendingPick = { model: "m-new", providerId: "" };
     sl.statusline.onSseDone();
     expect(el("slModel").textContent).toBe("m-new");

@@ -34,6 +34,7 @@ import type {
   SessionCreateResp,
   SessionMode,
   SessionModeResp,
+  SessionModelResp,
   SessionContextResp,
   SessionsResp,
   StatusSnapshot,
@@ -261,6 +262,15 @@ export const api = {
    */
   setSessionMode: (id: string, mode: SessionMode) =>
     postJson<SessionModeResp>('/api/sessions/' + encodeURIComponent(id) + '/mode', { mode }),
+  /**
+   * W870：切换**该会话**的模型（PUT /api/sessions/{id}/model）。200 回
+   * {ok,session,model,covered,effective}（下一轮生效）；`model: ''` = 清除覆盖、
+   * 回落到全局默认；409 = 该会话有在飞轮次；400/422 = 模型名非法；404/405 = 会话
+   * 不存在或该部署未提供此端点。理由与产品语义见 statusline/session-model.ts
+   * （徽标轮询的 model 来自会话实例的 profile，只改全局会被下一次轮询打回）。
+   */
+  setSessionModel: (id: string, model: string) =>
+    putJson<SessionModelResp>('/api/sessions/' + encodeURIComponent(id) + '/model', { model }),
   /** 重命名会话（W243）：POST /api/sessions/{id}/rename {"new_title"}。 */
   renameSession: (id: string, newTitle: string) =>
     postJson<ClearResp>('/api/sessions/' + encodeURIComponent(id) + '/rename', {
@@ -302,11 +312,7 @@ export const api = {
   testProvider: (payload: unknown) => postJson<ProviderTestResp>('/api/providers/test', payload),
   fetchProviderModels: (id: string) =>
     postJson<ProviderFetchResp>('/api/providers/' + encodeURIComponent(id) + '/models/fetch', {}),
-  /**
-   * W750：切默认 (provider, model)。`providerId` 只在需要消歧时传 —— 模型 id 跨
-   * provider 会撞名（同一 id 由两个 provider 提供、端点不同），不带 id 时后端只能
-   * 沿用「第一个列出该模型 id 的 provider」，切不到想切的那个。
-   */
+  /** W750：切默认 (provider, model)；`providerId` 只在跨 provider 撞名时传。 */
   setDefaultModel: (model: string, providerId?: string) =>
     postJson<ClearResp>(
       '/api/providers/default',

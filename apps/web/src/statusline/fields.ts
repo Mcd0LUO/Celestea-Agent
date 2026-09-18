@@ -16,5 +16,8 @@ export function pickStatusFields(p: StatusSnapshot): StatusSnapshot {
   if (p.usage !== undefined) out.usage = p.usage; // W263 缓存命中率
   if (p.busy !== undefined) out.busy = p.busy; // W514 运行态
   if (p.mode !== undefined) out.mode = p.mode; // W788 工作方式（SSE status.payload.mode）
+  // W870：模型是否来自该会话自己的 session.json.model 覆盖（选择器据此如实说明；
+  // 缺省 = 老服务不返回，界面不显示那一行，也不虚标）。
+  if (p.model_covered !== undefined) out.model_covered = p.model_covered;
   return out;
 }

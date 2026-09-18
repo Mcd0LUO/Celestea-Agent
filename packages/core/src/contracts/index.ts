@@ -159,7 +159,8 @@ export interface DataFilesIndex {
  */
 export const FROZEN_COUNTS = {
   // W860: 57 -> 60 (GET|PUT /api/sessions/{id}/tools + GET /api/plugins).
-  endpoints: 60,
+  // W870: 60 -> 61 (PUT /api/sessions/{id}/model, the session-scoped model switch).
+  endpoints: 61,
   sseEvents: 9,
   tools: 13,
 } as const;

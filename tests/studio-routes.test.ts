@@ -55,7 +55,8 @@ describe("apps/studio contract surface", () => {
     // 3's `cost` key only exists when the adapter HAS a ledger (this harness runs
     // the fake adapter, which has none — the real adapter's key set is asserted in
     // `runtime/real-runtime.test.ts`). W787: capability 1-P1 always adds
-    // `recovery`. The SET is asserted, so an undeclared field still fails here.
+    // `recovery`. W870 adds `model_covered` (is `model` this session's own
+    // override?). The SET is asserted, so an undeclared field still fails here.
     expect(Object.keys(status).sort()).toEqual([
       "busy",
       "context_usage",
@@ -64,6 +65,7 @@ describe("apps/studio contract surface", () => {
       "grants_active",
       "mode",
       "model",
+      "model_covered",
       "reasoning_effort",
       "recovery",
       "session",

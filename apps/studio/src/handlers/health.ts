@@ -34,7 +34,7 @@ import type { RouteTable } from "../routes.js";
 import type { LedgerCostBlock } from "@celestea/runtime";
 import { emptyRecoveryView } from "../runtime/recovery-view.js";
 import type { FallbackStatusView } from "../runtime/fallback-host.js";
-import { activeSession, modeOfSession, type Deps } from "./common.js";
+import { activeSession, modeOfSession, sessionModelCovered, type Deps } from "./common.js";
 import { baseUrlOf } from "./config-shape.js";
 import { effectiveGrantsOf, grantsActiveCaps } from "../runtime/engine-grants.js";
 import { nowSec } from "../store/grants-service.js";
@@ -72,6 +72,10 @@ export function registerHealth(app: Hono, deps: Deps, table: RouteTable): string
       session,
       // W729: the mode of the QUERIED session (absent = standard, K8).
       mode: modeOfSession(deps, session),
+      // W870: whether `model` above is THIS session's own override rather than
+      // the global default (the picker's 「本会话已固定模型」 line reads it).
+      // A PURE ADDITION: a client that does not see the key shows no such line.
+      model_covered: sessionModelCovered(deps, session),
       busy: deps.runtime.isBusy(session),
       grants_active: activeGrantCaps(deps, session),
       ...costField(deps, session),
