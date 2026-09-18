@@ -53,6 +53,14 @@ const ALLOWED_TAGS = new Set<string>([
   'a', 'img', 'strong', 'b', 'em', 'i', 'u', 's', 'del', 'ins', 'mark',
   'small', 'sub', 'sup', 'kbd', 'samp', 'var', 'abbr', 'cite', 'q', 'dfn',
   'code', 'time', 'bdi', 'bdo', 'wbr', 'ruby', 'rt', 'rp',
+  // W846：MathML 子集（KaTeX output:mathml 实测产物；只渲染、无交互）
+  'math', 'semantics', 'annotation',
+  'mrow', 'mi', 'mn', 'mo', 'mtext',
+  'msup', 'msub', 'msubsup',
+  'mfrac', 'msqrt', 'mroot',
+  'mstyle', 'mtable', 'mtr', 'mtd',
+  'mover', 'munder', 'munderover',
+  'mphantom', 'mspace', 'menclose',
   // GFM 任务清单复选框（属性被限制为 type=checkbox + disabled）
   'input',
 ]);
@@ -64,7 +72,9 @@ const ALLOWED_TAGS = new Set<string>([
 const DROP_WITH_CONTENT = new Set<string>([
   'script', 'style', 'noscript', 'template', 'iframe', 'frame', 'frameset', 'noframes',
   'object', 'embed', 'applet', 'param', 'link', 'meta', 'base', 'basefont',
-  'svg', 'math', 'canvas', 'audio', 'video', 'source', 'track', 'picture',
+  'svg', 'canvas', 'audio', 'video', 'source', 'track', 'picture',
+  // W846：MathML 里的危险容器（annotation-xml 可装 HTML 载荷、foreignObject 是 SVG 逃逸口）
+  'annotation-xml', 'foreignobject',
   'plaintext', 'xmp', 'listing', 'marquee', 'portal', 'slot', 'dialog',
   'form', 'fieldset', 'legend', 'select', 'option', 'optgroup', 'textarea', 'button',
   'title', 'head', 'html', 'body',
@@ -86,6 +96,17 @@ const TAG_ATTRS: Record<string, string[]> = {
   time: ['datetime'],
   details: ['open'],
   input: ['type', 'checked', 'disabled'],
+  // W846：MathML 属性（以 KaTeX output:mathml 实测为准；href 对任何 math 元素都不列入）
+  math: ['display', 'xmlns'],
+  annotation: ['encoding'],
+  menclose: ['notation'],
+  mfrac: ['linethickness'],
+  mi: ['mathvariant'],
+  mo: ['fence', 'mathvariant', 'stretchy'],
+  mover: ['accent'],
+  mspace: ['width'],
+  mstyle: ['displaystyle', 'mathcolor', 'scriptlevel'],
+  mtable: ['columnalign', 'columnlines', 'columnspacing', 'rowlines', 'rowspacing'],
 };
 
 /** URL 属性只允许的 scheme（其余显式 scheme 一律拒绝；相对路径放行）。 */
@@ -102,6 +123,20 @@ const MAX_ATTR_VALUE = 2048;
 const ALIGN_VALUES = ['left', 'center', 'right', 'justify'];
 const DIR_VALUES = ['ltr', 'rtl', 'auto'];
 const OL_TYPE_VALUES = ['1', 'a', 'A', 'i', 'I'];
+
+// W846：MathML 属性值校验（枚举/布尔/长度/颜色/对齐/线型/间距/记号；太自由的值一律删）
+const MATH_VARIANTS = new Set<string>([
+  'normal', 'bold', 'italic', 'bold-italic', 'double-struck', 'bold-fraktur',
+  'script', 'bold-script', 'fraktur', 'sans-serif', 'bold-sans-serif',
+  'sans-serif-italic', 'sans-serif-bold-italic', 'monospace', 'initial', 'tailed', 'looped', 'stretched',
+]);
+const MATH_COLOR_RE = /^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]{1,24}|rgba?\([0-9.,%\s]{1,32}\)|hsla?\([0-9.,%\s]{1,32}\))$/;
+const MATH_LENGTH_RE = /^(?:thin|medium|thick|-?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)$/;
+const MATH_ALIGN_RE = /^(?:left|center|right)(?: (?:left|center|right))*$/;
+const MATH_LINES_RE = /^(?:none|solid|dashed)(?: (?:none|solid|dashed))*$/;
+const MATH_SPACING_RE = /^(?:-?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)(?: -?(?:\d+|\d*\.\d+)(?:em|ex|mu|px|pt|pc|in|cm|mm|%)?)*$/;
+const SCRIPTLEVEL_RE = /^[+-]?\d{1,2}$/;
+const MATH_NOTATION_RE = /^(?:longdiv|actuarial|radical|box|roundedbox|circle|left|right|top|bottom|updiagonalstrike|downdiagonalstrike|verticalstrike|horizontalstrike|madruwb|phasorangle)(?: (?:longdiv|actuarial|radical|box|roundedbox|circle|left|right|top|bottom|updiagonalstrike|downdiagonalstrike|verticalstrike|horizontalstrike|madruwb|phasorangle))*$/
 
 /**
  * 属性值 → 安全 URL；不安全返回 null（调用方删除该属性）。
@@ -168,7 +203,65 @@ function scrubAttrs(el: Element, tag: string): void {
       }
       case 'width':
       case 'height': {
-        if (!SIZE_ATTR_RE.test(value)) el.removeAttribute(attr.name);
+        // img: 纯数字像素；mspace: MathML 长度（如 1em / 0.2778em）
+        const ok = tag === 'mspace' ? MATH_LENGTH_RE.test(value) : SIZE_ATTR_RE.test(value);
+        if (!ok) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'depth':
+      case 'linethickness': {
+        if (!MATH_LENGTH_RE.test(value)) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'display': {
+        if (value !== 'inline' && value !== 'block') el.removeAttribute(attr.name);
+        break;
+      }
+      case 'xmlns': {
+        if (value !== 'http://www.w3.org/1998/Math/MathML') el.removeAttribute(attr.name);
+        break;
+      }
+      case 'encoding': {
+        if (value !== 'application/x-tex') el.removeAttribute(attr.name);
+        break;
+      }
+      case 'mathvariant': {
+        if (!MATH_VARIANTS.has(value)) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'scriptlevel': {
+        if (!SCRIPTLEVEL_RE.test(value)) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'mathcolor':
+      case 'mathbackground': {
+        if (!MATH_COLOR_RE.test(value)) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'displaystyle':
+      case 'fence':
+      case 'stretchy':
+      case 'accent': {
+        if (value !== 'true' && value !== 'false') el.removeAttribute(attr.name);
+        break;
+      }
+      case 'columnalign':
+      case 'rowalign': {
+        if (!MATH_ALIGN_RE.test(value)) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'columnlines':
+      case 'rowlines': {
+        if (!MATH_LINES_RE.test(value)) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'columnspacing':
+      case 'rowspacing': {
+        if (!MATH_SPACING_RE.test(value)) el.removeAttribute(attr.name);
+        break;
+      }
+      case 'notation': {
+        if (!MATH_NOTATION_RE.test(value)) el.removeAttribute(attr.name);
         break;
       }
       case 'colspan':

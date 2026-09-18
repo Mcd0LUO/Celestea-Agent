@@ -11,6 +11,7 @@ import type { AssistantView, StreamDom } from '../view';
 import type { SessionPane } from '../viewctx';
 import { railAdd, railSync } from '../rail';
 import { htmlToNodes } from './markdown';
+import { upgradeMath } from './math';
 import { autoscroll, hideEmptyHint, renderEmptyHint } from './scroll';
 
 // ---- 文本段增量渲染器（W301） ---------------------------------------------------
@@ -104,6 +105,8 @@ function renderTextView(ctx: SessionPane, view: AssistantView): void {
   }
 
   highlightCode(view.content);
+  // W846：码块高亮后，把数学占位懒加载升级为 MathML（渲染器未就绪时登记，就绪后替换）。
+  upgradeMath(view.content);
   autoscroll(ctx);
   railSync(ctx);
 }

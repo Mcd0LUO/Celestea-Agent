@@ -52,6 +52,7 @@
 //   回写会造成重复计数）。标题 id 因此与「整段一次解析」完全一致。
 // ============================================================================
 import { marked, Parser } from 'marked';
+import { mathExtension } from './markdown-math';
 
 // 与现状一致（breaks/gfm）；renderMarkdown 与分块解析共用同一套默认选项
 marked.setOptions({ breaks: true, gfm: true });
@@ -68,6 +69,11 @@ const ESC_MAP: Record<string, string> = {
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ESC_MAP[c] ?? c);
 }
+
+// ---- 数学（W846 方案 A：只渲染 MathML，懒加载 KaTeX） -------------------------
+// 识别逻辑在 ./markdown-math（零 DOM、零 KaTeX）；这里在模块加载时注册扩展，
+// 扩展只产出安全占位；真实 MathML 渲染见 ui/messages/math.ts（懒加载）。
+marked.use(mathExtension(escapeHtml));
 
 /**
  * 用自带 slugger 状态的 Parser 渲染（等价于 marked.parse，但标题 id 计数器
@@ -238,6 +244,7 @@ interface RegionState {
   openBrackets: number;    // [ 计数
   closeBrackets: number;   // ] 计数
   refUse: boolean;         // 出现引用式链接用法（围栏/缩进代码之外）
+  hasDollar: boolean;      // 出现未转义 $ —— 保守：不固化（数学可能跨边界）
   hasList: boolean;        // 出现列表项（含嵌套）
   hasRawHtml: boolean;     // 区域内出现裸 HTML 标签/构造（保守：不固化）
   lastLine: string | null; // 最后一个非空行（含缩进行）
@@ -255,6 +262,7 @@ function newRegion(): RegionState {
     openBrackets: 0,
     closeBrackets: 0,
     refUse: false,
+    hasDollar: false,
     hasList: false,
     hasRawHtml: false,
     lastLine: null,
@@ -309,6 +317,9 @@ function feedLine(st: RegionState, line: string): void {
   const close = line.match(/\]/g);
   if (close) st.closeBrackets += close.length;
   if (REF_USE_RE.test(line)) st.refUse = true;
+  // W846：含未转义 $ 的区域一律不固化 —— 块数学可跨空行边界，固化半个数学会
+  // 与「整段一次解析」不一致；保守退化到全量重渲染（正确性优先于增量）。
+  if (/(^|[^\\])\$/.test(line)) st.hasDollar = true;
   if (LIST_ANY_RE.test(line)) st.hasList = true;
 }
 
@@ -320,6 +331,7 @@ function boundarySafe(snap: RegionState, nextLine: string, hasDef: boolean): boo
   if (snap.inFence) return false;                              // 未闭合围栏
   if (snap.hasRawHtml) return false;                           // 区域含裸 HTML（保守：不固化）
   if (snap.refUse && hasDef) return false;                     // 用法会被文末定义解析成链接
+  if (snap.hasDollar) return false;                            // 数学可能跨边界（W846）
   if (snap.ticks % 2 !== 0) return false;                      // 未闭合 `
   if (snap.strong % 2 !== 0) return false;                     // 未闭合 **
   if (snap.strike % 2 !== 0) return false;                     // 未闭合 ~~
