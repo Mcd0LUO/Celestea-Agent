@@ -1,330 +1,183 @@
-# Celestea-Agent（原 celestea_studio-ts）
+# Celestea Agent
 
-Celestea Studio **全栈仓**：TypeScript 后端（**生产**）+ 线上前端。
+> **自托管的 AI Agent 工作台**：一个网页界面 + 一个 TypeScript 后端，让 agent 在你自己的机器上带着工具干活。
 
-> W781（2026-09-14）：前端仓 `Celestea-Studio`（原 `/src/celestea_studio-ts`）已**全量并入本仓**，
-> 前端落在 `apps/web/`；本仓自此是 Celestea Studio 的**唯一仓**。
+Celestea Agent 把「一个能读写文件、执行命令、跑代码、并行派子任务的 agent」放进你自己的服务器。
+会话、工作区、模型提供商、权限与沙箱、成本账本**全部自持**，数据不出你的机器。
 
-> 本仓远端 = `https://github.com/Mcd0LUO/Celestea-Agent.git`。
-> 下文 §8 的分期（P0–P4）是**立项时口径**，保留作迁移留痕；
-> 现状以本段与 [docs/README.md](docs/README.md) 为准。
+- **会话即工作区** —— 每个会话绑定一个真实目录；agent 的每一步（读文件、改代码、跑命令）都发生在那儿，日志逐行落盘、可回放。
+- **13 个内置工具** —— `read_file` `write_file` `list_dir` `run_shell` `run_code` `read_image` `http_request` `process_control` `ask_user_question` `send_message` `spawn_worker` `stop_worker` `worker_status`。
+- **并行子 agent（worker）** —— 一个会话可派出多个 worker 会话并行干活；主会话能读它们的实时状态，也能**直接和它们对话**。
+- **沙箱执行** —— `bwrap` + `prlimit` 隔离文件系统、网络与资源；环境不具备时按策略**降级或拒绝**，不静默放行。
+- **权限档位** —— 内置 `read-only` / `write-read` / `full-access` 三档，可逐会话固定，也可由你在界面上**临时提权**（一次性授权、可撤销、全程审计、**永不可由模型自触发**）。
+- **多模型 / 多提供商** —— 任意 OpenAI 兼容端点；模型、推理档位、降级链可配，**可逐会话覆盖模型**。
+- **看得见的成本** —— 逐轮 usage 账本与费用视图。
+- **多模态** —— 图片附件；`md`/`txt` 等文本文件直接进上下文；LaTeX 公式（KaTeX + mhchem）。
+- **可插拔** —— 提示词库、前端插件、工具披露策略都长在插件缝上，可热开关。
+- **可选登录门** —— 自带 `/login` + HMAC cookie，可直接对公网暴露（也可只监听环回）。
 
-## 文档与仓库角色
-
-本仓现役 = **Studio 后端（TypeScript，生产）+ 线上前端（`apps/web/`）+ 模型同步脚本（`scripts/model-sync/`）**。
-运行数据（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/` 等）**不在仓内**，
-自 W781 起落在 `/var/lib/celestea-agent/`（见 `scripts/run-studio-ts.sh`）。
-
-- **[`docs/README.md`](docs/README.md)** — 本仓 `docs/` 全量索引：每份文档的**状态（当前 / 设计）**、一句话与权威入口。**找文档先看它。**
-- **[`docs/DEPENDENCY-POLICY.md`](docs/DEPENDENCY-POLICY.md)** — 依赖与工具链策略：Node 版本带（`.nvmrc`=26 + 启动守卫）、冻结安装、升级验证/回滚，以及为什么 `pnpm audit` 不进门禁（`pnpm deps:audit` 手工跑）。
-- **本仓角色**：Studio **后端**（TypeScript）。现状（2026-09-11）：`celestea-studio-ts.service` 跑在 127.0.0.1:3777，是**生产**后端。后端开发只在本仓。
-- **线上前端**在 [`apps/web/`](apps/web/)（Vite + TypeScript；构建产物 `apps/web/dist` 由后端作为静态根读取）。渲染铁律见 [`apps/web/FRONTEND-RULES.md`](apps/web/FRONTEND-RULES.md)。
-- **共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）在 `/var/lib/celestea-agent/`（W781 前在旧前端仓根）。
-- **引擎**参考实现（`celestea_harness`）随 W781 归档在 `docs/archive/frontend/harness/`。
-- 本仓 `docs/` 现在**含归档**：旧 API 契约、旧部署、旧评估等历史文档在 `docs/archive/frontend/`。
+> 本仓是 Celestea Studio 的**唯一仓**：后端 `apps/studio/` 与前端 `apps/web/` 同仓。
+> 2026-09-14（W781）前它们分属两仓，历史文档在 [`docs/archive/`](docs/archive/)。
 
 ---
 
-## 0. 前端（`apps/web/`）
+## 快速开始
 
-```bash
-cd apps/web
-pnpm build          # tsc --noEmit && vite build -> apps/web/dist
-pnpm check          # 7 道门禁（先 build 再 check：产物体积门禁量的是 dist）
-```
+### 前置
 
-依赖不从 `apps/web` 单独装：本仓是**一个** pnpm workspace（根 `pnpm-workspace.yaml`
-已含 `apps/*`），在**仓根** `pnpm install` 一次即可，前端依赖经根 store 链接进
-`apps/web/node_modules`。
-
-前端改动 `pnpm build` 后刷新页面即生效，**无需重启服务**。
-`pnpm check` 里的 scope-hash 门禁直接读本仓 `contracts/scope-hash-vectors.json`（同仓，不再跨仓）。
-
-> **W782：前端门禁不再有「单独入口」这一说。** 合并前这是两个仓、两条独立门禁，
-> 各自有各自的 CI 心智；合并成单仓后，在根目录跑 `pnpm check` 会**静默跳过整个
-> 前端门禁**（scope-hash 漂移守护、默认折叠守护、体积棘轮全都不跑）——那就是
-> 「合并后门禁假绿」。现在根 `pnpm check` 自带 `check:web`：
->
-> | 入口 | 覆盖 | 何时用 |
-> |---|---|---|
-> | `pnpm check` | 后端 4 关（typecheck / lint / lint:arch / test）**+ 前端 7 关** | **提交前必须跑的就是它**（全量） |
-> | `pnpm check:web` | 只跑前端：先 `pnpm --dir apps/web run build`，再 `CELESTEA_BUNDLE_STRICT=1 pnpm --dir apps/web run check` | 只改前端时的快回路 |
-> | `pnpm typecheck` / `lint` / `lint:arch` / `test` | 单关，后端 | 定位失败点 |
->
-> 两个细节是刻意的，别「优化」掉：
-> 1. **先 build 后 check**：`check-bundle-size.mjs` 量的是 `dist`，不先构建就量不到东西；
-> 2. **`CELESTEA_BUNDLE_STRICT=1`**：否则 `dist/assets` 不存在时该门禁会「跳过并退出 0」，
->    也就是**假绿**。根入口里它必须算失败。
-
-### Access via tunnel
-
-```sh
-ssh -L 3777:localhost:3777 <server>
-# then open http://localhost:3777
-```
-
----
-
-## 1. 快速开始
-
-```bash
-cd /src/celestea_studio-ts
-pnpm install            # Node 24–26（.nvmrc=26；engines >=24 <27）+ pnpm 11
-pnpm typecheck          # tsc --noEmit（strict + noUncheckedIndexedAccess + verbatimModuleSyntax）
-pnpm test               # vitest（全量单测）
-
-# 契约与实机对拍（只读 :3777）
-pnpm contracts:verify   # 22 端点抽样 + 9 SSE 事件名 + 11 工具，写 contracts/probe-evidence.json
-pnpm golden:export      # 导出 fixtures/（只读现有会话日志 + 只读 /api/events）
-pnpm replay:compare     # TS 侧回放 → reports/replay-diff.md（--strict 时 golden 分歧即退出码 1）
-```
-
-一次跑完：`pnpm check`（typecheck + lint + lint:arch + test **+ `check:web`（前端 7 关）**，见 §7 与 §0）。
-
-端口约定：生产 `:3777`（由 `scripts/run-studio-ts.sh` 设 `STUDIO_TS_PORT=3777`）；直接 `pnpm --filter @celestea/studio start` 时源码默认 `:3778`，便于与生产实例并排起临时实例。
-
----
-
-## 2. 目录职责
-
-| 路径 | 职责 | 对应参考实现 |
+| 依赖 | 版本 | 说明 |
 |---|---|---|
-| `packages/core` | 类型/seam/契约加载/事件总线/脱敏：`SessionEvent`、`TurnOutcome`、SSE 信封、`EventBus`(512 + lagged) | `celestea_harness/crates/core` + `studio/src/main.rs` 的信封部分 |
-| `packages/session` | `cli-main.jsonl` 解析（撕裂尾）/序列化/`turn-<n>` 归属/两套消息投影/回放统计 | 引擎 `session_log.rs` + `studio/src/api.rs:94-153` |
-| `packages/llm` | LLM seam 占位：usage 三键名、三档超时、`reasoning_effort` 自由字符串直通 | `crates/llm`（P2 实现） |
-| `packages/tools` | 10 工具注册表（从 `contracts/tools.json` 构建）+ guard seam | `crates/tools`、`crates/workers/src/tools.rs`（P2 实现） |
-| `packages/agent-loop` | `LoopEvent → SSE` 映射、五态 outcome、协作式取消信号、`MIN_STEPS=4096` | `crates/agent-loop`（P1 实现） |
-| `packages/workers` | `registry.tsv` 解析/序列化/k=v token/summarize（含 `by_state`） | `crates/workers/src/{types,registry}.rs` |
-| `packages/runtime` | compose 15 步、profile 12 键、key 三路解析枚举 | `crates/runtime` + `studio/src/main.rs:1191-1394`（P3 实现） |
-| `apps/studio` | Hono 应用：**47 端点全部实现**（契约测试与实机校验常绿） | `studio/src/main.rs` 路由表 + handlers |
-| `contracts/` | **机器可读契约（冻结数据）** | 见 §3 |
-| `scripts/` | 导出器 / 对拍器 / 实机校验器 | — |
-| `fixtures/` | 黄金样本（导出产物，入库） | — |
-| `reports/` | 对拍与校验报告（导出产物，入库） | — |
+| Node.js | **≥ 24 < 27**（[`.nvmrc`](.nvmrc) = 26） | 启动时有 fail-loud 的版本守卫 |
+| pnpm | **11**（`packageManager: pnpm@11.22.0`） | 单仓一个 workspace |
+| `bwrap`（bubblewrap） | 可选但强烈建议 | 缺了会按 `CELESTEA_SANDBOX_FALLBACK` 降级/拒绝 |
+| `prlimit` | 可选（util-linux） | 资源限额 |
 
----
-
-## 3. 契约清单（`contracts/`）
-
-| 文件 | 内容 | 数量 | 校验方式 |
-|---|---|---|---|
-| `endpoints.json` | 47 端点：method/path/请求字段/响应字段/错误码原文/只读探针结果 | **47** | `tests/contracts.test.ts` + `pnpm contracts:verify` |
-| `contracts/` 内的路由表快照 | 从旧后端路由表提取的快照 | 38 条声明 = **43** method+path（39 API + 4 静态）；另有 8 条 TS-only | 测试断言「39 + TS-only 8 = 契约 47」逐条相等 |
-| `sse-events.json` | 8 个 SSE 事件名 + 信封 `{turn,seq,payload}` + `lagged` 语义 + 512 容量 | **8** | 测试 + 实机 content-type 探针 |
-| `session-event.schema.json` | `SessionEvent` 7 变体 + `TurnOutcome` 5 态 + `turn-<n>` 单调规则 + 两套投影 | 7 / 5 | 测试 + 回放 |
-| `tools.json` | 10 个工具 spec（描述取自运行中的引擎 `/api/tools`，parameters 逐字转写自 `ToolSpec`） | **10** | 测试 + 实机工具名集合比对 |
-| `data-files/*.schema.json` | `workspaces.json`(v2) / `providers.json`(+public_view 不含 key) / `prompts.json` / `session.json` / `cli-main.jsonl` / `cli-main.jsonl.precompact` / `registry.tsv` / `pricing.json` / `usage-ledger.jsonl` / `checkpoint.json`，外加 `index.json` | **10**（+ `index.json`） | 测试（含"无 version 字段"与 round-trip 要求） |
-| `probe-evidence.json` | `pnpm contracts:verify` 的实机证据 | 28 checks | 生成 |
-
-**实机校验抽样**：12 个 GET 端点（health/status/tools/config/sessions/sessions-id-messages/workspaces/providers/prompts/fs-browse/worker-status + events 头）+ 8 个只读安全错误分支 = **20 个端点**，全部通过。错误分支的"不可写"性逐条举证（见 `reports/contract-probe.md` 末表）。
-
----
-
-## 4. 黄金样本（`fixtures/`）
-
-导出器：`scripts/export-golden.ts`。**只读**：GET + 被动连接 `/api/events` + 直接读会话日志；**绝不** POST `/api/turn`（那会往生产 `cli-main.jsonl` 追加）。
-
-| 来源会话 | 角色 | 事件 | 轮数 | 悬空 tool_call | run_code 子调用 | outcome |
-|---|---|---|---|---|---|---|
-| `celestea_harness/harness架构哥-…` | 悬空 tool_call + run_code parent_id | 606 | 17 | **3** | 11 | cancelled / error |
-| `server-center/center-架构师-…` | 普通多轮 | 967 | 7 | 0 | 0 | error |
-| `CelesteaTeamAPI/test-…` | run_code parent_id + 普通多轮 | 53 | 6 | 0 | 11 | — |
-| `CelesteaTeamAPI/scratch-cancel-e2e-…` | cancelled outcome | 6 | 1 | 0 | 0 | cancelled |
-| `CelesteaTeamAPI/scratch-timeout-…` | error outcome | 3 | 1 | 0 | 0 | error |
-
-每个会话导出：`cli-main.jsonl`（脱敏原文）、`messages-expected.json`（**实机** `GET …/messages`）、`derive-messages-expected.json`（TS 推导，标注 derived）、`sse-transcript-derived.jsonl`、`meta.json`。
-另有：`sse/live-capture.*`（被动抓取的真实 SSE 帧 + 头）、`workers/registry.tsv` + 解析结果、`providers/public-view.json`、`workspaces/*`、`live/*`（10 个 GET 快照）、`redaction-audit.json`、`index.json`（含每个文件的 sha256）。
-
-### 脱敏做法
-
-1. 注册已知密钥：`providers.json` 的 `api_key`、`~/.npmrc` 的 `_authToken`、`CELESTEA_API_KEY` 等 env 值（`collectKnownSecrets`，**只读取、不打印**）。
-2. 形状规则：`sk-*`、`npm_*`、`ghp_*`、`Bearer <token>`、`Authorization`/`api_key` JSON 值、`*_API_KEY=`/`*_TOKEN=` 赋值、`AKIA*`、`Cookie:`/`Set-Cookie:` 值、`-auth-<token>`。
-   - 这些规则**故意不加前导 `\b`**：会话日志里的 `\n` 是字面转义，前面是字母 `n`（词字符），加 `\b` 会漏掉真实密钥——这是本次实测发现并修掉的一个真实泄漏。
-   - 值字符类排除 `\`：否则会把 JSON 转义反斜杠一起吃掉，破坏 JSON 结构。
-3. **凭据发现 + 全局传播**：凡出现在凭据上下文（`Cookie:` / `Authorization:` / `Bearer` / `*token=*` / `sk-*` / `-auth-*` / `npm_*`）里的 16+ 字符 token，会被登记为"动态密钥"并在**整份导出**中全局替换——因此 `T=<cookie 值>` 这类别名同样会被抹掉（这是本次实测发现的第二个真实泄漏）。
-4. 每个写出的文件都重扫（注册密钥 + 动态密钥 + 形状规则）；`redaction-audit.json` 给出结论 `clean`，发现任何残留直接退出码 1。
-5. 本次导出：**63 处替换 / 0 泄漏**；已逐项确认 provider key、npm token、`dsh-auth-*`、`dsh_token` cookie 值、会话日志里的 `sk-*` 均不在 `fixtures/` 中。
-
----
-
-## 5. 回放对拍（`scripts/compare-replay.ts`）
-
-读 `fixtures/` → TS 侧重放 → 结构化 diff → `reports/replay-diff.{md,json}`。
-
-| 对比项 | 是否 golden | 说明 |
-|---|---|---|
-| A. Studio `messages` 投影 | **是（实机真源）** | `GET /api/sessions/{id}/messages` 为真源 |
-| B. 引擎 `derive_messages` | 否（自洽） | 引擎无 HTTP 面；P1 用引擎单测把它变成 golden |
-| C. SSE transcript | 否（自洽） | `seq` 是进程全局计数器，无法从日志还原 |
-| D. `public_view` | **是** | 断言不含 `api_key` 键 |
-| E. `registry.tsv` | **是** | `serialize(parse(x)) === x` 字节级 round-trip |
-
-P0 实测结果：**5 个真实会话、1531 条消息投影、golden 分歧 0**（`pnpm replay:compare --strict` 通过）。B/C 为自洽对比，P0 只保证工具链跑通与确定性；分歧非空时报告照样输出（不掩盖）。
-
----
-
-## 7. 架构规则与检查（W273，机械强制）
-
-**规则正文**：`docs/ARCHITECTURE.md`；**机械实现**：`eslint.config.js`（规模 + 导入边界）与 `.dependency-cruiser.cjs`（包依赖图）。
-违反架构规则会在 `pnpm check` 阶段直接失败——这是构建门槛，不是 review 建议。
+### 安装
 
 ```bash
-pnpm lint           # ESLint：单文件规模（≤400 行 / 函数 ≤80 行 / 嵌套 ≤4 / 参数 ≤5）+ 跨包导入字面量
-pnpm lint:arch      # dependency-cruiser：分层方向、同层横向依赖、循环依赖、深层导入、不可解析导入
-pnpm typecheck      # tsc --noEmit（strict + noUncheckedIndexedAccess + verbatimModuleSyntax）
-pnpm test           # vitest（契约 / 回放 / 单元）
-pnpm check          # = 以上四者 + 前端 7 关（check:web），本地提交前与 CI 的唯一门禁
-
-ARCH_STRICT=1 pnpm lint   # 忽略全部例外，用于复核 docs/ARCHITECTURE.md §5 的例外清单是否还有必要
-```
-
-CI / 新环境：
-
-```bash
+git clone https://github.com/Mcd0LUO/Celestea-Agent.git
+cd Celestea-Agent
 pnpm install --frozen-lockfile
-pnpm check
 ```
 
-### 新代码红线（摘要，全文见 `docs/ARCHITECTURE.md`）
+### 准备数据目录（推荐）
 
-1. **依赖只能向下**：`core ← session / llm / tools / agent-loop / workers ← runtime ← apps/studio`；反向依赖、L1 同层横向依赖、跨层上跳一律拒绝。
-2. **跨包只走包入口**：只能 `import ... from "@celestea/<pkg>"`；`@celestea/<pkg>/src/...` 与 `../../other/src/x.js` 都是错误。
-3. **公开 API 收口在 `src/index.ts`**：拆目录不构成破坏性变更，改 `index.ts` 导出才是。
-4. **规模硬线**：单文件 ≤400 行（建议 ≤300）、单函数 ≤80 行、嵌套 ≤4、参数 ≤5；空行与注释不计费。
-5. **一切皆插件**：新能力 = 新增 seam 实现 + 在 `runtime/compose` 注册；禁止在 `core` 里写 `if (provider === "x")`。
-6. **例外只能登记**在 `eslint.config.js` 的 `ARCH_EXCEPTIONS` 与 `docs/ARCHITECTURE.md` §5（原因 / 拆分方案 / 移除阶段三件套齐全）；禁止就地 `// eslint-disable`。
-
-新增包时必须同时改三处：`tsconfig.json` 的 paths、`.dependency-cruiser.cjs` 的 `PACKAGES` 数组、`docs/ARCHITECTURE.md` §1 层级表——否则新包没有边界保护。
-
----
-
-## 8. P0 范围与非目标
-
-- ✅ 契约冻结（39 端点 / 8 SSE / 7+5 SessionEvent / 10 工具 / 8 数据文件）
-- ✅ pnpm workspace 骨架（7 packages + apps/studio，Node 24 + Hono + strict TS + vitest）
-- ✅ 黄金样本导出器（只读、脱敏、可复现）与回放对拍脚本骨架
-- ✅ 实机契约校验（22 端点抽样，只读）
-- ❌ 不含真实业务实现（LLM 调用、沙箱、agent loop、HTTP handler 行为）——P1–P4
-- ❌ 不启动任何服务、不改 systemd/nginx、不写任何生产数据文件
-
----
-
-## P4: apps/studio（Hono HTTP 层 + 数据存储）
-
-> 契约真源：`contracts/endpoints.json`（47 端点）、`contracts/sse-events.json`、
-> `contracts/data-files/`、`docs/archive/frontend/api-contract.md`（旧后端契约，已归档）。
-
-### 一句话
-
-`apps/studio` 是 L3 宿主：**Hono 路由 + 只读静态服务 + 三个 JSON 数据存储**，
-引擎能力全部经一个注入的 `RuntimeAdapter` 调用——P4 用 fake adapter 验契约，
-真实 runtime 落地后只换一行装配。
-
-### 模块地图
-
-| 文件 | 职责 |
-|---|---|
-| `src/app.ts` | `createStudioApp`：compose → 注册全部契约端点 → `/api/*` 404 → 静态/SPA |
-| `src/routes.ts` | 冻结路由表（contract id → method + path，`{x}`→`:x`） |
-| `src/runtime-adapter.ts` | **唯一的引擎 seam**（`RuntimeAdapter` 接口 + 错误类型） |
-| `src/fake-runtime-adapter.ts` | P4 假引擎：抢 busy 槽、脚本化 turn、worker/compact 确定应答 |
-| `src/sse.ts` | SSE 总线：`{turn,seq,payload}` 信封、8 事件名、512 容量 + lagged 降级 |
-| `src/static.ts` | 只读 Vite 产物 + SPA fallback + 路径穿越加固 |
-| `src/plugins.ts` | 装配根：store 插件 → `Context` 服务（一切皆插件） |
-| `src/settings.ts` | 宿主级 `system_prompt` / `base_url` 覆盖（USER_OVERRIDE 槽） |
-| `src/handlers/` | 按端点组拆分的处理器（health / dialog / config / sessions / session-move / workspaces / fs / providers / prompts / worker） |
-| `src/store/` | 数据存储：`workspaces.json` v2、`providers.json`(0600)、`prompts.json` + 模板引擎 |
-
-### 端点覆盖（47/47）
-
-`createStudioApp` 在启动期断言「契约里的每个 id 都恰好绑定一次」，缺一个直接抛错，
-所以**不存在静默漏掉的端点**。分组：
-
-| 组 | 数量 | 说明 |
-|---|---|---|
-| health | 3 | health / status / tools（恒 200，无错误分支） |
-| dialog | 4 | events(SSE) / turn(202 或 409 或 400) / cancel / clear |
-| config | 2 | GET + POST（宿主校验 → `runtime.configure`） |
-| sessions | 11 | 列表/创建/投影/激活/改名/分支/压缩/归档/回收站/批量 |
-| workspaces | 5 | 注册/改名（真动文件夹）/注销/批量注销 |
-| fs | 1 | browse（仅目录名、隐藏 dot、不跟随符号链接、200 上限） |
-| providers | 6 | 列表/upsert/删除/test/models fetch/default |
-| prompts | 4 | 列表/upsert/删除/设默认（persist → hot apply → 失败回滚） |
-| workers | 3 | spawn(502 硬失败) / send / status(恒 200) |
-
-### RuntimeAdapter（引擎 seam）
-
-```
-attach(bus)                        // 引擎把事件写进 SSE 总线
-isBusy() / startTurn(req)          // 单并发槽：409 "a turn is already running"
-cancel() / clear(session)          // 协作式取消 / 截断活动会话日志
-compact(session)                   // 压缩；成功额外广播 event: compact（信封 turn 恒 0）
-profile() / configure(patch)       // 引擎档案：model/base_url/limits/system_prompt
-statusline() / tools()             // GET /api/status 与 /api/tools
-workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
-```
-
-替换真实 runtime = 在 `createStudioApp({ runtime })` 传另一个实现；**处理器与路由零改动**。
-
-### 数据存储
-
-* **`workspaces.json`（v2，0644）**：注册表（key = 目录 basename，从不落盘）、`active_session`、
-  会话目录扫描（直接子目录且含 `cli-main.jsonl`，跳过 dot-dir）。写盘 = pretty JSON → `.tmp` → rename（无 fsync）。
-  文件损坏 = **硬错误**（绝不用空表覆盖读不出来的注册表）。
-* **`providers.json`（0600，含明文 key）**：每次保存都强制 0600 + fsync；
-  `public_view` 结构里**根本没有 `api_key` 字段**（不是 null），所以处理器无法"顺手"泄漏；
-  `api_key` 缺省/null/空白 = 保留旧 key（唯一 keep-on-default 字段），`models` 缺省 = 清空。
-  `/models` 探测与 `/test`：非 `chat_completions` → 该格式不支持；无 key 且 base_url 归一化后
-  **等于当前代际 base_url** → 借用引擎 key（请求级，不落盘、不回显、不打日志）；否则不发请求。
-* **`prompts.json` + `<CELESTEA_HOME>/workspaces/<ws>/prompts.json`（0644，W880）**：段注册表（builtin 10 段，order 100..1000）
-  四级覆盖 builtin → global → ws → 绑定 prompt 的 `section_overrides`；`{{var}}` 白名单插值、
-  8192 字节截断；写路径固定为 **409 检查 → 落盘 → hot apply → 失败写回旧文件**。
-
-### 安全
-
-* key 只进 `process.env[api_key_env]` 与 `providers.json`(0600)：**不进响应、不进日志、不回显**；
-  测试断言 providers/config 响应文本里既没有 key，也没有 `"api_key"` 这个键名。
-* 静态服务双重加固：`sanitizeRel` 拒绝 `..`/绝对/前缀组件，再对 realpath 做 root 包含性检查（符号链接也逃不出）。
-* `/api/*` 未匹配 → `{"error":"not found"}` 404，**永不落到静态/SPA**。
-* fs browse 无鉴权，因此默认只绑环回（`STUDIO_TS_BIND` 改非环回 = 开放全盘目录名枚举）。
-
-### 测试
-
-| 文件 | 覆盖 |
-|---|---|
-| `src/sse.test.ts` | 信封形状、8 事件名、多订阅者、lagged 降级、关闭语义 |
-| `src/static.test.ts` | SPA fallback、content-type、穿越拒绝、符号链接逃逸拒绝、`/api/*` JSON 404 |
-| `src/store/workspaces.test.ts` | 注册表 round-trip、v1 容忍、损坏文件硬错、basename 冲突、注销/改名 |
-| `src/store/sessions.test.ts` | 扫描/投影（撕裂尾部丢弃）、四种 id 错误码、创建、改名/分支/归档/回收站/批量 |
-| `src/store/providers.test.ts` | round-trip、0600、public_view 脱敏、keep-key 语义、探测三分支 + keyless 借用 |
-| `src/store/prompts.test.ts` | 模板三错、插值、四级组装、默认链、CRUD round-trip |
-| `src/app.test.ts` / `src/app-domains.test.ts` | 契约全部端点形状/状态码/409 守卫/错误码/redaction/SSE 帧 |
-| `src/config-models.test.ts` | W750：`available.models` 每个 (provider, model) 一条（provider 内去重、撞名 id 不合并）、`active` 归属、`POST /api/providers/default` 的 `provider_id` 消歧与拒绝分支 |
-| `tests/model-icon.test.ts` | W750：跨仓直测前端 `model-icon.ts` 纯函数（前缀/大小写/分隔符、未知 → null、SVG 零硬编码颜色） |
-| `tests/studio-routes.test.ts` | 跨包契约：路由表与契约逐条一致，无端点漏绑 |
-
-### 已知边界（P4）
-
-1. **引擎是假的**：`turn/cancel/clear/compact/worker` 由 `createFakeRuntimeAdapter` 应答，
-   真实 runtime 由另一条线交付后替换。
-2. **静态模型目录**：`/api/config.available.models` 目前**只**从 providers store 重建，
-   providers 为空时该数组为空。
-   W750：每条形如 `{id,name,provider,provider_id,active,reasoning}`，**去重按 provider 做**
-   （同一 id 由两个 provider 提供 = 两个可选条目，`provider_id` 才是切换要回传的稳定
-   id，`provider` 只是显示名）；`active` 由「同模型 id + 同端点」判定，端点都不匹配且
-   id 撞名时不标任何一条。
-3. **`POST /api/config` 的 base_url 空串**：清覆盖后回落链在 P4 只覆盖 env/provider；
-   引擎代际重算随真实 runtime 落地。
-4. **请求体拒绝**：按「缺 body=415、非 JSON=400、字段类型错=422」实现，
-   文案是 TS 侧自拟（契约只冻结了成功形状与业务错误串）。
-
-### 运行
+运行数据**不该**落在仓库里。会话与附件由 `CELESTEA_HOME` 决定（默认 `~/.celestea`），
+注册表/提供商/账本这几个文件由各自的变量指定（默认是**当前目录**，所以本地跑请显式指走）：
 
 ```bash
-pnpm --filter @celestea/studio start      # 默认 127.0.0.1:3778（生产实例占 3777）
-pnpm check                                # typecheck + lint + lint:arch + test + check:web
+export CELESTEA_HOME="$HOME/.celestea"                  # 会话/归档/回收站/run-code
+export CELESTEA_WORKSPACES_FILE="$CELESTEA_HOME/workspaces.json"
+export CELESTEA_PROVIDERS_FILE="$CELESTEA_HOME/providers.json"
+export CELESTEA_PROMPTS_FILE="$CELESTEA_HOME/prompts.json"
+export CELESTEA_USAGE_LEDGER_FILE="$CELESTEA_HOME/usage-ledger.jsonl"
+mkdir -p "$CELESTEA_HOME"
 ```
 
-### 许可
+`CELESTEA_HOME` 的解析顺序（第一个命中者胜）：
 
-MIT，见 [`LICENSE`](LICENSE)。
+1. `$CELESTEA_HOME` —— 显式覆盖（生产**应当**设为 `/var/lib/celestea-agent`，即 FHS 的 `/var/lib/<service>`；见下方部署小节）；
+2. `$XDG_DATA_HOME/celestea` —— Linux 上尊重 [XDG Base Directory](https://specifications.freedesktop.org/basedir/latest/)；
+3. `~/.celestea` —— Linux / macOS 默认（同类 agent CLI 的通行落点：`~/.claude`、`~/.codex`、`~/.gemini`）；
+4. `%USERPROFILE%\.celestea` —— Windows 默认。
+
+其下按工作区分桶：`<home>/workspaces/<工作区名>/{sessions,archive,trash,run-code}/` 与 `prompts.json`。
+
+### 配一个模型
+
+最小配置是给一个 API key（引擎的解析顺序：**env → `api_key_file` → `~/.celestea` 配置**）：
+
+```bash
+export CELESTEA_API_KEY="sk-..."      # 或写进 providers.json 的 api_key
+export CELESTEA_BASE_URL="https://api.example.com/v1"   # 可选，默认见 providers.json
+export CELESTEA_MODEL="your-model-id"                   # 可选
+```
+
+更完整的提供商/模型管理在界面的**设置 → 提供商**里做，落盘为 `providers.json`（**0600**，含密钥，切勿入库）。
+
+### 构建并启动
+
+```bash
+pnpm --dir apps/web run build          # 前端产物 -> apps/web/dist（后端从磁盘静态服务）
+pnpm --filter @celestea/studio start   # 源码默认监听 127.0.0.1:3778
+```
+
+打开 **<http://127.0.0.1:3778>** 即可。
+
+> 改了前端**不需要重启**：重新 `pnpm --dir apps/web run build` 后刷新页面即可（后端每次请求都从磁盘读 `dist`）。
+
+### 走隧道访问（服务器上跑）
+
+```bash
+ssh -L 3777:localhost:3777 <server>
+# 然后打开 http://localhost:3777
+```
+
+---
+
+## 配置
+
+常用环境变量（完整清单见 [`docs/data-files.md`](docs/data-files.md) 与 [`scripts/run-studio-ts.sh`](scripts/run-studio-ts.sh)）：
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `CELESTEA_HOME` | `~/.celestea` | 会话/归档/回收站/run-code 的数据根（见上） |
+| `CELESTEA_WORKSPACES_FILE` | `<cwd>/workspaces.json` | 工作区注册表（工作区 = 一个真实目录） |
+| `CELESTEA_PROVIDERS_FILE` | `<cwd>/providers.json` | 提供商与模型（含密钥，0600） |
+| `CELESTEA_PROMPTS_FILE` | `<cwd>/prompts.json` | 提示词库 |
+| `CELESTEA_USAGE_LEDGER_FILE` | 未设 | 用量/成本账本（`jsonl`） |
+| `STUDIO_TS_PORT` / `STUDIO_TS_BIND` | `3778` / `127.0.0.1` | 监听端口 / 地址（生产用 3777） |
+| `STUDIO_STATIC_ROOT` | `apps/web/dist` | 前端静态根 |
+| `CELESTEA_API_KEY` / `CELESTEA_BASE_URL` / `CELESTEA_MODEL` | — | 模型接入（见上） |
+| `CELESTEA_PERMISSION_DEFAULT` | `full-access` | 新会话的默认权限档位 |
+| `CELESTEA_PERMISSION_MAX` | `full-access` | 权限**上限**，任何提权都夹在它之内 |
+| `CELESTEA_SANDBOX_FALLBACK` | `userspace` | `bwrap` 不可用时：`userspace` 降级 / `fail` 拒绝执行 |
+| `CELESTEA_SANDBOX_NET` | 跟随权限 | `1` 强制开网 / 由档位决定 |
+| `CELESTEA_TOOL_ROOTS` | — | 工具可读根白名单（**fail-closed**） |
+| `CELESTEA_AUTH_SECRET_FILE` | 与 `workspaces.json` 同目录 | 登录 cookie 的 HMAC 密钥文件 |
+| `CELESTEA_AUTH_HTPASSWD_FILE` | `/etc/nginx/.htpasswd-studio` | 登录口令文件（`htpasswd -vbi` 校验） |
+
+## 安全模型（请务必读一遍）
+
+- **默认档位是 `full-access`**：整盘可读写、允许联网、允许非沙箱执行。这是为了「自己机器上少点摩擦」，**不是**面向多租户的默认值。要收紧就设 `CELESTEA_PERMISSION_DEFAULT=write-read`（或 `read-only`）与 `CELESTEA_PERMISSION_MAX`——上限一旦设死，会话**不可能**越过它。
+- **提权只能由人触发**：模型不能给自己加权限。界面上的提权是**一次性 grant**，有 TTL、可撤销、写入审计日志。
+- **沙箱是真实隔离**：`bwrap` 负责文件系统与网络命名空间，`prlimit` 负责 CPU/内存/文件数/输出上限。`CELESTEA_SANDBOX_FALLBACK=fail` 可以做到「没有 OS 隔离就拒绝执行」。
+- **密钥只从文件/环境读，绝不写进会话日志**：导出黄金样本时有独立的脱敏与泄漏自检。
+
+## 生产部署（systemd + nginx）
+
+生产由 [`scripts/run-studio-ts.sh`](scripts/run-studio-ts.sh) 拉起：它解析密钥、把数据指到 `/var/lib/celestea-agent`、
+设好沙箱读根，最后 `exec pnpm --dir apps/studio start`。
+
+```bash
+sudo systemctl restart celestea-studio-ts
+curl -s http://127.0.0.1:3777/api/health
+```
+
+> ⚠️ 若数据根用 `CELESTEA_HOME` 覆盖，**必须**在 systemd unit 里显式设置（例如
+> `Environment=CELESTEA_HOME=/var/lib/celestea-agent`），否则会落到 `~/.celestea`。
+
+公网暴露建议：进程只监听 `127.0.0.1`，由 nginx 反代 + Studio 自带登录门（见 [`docs/feature-studio-auth.md`](docs/feature-studio-auth.md)）。
+SSE 需要 `proxy_buffering off`。
+
+## 开发
+
+```bash
+pnpm check        # 提交前唯一门禁：typecheck + lint + lint:arch + test + 前端 7 关
+pnpm typecheck    # tsc --noEmit（strict + noUncheckedIndexedAccess + verbatimModuleSyntax）
+pnpm test         # vitest
+pnpm lint         # ESLint（单文件 ≤400 行 / 函数 ≤80 行 / 嵌套 ≤4 / 参数 ≤5）
+pnpm lint:arch    # dependency-cruiser（分层方向、循环、深层导入）
+pnpm check:web    # 只跑前端（快回路）
+```
+
+**架构是机械强制的**，不是评审建议：依赖只能向下、跨包只走包入口、一切皆插件、例外必须登记。
+规则正文见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，机械实现是 [`eslint.config.js`](eslint.config.js) 与 [`.dependency-cruiser.cjs`](.dependency-cruiser.cjs)。
+
+### 仓库结构
+
+| 路径 | 职责 |
+|---|---|
+| `packages/core` | 类型 / seam / 契约加载 / 事件总线 / 脱敏 |
+| `packages/session` | `cli-main.jsonl` 解析与投影、回放 |
+| `packages/llm` | LLM seam：usage、超时、`reasoning_effort` |
+| `packages/tools` | 工具注册表 + 路径守卫 + 沙箱（bwrap/prlimit） |
+| `packages/agent-loop` | agent 主循环、事件映射、协作式取消 |
+| `packages/workers` | worker 注册表与工具 |
+| `packages/runtime` | 组装（compose）、会话注册表、权限/授权、账本 |
+| `apps/studio` | Hono HTTP 层 + 数据存储 + 静态服务 |
+| `apps/web` | 前端（Vite + TypeScript，单主题灰阶） |
+| `contracts/` | **机器可读契约**（端点 / SSE / 工具 / 数据文件 schema） |
+
+## 文档
+
+- **[docs/README.md](docs/README.md)** —— `docs/` 全量索引（每篇的状态、一句话、权威入口）。**找文档先看它。**
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) —— 架构契约（规则正文）
+- [docs/data-files.md](docs/data-files.md) —— 数据文件 schema
+- [docs/DEPENDENCY-POLICY.md](docs/DEPENDENCY-POLICY.md) —— 依赖与工具链策略
+- [apps/web/FRONTEND-RULES.md](apps/web/FRONTEND-RULES.md) —— 前端渲染铁律
+- [docs/pitfalls.md](docs/pitfalls.md) —— 踩坑档案（症状 → 根因 → 正确做法）
+
+## 许可证
+
+[MIT](LICENSE) © 2026 Mcd0LUO
