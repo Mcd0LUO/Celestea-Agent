@@ -39,7 +39,7 @@ import {
 import { captureRun, preview, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
 import { limitsForCpu, limitsFromEnv, resolveCpuSec, type SandboxLimits } from "./limits.js";
 import { probeHost, type HostProbe } from "./probe.js";
-import { applyLimits, type RlimitVia } from "./rlimit.js";
+import { applyLimits, rlimitDiagnostics, rlimitVia, type RlimitDescribeOptions, type RlimitVia } from "./rlimit.js";
 import { openSeccompBlob } from "./seccomp.js";
 import { resolveWorkdir } from "./workdir.js";
 
@@ -51,6 +51,12 @@ export interface BwrapMeta {
   seccomp: boolean;
   /** true: the child saw a read-only host root. */
   readonly_root: boolean;
+  /**
+   * F4: true when RLIMIT_AS is in force. false = this view describes a call
+   * that would be exempt (or every rlimit is off). Diagnostics only — the
+   * model-visible SandboxMeta deliberately does NOT carry it.
+   */
+  address_space_limited: boolean;
   /** W6: effective `RLIMIT_CPU` for this run (seconds). */
   cpu_sec: number;
   /** Which mechanism enforced the rlimits. */
@@ -104,14 +110,14 @@ export class BwrapSandbox implements Sandbox {
     validateSandboxConfig(this.config);
     const timeoutMs = resolveTimeout(this.config, request.timeoutMs);
     const limits = this.limitsFor(request.cpuSec);
-    const { child, meta } = await this.launch(request.command, request.workdir, false, limits);
+    const { child, meta } = await this.launch(request.command, request.workdir, false, limits, request.noAddressSpaceLimit === true);
     return captureRun(this.config, child, timeoutMs, meta);
   }
 
   async spawn(request: SandboxSpawnRequest): Promise<SandboxSpawned> {
     validateSandboxConfig(this.config);
     const limits = this.limitsFor(request.cpuSec);
-    const { child, meta } = await this.launch(request.command, request.workdir, true, limits);
+    const { child, meta } = await this.launch(request.command, request.workdir, true, limits, request.noAddressSpaceLimit === true);
     return { child: wrapChild(child, { detached: true }), sandbox: meta };
   }
 
@@ -121,8 +127,9 @@ export class BwrapSandbox implements Sandbox {
   }
 
   /** Isolation actually in force, without running anything (logs / health). */
-  describe(): BwrapMeta {
-    return runtimeMeta(this.options, this.limits, this.probe, this.rlimits ? rlimitVia(this.probe) : "none");
+  describe(options: RlimitDescribeOptions = {}): BwrapMeta {
+    const diag = rlimitDiagnostics(this.probe, this.rlimits, options.noAddressSpaceLimit === true);
+    return runtimeMeta(this.options, this.limits, this.probe, diag.via, diag.address_space_limited);
   }
 
   private async launch(
@@ -130,6 +137,7 @@ export class BwrapSandbox implements Sandbox {
     requestedWorkdir: string | undefined,
     withStdin: boolean,
     limits: SandboxLimits,
+    noAddressSpaceLimit: boolean,
   ): Promise<{ child: ChildProcess; meta: SandboxMeta }> {
     this.assertUsable();
     const workdir = await resolveWorkdir(this.config, requestedWorkdir);
@@ -144,7 +152,7 @@ export class BwrapSandbox implements Sandbox {
         buildBwrapCommand(workdir, { ...this.options, programDir: this.config.programDir }, command),
         limits,
         this.probe,
-        this.rlimits,
+        { enabled: this.rlimits, noAddressSpaceLimit },
       );
       const child = await spawnPlan({
         program: limited.program,
@@ -155,7 +163,8 @@ export class BwrapSandbox implements Sandbox {
         withStdin,
         label: `${bwrapLabel(this.options)} ${preview(command, 128)}`,
       });
-      return { child, meta: resultMeta(runtimeMeta(this.options, limits, this.probe, limited.via)) };
+      const diag = rlimitDiagnostics(this.probe, this.rlimits, noAddressSpaceLimit);
+      return { child, meta: resultMeta(runtimeMeta(this.options, limits, this.probe, limited.via, diag.address_space_limited)) };
     } finally {
       blob?.dispose();
     }
@@ -172,19 +181,22 @@ export class BwrapSandbox implements Sandbox {
   }
 }
 
-/** Which rlimit mechanism the probe leaves available. */
-export function rlimitVia(probe: HostProbe): RlimitVia {
-  if (probe.prlimitPath !== null) return "prlimit";
-  return probe.shellUlimitWorks ? "shell-ulimit" : "none";
-}
+/**
+ * Which rlimit mechanism the probe leaves available.
+ *
+ * F4: the implementation moved to `rlimit.ts` (where the limit plan lives);
+ * this re-export keeps the public path `@celestea/tools` -> `bwrap.js` stable.
+ */
+export { rlimitVia } from "./rlimit.js";
 
-function runtimeMeta(options: BwrapOptions, limits: SandboxLimits, probe: HostProbe, via: RlimitVia): BwrapMeta {
+function runtimeMeta(options: BwrapOptions, limits: SandboxLimits, probe: HostProbe, via: RlimitVia, addressSpaceLimited: boolean): BwrapMeta {
   return {
     provider: BWRAP_PROVIDER,
     net_isolated: !options.shareNet,
     tmp_private: !options.shareTmp,
     seccomp: options.seccomp,
     readonly_root: true,
+    address_space_limited: addressSpaceLimited,
     rlimit_via: via,
     cpu_sec: limits.cpuSec,
     nproc: limits.nproc,

@@ -35,7 +35,7 @@ import { shellInvocation, sanitizedEnv, buildSandboxConfig, sandboxConfigFromEnv
 import { captureRun, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
 import { limitsForCpu, limitsFromEnv, resolveCpuSec, rlimitsEnabled, type SandboxLimits } from "./limits.js";
 import { probeHost, type HostProbe } from "./probe.js";
-import { applyLimits } from "./rlimit.js";
+import { applyLimits, rlimitDiagnostics, type RlimitDescribeOptions, type RlimitVia } from "./rlimit.js";
 import { resolveWorkdir } from "./workdir.js";
 
 /** W6: the same rlimit layer the bwrap path uses (best-effort here). */
@@ -50,6 +50,17 @@ export interface UserspaceSandboxOptions {
 
 /** The effective mode every result reports (never inferred by the caller). */
 export const USERSPACE_META: SandboxMeta = USERSPACE_SANDBOX_META;
+
+/**
+ * F4: the DIAGNOSTIC view (logs / health), never the model-visible contract.
+ * `address_space_limited` is how an AS exemption stays observable without
+ * adding a field to `SandboxMeta`.
+ */
+export interface UserspaceMeta extends SandboxMeta {
+  cpu_sec: number;
+  rlimit_via: RlimitVia;
+  address_space_limited: boolean;
+}
 
 export class UserspaceSandbox implements Sandbox {
   readonly config: SandboxConfig;
@@ -77,13 +88,13 @@ export class UserspaceSandbox implements Sandbox {
   async run(request: SandboxRunRequest): Promise<SandboxRunResult> {
     validateSandboxConfig(this.config);
     const timeoutMs = resolveTimeout(this.config, request.timeoutMs);
-    const { child, meta } = await this.launch(request.command, request.workdir, false, this.limitsFor(request.cpuSec));
+    const { child, meta } = await this.launch(request.command, request.workdir, false, this.limitsFor(request.cpuSec), request.noAddressSpaceLimit === true);
     return captureRun(this.config, child, timeoutMs, meta);
   }
 
   async spawn(request: SandboxSpawnRequest): Promise<SandboxSpawned> {
     validateSandboxConfig(this.config);
-    const { child, meta } = await this.launch(request.command, request.workdir, true, this.limitsFor(request.cpuSec));
+    const { child, meta } = await this.launch(request.command, request.workdir, true, this.limitsFor(request.cpuSec), request.noAddressSpaceLimit === true);
     return { child: wrapChild(child, { detached: true }), sandbox: meta };
   }
 
@@ -92,18 +103,30 @@ export class UserspaceSandbox implements Sandbox {
     return limitsForCpu(this.limits, resolveCpuSec(this.limits.cpuSec, cpuSec, this.config.maxCpuSec));
   }
 
+  /** F4: diagnostic view of what would be enforced (never SandboxMeta). */
+  describe(options: RlimitDescribeOptions = {}): UserspaceMeta {
+    const diag = rlimitDiagnostics(this.probe, this.rlimits, options.noAddressSpaceLimit === true);
+    return {
+      ...USERSPACE_META,
+      cpu_sec: this.limits.cpuSec,
+      rlimit_via: diag.via,
+      address_space_limited: diag.address_space_limited,
+    };
+  }
+
   private async launch(
     command: string,
     requestedWorkdir: string | undefined,
     withStdin: boolean,
     limits: SandboxLimits,
+    noAddressSpaceLimit: boolean,
   ): Promise<{ child: ChildProcess; meta: SandboxMeta }> {
     const workdir = await resolveWorkdir(this.config, requestedWorkdir);
     const { program, args } = shellInvocation(command, this.shell);
     let plan = { program, args };
     if (this.rlimits) {
       try {
-        const limited = applyLimits(program, args, limits, this.probe, true);
+        const limited = applyLimits(program, args, limits, this.probe, { enabled: true, noAddressSpaceLimit });
         plan = { program: limited.program, args: limited.args };
       } catch {
         // W6: userspace is the DEGRADED fallback: unlike the fail-closed bwrap

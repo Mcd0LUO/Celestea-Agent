@@ -94,7 +94,24 @@ export interface SandboxChild {
   kill(): void;
 }
 
-export interface SandboxRunRequest {
+/**
+ * F4: per-call address-space exemption.
+ *
+ * Modern Chromium reserves an enormous VIRTUAL address space; under a 2GiB
+ * `RLIMIT_AS` it dies with SIGTRAP before it can log anything (measured:
+ * 2/3/4/8/16/32GiB all die, 64GiB lives). Setting this on ONE call omits
+ * `RLIMIT_AS` and NOTHING ELSE — CPU/NPROC/FSIZE/NOFILE/CORE still apply.
+ *
+ * Absent/undefined = the historical behaviour (address space limited).
+ * Deliberately NOT surfaced in `SandboxMeta`: the model-visible contract stays
+ * the four fields it was just reduced to; the tool layer states the exemption
+ * in its own result.
+ */
+export interface SandboxAddressSpaceOptions {
+  noAddressSpaceLimit?: boolean;
+}
+
+export interface SandboxRunRequest extends SandboxAddressSpaceOptions {
   command: string;
   /** Optional per-call cwd; must exist inside `config.root`. */
   workdir?: string;
@@ -104,7 +121,7 @@ export interface SandboxRunRequest {
   cpuSec?: number;
 }
 
-export interface SandboxSpawnRequest {
+export interface SandboxSpawnRequest extends SandboxAddressSpaceOptions {
   command: string;
   workdir?: string;
   /** W6: optional per-call `RLIMIT_CPU` in seconds, clamped to `config.maxCpuSec`. */
