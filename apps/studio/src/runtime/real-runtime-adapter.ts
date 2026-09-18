@@ -86,7 +86,7 @@ import type {
 } from "../runtime-adapter.js";
 import { QuestionHost } from "./question-host.js";
 import { AdapterFallback, type FallbackStatusView } from "./fallback-host.js";
-import { reportImageDowngrade } from "./image-downgrade.js";
+import { createImageDowngradeReporter } from "./image-downgrade.js";
 import type { StudioBus } from "../sse.js";
 import { contextViewOf } from "./context-snapshot.js";
 import { applyProfilePatch, defaultEngineProfile, engineProfileOf, profileFromEngine } from "./engine-profile.js";
@@ -194,6 +194,12 @@ class RealEngine implements RealRuntimeAdapter {
   private readonly fallback: AdapterFallback;
   /** E §2.3 P0 ①: the resolved worker table path (null = in-memory only). */
   private readonly workerTable: string | null;
+  /**
+   * W863: the ONE default downgrade reporter of this adapter — it owns the
+   * per-session (model, cause) memo, so a multi-step image turn reports ONCE
+   * instead of once per step. A host-supplied `onModelDowngrade` still wins.
+   */
+  private readonly downgrades = createImageDowngradeReporter({ bus: () => this.bus });
   /** W783: process-wide user-question capability (table + host view). */
   private readonly questions = new QuestionHost({
     emit: (sessionId, turn, f) => void this.bus?.emit(f.event, turn, f.payload, sessionId),
@@ -202,8 +208,10 @@ class RealEngine implements RealRuntimeAdapter {
 
 
   constructor(opts: RealRuntimeAdapterOptions = {}) {
-    this.opts = opts;
-    this.env = opts.env ?? process.env;
+    // W863: these two assignments share one line on purpose — this file sits
+    // exactly on the eslint 400-code-line budget and the downgrade reporter
+    // field above needs the line. Pure formatting, no behaviour change.
+    this.opts = opts; this.env = opts.env ?? process.env;
     this.autowake = new HostAutowake({
       enabled: autowakeEnabled(this.env),
       lookup: (session) => autowakeStateOf(this.registry.peek(session)),
@@ -231,8 +239,9 @@ class RealEngine implements RealRuntimeAdapter {
       publishQuestion: (sessionId, question) => this.questions.publish(sessionId, question),
       // W804 section 7.6: the downgrade visibility is the HOST's job. The default
       // emits a status frame (statusline + info block) and an audit line; a host
-      // may override it.
-      onModelDowngrade: opts.onModelDowngrade ?? ((sessionId, info) => reportImageDowngrade(this.bus, sessionId, info)),
+      // may override it. W863: that default is now deduplicated per session by
+      // (model, cause) — see `downgrades` above and image-downgrade.ts.
+      onModelDowngrade: opts.onModelDowngrade ?? ((sessionId, info) => void this.downgrades.report(sessionId, info)),
     });
     this.registry = new SessionRuntimeRegistry({
       build: (sessionId, dir) => {

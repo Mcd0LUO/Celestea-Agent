@@ -228,4 +228,4 @@ export {
 } from './messages/assistant';
 export { addUserMessage, laneLabel, renderInboxMessage } from './messages/user';
 export type { MsgKind } from './messages/user';
-export { renderInfoBlock, renderInterjectNote } from './messages/info';
+export { renderInfoBlock, renderInterjectNote, updateInfoBlock } from './messages/info';

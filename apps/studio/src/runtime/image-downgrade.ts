@@ -5,6 +5,13 @@
  *
  * Three channels: a `status` frame (the statusline and the info block share it)
  * and an audit line on the process log. The turn itself is NOT failed.
+ *
+ * W863: the report is DEDUPLICATED per session. The decorator fires on EVERY
+ * image-bearing request (`packages/llm/src/image-fallback.ts`), and a multi-step
+ * turn re-sends the same history image at every step — so one turn used to emit
+ * N identical frames and the UI stacked N identical blocks. The memo below
+ * lives in a per-adapter reporter (never module state): one entry per session,
+ * keyed by the (model, cause) signature that defines "this is NEWS".
  */
 
 import type { ImageDowngradeCause, ImageDowngradeInfo } from "@celestea/llm";
@@ -36,7 +43,61 @@ function copyOf(info: ImageDowngradeInfo, cause: ImageDowngradeCause): { message
   };
 }
 
-export function reportImageDowngrade(bus: StudioBus | null, sessionId: string | null, info: ImageDowngradeInfo): void {
+/**
+ * W863: the dedupe signature of one downgrade — exactly the (model, cause) pair
+ * the requirement fixes. `cause` is normalized the same way `copyOf` does, so a
+ * pre-W855 producer (cause absent) and an explicit `upstream_rejected` are the
+ * SAME signature. Deliberately NOT keyed on httpStatus/message/placeholder: for
+ * one (model, cause) the visible copy is identical in shape, and the verbatim
+ * upstream body is not what the user acts on.
+ */
+export function downgradeSignature(info: ImageDowngradeInfo): string {
+  return info.model + "\u0000" + (info.cause ?? "upstream_rejected");
+}
+
+/** One reporter per host adapter: the per-session memo + the two channels. */
+export interface ImageDowngradeReporter {
+  /** Returns true when this report was NEW (emitted + audited), false when deduped. */
+  report(sessionId: string | null, info: ImageDowngradeInfo): boolean;
+}
+
+/**
+ * W863 (§A): make the host report ONE downgrade per session per (model, cause).
+ *   - every later frame with the same signature is swallowed ENTIRELY (no emit
+ *     AND no audit line: the process log must never claim what the UI did not
+ *     show);
+ *   - a new model or a new cause is news again (the user must see that the
+ *     situation changed);
+ *   - `sessionId` is the partition key (`null` = the detached session), so two
+ *     sessions never silence each other. State is per reporter instance and JS
+ *     is single-threaded, so there is no cross-session race to guard.
+ * Scope is the SESSION (not the turn): see the W863 report for the boundary.
+ */
+export function createImageDowngradeReporter(deps: {
+  bus: () => StudioBus | null;
+  /** Audit sink (defaults to console.warn); injected so tests can count lines. */
+  warn?: (line: string) => void;
+}): ImageDowngradeReporter {
+  const lastBySession = new Map<string, string>();
+  const warn = deps.warn ?? ((line: string): void => console.warn(line));
+  return {
+    report(sessionId: string | null, info: ImageDowngradeInfo): boolean {
+      const key = sessionId ?? "";
+      const signature = downgradeSignature(info);
+      if (lastBySession.get(key) === signature) return false;
+      lastBySession.set(key, signature);
+      reportImageDowngrade(deps.bus(), sessionId, info, warn);
+      return true;
+    },
+  };
+}
+
+export function reportImageDowngrade(
+  bus: StudioBus | null,
+  sessionId: string | null,
+  info: ImageDowngradeInfo,
+  warn: (line: string) => void = (line) => console.warn(line),
+): void {
   // W855: an absent cause = a pre-W855 producer -> the historical 400 wording.
   const cause: ImageDowngradeCause = info.cause ?? "upstream_rejected";
   const { message, hint } = copyOf(info, cause);
@@ -51,7 +112,7 @@ export function reportImageDowngrade(bus: StudioBus | null, sessionId: string | 
     placeholder: info.placeholder,
   }, sessionId);
   // Audit: the process log (the session log keeps its frozen event vocabulary).
-  console.warn(
+  warn(
     "[W804/W855] image downgrade session=" + (sessionId ?? "-") +
       " model=" + info.model + " cause=" + cause + " status=" + String(info.httpStatus),
   );
