@@ -28,6 +28,7 @@
  *   sse-bus.ts       SDK-side SSE broadcast bus
  *   redact.ts        secret redaction for fixtures / reports
  *   repo.ts          repository-relative path helpers
+ *   celestea-home.ts CELESTEA_HOME data-root resolution (W880)
  *   errors.ts        shared error types
  *   contracts/       contract-file loaders (frozen data in contracts/)
  */
@@ -54,4 +55,5 @@ export * from "./sse-bus.js";
 export * from "./errors.js";
 export * from "./redact.js";
 export * from "./repo.js";
+export * from "./celestea-home.js";
 export * from "./contracts/index.js";

@@ -34,7 +34,6 @@ import { errorCode, errorText } from "../errors.js";
 import { stringArg } from "../args.js";
 import { TIMED_OUT, withTimeout } from "../sandbox/async.js";
 import { readCapped, REAP_GRACE_MS } from "../sandbox/launch.js";
-import { resolveWorkdir } from "../sandbox/workdir.js";
 import { ToolFailure } from "../tool-failure.js";
 import {
   EXIT_GRACE_MS,
@@ -106,11 +105,13 @@ export const TS_PROGRAM_RUNTIME = existsSync("/usr/bin/node") ? "/usr/bin/node" 
 export async function brokerRun(ctx: BrokerContext, args: unknown): Promise<ToolExecOutcome> {
   const source = programSource(args);
   const timeoutMs = resolveTimeoutMs(readArg(args, "timeout_ms"), ctx.config);
-  const workdir = await sandboxWorkdir(ctx.sandbox);
-  const script = await placeProgram(workdir, source);
+  // W880: the program is written to <CELESTEA_HOME>/.../run-code, NOT into the
+  // workspace. The sandbox config owns that absolute path; the interpreter is
+  // invoked with the absolute path so no cwd-relative lookup is involved.
+  const script = await placeProgram(ctx.sandbox.config.programDir, source);
   const state = newRunState();
   try {
-    await executeProgram(ctx, script.name, source.language, timeoutMs, state);
+    await executeProgram(ctx, script.path, source.language, timeoutMs, state);
   } catch (e) {
     throw withLogs(e, ctx, state);
   } finally {
@@ -143,35 +144,29 @@ function readArg(args: unknown, key: string): unknown {
   return (args as Record<string, unknown>)[key];
 }
 
-async function sandboxWorkdir(sandbox: Sandbox): Promise<string> {
-  try {
-    return await resolveWorkdir(sandbox.config);
-  } catch (e) {
-    throw runCodeFailure("config", errorText(e));
-  }
-}
-
 /**
  * Write `SDK + user code + runner` into
- * `<workdir>/.celestea/run_code_<pid>_<n>.{ts,py}` — the extension is the ONLY
- * thing the language changes about placement.
+ * `<programDir>/run_code_<pid>_<n>.{ts,py}` — the extension is the ONLY thing the
+ * language changes about placement. `programDir` is the sandbox config's
+ * absolute `<CELESTEA_HOME>/workspaces/<ws>/run-code`; the host has full-disk
+ * access so it writes directly, and the bwrap provider binds that dir into the
+ * namespace so the child can read it.
  */
-async function placeProgram(workdir: string, source: ProgramSource): Promise<{ name: string; cleanup: () => Promise<void> }> {
-  const dir = join(workdir, ".celestea");
+async function placeProgram(programDir: string, source: ProgramSource): Promise<{ path: string; cleanup: () => Promise<void> }> {
   try {
-    await mkdir(dir, { recursive: true });
+    await mkdir(programDir, { recursive: true });
   } catch (e) {
-    throw runCodeFailure("config", `cannot create '${dir}': ${errorText(e)}`);
+    throw runCodeFailure("config", `cannot create '${programDir}': ${errorText(e)}`);
   }
   const suffix = source.language === "python" ? "py" : "ts";
   const name = `run_code_${process.pid}_${scriptSeq++}.${suffix}`;
-  const path = join(dir, name);
+  const path = join(programDir, name);
   try {
     await writeFile(path, assembleProgram(source.code, source.language), "utf8");
   } catch (e) {
     throw runCodeFailure("spawn", `cannot write program file '${path}': ${errorText(e)}`);
   }
-  return { name, cleanup: () => rm(path, { force: true }).catch(() => undefined) };
+  return { path, cleanup: () => rm(path, { force: true }).catch(() => undefined) };
 }
 
 // ---- child lifecycle ---------------------------------------------------------
@@ -181,14 +176,20 @@ async function placeProgram(workdir: string, source: ProgramSource): Promise<{ n
  * TypeScript runs under an absolute Node path (native type stripping, no build,
  * no `node_modules`), so the child's PATH never matters.
  */
-function interpreterCommand(language: RunCodeLanguage, scriptName: string): string {
-  return language === "python" ? `python3 -uB .celestea/${scriptName}` : `${TS_PROGRAM_RUNTIME} .celestea/${scriptName}`;
+function interpreterCommand(language: RunCodeLanguage, scriptPath: string): string {
+  const quoted = shellQuote(scriptPath);
+  return language === "python" ? `python3 -uB ${quoted}` : `${TS_PROGRAM_RUNTIME} ${quoted}`;
 }
 
-async function spawnProgram(sandbox: Sandbox, scriptName: string, language: RunCodeLanguage): Promise<SandboxChild> {
+/** POSIX single-quote a path so an absolute path with spaces stays one word. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+async function spawnProgram(sandbox: Sandbox, scriptPath: string, language: RunCodeLanguage): Promise<SandboxChild> {
   let spawned: SandboxSpawned;
   try {
-    spawned = await sandbox.spawn({ command: interpreterCommand(language, scriptName) });
+    spawned = await sandbox.spawn({ command: interpreterCommand(language, scriptPath) });
   } catch (e) {
     throw runCodeFailure("spawn", errorText(e));
   }
@@ -199,12 +200,12 @@ async function spawnProgram(sandbox: Sandbox, scriptName: string, language: RunC
 /** Spawn, pump the protocol to completion, then settle (and always clean up). */
 async function executeProgram(
   ctx: BrokerContext,
-  scriptName: string,
+  scriptPath: string,
   language: RunCodeLanguage,
   timeoutMs: number,
   state: RunState,
 ): Promise<void> {
-  const child = await spawnProgram(ctx.sandbox, scriptName, language);
+  const child = await spawnProgram(ctx.sandbox, scriptPath, language);
   const stderr = readCapped(child.stderr, ctx.config.maxLogBytes);
   // W833 (R3 B1 / W812 P1-1): the wall clock is enforced HERE, not only while
   // waiting for the next stdout line. A slow sub-call (run_shell itself allows

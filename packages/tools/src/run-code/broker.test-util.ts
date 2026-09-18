@@ -37,7 +37,7 @@ export interface BrokerHarness {
   /** Register `run_code`, then bind its handle to that same registry. */
   mount(registry: ToolRegistryImpl, options?: { events?: (event: SessionEvent) => void }): Tool;
   run(tool: Tool, callId: string, args: unknown): Promise<unknown> & { value?: unknown };
-  /** `run_code_*` files left behind in `<workdir>/.celestea`. */
+  /** `run_code_*` files left behind in `<workdir>/.celestea/run-code` (W880). */
   leftoverScripts(): Promise<string[]>;
   echoRegistry(): ToolRegistryImpl;
   shellRegistry(): ToolRegistryImpl;
@@ -157,7 +157,7 @@ export async function startBrokerHarness(options: BrokerHarnessOptions = {}): Pr
       return tool.executeWith({ call_id: callId, name: "run_code", args });
     },
     async leftoverScripts(): Promise<string[]> {
-      const entries = await readdir(join(dir, ".celestea")).catch(() => [] as string[]);
+      const entries = await readdir(join(dir, ".celestea", "run-code")).catch(() => [] as string[]);
       return entries.filter((name) => name.startsWith("run_code_"));
     },
     echoRegistry: echoRegistryOn,

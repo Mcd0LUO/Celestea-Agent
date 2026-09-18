@@ -4,6 +4,15 @@
 > 运行数据迁到 `/var/lib/celestea-agent/`。本页所述路径以**并入前**的旧两仓布局为准（历史参考），
 > 现役口径见 [`README.md`](./README-frontend.md) 与 [`../README.md`](../README.md)。
 
+> 🏠 **W880（2026-09-18）：CELESTEA_HOME 数据根**。workspace 里的 celestea 产物（会话目录 / 归档 / 回收站 / prompts / run_code 临时程序）已全部移出工作区，落到跨平台数据根：
+> 1. `$CELESTEA_HOME`（生产 systemd 固定 `/var/lib/celestea-agent`，FHS 的 `/var/lib/<service>`）；
+> 2. `$XDG_DATA_HOME/celestea`（Linux；回应 claude-code#1455 一类 XDG 诉求）；
+> 3. `~/.celestea`（Linux/macOS 默认；同类 agent CLI 的事实标准）；
+> 4. `%USERPROFILE%\.celestea`（Windows 默认）。
+>
+> 布局：`<home>/workspaces/<workspace-basename>/{sessions,archive,trash,run-code}/prompts.json`。会话 id 仍是 `<workspace-basename>/<session-dir>`。
+> 旧布局 `<ws>/.celestea/sessions`（W877 过渡）与 `<ws>/<session-dir>`、`<ws>/.celestea-archived`、`<ws>/.celestea-trash`、`<ws>/.celestea-prompts.json` 继续**只读兼容**（canonical 优先）。解析器 `packages/core/src/celestea-home.ts`，存储侧 `apps/studio/src/store/celestea-home.ts`。
+
 
 > 权威来源：`src/workspaces.rs` / `src/providers.rs` / `src/prompts.rs` / `src/compact.rs` / `src/api.rs` 的实际读写代码。
 > 所有 schema 都是 serde 派生结构的真实字段（含 `#[serde(default)]` 与 `Option` 语义）。
@@ -15,9 +24,9 @@
 | `workspaces.json` | `<cwd>/workspaces.json` | `CELESTEA_WORKSPACES_FILE` | 普通（无 key） | `WorkspaceRegistry::persist_locked` | 启动 / 所有会话端点 |
 | `providers.json` | `<cwd>/providers.json` | `CELESTEA_PROVIDERS_FILE` | **0600** | `ProvidersStore::save` | 启动 / 所有 provider 端点 |
 | `prompts.json` | `<cwd>/prompts.json` | `CELESTEA_PROMPTS_FILE` | 普通 | `persist_prompt_file` | compose 时装配 / prompts 端点 |
-| `<ws>/.celestea-prompts.json` | 每个工作区根目录 | — | 普通 | 同上（workspace scope） | compose 时装配 / prompts 端点 |
+| `<CELESTEA_HOME>/workspaces/<ws>/prompts.json` | 每个工作区容器 | — | 普通 | 同上（workspace scope） | compose 时装配 / prompts 端点 |
 | `celestea.toml` | `<cwd>/celestea.toml` | —（引擎解析链） | 普通，**不含 key** | 人 | 启动 `resolve_profile` |
-| 会话目录 | `<workspace path>/<session>/` | `CELESTEA_SESSION_DIR`（指向**会话目录**） | 普通 | 引擎 `PersistentSessionLog` + Studio | 引擎回放 / messages 端点 |
+| 会话目录 | `<CELESTEA_HOME>/workspaces/<ws>/sessions/<session>/`（legacy `<workspace path>/<session>/`） | `CELESTEA_SESSION_DIR`（指向**会话目录**） | 普通 | 引擎 `PersistentSessionLog` + Studio | 引擎回放 / messages 端点 |
 | `cli-main.jsonl` | 会话目录内 | — | 普通 | 引擎（每事件一行） | 引擎回放 / messages / compact |
 | `session.json` | 会话目录内（可选） | — | 普通 | `POST /api/sessions` | activate / compact / prompts 装配 |
 | `cli-main.jsonl.precompact` | 会话目录内 | — | 普通 | `compact::rewrite_atomic` | 人工回滚 |
@@ -39,7 +48,7 @@
 
 - **没有 `version` 字段**。"v2" 只是命名约定（`src/workspaces.rs:1-14`）：工作区 key = 注册路径的 `Path::file_name()`（文件夹 basename），**名称从不存储**；v1 的 `name` 字段在加载时被读出用作映射后丢弃、不再写回（`src/workspaces.rs:363-376`）。
 - 未知字段不报错（没有 `deny_unknown_fields`）。
-- **没有归档状态字段**：归档是纯文件系统移动，registry 不记录；归档后的会话落在 `.celestea-archived/`，而扫描跳过 dot 目录 → 对 `GET /api/sessions` 完全不可见。
+- **没有归档状态字段**：归档是纯文件系统移动，registry 不记录；归档后的会话落在 `<CELESTEA_HOME>/workspaces/<ws>/archive/`（W880；legacy `.celestea-archived/` 只读兼容），默认扫描不列出 → 对 `GET /api/sessions` 完全不可见（`?archived=1` 才列）。
 - 写入：`to_string_pretty` → `<path>.json.tmp` → `rename` 原子替换（`src/workspaces.rs:284-293`）。**没有 fsync**（与 `compact` 的日志写入不同级，见 §5）。
 
 ### 1.2 session id 形态
@@ -59,9 +68,21 @@
 │   ├── cli-main.jsonl                引擎 PersistentSessionLog 回放文件
 │   ├── session.json                  可选：{"model":"<id>","prompt":"<prompt id>"}
 │   └── cli-main.jsonl.precompact     可选：/compact 的单副本备份
-├── <session-dir-2>/
-├── .celestea-archived/<name>/        归档（保持原名，可 unarchive）
-└── .celestea-trash/<name>-<ts>/      回收站（加时间戳，**不可再按 id 寻址**）
+├── <session-dir-2>/                  （legacy 布局；新会话不再落在这里）
+├── .celestea/sessions/<name>/        W877 过渡布局（只读兼容）
+├── .celestea-archived/<name>/        归档（legacy；只读兼容）
+└── .celestea-trash/<name>-<ts>/      回收站（legacy；只读兼容）
+```
+
+W880 之后工作区**根下不再新建任何 celestea 产物**，canonical 布局为：
+
+```
+<CELESTEA_HOME>/workspaces/<workspace-basename>/
+├── sessions/<name>/                 活跃会话
+├── archive/<name>/                  归档（保持原名，可 unarchive）
+├── trash/<name>-<ts>/               回收站（加时间戳，**不可再按 id 寻址**）
+├── prompts.json                     工作区级段注册表
+└── run-code/                        run_code 临时程序（宿主机写、bwrap 只读挂载）
 ```
 - dot 前缀目录永不扫描（`scan_session_dirs`，`src/workspaces.rs:666-692`）。
 - `cli-main` 只是引擎内部文件名（`SESSION_FILE`），**没有特权**；唯一限制是活动会话不能被归档/删除。
@@ -170,7 +191,7 @@ pretty JSON → `providers.json.tmp` → `OpenOptions` 带 `mode(0o600)` → `wr
 
 两个注册表：
 - **全局**：`prompts.json`（`CELESTEA_PROMPTS_FILE` 覆盖，否则相对进程 cwd）；
-- **工作区**：`<workspace path>/.celestea-prompts.json`。
+- **工作区**：`<CELESTEA_HOME>/workspaces/<ws>/prompts.json`（legacy `<workspace path>/.celestea/prompts.json` 与 `<workspace path>/.celestea-prompts.json` 只读兼容）。
 
 ```jsonc
 {
@@ -195,7 +216,7 @@ pretty JSON → `providers.json.tmp` → `OpenOptions` 带 `mode(0o600)` → `wr
 |---|---|---|
 | `builtin` | 代码常量 `BUILTIN_SECTIONS`（10 段：`identity` / `environment` / `tool_access` / `paths` / `shell` / `network` / `delegation` / `planning` / `output` / `context`，order 100..1000） | 只有 builtin 段有静态 `name`；`default_system_prompt()` = 按数组序 `"\n\n"` 拼接 |
 | `global` | `prompts.json` 的 `sections` / `prompts` | 覆盖 builtin 同名段 |
-| `workspace` | `<ws>/.celestea-prompts.json` | 覆盖 global 同名段 |
+| `workspace` | `<CELESTEA_HOME>/workspaces/<ws>/prompts.json` | 覆盖 global 同名段 |
 | `session` | 会话目录 `session.json` 的 `"prompt"` 字段（**绑定一个 prompt id，不是独立的段层**） | 其 `section_overrides` 最后覆盖 |
 
 装配顺序（`effective_sections`，`src/prompts.rs:422-456`）：`builtin` → `global.sections` → `ws.sections` → bound prompt 的 `section_overrides`。
@@ -293,7 +314,7 @@ turn-2 .. turn-(K+1): 最近 K=4 个完整轮，内容原样，仅 turn_start/tu
 |---|---|---|---|
 | `workspaces.json` | tmp + rename | **无** | registry 变更立即持久化 |
 | `providers.json` | tmp + rename + **0600** | 有（忽略错误） | 每次写重设权限 |
-| `prompts.json` / `.celestea-prompts.json` | tmp + rename | 无 | 无权限要求 |
+| `prompts.json`（global / 工作区 canonical） | tmp + rename | 无 | 无权限要求 |
 | `cli-main.jsonl`（引擎写入） | 引擎 `PersistentSessionLog` 负责 | 引擎决定 | Studio 不直接写 |
 | `cli-main.jsonl`（compact 重写） | 先备份 → tmp + `sync_all` → rename | **有** | 失败删 tmp |
 | `session.json` | 直接 `std::fs::write`（**非原子**） | 无 | 内容极小，仅创建时写 |

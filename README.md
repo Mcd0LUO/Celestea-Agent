@@ -276,7 +276,7 @@ workerSpawn/workerSend/workerStatus/workerSessions/workerMessages
   `api_key` 缺省/null/空白 = 保留旧 key（唯一 keep-on-default 字段），`models` 缺省 = 清空。
   `/models` 探测与 `/test`：非 `chat_completions` → 该格式不支持；无 key 且 base_url 归一化后
   **等于当前代际 base_url** → 借用引擎 key（请求级，不落盘、不回显、不打日志）；否则不发请求。
-* **`prompts.json` + `<ws>/.celestea-prompts.json`（0644）**：段注册表（builtin 10 段，order 100..1000）
+* **`prompts.json` + `<CELESTEA_HOME>/workspaces/<ws>/prompts.json`（0644，W880）**：段注册表（builtin 10 段，order 100..1000）
   四级覆盖 builtin → global → ws → 绑定 prompt 的 `section_overrides`；`{{var}}` 白名单插值、
   8192 字节截断；写路径固定为 **409 检查 → 落盘 → hot apply → 失败写回旧文件**。
 

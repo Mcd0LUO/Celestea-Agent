@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionOps } from "./session-ops.js";
 import { SessionsStore } from "./sessions.js";
+import { workspaceHome } from "./celestea-home.js";
 import { WorkspacesStore } from "./workspaces.js";
 
 let root: string;
@@ -36,6 +37,11 @@ function plant(name: string, log = LOG, meta?: Record<string, string>): string {
 /** W877 slice A: plant a session in the NEW layout `<ws>/.celestea/sessions/<name>`. */
 function plantNew(name: string, log = LOG, meta?: Record<string, string>): string {
   return plantAt(join(ws, ".celestea", "sessions"), name, log, meta);
+}
+
+/** W880: plant a session in the canonical `<CELESTEA_HOME>/.../sessions` root. */
+function plantCanon(name: string, log = LOG, meta?: Record<string, string>): string {
+  return plantAt(join(workspaceHome(ws), "sessions"), name, log, meta);
 }
 
 function plantAt(root: string, name: string, log = LOG, meta?: Record<string, string>): string {
@@ -88,7 +94,7 @@ describe("session scanner + transcript", () => {
   it("creates a session dir with the <title>-<secs>.<nanos> suffix and the meta file", () => {
     const res = sessions.create({ workspace: "sample-ws", title: "我的 会话", model: "m-1", prompt: "p-1" });
     expect(res).toEqual({ ok: true, value: "sample-ws/我的_会话-1700000000.0" });
-    const dir = join(ws, ".celestea", "sessions", "我的_会话-1700000000.0");
+    const dir = join(workspaceHome(ws), "sessions", "我的_会话-1700000000.0");
     expect(existsSync(join(dir, "cli-main.jsonl"))).toBe(true);
     // W779 T2: the ORIGINAL title is persisted next to model/prompt, so the row
     // shows `我的 会话` rather than the directory `我的_会话-1700000000.0`.
@@ -107,7 +113,7 @@ describe("session scanner + transcript", () => {
     expect(sessions.create({ workspace: "sample-ws", title: "ok", model: "bad model" }).ok).toBe(false);
     expect(sessions.create({ workspace: "sample-ws", title: "ok", prompt: "bad/id" }).ok).toBe(false);
     expect(sessions.create({ workspace: "ghost", title: "ok" })).toEqual({ ok: false, status: 404, error: "unknown workspace 'ghost'" });
-    expect(existsSync(join(ws, ".celestea", "sessions", "ok-1700000000.0"))).toBe(false);
+    expect(existsSync(join(workspaceHome(ws), "sessions", "ok-1700000000.0"))).toBe(false);
   });
 
   it("M3/K8: the default mode is never WRITTEN as a key (W779 added `title`)", () => {
@@ -118,27 +124,27 @@ describe("session scanner + transcript", () => {
       ok: true,
       value: "sample-ws/plain-1700000000.0",
     });
-    expect(readFileSync(join(ws, ".celestea", "sessions", "plain-1700000000.0", "session.json"), "utf8")).toBe(
+    expect(readFileSync(join(workspaceHome(ws), "sessions", "plain-1700000000.0", "session.json"), "utf8")).toBe(
       '{\n  "title": "plain",\n  "model": "m-1",\n  "prompt": "p-1"\n}\n',
     );
     expect(sessions.create({ workspace: "sample-ws", title: "bare" })).toEqual({ ok: true, value: "sample-ws/bare-1700000000.0" });
     // A title-only session DOES have a meta file: the display name must survive
     // the directory being renamed away from the title.
-    expect(readFileSync(join(ws, ".celestea", "sessions", "bare-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "bare"\n}\n');
+    expect(readFileSync(join(workspaceHome(ws), "sessions", "bare-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "bare"\n}\n');
     for (const id of ["sample-ws/plain-1700000000.0", "sample-ws/bare-1700000000.0"]) {
       const row = sessions.list().find((r) => r.id === id);
       expect(row?.mode, id).toBe("standard");
-      expect(row ? Object.keys(JSON.parse(readFileSync(join(ws, ".celestea", "sessions", id.slice(id.indexOf("/") + 1), "session.json"), "utf8")) as object) : [], id).not.toContain("mode");
+      expect(row ? Object.keys(JSON.parse(readFileSync(join(workspaceHome(ws), "sessions", id.slice(id.indexOf("/") + 1), "session.json"), "utf8")) as object) : [], id).not.toContain("mode");
     }
   });
 
   it("M1/M2: writes an explicit mode, and rejects an unknown one before touching the disk", () => {
     expect(sessions.create({ workspace: "sample-ws", title: "exec", mode: "execution" })).toEqual({ ok: true, value: "sample-ws/exec-1700000000.0" });
-    expect(readFileSync(join(ws, ".celestea", "sessions", "exec-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "exec",\n  "mode": "execution"\n}\n');
+    expect(readFileSync(join(workspaceHome(ws), "sessions", "exec-1700000000.0", "session.json"), "utf8")).toBe('{\n  "title": "exec",\n  "mode": "execution"\n}\n');
     expect(sessions.list()[0]).toMatchObject({ id: "sample-ws/exec-1700000000.0", mode: "execution" });
 
     expect(sessions.create({ workspace: "sample-ws", title: "fast", mode: "fast" })).toEqual({ ok: false, status: 400, error: "invalid mode: fast" });
-    expect(existsSync(join(ws, ".celestea", "sessions", "fast-1700000000.0"))).toBe(false);
+    expect(existsSync(join(workspaceHome(ws), "sessions", "fast-1700000000.0"))).toBe(false);
   });
 
   it("reads an unknown hand-written mode as the default and keeps explicit standard", () => {
@@ -245,13 +251,13 @@ describe("session moves", () => {
   it("archives into .celestea-archived and unarchives back (id preserved)", () => {
     plant("alpha");
     expect(ops.archive("sample-ws/alpha")).toEqual({ ok: true, value: undefined });
-    expect(existsSync(join(ws, ".celestea-archived", "alpha", "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(ws), "archive", "alpha", "cli-main.jsonl"))).toBe(true);
     expect(sessions.list().map((r) => r.id)).toEqual([]);
     expect(ops.archive("sample-ws/alpha")).toEqual({ ok: false, status: 404, error: "unknown session 'sample-ws/alpha'" });
     expect(ops.unarchive("sample-ws/alpha")).toEqual({ ok: true, value: undefined });
     // W877 slice A: with neither live layout present, `resolve()` falls back to the
     // NEW layout, so a legacy session restored from the archive lands there.
-    expect(existsSync(join(ws, ".celestea", "sessions", "alpha", "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(ws), "sessions", "alpha", "cli-main.jsonl"))).toBe(true);
     expect(existsSync(join(ws, "alpha"))).toBe(false);
     expect(ops.unarchive("sample-ws/missing")).toEqual({ ok: false, status: 404, error: "session 'sample-ws/missing' is not archived" });
   });
@@ -263,13 +269,13 @@ describe("session moves", () => {
     // 裁决：active 只是状态标记，不是保护理由 —— 归档活动会话成功，且标记被清空
     // （archived 行不在默认列表里，标记若留着就与 GET /api/sessions 自相矛盾）。
     expect(ops.archive("sample-ws/alpha")).toEqual({ ok: true, value: undefined });
-    expect(existsSync(join(ws, ".celestea-archived", "alpha", "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(ws), "archive", "alpha", "cli-main.jsonl"))).toBe(true);
     expect(registry.activeSession()).toBeNull();
 
     // 删除活动会话同样成功：目录进 trash，active_session 落盘为 null。
     registry.setActiveSession("sample-ws/beta");
     expect(ops.batchDelete(["sample-ws/beta"])).toEqual({ deleted: 1, failed: [] });
-    expect(existsSync(join(ws, ".celestea-trash", "beta-1700000000.0", "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(ws), "trash", "beta-1700000000.0", "cli-main.jsonl"))).toBe(true);
     expect(registry.activeSession()).toBeNull();
     expect(registry.registry().active_session).toBeNull();
 
@@ -286,7 +292,7 @@ describe("session moves", () => {
     const out = ops.batchDelete(["sample-ws/alpha", "sample-ws/ghost"]);
     expect(out.deleted).toBe(1);
     expect(out.failed).toEqual([{ id: "sample-ws/ghost", error: "unknown session 'sample-ws/ghost'" }]);
-    expect(existsSync(join(ws, ".celestea-trash", "alpha-1700000000.0", "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(ws), "trash", "alpha-1700000000.0", "cli-main.jsonl"))).toBe(true);
   });
 
   it("reports per-id failures for batch-archive", () => {
@@ -309,39 +315,48 @@ describe("W877 slice A · new-layout sessions (<ws>/.celestea/sessions/)", () =>
     expect(res.value.id).toBe("sample-ws/alpha");
   });
 
-  it("(2) create() writes <ws>/.celestea/sessions/<name>/ and keeps the id", () => {
+  it("(1b) still lists and resolves a slice-A `<ws>/.celestea/sessions` session", () => {
+    plantNew("alpha");
+    expect(sessions.list().map((r) => r.id)).toEqual(["sample-ws/alpha"]);
+    const res = sessions.resolve("sample-ws/alpha");
+    expect(res.ok && res.value.dir).toBe(join(ws, ".celestea", "sessions", "alpha"));
+  });
+
+  it("(2) create() writes <home>/workspaces/<ws>/sessions/<name>/ and keeps the id", () => {
     const res = sessions.create({ workspace: "sample-ws", title: "fresh" });
     expect(res).toEqual({ ok: true, value: "sample-ws/fresh-1700000000.0" });
-    const dir = join(ws, ".celestea", "sessions", "fresh-1700000000.0");
+    const dir = join(workspaceHome(ws), "sessions", "fresh-1700000000.0");
     expect(existsSync(join(dir, "cli-main.jsonl"))).toBe(true);
     expect(existsSync(join(dir, "session.json"))).toBe(true);
-    // The legacy root stays clean.
+    // ZERO pollution: not the legacy root, not even a `.celestea` container.
     expect(existsSync(join(ws, "fresh-1700000000.0"))).toBe(false);
+    expect(existsSync(join(ws, ".celestea"))).toBe(false);
     expect(sessions.list().map((r) => r.id)).toEqual(["sample-ws/fresh-1700000000.0"]);
     const resolved = sessions.resolve("sample-ws/fresh-1700000000.0");
     expect(resolved.ok && resolved.value.dir).toBe(dir);
   });
 
-  it("(3) dedupes a name present in BOTH layouts, keeping the NEW-layout row", () => {
+  it("(3) dedupes a name present in THREE layers, keeping the canonical row", () => {
     plant("dup", LOG, { title: "legacy" });
-    plantNew("dup", LOG, { title: "fresh" });
+    plantNew("dup", LOG, { title: "slice-a" });
+    plantCanon("dup", LOG, { title: "canonical" });
     const rows = sessions.list().filter((r) => r.id === "sample-ws/dup");
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.title).toBe("fresh");
+    expect(rows[0]?.title).toBe("canonical");
     const resolved = sessions.resolve("sample-ws/dup");
-    expect(resolved.ok && resolved.value.dir).toBe(join(ws, ".celestea", "sessions", "dup"));
+    expect(resolved.ok && resolved.value.dir).toBe(join(workspaceHome(ws), "sessions", "dup"));
   });
 
-  it("(4) create() collision-detects across BOTH layouts (legacy name is not re-minted)", () => {
+  it("(4) create() collision-detects across ALL layers (legacy name is not re-minted)", () => {
     plant("beta-1700000000.0");
     const res = sessions.create({ workspace: "sample-ws", title: "beta" });
     expect(res).toEqual({ ok: true, value: "sample-ws/beta-1700000000.0-1" });
-    expect(existsSync(join(ws, ".celestea", "sessions", "beta-1700000000.0-1", "cli-main.jsonl"))).toBe(true);
-    expect(existsSync(join(ws, ".celestea", "sessions", "beta-1700000000.0"))).toBe(false);
+    expect(existsSync(join(workspaceHome(ws), "sessions", "beta-1700000000.0-1", "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(ws), "sessions", "beta-1700000000.0"))).toBe(false);
     expect(sessions.list().map((r) => r.id).sort()).toEqual(["sample-ws/beta-1700000000.0", "sample-ws/beta-1700000000.0-1"]);
   });
 
-  it("(4b) a NEW-layout name also blocks a second create() from reusing it", () => {
+  it("(4b) a canonical name also blocks a second create() from reusing it", () => {
     const first = sessions.create({ workspace: "sample-ws", title: "twice" });
     expect(first).toEqual({ ok: true, value: "sample-ws/twice-1700000000.0" });
     const second = sessions.create({ workspace: "sample-ws", title: "twice" });

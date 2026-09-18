@@ -48,6 +48,12 @@ describe("sandbox config scope (W768)", () => {
     expect(sessionSandboxConfig(null, env)).toEqual(config);
   });
 
+  it("W880: run_code's program dir is under CELESTEA_HOME, keyed by the workspace", () => {
+    const withHome: NodeJS.ProcessEnv = { ...env, CELESTEA_HOME: "/data" };
+    expect(sessionSandboxConfig({ workspace: wsA }, withHome).programDir).toBe("/data/workspaces/ws-a/run-code");
+    expect(sandboxConfigFromEnv(withHome).programDir).toBe("/data/workspaces/ws-b/run-code");
+  });
+
   it("runs a session in ITS workspace (cwd AND containment root)", () => {
     const config = sessionSandboxConfig({ workspace: wsA }, env);
     expect(config.workdir).toBe(wsA);

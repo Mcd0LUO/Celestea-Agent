@@ -16,7 +16,7 @@ import { renameSync } from "node:fs";
 import { resolve } from "node:path";
 import { writeJsonAtomic, isDirectory, isFile, listEntries, readJsonIfExists } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, serverError, type StoreResult } from "./result.js";
-import { sessionsRoot, workspaceBasename } from "./session-id.js";
+import { sessionRoots, workspaceBasename } from "./session-id.js";
 
 export const SESSION_FILE = "cli-main.jsonl";
 
@@ -126,22 +126,22 @@ export class WorkspacesStore {
   }
 
   /**
-   * Count LIVE session dirs of a workspace in BOTH layouts (W877 slice A): the
-   * new `<ws>/.celestea/sessions/` root plus the legacy workspace root. Missing
-   * either one is how the GUI's workspace session count silently drops to 0.
+   * Count LIVE session dirs of a workspace across EVERY layer (W880): the
+   * canonical `<CELESTEA_HOME>/.../sessions`, the slice-A
+   * `<ws>/.celestea/sessions` and the oldest workspace root. A name present in
+   * more than one layer is counted ONCE (the canonical copy wins), matching
+   * `SessionsStore.list()`; missing a layer is how the GUI's workspace session
+   * count silently drops to 0.
    */
   countSessions(path: string): number {
-    let n = 0;
-    for (const e of listEntries(path)) {
-      if (!e.isDir || e.name.startsWith(".")) continue;
-      if (isFile(`${path}/${e.name}/${SESSION_FILE}`)) n += 1;
+    const seen = new Set<string>();
+    for (const root of sessionRoots(path)) {
+      for (const e of listEntries(root)) {
+        if (!e.isDir || e.name.startsWith(".") || seen.has(e.name)) continue;
+        if (isFile(`${root}/${e.name}/${SESSION_FILE}`)) seen.add(e.name);
+      }
     }
-    const newRoot = sessionsRoot(path);
-    for (const e of listEntries(newRoot)) {
-      if (!e.isDir || e.name.startsWith(".")) continue;
-      if (isFile(`${newRoot}/${e.name}/${SESSION_FILE}`)) n += 1;
-    }
-    return n;
+    return seen.size;
   }
 
   view(): WorkspacesView {

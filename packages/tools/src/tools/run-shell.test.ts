@@ -16,6 +16,7 @@ function stubSandbox(result: Partial<SandboxRunResult>): Sandbox {
     maxOutputBytes: 1024,
     workdir: "/tmp",
     root: "/tmp",
+    programDir: "/tmp/run-code",
     extraEnv: [] as ReadonlyArray<readonly [string, string]>,
   };
   const base: SandboxRunResult = {

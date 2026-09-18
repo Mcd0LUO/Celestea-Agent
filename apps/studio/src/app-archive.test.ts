@@ -20,10 +20,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getJson, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
+import { workspaceHome } from "./store/celestea-home.js";
 
 const harnesses: StudioHarness[] = [];
-const ARCHIVE = ".celestea-archived";
-const TRASH = ".celestea-trash";
 /** `FIXED_NOW` (1_700_000_000_000 ms) → the created/trash-suffixed stamp. */
 const STAMP = "1700000000.0";
 
@@ -64,7 +63,7 @@ describe("W791 archived session listing (?archived=1)", () => {
 
     const archived = await getJson(h.app, `/api/sessions/${encodeURIComponent(created_id)}/archive`, jsonRequest("POST"));
     expect(archived.body).toEqual({ ok: true });
-    expect(existsSync(join(h.workspace, ARCHIVE, `arch-${STAMP}`, "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(h.workspace), "archive", `arch-${STAMP}`, "cli-main.jsonl"))).toBe(true);
 
     // DEFAULT listing: unchanged — the session is gone and the key never appears.
     const fallback = await sessions(h);
@@ -101,7 +100,7 @@ describe("W791 archived session listing (?archived=1)", () => {
 
   it("tolerates a workspace that never archived anything", async () => {
     const h = make();
-    expect(existsSync(join(h.workspace, ARCHIVE))).toBe(false);
+    expect(existsSync(join(workspaceHome(h.workspace), "archive"))).toBe(false);
     const listed = await sessions(h, "?archived=1");
     expect(listed.rows).toEqual([]);
     expect(listed.body["active_session"]).toBeNull();
@@ -136,8 +135,8 @@ describe("W791 deleting an archived session (B3)", () => {
     const res = await getJson(h.app, "/api/sessions/batch-delete", jsonRequest("POST", { ids: [sid] }));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, deleted: 1, failed: [] });
-    expect(existsSync(join(h.workspace, ARCHIVE, `gone-${STAMP}`))).toBe(false);
-    const trash = join(h.workspace, TRASH, `gone-${STAMP}-${STAMP}`);
+    expect(existsSync(join(workspaceHome(h.workspace), "archive", `gone-${STAMP}`))).toBe(false);
+    const trash = join(workspaceHome(h.workspace), "trash", `gone-${STAMP}-${STAMP}`);
     expect(existsSync(join(trash, "cli-main.jsonl"))).toBe(true);
     // Nothing is left to list anywhere.
     expect((await sessions(h, "?archived=1")).rows).toEqual([]);
@@ -156,7 +155,7 @@ describe("W791 deleting an archived session (B3)", () => {
     const deleted = await getJson(h.app, "/api/sessions/batch-delete", jsonRequest("POST", { ids: [sid] }));
     expect(deleted.status).toBe(200);
     expect(deleted.body).toEqual({ ok: true, deleted: 1, failed: [] });
-    expect(existsSync(join(h.workspace, TRASH, `live-${STAMP}-${STAMP}`, "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(h.workspace), "trash", `live-${STAMP}-${STAMP}`, "cli-main.jsonl"))).toBe(true);
     expect((await sessions(h)).body["active_session"]).toBeNull();
   });
 });
@@ -168,8 +167,8 @@ describe("W791 listArchived (B1, store level)", () => {
     await getJson(h.app, `/api/sessions/${encodeURIComponent(sid)}/archive`, jsonRequest("POST"));
     // Decoys: a hidden dir and a dir without a log file are not sessions.
     const store = h.studio.services.sessions;
-    const decoy = join(h.workspace, ARCHIVE, ".hidden");
-    const empty = join(h.workspace, ARCHIVE, "no-log");
+    const decoy = join(workspaceHome(h.workspace), "archive", ".hidden");
+    const empty = join(workspaceHome(h.workspace), "archive", "no-log");
     // W839 (R3 B8 / W818-P1-4): actually CREATE the decoys. Before this the two
     // paths were only joined then voided, so the claimed rule ("hidden dirs and
     // dirs without a log are not sessions") asserted nothing - the dirs did not
@@ -177,7 +176,7 @@ describe("W791 listArchived (B1, store level)", () => {
     mkdirSync(decoy, { recursive: true });
     writeFileSync(join(decoy, "cli-main.jsonl"), "", "utf8"); // hidden dir WITH a log
     mkdirSync(empty, { recursive: true }); // visible dir WITHOUT a log
-    expect(readFileSync(join(h.workspace, ARCHIVE, `one-${STAMP}`, "session.json"), "utf8")).toContain('"mode": "execution"');
+    expect(readFileSync(join(workspaceHome(h.workspace), "archive", `one-${STAMP}`, "session.json"), "utf8")).toContain('"mode": "execution"');
     const rows = store.listArchived();
     expect(rows.map((r) => r["id"])).toEqual([sid]);
     expect(rows[0]).toMatchObject({ archived: true, active: false, kind: "session", workspace: "sample-ws", title: "one", mode: "execution" });

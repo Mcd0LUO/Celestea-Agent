@@ -26,9 +26,8 @@ import type { SessionEvent, TurnOutcome } from "@celestea/core";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
 import type { BusSubscription } from "../sse.js";
 import { activate, asPayload, engineOf, makeEngineHarness, turns } from "./test-util.js";
+import { workspaceHome } from "../store/celestea-home.js";
 
-const TRASH = ".celestea-trash";
-const ARCHIVE = ".celestea-archived";
 /** `FIXED_NOW`（1_700_000_000_000 ms）→ trash 后缀 / 会话目录后缀。 */
 const STAMP = "1700000000.0";
 const S1 = "sample-ws/s1";
@@ -131,7 +130,7 @@ describe("W794 删除活动会话", () => {
 
     // ① 目录确实进了 trash（活动会话没有任何特例）
     expect(existsSync(join(h.workspace, "s1"))).toBe(false);
-    const trashed = join(h.workspace, TRASH, `s1-${STAMP}`, "cli-main.jsonl");
+    const trashed = join(workspaceHome(h.workspace), "trash", `s1-${STAMP}`, "cli-main.jsonl");
     expect(existsSync(trashed)).toBe(true);
 
     // ② in-flight 回合被切断：日志里这一回合以 cancelled 收尾（不是 completed，
@@ -172,7 +171,7 @@ describe("W794 删除活动会话", () => {
 
     const del = await getJson(h.app, "/api/sessions/batch-delete", jsonRequest("POST", { ids: [S1] }));
     expect([del.status, del.body]).toEqual([200, { ok: true, deleted: 1, failed: [] }]);
-    expect(existsSync(join(h.workspace, TRASH, `s1-${STAMP}`, "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(h.workspace), "trash", `s1-${STAMP}`, "cli-main.jsonl"))).toBe(true);
     expect(engineOf(h).liveSessions()).not.toContain(S1);
     expect(persistedActive(h)).toBeNull();
 
@@ -215,7 +214,7 @@ describe("W794 删除活动会话", () => {
       deleted: 1,
       failed: [{ id: "sample-ws/ghost", error: "unknown session 'sample-ws/ghost'" }],
     });
-    expect(existsSync(join(h.workspace, TRASH, `gone-${STAMP}`, "cli-main.jsonl"))).toBe(true);
+    expect(existsSync(join(workspaceHome(h.workspace), "trash", `gone-${STAMP}`, "cli-main.jsonl"))).toBe(true);
 
     // 删的不是活动会话：active_session 原样保留，并且列表里那一行确实是 active。
     const listed = await rows(h);
@@ -239,7 +238,7 @@ describe("W794 归档活动会话", () => {
 
     // 目录进了归档（id 保留，可回滚），并且那一回合被切断。
     expect(existsSync(join(h.workspace, "s1"))).toBe(false);
-    const archivedLog = join(h.workspace, ARCHIVE, "s1", "cli-main.jsonl");
+    const archivedLog = join(workspaceHome(h.workspace), "archive", "s1", "cli-main.jsonl");
     expect(existsSync(archivedLog)).toBe(true);
     expect(lastOutcome(readFileSync(archivedLog, "utf8"))).toBe("cancelled");
     expect(engineOf(h).liveSessions()).not.toContain(S1);

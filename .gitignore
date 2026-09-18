@@ -12,11 +12,12 @@ results/
 
 # Celestea 会话产物（对话日志/附件/授权/检查点）。
 # 工作区根可能就是一个 git 仓库（本项目自己就是），会话数据绝不能进版本库。
-# W876/W877：会话目录正在收进 <ws>/.celestea/。
-#   .celestea/          终态容器（会话/归档/回收站/prompts/run-code）
-#   .celestea-*         过渡期仍散在根上的旧产物（.celestea-trash/.celestea-archived/.celestea-prompts.json）
-#   /*-[0-9]*.[0-9]*/   过渡期仍散在根上的旧布局会话目录（<标题>-<秒>.<纳秒>）
-# 切片 C 迁移完成后，后两条可以删掉。
+# W880：canonical 产物已全部移出工作区，落到 $CELESTEA_HOME
+#   （<home>/workspaces/<ws>/{sessions,archive,trash,run-code}/prompts.json）。
+# 下面三条只覆盖「尚未迁移的旧数据」——迁移切片完成后即可整段删除：
+#   .celestea/          W877 过渡容器 / W876 拟议容器（会话、归档、回收站、prompts、run-code）
+#   .celestea-*         更老的根上产物（.celestea-trash/.celestea-archived/.celestea-prompts.json）
+#   /*-[0-9]*.[0-9]*/   最老的根上会话目录（<标题>-<秒>.<纳秒>）
 .celestea/
 .celestea-*
 /*-[0-9]*.[0-9]*/

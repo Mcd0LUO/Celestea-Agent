@@ -1,6 +1,7 @@
 /**
  * Prompt registry store — global `prompts.json` + per-workspace
- * `<ws>/.celestea-prompts.json` (`contracts/data-files/prompts.schema.json`,
+ * `<CELESTEA_HOME>/workspaces/<ws>/prompts.json` (W880; legacy
+ * `<ws>/.celestea-prompts.json` stays readable) (`contracts/data-files/prompts.schema.json`,
  * `src/prompts.rs:560-880`).
  *
  * Tolerated-on-read, strict-on-write: a missing OR malformed registry file
@@ -19,6 +20,7 @@ import { validatePromptId } from "./validate.js";
 import { ORDER_FALLBACK, validateTemplate } from "./prompts-template.js";
 import { builtinRowsFor } from "./builtin-sections.js";
 import { DEFAULT_SESSION_MODE, type SessionMode } from "./mode.js";
+import { promptsFileCandidates } from "./session-id.js";
 
 export interface PromptSectionRow {
   id: string;
@@ -49,7 +51,16 @@ export interface PromptFileData {
 export interface PromptScope {
   kind: "global" | "workspace";
   workspace: string | null;
+  /** Canonical write target (reads fall back through `files`). */
   file: string;
+  /**
+   * Every file this scope READS, canonical FIRST (W880). `file` === `files[0]`
+   * is the single write target; the rest are legacy locations kept readable so a
+   * pre-W880 workspace registry is never lost. Writes always land in `file`,
+   * which keeps `snapshot`/`restore` correct: they roll the write target back,
+   * leaving a legacy source untouched.
+   */
+  files: readonly string[];
 }
 
 export interface PromptDefaultRef {
@@ -120,16 +131,22 @@ export class PromptsStore {
   constructor(private readonly globalFile: string) {}
 
   scopeGlobal(): PromptScope {
-    return { kind: "global", workspace: null, file: this.globalFile };
+    return { kind: "global", workspace: null, file: this.globalFile, files: [this.globalFile] };
   }
 
   scopeWorkspace(name: string, wsPath: string): PromptScope {
-    return { kind: "workspace", workspace: name, file: `${wsPath}/.celestea-prompts.json` };
+    const files = promptsFileCandidates(wsPath);
+    return { kind: "workspace", workspace: name, file: files[0] as string, files };
   }
 
-  /** Tolerant read: missing OR malformed both degrade to an empty registry. */
+  /**
+   * Tolerant read: missing OR malformed both degrade to an empty registry. The
+   * first EXISTING candidate wins (canonical, then the legacy locations).
+   */
   read(scope: PromptScope): PromptFileData {
-    const out = readJsonIfExists(scope.file);
+    const file = scope.files.find((candidate) => existsSync(candidate));
+    if (file === undefined) return { ...EMPTY, sections: [], prompts: [] };
+    const out = readJsonIfExists(file);
     if (!out.exists || out.error !== undefined) return { ...EMPTY, sections: [], prompts: [] };
     const rec = (typeof out.value === "object" && out.value !== null ? out.value : {}) as Record<string, unknown>;
     const def = rec["default_prompt"];
