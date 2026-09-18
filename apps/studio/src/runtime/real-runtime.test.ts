@@ -328,7 +328,8 @@ describe("GET /api/sessions/{id}/context over the real engine", () => {
     // `ask_user_question` is part of the face the model is offered.
     // W804: 11 -> 12 — the session has an attachment store, so read_image is
     // mounted too (it is not offered to a store-less embedding).
-    expect(toolViews).toHaveLength(12);
+    // W7: 12 -> 13 — `stop_worker` joins the contract-driven worker tools.
+    expect(toolViews).toHaveLength(13);
     expect(tools).toContain("ask_user_question");
     expect(tools).toContain("read_image");
     for (const view of toolViews) {

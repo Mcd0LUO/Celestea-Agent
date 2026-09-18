@@ -74,8 +74,9 @@ describe("apps/studio contract surface", () => {
     expect(status["mode"]).toBe("standard");
     const tools = (await (await app.request("/api/tools")).json()) as { tools: unknown[] };
     expect(Array.isArray(tools.tools)).toBe(true);
-    // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`).
-    expect(loadTools().tools).toHaveLength(12);
+    // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`);
+    // W7: 12 -> 13 (`stop_worker`).
+    expect(loadTools().tools).toHaveLength(13);
   });
 
   it("404s unknown /api/* paths with the JSON envelope (never the SPA)", async () => {
