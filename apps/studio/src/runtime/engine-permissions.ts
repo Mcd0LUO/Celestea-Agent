@@ -13,7 +13,6 @@
  */
 
 import { dirname } from "node:path";
-import { sessionIdOfDir } from "@celestea/runtime";
 import { parseToolRoots } from "@celestea/tools";
 import { loadStudioConfig } from "../config.js";
 import {
@@ -69,6 +68,7 @@ function clampByMax(preset: PermissionPreset, max: PermissionPreset): Permission
 
 export function effectivePermissionOf(
   sessionDir: string | null,
+  sessionId: string | null,
   env: NodeJS.ProcessEnv,
   presetHint?: string | null,
 ): PermissionBaseline {
@@ -79,8 +79,10 @@ export function effectivePermissionOf(
   const custom = customRead.presets;
 
   let requested: string | null = presetHint ?? null;
-  if (requested === null && sessionDir !== null) {
-    const file = readSessionPermission(sessionDir, sessionIdOfDir(sessionDir));
+  // W878: the sidecar is self-describing — use the TRUSTED id, never a path
+  // inference. A null id with a real directory degrades fail-closed.
+  if (requested === null && sessionDir !== null && sessionId !== null) {
+    const file = readSessionPermission(sessionDir, sessionId);
     if (file.error !== undefined) warnings.push("permission_unreadable: " + file.error);
     if (file.preset !== undefined) requested = file.preset;
   }

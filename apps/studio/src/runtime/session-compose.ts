@@ -40,7 +40,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapacityError } from "../runtime-adapter.js";
 import { bindingFor, closeLog, workerSessionPrefix, type CheckpointWiring, type SessionTarget } from "./engine-session.js";
-import { sessionIdOfDir } from "./engine-grants.js";
 import { DEFAULT_SESSION_MODE, effectiveMode } from "../store/mode.js";
 import { enginePlugins, type DisclosureOptions, type QuestionWiring } from "./engine-plugins.js";
 import type { PendingQuestion, QuestionRegistry } from "../question-registry.js";
@@ -340,11 +339,17 @@ export class SessionComposer {
   /**
    * The session's ledger, or null when the host did not wire one. The session
    * label is the file's self-description (`<workspace>/<session>`, §3.2.1).
+   *
+   * W878: `compose(sessionId, dir)` already carries the trusted id, so the label
+   * uses it directly and only falls back to `HOST_SESSION_ID` when the id is
+   * null (the detached generation). `dir` is kept in the signature for the
+   * caller but is deliberately no longer a source of the label.
    */
   private usageLedger(sessionId: string | null, dir: string | null): UsageLedger | null {
+    void dir;
     const file = this.opts.ledgerFile;
     if (file === undefined || file === null) return null;
-    return createUsageLedger({ session: dir === null ? (sessionId ?? HOST_SESSION_ID) : sessionIdOfDir(dir), file });
+    return createUsageLedger({ session: sessionId ?? HOST_SESSION_ID, file });
   }
 
   /**

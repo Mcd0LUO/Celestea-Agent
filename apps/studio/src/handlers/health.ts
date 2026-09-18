@@ -137,5 +137,5 @@ function activeGrantCaps(deps: Deps, session: string | null): string[] {
   const resolved = session === null ? null : deps.sessions.resolve(session);
   if (resolved === null || !resolved.ok) return [];
   const dir = resolved.value.dir;
-  return grantsActiveCaps(effectiveGrantsOf(dir, deps.grants.env, nowSec(deps.grants)).grants);
+  return grantsActiveCaps(effectiveGrantsOf(dir, resolved.value.id, deps.grants.env, nowSec(deps.grants)).grants);
 }

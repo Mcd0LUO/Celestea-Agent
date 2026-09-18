@@ -20,7 +20,6 @@
 import { recoverSessionOnBoot, type BootRecoveryReport } from "@celestea/runtime";
 import type { SessionsStore } from "../store/sessions.js";
 import type { WorkspacesStore } from "../store/workspaces.js";
-import { sessionIdOfDir } from "./engine-grants.js";
 import type { RecoveryAuditWriter } from "./recovery-audit.js";
 
 export interface BootRecoveryInput {
@@ -43,13 +42,13 @@ export function recoverActiveSessionOnBoot(input: BootRecoveryInput): BootRecove
     return null;
   }
   // The sidecar's self-description must be the SAME string a live instance
-  // writes, and that one is derived from the directory (`<workspace>/<session>`,
-  // the id grants.json uses too) — never the host id, which may spell the
-  // workspace differently. A mismatch would void the file (fail-safe, but then
-  // nothing would ever be repaired).
+  // writes. W878: that is the host's TRUSTED `resolve()` id (the same one
+  // grants.json/permission.json/tools.json use), NOT a path inference — the
+  // inference breaks the moment a session directory sinks below the workspace
+  // root (`<ws>/.celestea/sessions/<dir>`), which would silently skip recovery.
   const report = recoverSessionOnBoot({
     dir: resolved.value.dir,
-    session: sessionIdOfDir(resolved.value.dir),
+    session: resolved.value.id,
     ...(input.now === undefined ? {} : { now: input.now }),
     warn,
   });

@@ -131,7 +131,7 @@ function registerGetSessionPermission(app: Hono, deps: Deps, table: RouteTable):
     const resolved = deps.sessions.require(c.req.param("id") ?? "");
     if (!resolved.ok) return storeFail(c, resolved);
     const read = readSessionPermission(resolved.value.dir, resolved.value.id);
-    const baseline = effectivePermissionOf(resolved.value.dir, deps.grants.env);
+    const baseline = effectivePermissionOf(resolved.value.dir, resolved.value.id, deps.grants.env);
     const warnings = [
       ...(read.error === undefined ? [] : [read.error]),
       ...baseline.warnings,
@@ -168,7 +168,7 @@ function registerPutSessionPermission(app: Hono, deps: Deps, table: RouteTable):
     }
     // W9: recompose the session at the next boundary (same hook grants use).
     deps.runtime.invalidateSession?.(resolved.value.id);
-    const baseline = effectivePermissionOf(resolved.value.dir, deps.grants.env);
+    const baseline = effectivePermissionOf(resolved.value.dir, resolved.value.id, deps.grants.env);
     return c.json({ ok: true, preset: preset.value, effective: effectiveBody(baseline) });
   });
   return route.id;

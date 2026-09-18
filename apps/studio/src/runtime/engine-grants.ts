@@ -119,11 +119,12 @@ export function netHostsEffective(env: NodeJS.ProcessEnv, grants: EffectiveGrant
  */
 export function effectiveGrantsOf(
   sessionDir: string | null,
+  sessionId: string | null,
   env: NodeJS.ProcessEnv,
   now: number,
   presetHint?: string | null,
 ): EffectiveGrantsResult {
-  const permission = effectivePermissionOf(sessionDir, env, presetHint);
+  const permission = effectivePermissionOf(sessionDir, sessionId, env, presetHint);
   /**
    * W860: the session's own DISABLED tool list is read HERE, through the same
    * reader every other consumer of the effective grants goes through
@@ -132,15 +133,18 @@ export function effectiveGrantsOf(
    * other cap; a session without a directory has nothing to read, so its
    * `toolDeny` is exactly the permission baseline's.
    */
-  const sessionTools = sessionDir === null ? { disabled: [], warnings: [] } : readSessionTools(sessionDir, sessionIdOfDir(sessionDir));
-  const base = collectGrants(sessionDir, env, now);
+  // W878: both sidecars are self-describing, so the TRUSTED id from `resolve()`
+  // must be used; a null id with a real directory is a caller bug and degrades
+  // fail-closed (nothing readable) rather than falling back to path inference.
+  const sessionTools = sessionDir === null || sessionId === null ? { disabled: [], warnings: [] } : readSessionTools(sessionDir, sessionId);
+  const base = collectGrants(sessionDir, sessionId, env, now);
   const merged = intersectGrants(base.grants, permission, env, sessionTools.disabled);
   return { grants: merged.grants, warnings: [...permission.warnings, ...sessionTools.warnings, ...base.warnings, ...merged.warnings] };
 }
 
-function collectGrants(sessionDir: string | null, env: NodeJS.ProcessEnv, now: number): EffectiveGrantsResult {
-  if (sessionDir === null) return { grants: EMPTY_GRANTS, warnings: [] };
-  const read = readGrantsFile(sessionDir, sessionIdOfDir(sessionDir));
+function collectGrants(sessionDir: string | null, sessionId: string | null, env: NodeJS.ProcessEnv, now: number): EffectiveGrantsResult {
+  if (sessionDir === null || sessionId === null) return { grants: EMPTY_GRANTS, warnings: [] };
+  const read = readGrantsFile(sessionDir, sessionId);
   if (!read.exists) return { grants: EMPTY_GRANTS, warnings: [] };
   if (read.file === undefined) {
     const reason = read.error ?? "unreadable";

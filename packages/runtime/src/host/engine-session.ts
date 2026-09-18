@@ -73,6 +73,14 @@ export interface SessionTarget {
  * file is deterministic.
  */
 export interface CheckpointWiring {
+  /**
+   * W878: the TRUSTED `<workspace>/<session>` id of this session, from the
+   * host's own `resolve()` (`ResolvedSession.id`). When present it is the
+   * sidecar's self-description; when absent the legacy `sessionIdOfDir(dir)`
+   * fallback below is used, which only holds while the session directory is a
+   * direct child of the workspace root. New callers must thread the id.
+   */
+  sessionId?: string;
   identity?: CheckpointIdentity;
   now?: () => number;
   warn?: (message: string) => void;
@@ -87,7 +95,15 @@ export interface CheckpointWiring {
 /** `boot_id` is generated ONCE per process and never again while it lives. */
 export const PROCESS_CHECKPOINT_IDENTITY: CheckpointIdentity = currentProcessIdentity();
 
-/** `<workspace>/<session>` of a session directory (the file's self-description). */
+/**
+ * `<workspace>/<session>` of a session directory (the file's self-description).
+ *
+ * W878 legacy: this infers the id from the PATH, so it is only correct while the
+ * session directory is a direct child of the workspace root. It stays exported
+ * for callers/tests that still derive the id, but inside the library it is no
+ * longer the source of truth — `openSessionLog` prefers the explicit
+ * `CheckpointWiring.sessionId` and only falls back here when none was threaded.
+ */
 export function sessionIdOfDir(sessionDir: string): string {
   return `${basename(dirname(sessionDir))}/${basename(sessionDir)}`;
 }
@@ -104,7 +120,10 @@ export function openSessionLog(dir: string, wiring: CheckpointWiring = {}): Sess
     dir,
     // Self-description `<workspace>/<session>` — the id grants.json also uses, so
     // a sidecar found in a renamed directory is ignored instead of trusted.
-    session: sessionIdOfDir(dir),
+    // W878: the explicit id wins; `sessionIdOfDir` is only the legacy fallback
+    // for callers that have no trusted id (it is wrong once a session dir sinks
+    // below the workspace root, e.g. `<ws>/.celestea/sessions/<dir>`).
+    session: wiring.sessionId ?? sessionIdOfDir(dir),
     identity: wiring.identity ?? PROCESS_CHECKPOINT_IDENTITY,
     ...(wiring.now === undefined ? {} : { now: wiring.now }),
     ...(wiring.warn === undefined ? {} : { warn: wiring.warn }),
@@ -131,7 +150,9 @@ export function bindingFor(
 ): SessionBinding {
   if (sessionId === null || target === null || target.dir === null) return memoryBindingFor(logs, sessionId);
   const dir = target.dir;
-  return createSessionBinding({ sessionId, dir, open: (): SessionLog => openSessionLog(dir, wiring) });
+  // W878: thread the trusted id into the sidecar wiring. `sessionId` is narrowed
+  // to a string here, so the checkpoint store never has to infer it from `dir`.
+  return createSessionBinding({ sessionId, dir, open: (): SessionLog => openSessionLog(dir, { ...wiring, sessionId }) });
 }
 
 /**

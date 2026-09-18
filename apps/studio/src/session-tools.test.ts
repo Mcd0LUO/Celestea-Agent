@@ -235,7 +235,7 @@ describe("W860 store + reader", () => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   });
 
-  /** A session dir at <tmp>/ws/s1 with a log, so sessionIdOfDir() answers "ws/s1". */
+  /** A session dir at <tmp>/ws/s1 with a log; its trusted id is "ws/s1". */
   function sessionDir(name: string): string {
     const root = mkdtempSync(join(tmpdir(), "w860-tools-" + name + "-"));
     roots.push(root);
@@ -262,14 +262,14 @@ describe("W860 store + reader", () => {
         grants: [{ id: "g-net", cap: "net_hosts", scope: { hosts: ["10.1.2.3"] }, granted_at: 1_700_000_000, granted_by: "hand", expires_at: null, uses_left: null, note: "" }],
       }),
     );
-    const before = effectiveGrantsOf(dir, envOf(dir), NOW);
+    const before = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW);
     expect(before.grants.netHosts).toEqual(["10.1.2.3"]);
     expect(before.grants.toolDeny).toEqual([]);
     expect(before.warnings).toEqual([]);
 
     // Hand-written on purpose: blanks are dropped, duplicates collapse, order holds.
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ version: 1, session: "ws/s1", disabled: ["write_file", " http_request ", "write_file", ""] }));
-    const after = effectiveGrantsOf(dir, envOf(dir), NOW);
+    const after = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW);
     expect(after.grants.toolDeny).toEqual(["write_file", "http_request"]);
     expect(after.grants.netHosts).toEqual(before.grants.netHosts);
     expect(after.grants.readRoots).toEqual(before.grants.readRoots);
@@ -281,7 +281,7 @@ describe("W860 store + reader", () => {
     expect(after.warnings).toEqual([]);
 
     writeFileSync(join(dir, "tools.json"), "{ nope");
-    const broken = effectiveGrantsOf(dir, envOf(dir), NOW);
+    const broken = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW);
     expect(broken.grants.toolDeny).toEqual([]);
     expect(broken.grants.netHosts).toEqual(before.grants.netHosts);
     expect(broken.warnings).toHaveLength(1);
@@ -289,6 +289,6 @@ describe("W860 store + reader", () => {
   });
 
   it("keeps the no-sessionDir path byte-identical (toolDeny stays empty)", () => {
-    expect(effectiveGrantsOf(null, {}, NOW).grants.toolDeny).toEqual([]);
+    expect(effectiveGrantsOf(null, null, {}, NOW).grants.toolDeny).toEqual([]);
   });
 });
