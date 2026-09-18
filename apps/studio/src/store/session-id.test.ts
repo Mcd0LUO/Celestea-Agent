@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { sanitizeComponent, sessionDirName, stripCreationSuffix, timestampSuffix } from "./session-id.js";
+import { CELESTEA_DIR, liveDirCandidates, sanitizeComponent, sessionDirName, SESSIONS_SUBDIR, sessionsRoot, stripCreationSuffix, timestampSuffix } from "./session-id.js";
 
 describe("W779 T2 · stripCreationSuffix", () => {
   it("strips the <secs>.<nanos> creation tail of a real session dir", () => {
@@ -42,5 +42,18 @@ describe("W779 T2 · stripCreationSuffix", () => {
       expect(stripCreationSuffix(sessionDirName(title, 1_700_000_000_000))).toBe(sanitizeComponent(title));
     }
     expect(sessionDirName("main", 1_700_000_000_000)).toBe(`main-${timestampSuffix(1_700_000_000_000)}`);
+  });
+});
+
+describe("W877 slice A · new-layout session paths", () => {
+  it("exposes the .celestea/sessions vocabulary", () => {
+    expect(CELESTEA_DIR).toBe(".celestea");
+    expect(SESSIONS_SUBDIR).toBe("sessions");
+    expect(sessionsRoot("/ws")).toBe("/ws/.celestea/sessions");
+  });
+
+  it("liveDirCandidates probes the NEW layout first and the legacy root second", () => {
+    expect(liveDirCandidates("/ws", "alpha")).toEqual(["/ws/.celestea/sessions/alpha", "/ws/alpha"]);
+    expect(liveDirCandidates("/ws", "报告-2024")).toEqual(["/ws/.celestea/sessions/报告-2024", "/ws/报告-2024"]);
   });
 });
