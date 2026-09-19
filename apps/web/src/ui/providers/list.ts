@@ -8,18 +8,19 @@ import { el } from '../../utils/dom';
 import { releasePanels, renderProviderRow } from './panel';
 import { fmtErr, getDefaultModel, getProviders, setDefaultModel } from './state';
 import type { ProviderListHost } from './types';
+import { t } from '../../i18n';
 
 export function renderProviders(container: HTMLElement, host: ProviderListHost): void {
   releasePanels(); // 旧行 DOM 即将被替换：先摘掉它们留在层级栈上的句柄
   container.replaceChildren();
   if (!getProviders().length) {
-    container.appendChild(el('div', 'side-note', '暂无提供商 · 点击上方「添加提供商」创建'));
+    container.appendChild(el('div', 'side-note', t('settings.providers.empty')));
     return;
   }
   const table = el('table', 'prov-table');
   const thead = el('thead');
   const hr = el('tr');
-  for (const h of ['名称', '备注', '请求格式', '模型', '状态', '操作']) {
+  for (const h of [t('settings.field.name'), t('settings.providers.note'), t('settings.providers.requestFormat'), t('settings.field.model'), t('settings.field.status'), t('settings.field.actions')]) {
     hr.appendChild(el('th', null, h));
   }
   thead.appendChild(hr);
@@ -37,11 +38,11 @@ export function renderProviders(container: HTMLElement, host: ProviderListHost):
 export function renderDefaultPicker(container: HTMLElement, host: ProviderListHost): void {
   const wrap = el('div', 'prov-default-card');
   const head = el('div', 'prov-default-head');
-  head.appendChild(el('span', 'prov-default-title', '默认模型'));
-  head.appendChild(el('span', 'prov-default-note', '切换后立即生效'));
+  head.appendChild(el('span', 'prov-default-title', t('settings.providers.defaultModel')));
+  head.appendChild(el('span', 'prov-default-note', t('settings.providers.defaultNote')));
   wrap.appendChild(head);
   const body = el('div', 'prov-default-body');
-  body.appendChild(el('span', 'prov-default-label', '当前默认'));
+  body.appendChild(el('span', 'prov-default-label', t('settings.providers.currentDefault')));
   const sel = document.createElement('select');
   sel.className = 'cfg-input prov-default-sel';
   const known = new Set<string>();
@@ -57,7 +58,7 @@ export function renderDefaultPicker(container: HTMLElement, host: ProviderListHo
   if (getDefaultModel() !== null && !known.has(getDefaultModel() ?? '')) {
     const o = document.createElement('option');
     o.value = getDefaultModel() ?? '';
-    o.textContent = (getDefaultModel() ?? '') + '（当前默认，不在列表）';
+    o.textContent = t('settings.providers.defaultNotInList', { model: getDefaultModel() ?? '' });
     sel.appendChild(o);
   }
   sel.value = getDefaultModel() ?? '';
@@ -65,18 +66,18 @@ export function renderDefaultPicker(container: HTMLElement, host: ProviderListHo
   sel.addEventListener('change', () => {
     const v = sel.value;
     if (!v) return;
-    msg.textContent = '应用默认模型…';
+    msg.textContent = t('settings.providers.applyingDefault');
     msg.className = 'prov-default-msg';
     void api
       .setDefaultModel(v)
       .then(() => {
         setDefaultModel(v);
-        msg.textContent = '已切换默认模型';
+        msg.textContent = t('settings.providers.defaultApplied');
         msg.className = 'prov-default-msg ok';
         void host.loadProviders();
       })
       .catch((err: unknown) => {
-        msg.textContent = '切换失败：' + fmtErr(err);
+        msg.textContent = t('settings.providers.switchFailed', { reason: fmtErr(err) });
         msg.className = 'prov-default-msg err';
         sel.value = getDefaultModel() ?? '';
       });

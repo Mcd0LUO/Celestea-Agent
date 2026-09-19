@@ -12,21 +12,25 @@ import { el, need } from '../utils/dom';
 import type { PromptInfo, PromptSection } from '../types';
 import { confirmDialog } from './confirm';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
+import { t } from '../i18n';
 
 const boxEl = need<HTMLElement>('#settingsPrompts');
 const wrapEl = need<HTMLElement>('#promptsWrap');
 
-const VARIABLES: readonly [string, string][] = [
-  ['{{model}}', '当前模型'],
-  ['{{provider}}', '提供商'],
-  ['{{base_url}}', 'API 地址'],
-  ['{{workspace}}', '工作区名'],
-  ['{{session}}', '会话标题'],
-  ['{{tools}}', '工具清单'],
-  ['{{context_window}}', '上下文窗口'],
-  ['{{max_output_tokens}}', '最大输出 tokens'],
-  ['{{date}}', '当前日期'],
-];
+/** 变量帮助表（函数而非常量：语言切换后标签必须跟着变，不能固化在模块加载时）。 */
+function variables(): readonly [string, string][] {
+  return [
+    ['{{model}}', t('settings.prompts.varCurrentModel')],
+    ['{{provider}}', t('settings.field.provider')],
+    ['{{base_url}}', t('settings.prompts.varApiUrl')],
+    ['{{workspace}}', t('settings.prompts.varWorkspaceName')],
+    ['{{session}}', t('settings.prompts.varSessionTitle')],
+    ['{{tools}}', t('settings.prompts.varToolList')],
+    ['{{context_window}}', t('settings.field.contextWindow')],
+    ['{{max_output_tokens}}', t('settings.field.maxOutputTokens')],
+    ['{{date}}', t('settings.prompts.varCurrentDate')],
+  ];
+}
 
 let scope: 'global' | 'workspace' = 'global';
 let curWs = ''; // 工作区模式下的工作区名
@@ -39,7 +43,7 @@ function fmtErr(err: unknown): string {
 }
 
 function scopeLabel(sc: string): string {
-  return sc === 'global' ? '全局' : '工作区';
+  return t(sc === 'global' ? 'settings.scope.global' : 'settings.scope.workspace');
 }
 
 // ---- 列表 ----------------------------------------------------------------------
@@ -48,7 +52,7 @@ function renderList(): void {
   const off = document.createElement('div');
   if (!prompts.length) {
     off.appendChild(
-      el('div', 'side-note', scope === 'global' ? '暂无全局提示词 · 点击「新建提示词」创建' : '该工作区暂无提示词 · 点击「新建提示词」创建'),
+      el('div', 'side-note', t(scope === 'global' ? 'settings.prompts.emptyGlobal' : 'settings.prompts.emptyWorkspace')),
     );
     boxEl.replaceChildren(...off.childNodes);
     return;
@@ -56,7 +60,7 @@ function renderList(): void {
   const table = el('table', 'prompts-table');
   const thead = el('thead');
   const hr = el('tr');
-  for (const h of ['名称', '作用域', '状态', '操作']) hr.appendChild(el('th', null, h));
+  for (const h of [t('settings.field.name'), t('settings.prompts.scope'), t('settings.field.status'), t('settings.field.actions')]) hr.appendChild(el('th', null, h));
   thead.appendChild(hr);
   table.appendChild(thead);
   const tbody = el('tbody');
@@ -65,46 +69,46 @@ function renderList(): void {
     if (p.id === activePrompt) tr.classList.add('is-active');
     const tdName = el('td', 'prompts-td-name');
     tdName.appendChild(el('span', 'prompt-name', p.name || p.id));
-    if (p.id === activePrompt) tdName.appendChild(el('span', 'prompt-badge active', '活跃'));
+    if (p.id === activePrompt) tdName.appendChild(el('span', 'prompt-badge active', t('settings.tag.active')));
     tr.appendChild(tdName);
     tr.appendChild(el('td', 'prompts-td-scope', scopeLabel(p.scope)));
     const tdState = el('td', 'prompts-td-state');
-    if (p.is_default) tdState.appendChild(el('span', 'prompt-badge def', '默认'));
+    if (p.is_default) tdState.appendChild(el('span', 'prompt-badge def', t('settings.tag.default')));
     if (!p.is_default && p.id !== activePrompt) tdState.textContent = '—';
     tr.appendChild(tdState);
     const tdOps = el('td', 'prompts-td-ops');
-    const edit = el('button', 'btn-mini', '编辑') as HTMLButtonElement;
+    const edit = el('button', 'btn-mini', t('settings.action.edit')) as HTMLButtonElement;
     edit.type = 'button';
     edit.addEventListener('click', () => openEditor(p));
-    const def = el('button', 'btn-mini', '设为默认') as HTMLButtonElement;
+    const def = el('button', 'btn-mini', t('settings.prompts.setDefault')) as HTMLButtonElement;
     def.type = 'button';
     def.disabled = !!p.is_default;
     def.addEventListener('click', () => {
       void api
         .setDefaultPrompt(p.id, scope === 'global' ? undefined : curWs || undefined)
         .then(() => {
-          note('已设为默认：' + (p.name || p.id));
+          note(t('settings.prompts.setDefaultDone', { name: p.name || p.id }));
           void loadPrompts();
         })
-        .catch((err: unknown) => note('设为默认失败：' + fmtErr(err)));
+        .catch((err: unknown) => note(t('settings.prompts.setDefaultFailed', { reason: fmtErr(err) })));
     });
-    const del = el('button', 'btn-mini danger', '删除') as HTMLButtonElement;
+    const del = el('button', 'btn-mini danger', t('settings.action.delete')) as HTMLButtonElement;
     del.type = 'button';
     del.addEventListener('click', () => {
       void confirmDialog({
-        title: '删除提示词',
-        message: '确认删除提示词「' + (p.name || p.id) + '」？',
-        okLabel: '删除',
+        title: t('settings.prompts.deleteTitle'),
+        message: t('settings.prompts.confirmDelete', { name: p.name || p.id }),
+        okLabel: t('settings.action.delete'),
         danger: true,
       }).then((ok) => {
         if (!ok) return;
         void api
           .deletePrompt(p.id, scope === 'global' ? undefined : curWs || undefined)
           .then(() => {
-            note('已删除：' + (p.name || p.id));
+            note(t('settings.prompts.deleted', { name: p.name || p.id }));
             void loadPrompts();
           })
-          .catch((err: unknown) => note('删除失败：' + fmtErr(err)));
+          .catch((err: unknown) => note(t('settings.prompts.deleteFailed', { reason: fmtErr(err) })));
       });
     });
     tdOps.appendChild(edit);
@@ -115,7 +119,7 @@ function renderList(): void {
   }
   table.appendChild(tbody);
   off.appendChild(table);
-  off.appendChild(el('div', 'prompts-note', '「活跃」= 当前会话正在使用的提示词 · 「默认」= 新建会话时的默认选项'));
+  off.appendChild(el('div', 'prompts-note', t('settings.prompts.legend')));
   boxEl.replaceChildren(...off.childNodes);
 }
 
@@ -129,16 +133,16 @@ function note(text: string): void {
 function openEditor(existing: PromptInfo | null): void {
   const scrim = el('div', 'modal-scrim');
   const card = el('div', 'modal-card prompt-modal');
-  card.appendChild(el('div', 'modal-card-title', existing ? '编辑提示词：' + (existing.name || existing.id) : '新建提示词'));
+  card.appendChild(el('div', 'modal-card-title', existing ? t('settings.prompts.editTitle', { name: existing.name || existing.id }) : t('settings.prompts.newPrompt')));
 
   // 变量帮助表
   const varsHelp = el('details', 'prompt-vars');
   const vs = document.createElement('summary');
-  vs.textContent = '可用变量';
+  vs.textContent = t('settings.prompts.variables');
   varsHelp.appendChild(vs);
   const vt = el('table', 'prompt-vars-table');
   const vtb = el('tbody');
-  for (const [v, d] of VARIABLES) {
+  for (const [v, d] of variables()) {
     const r = el('tr');
     r.appendChild(el('td', 'prompt-var-code', v));
     r.appendChild(el('td', 'prompt-var-desc', d));
@@ -149,9 +153,9 @@ function openEditor(existing: PromptInfo | null): void {
   card.appendChild(varsHelp);
 
   const nameRow = el('label', 'prov-field');
-  nameRow.appendChild(el('span', 'prov-field-label', '名称'));
+  nameRow.appendChild(el('span', 'prov-field-label', t('settings.field.name')));
   const nameInput = el('input', 'cfg-input') as HTMLInputElement;
-  nameInput.placeholder = '提示词名称';
+  nameInput.placeholder = t('settings.prompts.promptName');
   nameInput.value = existing?.name ?? '';
   nameRow.appendChild(nameInput);
   card.appendChild(nameRow);
@@ -162,7 +166,7 @@ function openEditor(existing: PromptInfo | null): void {
   const secWrap = el('div', 'prompt-secs');
   card.appendChild(secWrap);
   if (!sections.length) {
-    secWrap.appendChild(el('div', 'side-note', '暂不支持分段编辑，可直接保存整体提示词'));
+    secWrap.appendChild(el('div', 'side-note', t('settings.prompts.noSegmentEdit')));
   }
   // 覆盖编辑器：未覆盖段 = 继承；textarea 非空 = 覆盖。
   // P0-4 回填：编辑已存在提示词时，必须把该 prompt 的 section_overrides
@@ -181,13 +185,13 @@ function openEditor(existing: PromptInfo | null): void {
     inherit.checked = true;
     const inheritLabel = el('label', 'prompt-inherit-label');
     inheritLabel.appendChild(inherit);
-    inheritLabel.appendChild(el('span', null, '继承'));
+    inheritLabel.appendChild(el('span', null, t('settings.prompts.inherit')));
     head.appendChild(inheritLabel);
     row.appendChild(head);
     const ta = el('textarea', 'prompt-sec-ta cfg-input') as HTMLTextAreaElement;
     ta.rows = 3;
     ta.disabled = true;
-    ta.placeholder = '（继承自内置模板）';
+    ta.placeholder = t('settings.prompts.inheritedFromBuiltin');
     const ov = existing?.section_overrides?.[sec.id];
     if (ov !== undefined) {
       inherit.checked = false;
@@ -198,7 +202,7 @@ function openEditor(existing: PromptInfo | null): void {
     rows.push({ sec, ta, inherit });
     const sync = () => {
       ta.disabled = inherit.checked;
-      ta.placeholder = inherit.checked ? '（继承自内置模板）' : '覆盖模板文本…';
+      ta.placeholder = inherit.checked ? t('settings.prompts.inheritedFromBuiltin') : t('settings.prompts.overridePlaceholder');
       row.classList.toggle('inherited', inherit.checked);
     };
     inherit.addEventListener('change', sync);
@@ -206,9 +210,9 @@ function openEditor(existing: PromptInfo | null): void {
   }
 
   const actions = el('div', 'modal-card-actions');
-  const cancel = el('button', 'btn btn-soft', '取消') as HTMLButtonElement;
+  const cancel = el('button', 'btn btn-soft', t('settings.action.cancel')) as HTMLButtonElement;
   cancel.type = 'button';
-  const save = el('button', 'btn btn-accent', '保存') as HTMLButtonElement;
+  const save = el('button', 'btn btn-accent', t('settings.action.save')) as HTMLButtonElement;
   save.type = 'button';
   // 任务 3：挂到 body 的弹窗打开时 push 自身 close，Esc 只关栈顶一层
   let overlay: OverlayHandle | null = null;
@@ -225,7 +229,7 @@ function openEditor(existing: PromptInfo | null): void {
     const name = nameInput.value.trim();
     if (!name) {
       status.className = 'ws-fs-status err';
-      status.textContent = '名称不能为空';
+      status.textContent = t('settings.prompts.nameRequired');
       nameInput.focus();
       return;
     }
@@ -241,14 +245,14 @@ function openEditor(existing: PromptInfo | null): void {
       if (r.inherit.checked) continue;
       if (r.ta.value.trim() === '') {
         status.className = 'ws-fs-status err';
-        status.textContent = '段「' + (r.sec.name || r.sec.id) + '」未填覆盖文本：请填写，或勾选「继承」以恢复上层模板';
+        status.textContent = t('settings.prompts.segmentNoOverride', { name: r.sec.name || r.sec.id });
         r.ta.focus();
         return;
       }
       overrides[r.sec.id] = r.ta.value;
     }
     save.disabled = true;
-    save.textContent = '保存中…';
+    save.textContent = t('settings.config.saving');
     void api
       .savePrompt({
         id: existing?.id ?? 'p' + Date.now().toString(36),
@@ -260,22 +264,22 @@ function openEditor(existing: PromptInfo | null): void {
       .then((r) => {
         if (r.ok === false) {
           status.className = 'ws-fs-status err';
-          status.textContent = '保存失败：' + userErrorText(r.error, '请检查填写内容');
+          status.textContent = t('settings.prompts.saveFailed', { reason: userErrorText(r.error, t('settings.common.checkInput')) });
           save.disabled = false;
-          save.textContent = '保存';
+          save.textContent = t('settings.action.save');
           return;
         }
         close();
         // persist+prepare+swap 全部成功后才会走到这里（409/500 都会抛错），
         // 所以此时提示「已热应用」是真实语义。
-        note('已保存：' + name);
+        note(t('settings.prompts.saved', { name }));
         void loadPrompts();
       })
       .catch((err: unknown) => {
         status.className = 'ws-fs-status err';
-        status.textContent = '保存失败：' + fmtErr(err);
+        status.textContent = t('settings.prompts.saveFailed', { reason: fmtErr(err) });
         save.disabled = false;
-        save.textContent = '保存';
+        save.textContent = t('settings.action.save');
       });
   });
   actions.appendChild(cancel);
@@ -299,7 +303,7 @@ export async function loadPrompts(): Promise<void> {
     resp = await api.prompts(scope === 'workspace' ? curWs || undefined : undefined);
   } catch (err) {
     if (seq !== loadSeq) return; // 旧 scope 的失败结果，丢弃
-    off.appendChild(el('div', 'side-note err', '当前版本不支持提示词管理'));
+    off.appendChild(el('div', 'side-note err', t('settings.prompts.unsupported')));
     off.appendChild(el('div', 'side-note', fmtErr(err)));
     boxEl.replaceChildren(...off.childNodes);
     return;
@@ -314,9 +318,9 @@ export async function loadPrompts(): Promise<void> {
 /** 装配（config.ts 调用一次；幂等）。 */
 export function initPromptsSection(): void {
   const seg = el('div', 'prompts-scope');
-  const g = el('button', 'prompts-scope-btn' + (scope === 'global' ? ' active' : ''), '全局') as HTMLButtonElement;
+  const g = el('button', 'prompts-scope-btn' + (scope === 'global' ? ' active' : ''), t('settings.scope.global')) as HTMLButtonElement;
   g.type = 'button';
-  const w = el('button', 'prompts-scope-btn' + (scope === 'workspace' ? ' active' : ''), '工作区') as HTMLButtonElement;
+  const w = el('button', 'prompts-scope-btn' + (scope === 'workspace' ? ' active' : ''), t('settings.scope.workspace')) as HTMLButtonElement;
   w.type = 'button';
   const wsSel = document.createElement('select');
   wsSel.className = 'cfg-input prompts-ws-sel';

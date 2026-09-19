@@ -7,6 +7,7 @@ import type { ProviderInfo } from '../../types';
 import { el } from '../../utils/dom';
 import { boxEl, getProviders, openPanels, setProviderData } from './state';
 import type { ProviderListHost } from './types';
+import { t } from '../../i18n';
 
 export function modelCount(p: ProviderInfo): number {
   return p.models?.length ?? 0;
@@ -15,8 +16,8 @@ export function modelCount(p: ProviderInfo): number {
 /** 状态单元格内容（默认 / 已配 Key 徽章）：离屏构建后单次替换。 */
 export function renderStateCell(td: HTMLElement, p: ProviderInfo): void {
   const off = document.createElement('div');
-  if (p.is_default) off.appendChild(el('span', 'prov-badge', '默认'));
-  if (p.has_key) off.appendChild(el('span', 'prov-badge key', '已配 Key'));
+  if (p.is_default) off.appendChild(el('span', 'prov-badge', t('settings.tag.default')));
+  if (p.has_key) off.appendChild(el('span', 'prov-badge key', t('settings.providers.keyConfigured')));
   if (!p.is_default && !p.has_key) off.textContent = '—';
   td.replaceChildren(...off.childNodes);
 }

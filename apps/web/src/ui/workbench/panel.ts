@@ -145,7 +145,7 @@ function panelBox(panel: PanelState): HTMLElement {
 
 /** 重建整个面板区（离屏构建 + 单次 replaceChildren；只动本容器）。 */
 export function renderWorkbench(): void {
-  if (!dock) return;
+  if (!host || !dock) return; // host/dock 同建同销；TS 不跨函数推断，显式守卫
   const all = listPanels();
   const bottoms = all.filter((p) => p.dock === 'bottom');
   const rights = all.filter((p) => p.dock === 'right');

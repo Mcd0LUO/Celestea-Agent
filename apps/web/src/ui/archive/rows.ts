@@ -14,6 +14,7 @@
 //   调用方必须先从归档端点取数（archive/panel.ts 已如此）。
 // ============================================================================
 import type { SessionInfo } from '../../types';
+import { t } from '../../i18n';
 
 export interface ArchiveGroup {
   /** 工作区名；工作区为空的行归入 root（与侧栏同一口径）。 */
@@ -81,15 +82,15 @@ export function isEmptyArchive(rows: readonly SessionInfo[]): boolean {
 
 /** 空态文案（无归档会话时）。 */
 export function archiveEmptyText(): string {
-  return '暂无归档会话';
+  return t('settings.archive.empty');
 }
 
 /** 恢复二次确认正文。 */
 export function restoreConfirmText(label: string): string {
-  return '将「' + label + '」恢复到会话列表？';
+  return t('settings.archive.restoreConfirm', { label });
 }
 
 /** 删除二次确认正文（沿用既有删除措辞：可从回收目录恢复）。 */
 export function archiveDeleteConfirmText(label: string): string {
-  return '将删除归档会话「' + label + '」。删除后可在回收目录恢复，确认？';
+  return t('settings.archive.deleteConfirm', { label });
 }

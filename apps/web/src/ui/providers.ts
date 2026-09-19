@@ -26,6 +26,7 @@
 // ============================================================================
 import { api } from '../api';
 import { el, need } from '../utils/dom';
+import { t } from '../i18n';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
 import { buildProviderForm } from './providers/form';
 import { renderDefaultPicker, renderProviders } from './providers/list';
@@ -45,7 +46,7 @@ export async function loadProviders(): Promise<void> {
     const d = await api.providers();
     setProviderData(d.providers ?? [], d.default_model ?? null);
   } catch (err) {
-    off.appendChild(el('div', 'side-note err', '提供商列表暂不可用'));
+    off.appendChild(el('div', 'side-note err', t('settings.providers.listUnavailable')));
     off.appendChild(el('div', 'side-note', fmtErr(err)));
     boxEl.replaceChildren(...off.childNodes);
     return;
@@ -64,7 +65,7 @@ function openEditor(): void {
 
   const scrim = el('div', 'modal-scrim');
   const card = el('div', 'modal-card prov-modal');
-  card.appendChild(el('div', 'modal-card-title', '添加提供商'));
+  card.appendChild(el('div', 'modal-card-title', t('settings.providers.add')));
 
   let overlay: OverlayHandle | null = null;
   const close = (): void => {

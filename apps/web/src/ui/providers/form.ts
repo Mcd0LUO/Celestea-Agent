@@ -9,6 +9,7 @@ import type { ProviderInfo, ProviderModelSpec } from '../../types';
 import { addModelRow } from './modelrow';
 import { openModelPicker } from './picker';
 import { fmtErr } from './state';
+import { t } from '../../i18n';
 import type { EditorRefs, FormHooks, ProviderPayload } from './types';
 
 const FORMATS: readonly { value: string; label: string }[] = [
@@ -68,30 +69,30 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
   };
 
   const name = el('input', 'cfg-input') as HTMLInputElement;
-  name.placeholder = '提供商 id（字母/数字/下划线）';
+  name.placeholder = t('settings.providers.idPlaceholder');
   name.value = p?.name ?? '';
-  root.appendChild(field('名称', name));
+  root.appendChild(field(t('settings.field.name'), name));
 
   const note = el('input', 'cfg-input') as HTMLInputElement;
-  note.placeholder = '备注（可选）';
+  note.placeholder = t('settings.providers.notePlaceholder');
   note.value = p?.note ?? '';
-  root.appendChild(field('备注', note));
+  root.appendChild(field(t('settings.providers.note'), note));
 
   const key = el('input', 'cfg-input') as HTMLInputElement;
   key.type = 'password';
-  key.placeholder = p ? '留空 = 保持现有 Key' : 'API Key';
+  key.placeholder = p ? t('settings.providers.keyPlaceholderExisting') : 'API Key';
   key.value = '';
   root.appendChild(field('API Key', key));
 
   const url = el('input', 'cfg-input') as HTMLInputElement;
   url.placeholder = 'https://…/v1';
   url.value = p?.base_url ?? '';
-  const testBtn = el('button', 'btn btn-soft btn-mini', '请求测试') as HTMLButtonElement;
+  const testBtn = el('button', 'btn btn-soft btn-mini', t('settings.providers.requestTest')) as HTMLButtonElement;
   testBtn.type = 'button';
   const urlRow = el('div', 'prov-urlrow');
   urlRow.appendChild(url);
   urlRow.appendChild(testBtn);
-  root.appendChild(field('API 请求地址', urlRow));
+  root.appendChild(field(t('settings.providers.apiUrl'), urlRow));
 
   const format = document.createElement('select');
   format.className = 'cfg-input';
@@ -111,14 +112,14 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
     }
     format.value = p.request_format;
   }
-  root.appendChild(field('请求格式', format));
+  root.appendChild(field(t('settings.providers.requestFormat'), format));
 
   // ---- 模型列表 ----
   const modelsHead = el('div', 'prov-models-head');
-  modelsHead.appendChild(el('span', 'prov-models-title', '模型'));
-  const fetchBtn = el('button', 'btn btn-soft btn-mini', '获取模型') as HTMLButtonElement;
+  modelsHead.appendChild(el('span', 'prov-models-title', t('settings.field.model')));
+  const fetchBtn = el('button', 'btn btn-soft btn-mini', t('settings.providers.fetchModels')) as HTMLButtonElement;
   fetchBtn.type = 'button';
-  fetchBtn.title = '从服务商拉取可用模型（会先保存当前填写内容）';
+  fetchBtn.title = t('settings.providers.fetchModelsHint');
   modelsHead.appendChild(fetchBtn);
   root.appendChild(modelsHead);
   const modelsBox = el('div', 'prov-models');
@@ -139,36 +140,35 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
     // 留空保存即写 null（后端 numOrNull），这是期望行为。
   }
 
-  const addM = el('button', 'btn-mini', '+ 添加模型') as HTMLButtonElement;
+  const addM = el('button', 'btn-mini', t('settings.providers.addModel')) as HTMLButtonElement;
   addM.type = 'button';
   addM.addEventListener('click', () => addModelRow(e));
   root.appendChild(addM);
 
   // ---- 操作 ----
   const actions = el('div', 'modal-card-actions');
-  const cancel = el('button', 'btn btn-soft', '取消') as HTMLButtonElement;
+  const cancel = el('button', 'btn btn-soft', t('settings.action.cancel')) as HTMLButtonElement;
   cancel.type = 'button';
-  const save = el('button', 'btn btn-accent', '保存') as HTMLButtonElement;
+  const save = el('button', 'btn btn-accent', t('settings.action.save')) as HTMLButtonElement;
   save.type = 'button';
 
   testBtn.addEventListener('click', () => {
     status.className = 'prov-editor-status';
-    status.textContent = '测试中…';
+    status.textContent = t('settings.providers.testing');
     void api
       .testProvider(buildPayload(e))
       .then((r) => {
         if (r.ok === false || (r.ok === undefined && r.error)) {
           status.className = 'prov-editor-status err';
-          status.textContent = '测试失败：' + userErrorText(r.error, '请检查请求地址与 Key');
+          status.textContent = t('settings.providers.testFailed', { reason: userErrorText(r.error, t('settings.common.checkUrlKey')) });
           return;
         }
         status.className = 'prov-editor-status ok';
-        status.textContent =
-          '✓ 延迟 ' + (r.latency_ms ?? '—') + 'ms · 模型数 ' + (r.model_count ?? '—');
+        status.textContent = t('settings.providers.testOk', { ms: r.latency_ms ?? '—', n: r.model_count ?? '—' });
       })
       .catch((err: unknown) => {
         status.className = 'prov-editor-status err';
-        status.textContent = '测试失败：' + fmtErr(err);
+        status.textContent = t('settings.providers.testFailed', { reason: fmtErr(err) });
       });
   });
 
@@ -179,11 +179,11 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
     const id = name.value.trim();
     if (!id) {
       status.className = 'prov-editor-status err';
-      status.textContent = '请先填写提供商名称（作为 id）';
+      status.textContent = t('settings.providers.needId');
       return;
     }
     status.className = 'prov-editor-status';
-    status.textContent = '保存并获取模型中…';
+    status.textContent = t('settings.providers.savingAndFetching');
     void api
       .saveProvider(buildPayload(e))
       .then(() => api.fetchProviderModels(id))
@@ -191,19 +191,19 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
         if (seq !== fetchSeq) return; // 旧响应：丢弃，不覆盖新状态
         if (r.ok === false || (r.ok === undefined && r.error)) {
           status.className = 'prov-editor-status err';
-          status.textContent = '获取模型失败：' + userErrorText(r.error, '请检查请求地址与 Key');
+          status.textContent = t('settings.providers.fetchFailed', { reason: userErrorText(r.error, t('settings.common.checkUrlKey')) });
           return;
         }
         // W258 任务 4：fetch 结果只缓存在局部变量（got），不自动写入表单
         const got = r.models ?? [];
         if (!got.length) {
           status.className = 'prov-editor-status';
-          status.textContent = '未获取到任何模型';
+          status.textContent = t('settings.providers.noModelsFetched');
           return;
         }
         const existing = new Set(e.rows.map((x) => x.id.value.trim()).filter(Boolean));
         status.className = 'prov-editor-status ok';
-        status.textContent = '已获取 ' + got.length + ' 个模型 · 请勾选要添加的模型';
+        status.textContent = t('settings.providers.fetched', { n: got.length });
         // 二级选择窗：确认后才 addModelRow（已存在的跳过不重复加）
         openModelPicker(
           got.map((m) => ({ id: m.id, existing: existing.has(m.id) })),
@@ -212,15 +212,15 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
             for (const mid of fresh) addModelRow(e, mid, mid);
             status.className = 'prov-editor-status ok';
             status.textContent = fresh.length
-              ? '已添加 ' + fresh.length + ' 个模型（共获取 ' + got.length + ' 个）· 请保存以生效'
-              : '未选择模型（共获取 ' + got.length + ' 个）· 请保存以生效';
+              ? t('settings.providers.added', { n: fresh.length, total: got.length })
+              : t('settings.providers.noneSelected', { n: got.length });
           },
         );
       })
       .catch((err: unknown) => {
         if (seq !== fetchSeq) return; // 旧响应：丢弃
         status.className = 'prov-editor-status err';
-        status.textContent = '获取模型失败：' + fmtErr(err);
+        status.textContent = t('settings.providers.fetchFailed', { reason: fmtErr(err) });
       });
   });
 
@@ -228,29 +228,29 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
     const payload = buildPayload(e);
     if (!payload.id) {
       status.className = 'prov-editor-status err';
-      status.textContent = '名称（id）不能为空';
+      status.textContent = t('settings.providers.idRequired');
       return;
     }
     status.className = 'prov-editor-status';
-    status.textContent = '保存中…';
+    status.textContent = t('settings.config.saving');
     save.disabled = true;
     void api
       .saveProvider(payload)
       .then((r) => {
         if (r.ok === false) {
           status.className = 'prov-editor-status err';
-          status.textContent = '保存失败：' + userErrorText(r.error, '请检查填写内容');
+          status.textContent = t('settings.providers.saveFailed', { reason: userErrorText(r.error, t('settings.common.checkInput')) });
           save.disabled = false;
           return;
         }
         save.disabled = false;
         status.className = 'prov-editor-status ok';
-        status.textContent = '已保存';
+        status.textContent = t('settings.config.saved');
         hooks.onSaved(payload);
       })
       .catch((err: unknown) => {
         status.className = 'prov-editor-status err';
-        status.textContent = '保存失败：' + fmtErr(err);
+        status.textContent = t('settings.providers.saveFailed', { reason: fmtErr(err) });
         save.disabled = false;
       });
   });

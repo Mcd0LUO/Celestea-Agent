@@ -10,6 +10,7 @@
 //     · 纯函数、零 DOM、零网络 ⇒ 可在 node（vitest）里直接跑真实生产代码。
 // ============================================================================
 import type { BatchFailedItem, BatchOpResp } from '../types';
+import { t } from '../i18n';
 
 /** 最多列几个失败项（更多只报数，避免把提示行刷爆）。 */
 const MAX_LISTED = 3;
@@ -27,15 +28,15 @@ const MAX_LISTED = 3;
 export function failureReasonText(err: unknown): string {
   const e = typeof err === 'string' ? err.toLowerCase() : '';
   if (e === '') return '';
-  if (e.includes('unknown workspace')) return '所属工作区已不存在，无法处理';
-  if (e.includes('unknown session')) return '该会话已不存在（可能已被删除）';
+  if (e.includes('unknown workspace')) return t('settings.batch.reasonUnknownWorkspace');
+  if (e.includes('unknown session')) return t('settings.batch.reasonUnknownSession');
   return '';
 }
 
 /** 会话 id 末段（`ws/name` → `name`）；空/缺失回退 `(未知)`。 */
 export function failedTail(it: BatchFailedItem): string {
   const raw = (it.id ?? '').trim();
-  if (raw === '') return '(未知)';
+  if (raw === '') return t('settings.batch.unknownTail');
   const i = raw.lastIndexOf('/');
   return i >= 0 ? raw.slice(i + 1) : raw;
 }
@@ -56,16 +57,16 @@ export function batchFailureText(verb: string, resp: BatchOpResp | null | undefi
     }
   }
   const done = typeof resp?.deleted === 'number' ? resp.deleted : resp?.archived;
-  const rest = typeof done === 'number' && done > 0 ? '（已成功 ' + done + ' 个）' : '';
+  const rest = typeof done === 'number' && done > 0 ? t('settings.batch.rest', { n: done }) : '';
   const reason = failureReasonText(failed[0]?.error);
   if (failed.length === 1) {
-    return verb + '失败：' + (reason !== '' ? reason : failedTail(failed[0] as BatchFailedItem)) + rest;
+    return t('settings.batch.failedOne', { verb, reason: reason !== '' ? reason : failedTail(failed[0] as BatchFailedItem), rest });
   }
   const tails = failed.map(failedTail);
-  const shown = tails.slice(0, MAX_LISTED).join('、');
-  const more = tails.length > MAX_LISTED ? ' 等 ' + tails.length + ' 个' : '';
-  const head = reason !== '' ? reason + '；' : '';
-  return verb + '失败 ' + failed.length + ' 个：' + head + shown + more + rest;
+  const shown = tails.slice(0, MAX_LISTED).join(t('settings.batch.listSep'));
+  const more = tails.length > MAX_LISTED ? t('settings.batch.more', { n: tails.length }) : '';
+  const head = reason !== '' ? t('settings.batch.headSep', { reason }) : '';
+  return t('settings.batch.failedMany', { verb, n: failed.length, head, shown, more, rest });
 }
 
 /** 批量响应的成功条数（缺省/legacy 服务 → undefined，不臆造数字）。 */

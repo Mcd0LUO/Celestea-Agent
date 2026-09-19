@@ -5,6 +5,7 @@
 // ============================================================================
 import { api } from '../api';
 import { el, need } from '../utils/dom';
+import { t } from '../i18n';
 import type { ToolInfo } from '../types';
 
 const boxEl = need<HTMLElement>('#settingsTools');
@@ -15,14 +16,14 @@ function renderTools(tools: ToolInfo[] | undefined, container: HTMLElement): voi
   countEl.textContent = String(arr.length);
   container.replaceChildren();
   if (!arr.length) {
-    container.appendChild(el('div', 'side-note', '未获取到工具'));
+    container.appendChild(el('div', 'side-note', t('settings.tools.empty')));
     return;
   }
   const table = el('table', 'tools-table');
   const thead = el('thead');
   const hr = el('tr');
-  hr.appendChild(el('th', null, '名称'));
-  hr.appendChild(el('th', null, '描述'));
+  hr.appendChild(el('th', null, t('settings.field.name')));
+  hr.appendChild(el('th', null, t('settings.field.description')));
   thead.appendChild(hr);
   table.appendChild(thead);
   const tbody = el('tbody');
@@ -53,7 +54,7 @@ export function loadToolsSection(): Promise<void> {
     })
     .catch((err: unknown) => {
       countEl.textContent = '—';
-      off.appendChild(el('div', 'side-note err', '工具列表暂不可用'));
+      off.appendChild(el('div', 'side-note err', t('settings.tools.unavailable')));
       off.appendChild(el('div', 'side-note', err instanceof Error ? err.message : String(err)));
       boxEl.replaceChildren(...off.childNodes);
     });

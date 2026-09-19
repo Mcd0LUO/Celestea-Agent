@@ -12,6 +12,7 @@
 import { ApiError, api, userErrorText } from '../../api';
 import type { PermissionPreset } from '../../types/permission';
 import { findPreset, removeCustom, restore, snapshot, upsertCustom } from './store';
+import { t } from '../../i18n';
 
 export interface ActionResult {
   ok: boolean;
@@ -40,12 +41,12 @@ export async function createPreset(preset: PermissionPreset): Promise<ActionResu
   upsertCustom(preset); // 乐观：先插卡片
   try {
     const r = await api.createPermissionPreset(preset);
-    if (rejected(r) || r.preset === undefined) throw new ApiError('服务拒绝了该预设');
+    if (rejected(r) || r.preset === undefined) throw new ApiError(t('settings.permissions.rejected'));
     upsertCustom(r.preset); // 以服务端回声为准（label/字段可能被截断规范化）
-    return { ok: true, text: '已保存自定义预设', preset: r.preset };
+    return { ok: true, text: t('settings.permissions.savedCustom'), preset: r.preset };
   } catch (err) {
     restore(before); // 回滚：坏档不许留在列表里
-    return { ok: false, text: '保存失败：' + reasonText(err, '请检查填写内容') };
+    return { ok: false, text: t('settings.permissions.saveFailed', { reason: reasonText(err, t('settings.common.checkInput')) }) };
   }
 }
 
@@ -54,12 +55,12 @@ export async function updatePreset(preset: PermissionPreset): Promise<ActionResu
   upsertCustom(preset);
   try {
     const r = await api.updatePermissionPreset(preset.id, preset);
-    if (rejected(r) || r.preset === undefined) throw new ApiError('服务拒绝了该预设');
+    if (rejected(r) || r.preset === undefined) throw new ApiError(t('settings.permissions.rejected'));
     upsertCustom(r.preset);
-    return { ok: true, text: '已保存自定义预设', preset: r.preset };
+    return { ok: true, text: t('settings.permissions.savedCustom'), preset: r.preset };
   } catch (err) {
     restore(before);
-    return { ok: false, text: '保存失败：' + reasonText(err, '请检查填写内容') };
+    return { ok: false, text: t('settings.permissions.saveFailed', { reason: reasonText(err, t('settings.common.checkInput')) }) };
   }
 }
 
@@ -69,10 +70,10 @@ export async function deletePreset(id: string): Promise<ActionResult> {
   removeCustom(id);
   try {
     const r = await api.deletePermissionPreset(id);
-    if (r.ok === false) throw new ApiError('服务拒绝了该操作');
-    return { ok: true, text: '已删除「' + label + '」' };
+    if (r.ok === false) throw new ApiError(t('settings.permissions.opRejected'));
+    return { ok: true, text: t('settings.permissions.deleted', { label }) };
   } catch (err) {
     restore(before);
-    return { ok: false, text: '删除失败：' + reasonText(err, '请稍后重试') };
+    return { ok: false, text: t('settings.permissions.deleteFailed', { reason: reasonText(err, t('settings.common.retryLater')) }) };
   }
 }

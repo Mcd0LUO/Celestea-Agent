@@ -12,13 +12,21 @@ import type { PermissionPreset } from '../../types/permission';
 import { el } from '../../utils/dom';
 import { pickDirectory } from '../fsbrowser';
 import { createPreset, updatePreset, type ActionResult } from './actions';
-import { PRESET_ID_RE, UNSANDBOXED_NOTE } from './copy';
+import { PRESET_ID_RE, unsandboxedNoteText } from './copy';
+import { t } from '../../i18n';
 
 const MAX_ROOTS = 32;
 const MAX_TOOLS = 64;
-const ID_HINT = '小写字母开头，只用小写字母、数字、下划线或连字符';
-const ROOTS_HINT = '额外可写目录：工作区与工具根之外仍需写入的绝对路径';
-const TOOLS_HINT = '勾选后该工具从本档会话的工具面移除';
+/** 提示语做成函数：语言切换后必须跟着变（不能固化在模块加载时）。 */
+function idHint(): string {
+  return t('settings.permissions.idHint');
+}
+function rootsHint(): string {
+  return t('settings.permissions.rootsHint');
+}
+function toolsHint(): string {
+  return t('settings.permissions.toolsHint');
+}
 
 export interface EditorHandlers {
   onSettled(result: ActionResult): void;
@@ -92,14 +100,14 @@ function rootsEditor(initial: string[]): RootsEditor {
     for (const root of roots) {
       const row = el('div', 'perm-root-row');
       row.appendChild(el('code', 'perm-root', root));
-      row.appendChild(miniButton('移除', () => {
+      row.appendChild(miniButton(t('settings.action.remove'), () => {
         const i = roots.indexOf(root);
         if (i >= 0) roots.splice(i, 1);
         redraw();
       }));
       off.appendChild(row);
     }
-    if (roots.length === 0) off.appendChild(el('div', 'side-note', '未添加额外可写目录'));
+    if (roots.length === 0) off.appendChild(el('div', 'side-note', t('settings.permissions.noExtraRootsAdded')));
     list.replaceChildren(...off.childNodes);
   };
   const add = (raw: string): void => {
@@ -108,16 +116,16 @@ function rootsEditor(initial: string[]): RootsEditor {
     roots.push(path);
     redraw();
   };
-  const input = textInput('', '绝对路径，例如 /srv/data');
+  const input = textInput('', t('settings.permissions.rootPlaceholder'));
   const addRow = el('div', 'perm-addrow');
   addRow.append(
     input,
-    miniButton('添加', () => {
+    miniButton(t('settings.action.add'), () => {
       add(input.value);
       input.value = '';
     }),
-    miniButton('选择目录', () => {
-      void pickDirectory('选择额外可写目录', ROOTS_HINT).then((picked) => {
+    miniButton(t('settings.permissions.chooseDir'), () => {
+      void pickDirectory(t('settings.permissions.chooseExtraDir'), rootsHint()).then((picked) => {
         if (picked !== null) add(picked);
       });
     }),
@@ -169,9 +177,9 @@ function toolsEditor(initial: string[]): ToolsEditor {
       const names = (r.tools ?? [])
         .map((t) => t.name)
         .filter((n) => typeof n === 'string' && n !== '');
-      paint(names, names.length === 0 ? '未取到工具清单，可稍后重新载入' : '');
+      paint(names, names.length === 0 ? t('settings.permissions.toolsNotLoaded') : '');
     })
-    .catch(() => paint(initial, '工具清单暂不可用，可稍后重新载入'));
+    .catch(() => paint(initial, t('settings.permissions.toolsUnavailableReload')));
   return { el: box, value: () => Array.from(chosen).slice(0, MAX_TOOLS) };
 }
 
@@ -188,20 +196,20 @@ export function openEditor(
   handlers: EditorHandlers,
 ): void {
   const isNew = preset === null;
-  const idCtl = textInput(preset?.id ?? '', '例如 deploy-docs');
+  const idCtl = textInput(preset?.id ?? '', t('settings.permissions.idPlaceholder'));
   idCtl.disabled = !isNew;
-  const labelCtl = textInput(preset?.label ?? '', '档位显示名');
-  const net = switchRow('网络访问', preset?.network === true);
-  const ws = switchRow('工作区可写', preset?.workspaceWritable === true);
-  const tr = switchRow('工具根可写', preset?.toolRootsWritable === true);
-  const ap = switchRow('全部目录可读写', preset?.allPaths === true, '整台机器可读写，风险自担');
-  const unsb = switchRow('免沙箱（声明）', preset?.unsandboxed === true, UNSANDBOXED_NOTE);
+  const labelCtl = textInput(preset?.label ?? '', t('settings.permissions.labelPlaceholder'));
+  const net = switchRow(t('settings.permissions.networkOn'), preset?.network === true);
+  const ws = switchRow(t('settings.permissions.workspaceOn'), preset?.workspaceWritable === true);
+  const tr = switchRow(t('settings.permissions.toolRootOn'), preset?.toolRootsWritable === true);
+  const ap = switchRow(t('settings.permissions.allPathsOn'), preset?.allPaths === true, t('settings.permissions.allPathsRisk'));
+  const unsb = switchRow(t('settings.permissions.unsandboxedDeclare'), preset?.unsandboxed === true, unsandboxedNoteText());
   const roots = rootsEditor(preset?.writeRoots ?? []);
   const tools = toolsEditor(preset?.toolDeny ?? []);
   const status = el('div', 'perm-editor-status');
-  const save = el('button', 'btn btn-accent', '保存') as HTMLButtonElement;
+  const save = el('button', 'btn btn-accent', t('settings.action.save')) as HTMLButtonElement;
   save.type = 'button';
-  const cancel = el('button', 'btn btn-soft', '取消') as HTMLButtonElement;
+  const cancel = el('button', 'btn btn-soft', t('settings.action.cancel')) as HTMLButtonElement;
   cancel.type = 'button';
 
   const setStatus = (cls: string, text: string): void => {
@@ -210,8 +218,8 @@ export function openEditor(
   };
   const submit = (): void => {
     const id = idCtl.value.trim();
-    if (id === '') return setStatus('err', '请填写预设 id');
-    if (!PRESET_ID_RE.test(id)) return setStatus('err', '预设 id ' + ID_HINT);
+    if (id === '') return setStatus('err', t('settings.permissions.saveIdRequired'));
+    if (!PRESET_ID_RE.test(id)) return setStatus('err', t('settings.permissions.idInvalid', { hint: idHint() }));
     const next: PermissionPreset = {
       id,
       label: labelCtl.value.trim() || id,
@@ -239,15 +247,15 @@ export function openEditor(
 
   const form = el('form', 'cfg-form perm-editor-form');
   form.appendChild(
-    el('div', 'perm-editor-title', isNew ? '新建自定义预设' : '编辑自定义预设：' + (preset?.id ?? '')),
+    el('div', 'perm-editor-title', isNew ? t('settings.permissions.newTitle') : t('settings.permissions.editTitle', { id: preset?.id ?? '' })),
   );
-  form.appendChild(field('预设 id', idCtl, isNew ? ID_HINT : '编辑时 id 不可改'));
-  form.appendChild(field('显示名', labelCtl, '留空则用 id 作为显示名'));
+  form.appendChild(field(t('settings.permissions.idField'), idCtl, isNew ? idHint() : t('settings.permissions.idLocked')));
+  form.appendChild(field(t('settings.permissions.labelField'), labelCtl, t('settings.permissions.labelHint')));
   const switches = el('div', 'perm-switches');
   for (const s of [net, ws, tr, ap, unsb]) switches.appendChild(s.row);
-  form.appendChild(fieldBox('能力开关', switches));
-  form.appendChild(fieldBox('额外可写目录', roots.el, ROOTS_HINT));
-  form.appendChild(fieldBox('工具禁用', tools.el, TOOLS_HINT));
+  form.appendChild(fieldBox(t('settings.permissions.switches'), switches));
+  form.appendChild(fieldBox(t('settings.permissions.extraRootsLabel'), roots.el, rootsHint()));
+  form.appendChild(fieldBox(t('settings.permissions.toolsField'), tools.el, toolsHint()));
   const actions = el('div', 'cfg-actions');
   actions.append(save, cancel);
   form.appendChild(actions);

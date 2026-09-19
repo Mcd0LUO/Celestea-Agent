@@ -22,6 +22,7 @@ import type { BatchOpResp, ClearResp, SessionInfo } from '../../types';
 import { el } from '../../utils/dom';
 import { batchFailureText } from '../batchresult';
 import { confirmDialog } from '../confirm';
+import { t } from '../../i18n';
 import { removeRowOptimistic } from '../optimistic';
 import { forgetSession } from '../sessiongone';
 import {
@@ -73,8 +74,8 @@ function renderRow(s: SessionInfo, ctx: Ctx): HTMLElement {
   if (tail !== '') main.appendChild(el('div', 'arc-id', tail));
   row.appendChild(main);
   const acts = el('div', 'arc-actions');
-  acts.appendChild(actionButton('恢复', 'btn-mini', () => void restoreRow(id, label, ctx)));
-  acts.appendChild(actionButton('删除', 'btn-mini danger', () => void deleteRow(id, label, ctx)));
+  acts.appendChild(actionButton(t('settings.action.restore'), 'btn-mini', () => void restoreRow(id, label, ctx)));
+  acts.appendChild(actionButton(t('settings.action.delete'), 'btn-mini danger', () => void deleteRow(id, label, ctx)));
   row.appendChild(acts);
   return row;
 }
@@ -103,7 +104,7 @@ function buildBody(rows: SessionInfo[], ctx: Ctx): HTMLElement {
 
 function buildError(err: unknown): HTMLElement {
   const off = el('div', 'arc-wrap');
-  off.appendChild(el('div', 'side-note err', '归档会话暂不可用'));
+  off.appendChild(el('div', 'side-note err', t('settings.archive.unavailable')));
   off.appendChild(el('div', 'side-note', userErrorText(err)));
   return off;
 }
@@ -145,6 +146,7 @@ export function loadArchiveSection(
  */
 async function applyAction(
   verb: string,
+  isDelete: boolean,
   id: string,
   call: () => Promise<ClearResp | BatchOpResp>,
   done: string,
@@ -164,14 +166,14 @@ async function applyAction(
       undo?.restore();
       setStatus(fail, true);
     } else {
-      if (verb === '删除') forgetSession(id); // 面板里删掉的归档会话同样要收尾
+      if (isDelete) forgetSession(id); // 面板里删掉的归档会话同样要收尾
       setStatus(done);
       // 成功才静默对账一次（归档集合已变）：不清计数位、不闪加载态。
       await loadArchiveSection(ctx.container, ctx.countEl, { quiet: true });
     }
   } catch (err) {
     undo?.restore();
-    setStatus(verb + '失败：' + userErrorText(err), true);
+    setStatus(t('settings.archive.failed', { verb, reason: userErrorText(err) }), true);
   } finally {
     busy = false;
   }
@@ -190,22 +192,22 @@ export function refreshArchivePane(): void {
 async function restoreRow(id: string, label: string, ctx: Ctx): Promise<void> {
   if (busy || id === '') return;
   const ok = await confirmDialog({
-    title: '恢复归档会话',
+    title: t('settings.archive.restoreTitle'),
     message: restoreConfirmText(label),
-    okLabel: '恢复',
+    okLabel: t('settings.action.restore'),
   });
   if (!ok) return;
-  await applyAction('恢复', id, () => api.unarchiveSession(id), '已恢复会话：' + label, ctx);
+  await applyAction(t('settings.action.restore'), false, id, () => api.unarchiveSession(id), t('settings.archive.restored', { name: label }), ctx);
 }
 
 async function deleteRow(id: string, label: string, ctx: Ctx): Promise<void> {
   if (busy || id === '') return;
   const ok = await confirmDialog({
-    title: '删除归档会话',
+    title: t('settings.archive.deleteTitle'),
     message: archiveDeleteConfirmText(label),
-    okLabel: '删除',
+    okLabel: t('settings.action.delete'),
     danger: true,
   });
   if (!ok) return;
-  await applyAction('删除', id, () => api.batchDeleteSessions([id]), '已删除会话：' + label, ctx);
+  await applyAction(t('settings.action.delete'), true, id, () => api.batchDeleteSessions([id]), t('settings.archive.deleted', { name: label }), ctx);
 }

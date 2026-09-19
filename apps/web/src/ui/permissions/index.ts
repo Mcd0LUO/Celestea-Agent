@@ -19,6 +19,7 @@ import { deletePreset } from './actions';
 import { closeEditor, openEditor } from './editor';
 import { renderMaxNote, renderPresetsList, type ListHandlers } from './list';
 import { PERMISSIONS_CHANGED, ensurePresets, snapshot } from './store';
+import { t } from '../../i18n';
 
 const HOST = '#settingsPermissions';
 
@@ -54,9 +55,9 @@ function showEditor(preset: PermissionPreset | null): void {
 
 async function removePreset(preset: PermissionPreset): Promise<void> {
   const ok = await confirmDialog({
-    title: '删除自定义预设',
-    message: '删除「' + (preset.label || preset.id) + '」？仍在使用该档位的会话会回落到默认档。',
-    okLabel: '删除',
+    title: t('settings.permissions.deleteTitle'),
+    message: t('settings.permissions.deleteConfirm', { name: preset.label || preset.id }),
+    okLabel: t('settings.action.delete'),
     danger: true,
   });
   if (!ok) return;
@@ -83,7 +84,7 @@ function buildShell(host: HTMLElement): void {
   const off = document.createElement('div');
   const bar = el('div', 'perm-toolbar');
   bar.appendChild(el('span', 'perm-max', ''));
-  const add = el('button', 'btn-mini', '新建预设') as HTMLButtonElement;
+  const add = el('button', 'btn-mini', t('settings.permissions.newPreset')) as HTMLButtonElement;
   add.type = 'button';
   add.id = 'btnNewPreset';
   add.addEventListener('click', () => showEditor(null));
@@ -118,6 +119,6 @@ export async function loadPermissionsSection(): Promise<void> {
     renderMax();
     renderList();
   } catch (err) {
-    setStatus('权限预设暂不可用：' + userErrorText(err, '请稍后重试'), false);
+    setStatus(t('settings.permissions.unavailableReason', { reason: userErrorText(err, t('settings.common.retryLater')) }), false);
   }
 }

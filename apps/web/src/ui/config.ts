@@ -16,6 +16,7 @@ import { initPromptsSection, loadPrompts } from './prompts';
 import { loadPermissionsSection } from './permissions';
 import { loadPluginsSection } from './plugins'; // W859 设置页「插件」（客户端热开关 + 宿主只读）
 import { installI18nSettings, mountGeneralPane } from '../i18n/settings'; // i18n：通用偏好 pane
+import { t } from '../i18n';
 
 const page = need<HTMLElement>('#settingsPage');
 const box = need<HTMLElement>('#settingsConfig');
@@ -37,7 +38,7 @@ const ctl = {
     const cur = current ?? '';
     if (cur !== '' && !options.some((o) => o.value === cur)) {
       // 当前值不在清单（如 pinned 具体版本）：保留为附加选项，避免误改
-      const extra = el('option', null, cur + '（当前）') as HTMLOptionElement;
+      const extra = el('option', null, cur + t('settings.suffix.current')) as HTMLOptionElement;
       extra.value = cur;
       s.appendChild(extra);
     }
@@ -88,43 +89,43 @@ function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTM
 
   const modelCtl: HTMLSelectElement | HTMLInputElement = models.length
     ? ctl.select(models.map((m) => ({ value: m.id, label: m.name })), cfg.model ?? null)
-    : ctl.text(cfg.model ?? '', '模型名称');
-  form.appendChild(ctl.field('模型', modelCtl, models.length ? '' : '请手动填写模型名称'));
+    : ctl.text(cfg.model ?? '', t('settings.config.modelName'));
+  form.appendChild(ctl.field(t('settings.field.model'), modelCtl, models.length ? '' : t('settings.config.modelNameHint')));
 
-  const effortOptions: { value: string; label: string }[] = [{ value: '', label: '标准（清除）' }];
+  const effortOptions: { value: string; label: string }[] = [{ value: '', label: t('settings.config.effortStandard') }];
   for (const e of efforts.length ? efforts : EFFORT_FALLBACK) {
     effortOptions.push({ value: e, label: e });
   }
   const effortCtl = ctl.select(effortOptions, cfg.reasoning_effort ?? null);
-  form.appendChild(ctl.field('推理档位', effortCtl, efforts.length ? '空 = 标准档' : '请手动填写档位'));
+  form.appendChild(ctl.field(t('settings.config.effort'), effortCtl, efforts.length ? t('settings.config.effortHint') : t('settings.config.effortManual')));
 
   const baseUrlCtl = ctl.text(cfg.base_url ?? '', 'https://…/v1');
   form.appendChild(ctl.field('Base URL', baseUrlCtl));
 
-  const apiKeyCtl = ctl.text('', '留空则保持当前密钥不变', 'password');
-  form.appendChild(ctl.field('API Key', apiKeyCtl, '不会读取或显示已保存的密钥明文'));
+  const apiKeyCtl = ctl.text('', t('settings.config.apiKeyPlaceholder'), 'password');
+  form.appendChild(ctl.field('API Key', apiKeyCtl, t('settings.config.apiKeyHint')));
 
   const ctxWin = cfg.context_window ?? cfg.context_window_tokens ?? statusWindow;
-  const ctxCtl = ctl.num(ctxWin, '默认 1M（1000000 tokens）');
-  form.appendChild(ctl.field('上下文窗口', ctxCtl));
+  const ctxCtl = ctl.num(ctxWin, t('settings.config.contextWindowPlaceholder'));
+  form.appendChild(ctl.field(t('settings.field.contextWindow'), ctxCtl));
 
-  const maxOutCtl = ctl.num(cfg.max_output_tokens ?? null, '未限制');
-  form.appendChild(ctl.field('最大输出 tokens', maxOutCtl));
+  const maxOutCtl = ctl.num(cfg.max_output_tokens ?? null, t('settings.config.noLimit'));
+  form.appendChild(ctl.field(t('settings.field.maxOutputTokens'), maxOutCtl));
 
-  const maxStepsCtl = ctl.num(cfg.max_steps ?? null, '未设置');
-  form.appendChild(ctl.field('最大步数', maxStepsCtl));
+  const maxStepsCtl = ctl.num(cfg.max_steps ?? null, t('settings.config.notSet'));
+  form.appendChild(ctl.field(t('settings.field.maxSteps'), maxStepsCtl));
 
   const sysCtl = el('textarea', 'cfg-input cfg-sys') as HTMLTextAreaElement;
   sysCtl.rows = 6;
-  sysCtl.placeholder = '系统提示词（留空 = 保持默认）';
+  sysCtl.placeholder = t('settings.config.systemPromptPlaceholder');
   sysCtl.value = cfg.system_prompt ?? '';
-  form.appendChild(ctl.field('系统提示词', sysCtl, '发送给模型的指令前缀'));
+  form.appendChild(ctl.field(t('settings.field.systemPrompt'), sysCtl, t('settings.config.systemPromptHint')));
 
   // ---- 操作行 ----
   const actions = el('div', 'cfg-actions');
-  const saveBtn = el('button', 'btn btn-accent', '保存') as HTMLButtonElement;
+  const saveBtn = el('button', 'btn btn-accent', t('settings.action.save')) as HTMLButtonElement;
   saveBtn.type = 'button';
-  const reloadBtn = el('button', 'btn btn-soft', '重新载入') as HTMLButtonElement;
+  const reloadBtn = el('button', 'btn btn-soft', t('settings.action.reload')) as HTMLButtonElement;
   reloadBtn.type = 'button';
   actions.appendChild(saveBtn);
   actions.appendChild(reloadBtn);
@@ -140,7 +141,7 @@ function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTM
     const n = toNum(ctl2.value);
     if (Number.isNaN(n)) {
       status.className = 'cfg-status err';
-      status.textContent = '「' + name + '」不是合法数字';
+      status.textContent = t('settings.config.notAValidNumber', { name });
       throw new Error('bad number: ' + name);
     }
     return n;
@@ -157,34 +158,34 @@ function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTM
     if (baseUrl !== '' && baseUrl !== (cfg.base_url ?? '')) patch.base_url = baseUrl;
     if (apiKeyCtl.value.trim() !== '') patch.api_key = apiKeyCtl.value.trim();
     patch.reasoning_effort = effortCtl.value === '' ? null : effortCtl.value;
-    patch.context_window = parseNum(ctxCtl, '上下文窗口');
-    patch.max_output_tokens = parseNum(maxOutCtl, '最大输出 tokens');
-    patch.max_steps = parseNum(maxStepsCtl, '最大步数');
+    patch.context_window = parseNum(ctxCtl, t('settings.field.contextWindow'));
+    patch.max_output_tokens = parseNum(maxOutCtl, t('settings.field.maxOutputTokens'));
+    patch.max_steps = parseNum(maxStepsCtl, t('settings.field.maxSteps'));
     patch.system_prompt = sysCtl.value;
 
     saveBtn.disabled = true;
-    saveBtn.textContent = '保存中…';
+    saveBtn.textContent = t('settings.config.saving');
     void api
       .saveConfig(patch)
       .then((d) => {
         status.className = 'cfg-status ok';
-        status.textContent = d.ok === false ? '保存失败，请重试' : '已保存';
+        status.textContent = d.ok === false ? t('settings.config.saveFailedRetry') : t('settings.config.saved');
         if (d.ok !== false) window.dispatchEvent(new Event('studio:config-saved'));
       })
       .catch((err: unknown) => {
         status.className = 'cfg-status err';
         const e = err as Error;
         if (err instanceof ApiError && err.status === 409) {
-          status.textContent = '本轮对话仍在进行，请在结束后再保存。';
+          status.textContent = t('settings.config.busySave');
         } else if (err instanceof ApiError && (err.status === 405 || err.status === 404)) {
-          status.textContent = '当前版本不支持在线保存配置，请升级后重试';
+          status.textContent = t('settings.config.unsupportedSave');
         } else {
-          status.textContent = '保存失败：' + (e.message || String(err));
+          status.textContent = t('settings.config.saveFailed', { reason: e.message || String(err) });
         }
       })
       .finally(() => {
         saveBtn.disabled = false;
-        saveBtn.textContent = '保存';
+        saveBtn.textContent = t('settings.action.save');
       });
   };
 
@@ -207,7 +208,7 @@ export async function loadConfig(opts: { refresh?: boolean } = {}): Promise<void
   try {
     cfg = opts.refresh === true ? await revalidateConfig() : await loadConfigCached();
   } catch (err) {
-    off.appendChild(el('div', 'side-note err', '配置暂不可用'));
+    off.appendChild(el('div', 'side-note err', t('settings.config.unavailable')));
     off.appendChild(el('div', 'side-note', err instanceof Error ? err.message : String(err)));
     box.replaceChildren(...off.childNodes);
     statusHint.textContent = '';
@@ -226,7 +227,7 @@ export async function loadConfig(opts: { refresh?: boolean } = {}): Promise<void
     statusHint.textContent = '';
     box.replaceChildren(...off.childNodes);
   } catch (err) {
-    off.appendChild(el('div', 'side-note err', '配置暂不可用'));
+    off.appendChild(el('div', 'side-note err', t('settings.config.unavailable')));
     off.appendChild(el('div', 'side-note', err instanceof Error ? err.message : String(err)));
     box.replaceChildren(...off.childNodes);
     statusHint.textContent = '';

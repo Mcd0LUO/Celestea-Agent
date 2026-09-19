@@ -17,12 +17,10 @@ import { CLIENT_PLUGINS, isClientPluginOn, setClientPlugin } from '../../plugins
 import type { ClientPluginDescriptor } from '../../plugins';
 import { el, need } from '../../utils/dom';
 import { fetchHostPlugins, type HostPluginRow } from './host';
+import { t } from '../../i18n';
 
 const HOST = '#settingsPlugins';
 /** 宿主清单不可用（端点缺失/不可达/清单为空）时的如实空态。 */
-const HOST_EMPTY = '服务端未提供插件清单';
-/** 宿主插件逐项标注：只读，进程内拔不掉。 */
-const HOST_BADGE = '服务端内置 · 进程内不可热拔插';
 
 function section(title: string, note: string): HTMLElement {
   const sec = el('section', 'plug-sec');
@@ -69,14 +67,14 @@ function hostRow(p: HostPluginRow): HTMLElement {
   main.appendChild(label);
   if (p.note !== '') main.appendChild(el('div', 'plug-row-hint', p.note));
   row.appendChild(main);
-  row.appendChild(el('span', 'plug-badge', HOST_BADGE));
+  row.appendChild(el('span', 'plug-badge', t('settings.plugins.hostBadge')));
   return row;
 }
 
 /** 宿主一段的渲染（空列表 = 如实空态）。 */
 function renderHost(box: HTMLElement, rows: HostPluginRow[]): void {
   const off = document.createElement('div');
-  if (rows.length === 0) off.appendChild(el('div', 'plug-empty', HOST_EMPTY));
+  if (rows.length === 0) off.appendChild(el('div', 'plug-empty', t('settings.plugins.hostEmpty')));
   else for (const r of rows) off.appendChild(hostRow(r));
   box.replaceChildren(...off.childNodes);
 }
@@ -90,14 +88,14 @@ export async function loadPluginsSection(): Promise<void> {
     status.textContent = t;
   };
 
-  const clientSec = section('客户端插件', '开关立即生效，重新打开页面后保持');
+  const clientSec = section(t('settings.plugins.clientTitle'), t('settings.plugins.clientNote'));
   const list = el('div', 'plug-list');
   for (const d of CLIENT_PLUGINS) list.appendChild(clientRow(d, setStatus));
   clientSec.appendChild(list);
   clientSec.appendChild(status);
 
   const hostList = el('div', 'plug-host-list');
-  const hostSec = section('服务端插件', '只读清单');
+  const hostSec = section(t('settings.plugins.hostTitle'), t('settings.plugins.hostNote'));
   hostSec.appendChild(hostList);
 
   const off = document.createElement('div');
@@ -109,6 +107,6 @@ export async function loadPluginsSection(): Promise<void> {
   } catch (err) {
     // 端点缺失/不可达：只画一行如实空态，不弹错、不重试、不伪造清单
     renderHost(hostList, []);
-    console.warn('[plugins] ' + userErrorText(err, '宿主插件清单暂不可用'));
+    console.warn('[plugins] ' + userErrorText(err, t('settings.plugins.hostUnavailable')));
   }
 }

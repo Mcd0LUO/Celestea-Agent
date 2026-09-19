@@ -8,6 +8,7 @@ import type { PermissionPreset } from '../../types/permission';
 import { el } from '../../utils/dom';
 import { maxNote, presetChips, unsandboxedNote } from './copy';
 import { snapshot } from './store';
+import { t } from '../../i18n';
 
 export interface ListHandlers {
   onEdit(preset: PermissionPreset): void;
@@ -34,11 +35,11 @@ export function presetCard(
   const head = el('div', 'perm-card-head');
   head.appendChild(el('span', 'perm-card-title', preset.label || preset.id));
   head.appendChild(el('code', 'perm-card-id', preset.id));
-  if (builtin) head.appendChild(el('span', 'perm-badge', '内置'));
+  if (builtin) head.appendChild(el('span', 'perm-badge', t('settings.permissions.builtin')));
   else {
     const ops = el('div', 'perm-card-ops');
-    ops.appendChild(opButton('编辑', 'btn-mini', () => handlers.onEdit(preset)));
-    ops.appendChild(opButton('删除', 'btn-mini danger', () => handlers.onDelete(preset)));
+    ops.appendChild(opButton(t('settings.action.edit'), 'btn-mini', () => handlers.onEdit(preset)));
+    ops.appendChild(opButton(t('settings.action.delete'), 'btn-mini danger', () => handlers.onDelete(preset)));
     head.appendChild(ops);
   }
   card.appendChild(head);
@@ -49,7 +50,7 @@ export function presetCard(
 
   if (preset.writeRoots.length > 0) {
     const roots = el('div', 'perm-roots');
-    roots.appendChild(el('span', 'perm-roots-label', '额外可写目录'));
+    roots.appendChild(el('span', 'perm-roots-label', t('settings.permissions.extraRootsLabel')));
     for (const root of preset.writeRoots) roots.appendChild(el('code', 'perm-root', root));
     card.appendChild(roots);
   }
@@ -63,12 +64,12 @@ export function renderPresetsList(container: HTMLElement, handlers: ListHandlers
   const off = document.createElement('div');
   const snap = snapshot();
   if (snap === null) {
-    off.appendChild(el('div', 'side-note', '权限预设暂不可用'));
+    off.appendChild(el('div', 'side-note', t('settings.permissions.unavailable')));
   } else {
     for (const p of snap.builtin) off.appendChild(presetCard(p, true, handlers));
     for (const p of snap.custom) off.appendChild(presetCard(p, false, handlers));
     if (snap.custom.length === 0) {
-      off.appendChild(el('div', 'side-note', '还没有自定义预设；可用上方「新建预设」自组合一档。'));
+      off.appendChild(el('div', 'side-note', t('settings.permissions.emptyCustom')));
     }
   }
   container.replaceChildren(...off.childNodes);

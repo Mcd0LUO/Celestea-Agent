@@ -4,6 +4,7 @@
 // ============================================================================
 import { el } from '../../utils/dom';
 import type { EditorRefs, EffortChips } from './types';
+import { t } from '../../i18n';
 
 /**
  * 推理强度固定档位（W258 任务 3）：与后端 available.efforts 一致。
@@ -14,15 +15,15 @@ const EFFORT_TIERS: readonly string[] = ['low', 'high', 'max'];
 export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   const li = el('div', 'prov-model-row');
   const rid = el('input', 'cfg-input') as HTMLInputElement;
-  rid.placeholder = '模型 id';
+  rid.placeholder = t('settings.providers.modelId');
   rid.value = id;
   const rname = el('input', 'cfg-input') as HTMLInputElement;
-  rname.placeholder = '显示名';
+  rname.placeholder = t('settings.providers.modelDisplayName');
   rname.value = name;
   const det = document.createElement('details');
   det.className = 'prov-model-adv';
   const sum = document.createElement('summary');
-  sum.textContent = '高级（推理强度 / 上下文 / 最大输出）';
+  sum.textContent = t('settings.providers.advanced');
   det.appendChild(sum);
   const adv = el('div', 'prov-model-adv-body');
   // W258 任务 3：推理强度改为可点击档位片（多选）；点击只切 class + aria-pressed，
@@ -38,9 +39,9 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   // 「+」按钮与内联输入框：永远排在所有档位片之后；新增片一律插到「+」左侧
   const plusBtn = el('button', 'btn-mini', '+') as HTMLButtonElement;
   plusBtn.type = 'button';
-  plusBtn.title = '添加自定义推理档位（如 xhigh）';
+  plusBtn.title = t('settings.providers.addEffortTier');
   const tierInput = el('input', 'cfg-input') as HTMLInputElement;
-  tierInput.placeholder = '自定义档位名（如 xhigh）';
+  tierInput.placeholder = t('settings.providers.customTierPlaceholder');
   tierInput.hidden = true;
   // 尺寸用内联样式：本任务提交范围仅本文件，不改 settings.css（避免全宽输入框撑满一行）
   tierInput.style.width = '170px';
@@ -93,7 +94,7 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
       const value = raw.trim();
       if (value !== '') {
         if (chipByKey.has(effortKey(value))) {
-          setHint('档位已存在：' + value); // 轻微提示，不重复添加
+          setHint(t('settings.providers.tierExists', { tier: value })); // 轻微提示，不重复添加
         } else {
           setHint('');
           addChip(value, true); // 新增片默认选中
@@ -158,21 +159,21 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   const ctx = el('input', 'cfg-input') as HTMLInputElement;
   ctx.type = 'text';
   ctx.min = '0';
-  ctx.placeholder = '上下文窗口（如 1000000 / 1m / 128k）';
+  ctx.placeholder = t('settings.providers.contextPlaceholder');
   const maxOut = el('input', 'cfg-input') as HTMLInputElement;
   maxOut.type = 'text';
   maxOut.min = '0';
-  maxOut.placeholder = '最大输出 tokens（如 8192 / 8k）';
-  adv.appendChild(el('label', 'prov-adv-label', '推理强度'));
+  maxOut.placeholder = t('settings.providers.maxOutPlaceholder');
+  adv.appendChild(el('label', 'prov-adv-label', t('settings.providers.reasoningEffort')));
   adv.appendChild(chipsRoot);
-  adv.appendChild(el('label', 'prov-adv-label', '模型上下文'));
+  adv.appendChild(el('label', 'prov-adv-label', t('settings.providers.modelContext')));
   adv.appendChild(ctx);
-  adv.appendChild(el('label', 'prov-adv-label', '最大输出 tokens'));
+  adv.appendChild(el('label', 'prov-adv-label', t('settings.field.maxOutputTokens')));
   adv.appendChild(maxOut);
   det.appendChild(adv);
   // 高级区展开/收起会改变内容高度：通知内联面板重算 max-height
   det.addEventListener('toggle', () => e.onLayout?.());
-  const del = el('button', 'btn-mini danger', '移除') as HTMLButtonElement;
+  const del = el('button', 'btn-mini danger', t('settings.action.remove')) as HTMLButtonElement;
   del.type = 'button';
   del.addEventListener('click', () => {
     li.remove();

@@ -4,6 +4,7 @@
 // ============================================================================
 import { el } from '../../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../../utils/overlays';
+import { t } from '../../i18n';
 
 export interface PickerItem {
   id: string;
@@ -25,9 +26,9 @@ export function openModelPicker(
   closeModelPicker?.(); // 单例：旧的（若有）先关
   const scrim = el('div', 'modal-scrim');
   const card = el('div', 'modal-card prov-picker');
-  card.appendChild(el('div', 'modal-card-title', '选择要添加的模型'));
+  card.appendChild(el('div', 'modal-card-title', t('settings.providers.pickTitle')));
   card.appendChild(
-    el('div', 'side-note', '请勾选要添加的模型（默认不勾选；已存在的模型不可重复添加）'),
+    el('div', 'side-note', t('settings.providers.pickNote')),
   );
 
   const list = el('div', 'prov-picker-list');
@@ -35,7 +36,7 @@ export function openModelPicker(
   const count = el('div', 'prov-picker-count');
   const syncCount = (): void => {
     const n = boxes.filter((b) => b.checked).length;
-    count.textContent = '已选 ' + n + ' / ' + boxes.length + ' 个可选模型';
+    count.textContent = t('settings.providers.pickCount', { n, total: boxes.length });
   };
   const off = document.createElement('div'); // 离屏构建：整份清单一次替换
   for (const it of items) {
@@ -48,7 +49,7 @@ export function openModelPicker(
     cb.addEventListener('change', syncCount);
     row.appendChild(cb);
     row.appendChild(el('span', 'prov-picker-id', it.id));
-    if (it.existing) row.appendChild(el('span', 'prov-picker-tag', '已存在'));
+    if (it.existing) row.appendChild(el('span', 'prov-picker-tag', t('settings.providers.pickExisting')));
     off.appendChild(row);
     if (!it.existing) boxes.push(cb);
   }
@@ -58,9 +59,9 @@ export function openModelPicker(
   card.appendChild(count);
 
   const actions = el('div', 'modal-card-actions');
-  const cancel = el('button', 'btn btn-soft', '取消') as HTMLButtonElement;
+  const cancel = el('button', 'btn btn-soft', t('settings.action.cancel')) as HTMLButtonElement;
   cancel.type = 'button';
-  const ok = el('button', 'btn btn-accent', '确认') as HTMLButtonElement;
+  const ok = el('button', 'btn btn-accent', t('settings.action.confirm')) as HTMLButtonElement;
   ok.type = 'button';
 
   let overlay: OverlayHandle | null = null;

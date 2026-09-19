@@ -13,6 +13,7 @@ import { buildProviderForm } from './form';
 import { modelCount, refreshRow, renderStateCell, setMsg } from './rows';
 import { fmtErr, getProviders, openPanels } from './state';
 import type { ProviderListHost } from './types';
+import { t } from '../../i18n';
 
 // ---- 行内联编辑面板（任务 2） ------------------------------------------------------
 
@@ -91,7 +92,7 @@ export function renderProviderRow(
 ): { tr: HTMLTableRowElement; panelTr: HTMLTableRowElement } {
   const tr = el('tr', 'prov-row') as HTMLTableRowElement;
   tr.dataset.id = p.id;
-  tr.title = '点击展开/收起内联编辑';
+  tr.title = t('settings.providers.expandHint');
   tr.setAttribute('aria-expanded', 'false');
   if (p.is_default) tr.classList.add('is-default');
 
@@ -106,23 +107,23 @@ export function renderProviderRow(
   tr.appendChild(tdState);
 
   const tdOps = el('td', 'prov-td-ops');
-  const del = el('button', 'btn-mini danger', '删除') as HTMLButtonElement;
+  const del = el('button', 'btn-mini danger', t('settings.action.delete')) as HTMLButtonElement;
   del.type = 'button';
   del.addEventListener('click', (e) => {
     e.stopPropagation(); // 删除不触发展开/收起
     const id = tr.dataset.id ?? '';
     const cur = getProviders().find((x) => x.id === id);
     void confirmDialog({
-      title: '删除提供商',
-      message: '确认删除提供商「' + (cur?.name || id) + '」？',
-      okLabel: '删除',
+      title: t('settings.providers.deleteTitle'),
+      message: t('settings.providers.confirmDelete', { name: cur?.name || id }),
+      okLabel: t('settings.action.delete'),
       danger: true,
     }).then((ok) => {
       if (!ok) return;
       void api
         .deleteProvider(id)
         .then(() => void host.loadProviders())
-        .catch((err: unknown) => setMsg('删除失败：' + fmtErr(err)));
+        .catch((err: unknown) => setMsg(t('settings.providers.deleteFailed', { reason: fmtErr(err) })));
     });
   });
   tdOps.appendChild(del);
