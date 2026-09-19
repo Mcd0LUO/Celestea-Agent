@@ -26,7 +26,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute } from "node:path";
-import { httpOptions, isInside, parseIpRange, parseToolRoots } from "@celestea/tools";
+import { httpOptions, isInside, parseIpRange, parseToolRoots, pathApi } from "@celestea/tools";
 /**
  * W747: `sessionIdOfDir` moved to the engine (`@celestea/runtime`, host layer
  * `host/engine-session.ts`) — the `<workspace>/<session>` id space is what that
@@ -138,7 +138,7 @@ export function effectiveGrantsOf(
   // fail-closed (nothing readable) rather than falling back to path inference.
   const sessionTools = sessionDir === null || sessionId === null ? { disabled: [], warnings: [] } : readSessionTools(sessionDir, sessionId);
   const base = collectGrants(sessionDir, sessionId, env, now);
-  const merged = intersectGrants(base.grants, permission, env, sessionTools.disabled);
+  const merged = intersectGrants(base.grants, permission, env, sessionTools.disabled, filesystemRoot(sessionDir));
   return { grants: merged.grants, warnings: [...permission.warnings, ...sessionTools.warnings, ...base.warnings, ...merged.warnings] };
 }
 
@@ -154,12 +154,44 @@ function collectGrants(sessionDir: string | null, sessionId: string | null, env:
 }
 
 /**
+ * W891: the filesystem root AS THIS HOST SPELLS IT.
+ *
+ * `allPaths` used to be the literal `"/"`, which the guard's segment-aware
+ * `isInside()` can never match against a Windows path: on win32 the separator is
+ * `"\\"`, so the prefix becomes `"/\\"` and `C:\\Users\\…` does not start with it.
+ * The default `full-access` preset therefore denied EVERYTHING outside the
+ * workspace on Windows — the exact opposite of its meaning.
+ *
+ * Derived from the session directory (an absolute path on the real host) via the
+ * platform path API, so POSIX still yields `"/"` byte-for-byte and Windows yields
+ * the drive root (`C:\\`). No session directory (nothing to derive from) keeps the
+ * POSIX literal: that path is the pre-existing behaviour for callers that pass no
+ * directory at all, and it is the conservative side (a root that matches nothing).
+ *
+ * `platform` is injectable so the win32 branch is unit-testable on Linux.
+ */
+export function filesystemRoot(sessionDir: string | null, platform: string = process.platform): string {
+  const api = pathApi(platform);
+  // isAbsolute MUST come from the same platform as parse(): the host's
+  // isAbsolute() rejects "C:\\..." on Linux, which would silently fall back to
+  // the POSIX literal in exactly the win32 case this function exists to fix.
+  if (sessionDir === null || !api.isAbsolute(sessionDir)) return "/";
+  return api.parse(sessionDir).root;
+}
+
+/**
  * W9: the permission baseline is the ceiling. `network` is decided by the
  * baseline; `write_roots` is dropped (with a warning) when the baseline allows
  * no writes at all (read-only); reads/hosts stay additive; `unsandboxed` is
  * `preset.unsandboxed && the operator env gate` (decision W9-b).
  */
-function intersectGrants(grants: EffectiveGrants, permission: PermissionBaseline, env: NodeJS.ProcessEnv, sessionDisabled: readonly string[] = []): { grants: EffectiveGrants; warnings: string[] } {
+function intersectGrants(
+  grants: EffectiveGrants,
+  permission: PermissionBaseline,
+  env: NodeJS.ProcessEnv,
+  sessionDisabled: readonly string[] = [],
+  root: string = "/",
+): { grants: EffectiveGrants; warnings: string[] } {
   const warnings: string[] = [];
   /**
    * W864: an `allPaths` baseline replaces BOTH root lists with the filesystem
@@ -174,8 +206,8 @@ function intersectGrants(grants: EffectiveGrants, permission: PermissionBaseline
   return {
     grants: {
       network: permission.network,
-      readRoots: allPaths ? ["/"] : grants.readRoots,
-      writeRoots: allPaths ? ["/"] : writesAllowed ? [...new Set([...permission.writeRoots, ...grants.writeRoots])] : [],
+      readRoots: allPaths ? [root] : grants.readRoots,
+      writeRoots: allPaths ? [root] : writesAllowed ? [...new Set([...permission.writeRoots, ...grants.writeRoots])] : [],
       netHosts: grants.netHosts,
       toolExtra: grants.toolExtra,
       unsandboxed: (permission.unsandboxed || grants.unsandboxed) && unsandboxedAvailable(env),

@@ -15,13 +15,13 @@
  * sandbox/w9-rw-roots.test.ts).
  */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, parse } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { Profile } from "@celestea/runtime";
-import { bwrapOptionsFromEnv, buildBwrapArgv } from "@celestea/tools";
+import { bwrapOptionsFromEnv, buildBwrapArgv, pathApi, POSIX_SHELL } from "@celestea/tools";
 import { getJson, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
-import { effectiveGrantsOf } from "./runtime/engine-grants.js";
+import { effectiveGrantsOf, filesystemRoot } from "./runtime/engine-grants.js";
 import { effectivePermissionOf } from "./runtime/engine-permissions.js";
 import { engineTools } from "./runtime/engine-plugins.js";
 import { createOfflineLlm } from "./runtime/offline-llm.js";
@@ -65,7 +65,7 @@ function sessionDir(name: string): string {
 }
 
 function envOf(dataDir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME: process.env["HOME"] ?? "/home/nobody", ...extra };
+  return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME: process.env["HOME"] ?? homedir(), ...extra };
 }
 
 function open(): StudioHarness {
@@ -79,15 +79,53 @@ function presetBody(over: Record<string, unknown> = {}): Record<string, unknown>
   return { id: "wide-path", label: "wide path", network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: [], ...over };
 }
 
+describe("W891 filesystemRoot — the allPaths root as the host spells it", () => {
+  it("POSIX yields '/' for any absolute path", () => {
+    expect(filesystemRoot("/src/celestea_studio-ts/ws/s1", "linux")).toBe("/");
+    expect(filesystemRoot("/", "linux")).toBe("/");
+  });
+
+  it("win32 yields the DRIVE root, not the POSIX literal", () => {
+    // The bug this replaces: allPaths used "/", and the guard's segment-aware
+    // isInside() then never matched "C:\…" (its prefix became "/\"), so the
+    // default full-access preset denied everything outside the workspace.
+    expect(filesystemRoot("C:\\Users\\me\\proj\\ws\\s1", "win32")).toBe("C:\\");
+    expect(filesystemRoot("D:\\data\\ws\\s1", "win32")).toBe("D:\\");
+  });
+
+  it("no / non-absolute session dir keeps the conservative POSIX literal", () => {
+    expect(filesystemRoot(null, "linux")).toBe("/");
+    expect(filesystemRoot("relative/ws/s1", "linux")).toBe("/");
+  });
+
+  it("the win32 root really CONTAINS a path outside the workspace (the invariant that was broken)", () => {
+    // Replicate the guard's own containment rule (packages/tools guard/paths.ts
+    // isInside) with the WIN32 separator — the guard uses the HOST separator, so
+    // only an explicit win32 run of the same rule can prove the win32 case here.
+    const sep = "\\";
+    const inside = (child: string, root: string): boolean => {
+      if (child === root) return true;
+      const prefix = root.endsWith(sep) ? root : root + sep;
+      return child.startsWith(prefix);
+    };
+    const root = filesystemRoot("C:\\Users\\me\\proj\\ws\\s1", "win32");
+    const outside = "C:\\Users\\me\\other\\file.txt";
+    expect(inside(outside, root), "the derived root must contain a path outside the workspace").toBe(true);
+    // The POSIX literal really does NOT contain it — that WAS the bug.
+    expect(inside(outside, "/"), "the old hardcoded '/' could never match a C:\\ path").toBe(false);
+  });
+});
+
 describe("W864 allPaths — the baseline", () => {
-  it("the default full-access baseline sets allPaths and BOTH effective root lists to ['/']", () => {
+  it("the default full-access baseline sets allPaths and BOTH effective root lists to the HOST root", () => {
     const dir = sessionDir("default");
     const baseline = effectivePermissionOf(dir, "ws/s1", envOf(dir));
     expect(baseline.preset).toBe("full-access");
     expect(baseline.allPaths).toBe(true);
     const grants = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
-    expect(grants.readRoots).toEqual(["/"]);
-    expect(grants.writeRoots).toEqual(["/"]);
+    // W891: the root is the host filesystem root — "/" on POSIX, "C:\\" on Windows.
+    expect(grants.readRoots).toEqual([parse(dir).root]);
+    expect(grants.writeRoots).toEqual([parse(dir).root]);
     // Unchanged caps: only the paths moved.
     expect(grants.network).toBe(true);
     expect(grants.workspaceWritable).toBe(true);
@@ -125,8 +163,8 @@ describe("W864 allPaths — the baseline", () => {
     const baseline = effectivePermissionOf(dir, "ws/s1", env);
     expect(baseline).toMatchObject({ preset: "wide-path", allPaths: true, network: false, unsandboxed: false });
     const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
-    expect(grants.readRoots).toEqual(["/"]);
-    expect(grants.writeRoots).toEqual(["/"]); // allPaths opens writes even with workspaceWritable:false
+    expect(grants.readRoots).toEqual([parse(dir).root]);
+    expect(grants.writeRoots).toEqual([parse(dir).root]); // allPaths opens writes even with workspaceWritable:false
     expect(grants.network).toBe(false); // path-only: network is untouched
     expect(grants.network === false && grants.unsandboxed === false).toBe(true);
   });
@@ -135,8 +173,8 @@ describe("W864 allPaths — the baseline", () => {
     const dir = sessionDir("tooldeny");
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ version: 1, session: "ws/s1", disabled: ["write_file", "http_request"] }));
     const grants = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
-    expect(grants.readRoots).toEqual(["/"]);
-    expect(grants.writeRoots).toEqual(["/"]);
+    expect(grants.readRoots).toEqual([parse(dir).root]);
+    expect(grants.writeRoots).toEqual([parse(dir).root]);
     expect(grants.toolDeny).toEqual(["write_file", "http_request"]);
   });
 
@@ -195,20 +233,26 @@ describe("W864 allPaths — the HTTP face", () => {
 });
 
 
+// W891: the root is now the HOST filesystem root (engine-grants.filesystemRoot()),
+// so the behavioural half runs on every OS — the fixture paths below are derived
+// from the host (tmpdir()/parse().root) instead of the POSIX literals.
 describe("W864 allPaths — the composed tool face", () => {
   it("read_file/list_dir outside the workspace pass, and a write lands outside it", async () => {
     const dir = sessionDir("face");
     const outside = mkdtempSync(join(tmpdir(), "allpaths-out-"));
     roots.push(outside);
+    // W891: the root is the HOST root ("/" on POSIX, "C:\\" on Windows), so the
+    // fixture is a real file outside the workspace rather than a POSIX literal.
+    writeFileSync(join(outside, "secret.txt"), "w864-outside\n");
     const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir });
     const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
-    expect(grants.readRoots).toEqual(["/"]);
+    expect(grants.readRoots).toEqual([parse(dir).root]);
     const tools = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants });
 
-    const read = await tools.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: "/etc/hostname" } });
+    const read = await tools.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: join(outside, "secret.txt") } });
     expect(read.error).toBeNull();
-    expect(String(read.value).length).toBeGreaterThan(0);
-    const ls = await tools.registry.dispatch({ call_id: "l1", name: "list_dir", args: { path: "/etc" } });
+    expect(String(read.value)).toContain("w864-outside");
+    const ls = await tools.registry.dispatch({ call_id: "l1", name: "list_dir", args: { path: outside } });
     expect(ls.error).toBeNull();
 
     const write = await tools.registry.dispatch({ call_id: "w1", name: "write_file", args: { path: join(outside, "made.txt"), content: "w864" } });
@@ -216,7 +260,7 @@ describe("W864 allPaths — the composed tool face", () => {
     expect(readFileSync(join(outside, "made.txt"), "utf8")).toBe("w864");
   });
 
-  it("the engine's grant view reaches the OS sandbox as --bind / / (the whole chain)", () => {
+  it.skipIf(!POSIX_SHELL)("the engine's grant view reaches the OS sandbox as --bind / / (the whole chain)", () => {
     const dir = sessionDir("argv");
     const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir });
     const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
@@ -227,7 +271,7 @@ describe("W864 allPaths — the composed tool face", () => {
       workspaceWritable: grants.workspaceWritable,
       writeRoots: grants.writeRoots,
     });
-    expect(opts.writeRoots).toEqual(["/"]);
+    expect(opts.writeRoots).toEqual([parse(dir).root]);
     const argv = buildBwrapArgv(dir, opts);
     expect(argv.join(" ")).toContain("--bind / /");
     expect(argv).not.toContain("--ro-bind");
@@ -242,7 +286,8 @@ describe("W864 allPaths — the composed tool face", () => {
     const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir, CELESTEA_PERMISSION_MAX: "write-read" });
     const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
     const tools = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants });
-    const read = await tools.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: "/etc/hostname" } });
+    writeFileSync(join(outside, "secret.txt"), "w864-ro\n");
+    const read = await tools.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: join(outside, "secret.txt") } });
     expect(String(read.error)).toContain("toolguard: code=path_forbidden");
     const write = await tools.registry.dispatch({ call_id: "w1", name: "write_file", args: { path: join(outside, "made.txt"), content: "w864" } });
     expect(String(write.error)).toContain("toolguard: code=path_forbidden");
