@@ -44,6 +44,7 @@ import type {
   WorkspacesResp,
 } from './types';
 import type { ExecReq, ExecResp } from './types/exec'; // A3：用户直发命令
+import type { FsListResp } from './types/fs-list'; // H：@提及的文件列举
 import type { GoalResp } from './types/goal'; // A3：持久目标
 // W859：宿主插件清单类型（端点尚未发布；整包按 unknown 校验，见 ./types/plugin）
 import type { PluginsResp } from './types/plugin';
@@ -290,12 +291,11 @@ export const api = {
     postJson<ActivateResp>('/api/sessions/' + encodeURIComponent(id) + '/activate', {}),
   compactSession: (id: string) => // W259：POST …/compact；409=轮次中
     postJson<CompactResp>('/api/sessions/' + encodeURIComponent(id) + '/compact', {}),
-  /** A3：用户直发命令（**不经模型**）；404/501 = 该部署未提供 → 调用方给可读提示。 */
-  exec: (req: ExecReq) => postJson<ExecResp>('/api/exec', req),
-  /** A3：设置/清除该会话的持久目标（text='' = 清除；200 回 goal，null = 无）。 */
-  setGoal: (id: string, text: string) =>
+  fsList: (path: string) => requestJson<FsListResp>('/api/fs/list?path=' + encodeURIComponent(path)), // H
+  exec: (req: ExecReq) => postJson<ExecResp>('/api/exec', req), // A3：不经模型；404/501 需可读提示
+  setGoal: (id: string, text: string) => // A3：text='' 清除；200 回 goal（null=无）
     postJson<GoalResp>('/api/sessions/' + encodeURIComponent(id) + '/goal', { text }),
-  /** 目录浏览（W237）：GET /api/fs/browse?path=（懒加载列目录，只显示目录）。 */
+  /** 目录浏览（W237）：GET /api/fs/browse?path=（只显示目录）。 */
   fsBrowse: (path?: string) =>
     requestJson<FsBrowseResp>('/api/fs/browse' + (path ? '?path=' + encodeURIComponent(path) : '')),
   /** 批量归档（W792）：部分失败仍 ok:true，失败项只在 failed[]，调用方必须呈现。 */

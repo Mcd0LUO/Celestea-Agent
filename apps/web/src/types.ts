@@ -270,8 +270,8 @@ export interface CompactResp {
   error?: string;
 }
 
-/** GET /api/fs/browse?path= 响应（目录浏览；只列目录）。 */
-export interface FsBrowseResp {
+export type { FsListEntry, FsListResp } from './types/fs-list'; // H：文件列举（@提及）
+export interface FsBrowseResp { // GET /api/fs/browse?path=（只列目录）
   path?: string;
   parent?: string | null;
   dirs?: string[];

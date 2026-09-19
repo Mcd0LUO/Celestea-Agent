@@ -18,7 +18,7 @@ interface CmdMod {
   normalizeBang(line: string): string;
   isCommand(line: string): boolean;
   completionVisible(): boolean;
-  activeCommandName(): string;
+  activeItemLabel(): string;
 }
 interface SendMod { dispatchSend(text: string, mode?: string): void }
 
@@ -64,6 +64,7 @@ describe('A3 · 斜杠命令补全框 + 派发', () => {
     const { input } = await boot();
     input.value = '/';
     input.dispatchEvent(new Ev('input', { bubbles: true }));
+    await flush();
     expect(popupVisible()).toBe(true);
     const names = popupRows().map((r) => r.querySelector('.cmd-name')?.textContent);
     expect(names).toEqual(['/run', '/goal', '/model', '/compact']);
@@ -75,15 +76,18 @@ describe('A3 · 斜杠命令补全框 + 派发', () => {
     const { input } = await boot();
     input.value = '/go';
     input.dispatchEvent(new Ev('input', { bubbles: true }));
+    await flush();
     expect(popupRows().map((r) => r.querySelector('.cmd-name')?.textContent)).toEqual(['/goal']);
     input.value = '/m';
     input.dispatchEvent(new Ev('input', { bubbles: true }));
+    await flush();
     expect(popupRows().map((r) => r.querySelector('.cmd-name')?.textContent)).toEqual(['/model']);
     input.value = '/';
     input.dispatchEvent(new Ev('input', { bubbles: true }));
+    await flush();
     key(input, 'ArrowDown');
     const cmd = (await import(/* @vite-ignore */ at('ui/commands/index.ts'))) as CmdMod;
-    expect(cmd.activeCommandName()).toBe('goal');
+    expect(cmd.activeItemLabel()).toBe('/goal');
     key(input, 'Enter');
     expect(input.value).toBe('/goal ');
     expect(popupHidden(), 'Enter 选中后补全框关闭').toBe(true);
@@ -93,6 +97,7 @@ describe('A3 · 斜杠命令补全框 + 派发', () => {
     const { input } = await boot();
     input.value = '/';
     input.dispatchEvent(new Ev('input', { bubbles: true }));
+    await flush();
     expect(popupVisible()).toBe(true);
     key(input, 'Escape');
     expect(popupHidden()).toBe(true);
@@ -102,9 +107,10 @@ describe('A3 · 斜杠命令补全框 + 派发', () => {
     const { input } = await boot();
     input.value = '/com';
     input.dispatchEvent(new Ev('input', { bubbles: true }));
+    await flush();
     const row = popupRows()[0] as ElLike;
     row.dispatchEvent(new Ev('mousedown', { bubbles: true }));
-    expect(input.value).toBe('/compact');
+    expect(input.value).toBe('/compact '); // 选中命令后留一个空格，便于继续输入参数
   });
 
   it('! 前缀归一化为 /run，且不触发 /api/turn', async () => {
