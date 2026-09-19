@@ -17,6 +17,7 @@
 //   —— 这正是用户报的「切换模型后几秒又弹回原状」。
 // ============================================================================
 import { api, ApiError, userErrorText } from '../api';
+import { t } from '../i18n'; // i18n P1-a
 
 /** 一次切换的目标：会话级（有聚焦会话）或全局（无聚焦会话的回落路径）。 */
 export type SessionModelTarget = 'session' | 'config';
@@ -66,15 +67,15 @@ function okOutcome(
  * 只有 200 且响应里带回了模型值才算成功：`ok:false` 的 200 也算失败（不假装成功）。
  */
 export async function requestSessionModel(session: string, model: string): Promise<SessionModelOutcome> {
-  if (session === '') return { kind: 'error', target: 'config', text: '当前会话尚未就绪，请稍后再试' };
+  if (session === '') return { kind: 'error', target: 'config', text: t('statusline.sessionNotReady') };
   try {
     const r = await api.setSessionModel(session, model);
-    if (r.ok === false) return { kind: 'error', target: 'session', text: '切换失败，请稍后重试' };
+    if (r.ok === false) return { kind: 'error', target: 'session', text: t('statusline.switchFailedRetry') };
     const resolved = typeof r.model === 'string' && r.model !== '' ? r.model : model;
     const eff = r.effective === undefined ? '' : (r.effective.model ?? '');
     return okOutcome('session', resolved, r.covered === true, eff === '' ? null : eff);
   } catch (err) {
-    return classify(err, 'session', '切换失败：' + userErrorText(err, '请稍后重试'));
+    return classify(err, 'session', t('statusline.switchFailed', { reason: userErrorText(err, t('statusline.retryLater')) }));
   }
 }
 
@@ -89,7 +90,7 @@ export async function requestGlobalModel(model: string): Promise<SessionModelOut
     const written = typeof d.model === 'string' && d.model !== '' ? d.model : model;
     return okOutcome('config', written, false, written);
   } catch (err) {
-    return classify(err, 'config', '切换失败：' + userErrorText(err, '请稍后重试'));
+    return classify(err, 'config', t('statusline.switchFailed', { reason: userErrorText(err, t('statusline.retryLater')) }));
   }
 }
 
@@ -98,7 +99,7 @@ function classify(err: unknown, target: SessionModelTarget, text: string): Sessi
   if (err instanceof ApiError) {
     if (err.status === 409) return { kind: 'busy', target, text };
     if (err.status === 404 || err.status === 405) {
-      return { kind: 'unsupported', target, text: '当前版本不支持切换本会话模型' };
+      return { kind: 'unsupported', target, text: t('statusline.sessionModel.unsupported') };
     }
     if (err.status === 400 || err.status === 422) return { kind: 'invalid', target, text };
   }
@@ -107,7 +108,7 @@ function classify(err: unknown, target: SessionModelTarget, text: string): Sessi
 
 /** 成功后的如实提示：会话级 ≠ 全局，两种目标说两种话（W870 要求如实）。 */
 export function switchedNote(target: SessionModelTarget): string {
-  return target === 'session' ? '已切换本会话模型' : '已切换默认模型';
+  return t(target === 'session' ? 'statusline.sessionModel.switchedSession' : 'statusline.sessionModel.switchedGlobal');
 }
 
 /**
@@ -115,5 +116,5 @@ export function switchedNote(target: SessionModelTarget): string {
  * 看的话；409 挂起由调用方走「本轮结束后按同一路径重试」那条路。
  */
 export function failureText(outcome: SessionModelFailure): string {
-  return outcome.text + '（已恢复原设置）';
+  return t('statusline.withRestoredSettings', { text: outcome.text });
 }

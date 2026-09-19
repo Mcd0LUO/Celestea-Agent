@@ -38,6 +38,7 @@
 //     与请求编排；对 statusline.ts 与测试**原样再导出**原有名字，调用方零改动。
 // ============================================================================
 import { api, userErrorText } from '../api';
+import { t } from '../i18n'; // i18n P1-a
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay } from '../utils/overlays';
 import type { ConfigInfo, ConfigPatch } from '../types';
@@ -45,8 +46,8 @@ import { loadConfigCached, peekConfig, revalidateConfig } from './cfg-cache';
 import { optimisticPatchView, revertPointOf } from './optimistic';
 import { listChanged, renderEffortList, renderList, renderModelList } from './picker-list';
 import {
-  EFFORT_OPTIONS,
-  OTHER_GROUP,
+  effortOptions,
+  otherGroupLabel,
   type ListHooks,
   type ModelPick,
   type PickerHost,
@@ -63,7 +64,7 @@ import {
 
 // W870：契约与常量仍在 ./picker-shared.ts（渲染器也要用它们，放这里会成环）；
 // 这里原样再导出，statusline.ts 与测试的既有 import 路径一个都不用改。
-export { EFFORT_OPTIONS, OTHER_GROUP };
+export { effortOptions, otherGroupLabel };
 export type { ModelPick, PickerHost, SwitchKind };
 
 /** 渲染器的点击行为：请求编排留在本文件（渲染器不 import 本文件，零环）。 */
@@ -101,7 +102,7 @@ export async function openPopup(host: PickerHost, kind: SwitchKind): Promise<voi
   host.root.appendChild(popup);
   host.popupOverlay = pushOverlay(() => closePopup(host));
 
-  popup.appendChild(el('div', 'sl-popup-title', kind === 'model' ? '切换模型' : '切换推理档位'));
+  popup.appendChild(el('div', 'sl-popup-title', t(kind === 'model' ? 'statusline.picker.switchModel' : 'statusline.picker.switchEffort')));
   const body = el('div', 'sl-popup-body');
   popup.appendChild(body);
 
@@ -126,7 +127,7 @@ export async function openPopup(host: PickerHost, kind: SwitchKind): Promise<voi
     if (seeded !== null) return; // 后台校验失败：缓存清单继续可用，不打扰用户
     if (kind === 'effort') return; // 档位清单是静态候选，已经画好了
     body.replaceChildren(
-      el('div', 'sl-popup-error', userErrorText(err, '无法读取当前配置，请稍后重试')),
+      el('div', 'sl-popup-error', userErrorText(err, t('statusline.picker.configUnavailable'))),
     );
     return;
   }
@@ -179,7 +180,7 @@ export async function pickModel(host: PickerHost, pick: ModelPick): Promise<void
   if (outcome.kind === 'busy') {
     // 轮次进行中 ⇒ 这一轮**没有**切过去：挂起，本轮结束后按**同一条路径**重试。
     host.pendingPick = pick;
-    host.setNote('轮次进行中，将在本轮结束后生效', 0);
+    host.setNote(t('statusline.picker.busy'), 0);
     closePopup(host);
     return;
   }
@@ -198,16 +199,16 @@ export async function apply(host: PickerHost, patch: ConfigPatch): Promise<void>
   try {
     const d = await api.saveConfig(patch);
     host.merge({ model: d.model, reasoning_effort: d.reasoning_effort });
-    host.setNote('已切换', 5000);
+    host.setNote(t('statusline.switched'), 5000);
     window.dispatchEvent(new Event('studio:config-saved'));
     closePopup(host);
   } catch (err) {
-    const msg = '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）';
+    const msg = t('statusline.withRestoredSettings', { text: t('statusline.switchFailed', { reason: err instanceof Error ? err.message : String(err) }) });
     if (isBusy(err)) {
       // 本轮不生效：退回原值 + 挂起，等本轮结束后重试（那时再乐观应用一次）
       host.merge(prev);
       host.pendingPatch = patch;
-      host.setNote('轮次进行中，将在本轮结束后生效', 0);
+      host.setNote(t('statusline.picker.busy'), 0);
       closePopup(host);
     } else {
       host.merge(prev);

@@ -11,7 +11,8 @@
 import { el } from '../utils/dom';
 import type { ConfigInfo, ModelInfo } from '../types';
 import { modelIconEl } from './icons';
-import { EFFORT_OPTIONS, OTHER_GROUP, type ListHooks, type ModelPick, type PickerHost, type SwitchKind } from './picker-shared';
+import { effortOptions, otherGroupLabel, type ListHooks, type ModelPick, type PickerHost, type SwitchKind } from './picker-shared';
+import { t } from '../i18n'; // i18n P1-a
 
 /**
  * 渲染清单（离屏构建 + 单次替换，铁律 1）。
@@ -31,10 +32,10 @@ export function renderList(body: HTMLElement, kind: SwitchKind, cfg: ConfigInfo,
  */
 export function renderEffortList(body: HTMLElement, current: string, hooks: ListHooks): void {
   const off = document.createElement('div');
-  const options = [...EFFORT_OPTIONS];
+  const options = [...effortOptions()];
   const cur = current;
   if (cur && !options.some((o) => o.value === cur)) {
-    options.push({ value: cur, label: cur + '（当前）' });
+    options.push({ value: cur, label: cur + t('statusline.picker.currentSuffix') });
   }
   for (const o of options) {
     off.appendChild(optButton(o.label, o.value ?? '', cur, () => hooks.apply({ reasoning_effort: o.value })));
@@ -52,10 +53,10 @@ export function renderModelList(body: HTMLElement, cfg: ConfigInfo, host: Picker
     // 清单缺失 → 内联文本输入降级
     const row = el('div', 'sl-popup-textrow');
     const input = el('input', 'sl-popup-input') as HTMLInputElement;
-    input.placeholder = '模型名称';
+    input.placeholder = t('statusline.picker.modelName');
     input.value = cur;
     row.appendChild(input);
-    const applyBtn = el('button', 'btn btn-accent btn-mini', '应用') as HTMLButtonElement;
+    const applyBtn = el('button', 'btn btn-accent btn-mini', t('statusline.picker.apply')) as HTMLButtonElement;
     applyBtn.addEventListener('click', () => {
       const v = input.value.trim();
       // W870：手工输入也是**切模型**，所以同样走 hooks.pick（会话级 / 全局由宿主决定）
@@ -64,7 +65,7 @@ export function renderModelList(body: HTMLElement, cfg: ConfigInfo, host: Picker
     });
     row.appendChild(applyBtn);
     off.appendChild(row);
-    off.appendChild(el('div', 'sl-popup-note', '请输入模型名称'));
+    off.appendChild(el('div', 'sl-popup-note', t('statusline.picker.enterModel')));
     appendFixedNote(off, host);
     body.replaceChildren(...off.childNodes);
     return;
@@ -72,9 +73,9 @@ export function renderModelList(body: HTMLElement, cfg: ConfigInfo, host: Picker
   const known = models.some((m) => m.id === cur);
   if (cur && !known) {
     // 当前模型不在清单里（自定义端点）→ 置顶一行，仍可点回
-    off.appendChild(optButton(cur + '（当前）', cur, cur, () => hooks.apply({ model: cur })));
+    off.appendChild(optButton(cur + t('statusline.picker.currentSuffix'), cur, cur, () => hooks.apply({ model: cur })));
     const sep = el('div', 'sl-popup-sep');
-    sep.textContent = '候选模型';
+    sep.textContent = t('statusline.picker.candidates');
     off.appendChild(sep);
   }
   // W750：当前生效项 = 后端标注的 active 行（同模型 + 同端点）。旧服务没有该
@@ -91,7 +92,7 @@ export function renderModelList(body: HTMLElement, cfg: ConfigInfo, host: Picker
   const byPid = new Map<string, { pid: string; name: string; list: ModelInfo[] }>();
   for (const m of models) {
     const pid = (m.provider_id ?? '').trim();
-    const name = (m.provider ?? '').trim() || (pid !== '' ? pid : OTHER_GROUP);
+    const name = (m.provider ?? '').trim() || (pid !== '' ? pid : otherGroupLabel());
     const key = pid !== '' ? pid : name;
     let group = byPid.get(key);
     if (!group) {
@@ -129,7 +130,7 @@ export function renderModelList(body: HTMLElement, cfg: ConfigInfo, host: Picker
  */
 function appendFixedNote(off: HTMLElement, host: PickerHost): void {
   if (!host.sessionModelFixed || host.sessionId === '') return;
-  off.appendChild(el('div', 'sl-popup-note', '本会话已固定模型：切换只改本会话，不跟随全局默认'));
+  off.appendChild(el('div', 'sl-popup-note', t('statusline.picker.fixed')));
 }
 
 /**
@@ -155,7 +156,7 @@ function groupRow(provider: string, providerId: string, cur: boolean): HTMLEleme
   if (providerId !== '' && providerId !== provider) {
     row.appendChild(el('span', 'sl-group-id', providerId));
   }
-  if (cur) row.appendChild(el('span', 'sl-group-tag', '当前'));
+  if (cur) row.appendChild(el('span', 'sl-group-tag', t('statusline.currentTag')));
   return row;
 }
 
@@ -177,7 +178,7 @@ function optButton(
   if (icon !== null) b.appendChild(icon);
   b.appendChild(el('span', 'sl-opt-name', label));
   if (value !== '') b.appendChild(el('span', 'sl-opt-val', value));
-  if (value !== '' && value === current) b.appendChild(el('span', 'sl-opt-tag', '当前'));
+  if (value !== '' && value === current) b.appendChild(el('span', 'sl-opt-tag', t('statusline.currentTag')));
   b.addEventListener('click', onPick);
   return b;
 }

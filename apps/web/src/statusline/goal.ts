@@ -6,6 +6,7 @@
 import { need } from '../utils/dom';
 import { goalOf, onGoalChange } from '../ui/commands/goal';
 import { activePane } from '../ui/viewctx';
+import { t } from '../i18n'; // i18n P1-a
 
 const MAX = 24;
 let badge: HTMLElement | null = null;
@@ -23,8 +24,8 @@ function render(): void {
   }
   btn.classList.remove('hidden');
   const short = g.text.length > MAX ? g.text.slice(0, MAX) + '…' : g.text;
-  badge.textContent = '目标 ' + short;
-  btn.title = '当前目标：' + g.text;
+  badge.textContent = t('statusline.goalBadge', { text: short });
+  btn.title = t('statusline.goalTitle', { text: g.text });
 }
 
 /** 装配目标徽标（幂等；statusline.start 之后调用一次）。 */

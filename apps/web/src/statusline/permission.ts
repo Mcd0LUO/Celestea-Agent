@@ -21,6 +21,7 @@ import { anchorOf, placeAnchoredPopup } from '../ui/anchor-popup';
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
 import { maxNote, riskNote } from '../ui/permissions/copy';
+import { t } from '../i18n'; // i18n P1-a
 import {
   PERMISSIONS_CHANGED,
   allPresets,
@@ -57,7 +58,6 @@ export interface PermissionController extends PermissionHost {
 }
 
 /** 回滚说明后缀（与 mode.ts 的「已恢复原设置」同款口径）。 */
-const RESTORED = '（已恢复原档位）';
 
 let popup: HTMLElement | null = null;
 let overlay: OverlayHandle | null = null;
@@ -115,8 +115,8 @@ function paintBadge(button: HTMLElement | null, badge: HTMLElement | null, view:
   button.classList.toggle('hidden', !known);
   const label = known ? view.label || view.preset : '';
   if (badge !== null && known) badge.textContent = label;
-  button.title = known ? '会话权限档位：' + label + '（点击切换）' : '会话权限档位';
-  button.setAttribute('aria-label', known ? '会话权限档位 ' + label : '会话权限档位');
+  button.title = known ? t('statusline.perm.badgeTitle', { tier: label }) : t('statusline.perm.title');
+  button.setAttribute('aria-label', known ? t('statusline.perm.badgeAria', { tier: label }) : t('statusline.perm.title'));
 }
 
 /** 装配入口：root = #statusline；sessionOf = 当前聚焦会话；note = 状态栏轻提示。 */
@@ -236,7 +236,7 @@ export function openPermissionPopup(h: PermissionHost): void {
   anchorEl = document.getElementById('slPerm');
   h.root.appendChild(p);
   overlay = pushOverlay(() => closePermissionPopup());
-  p.appendChild(el('div', 'sl-popup-title', '会话权限档位'));
+  p.appendChild(el('div', 'sl-popup-title', t('statusline.perm.title')));
   const body = el('div', 'sl-popup-body');
   p.appendChild(body);
   renderPermissionMenu(body, h);
@@ -271,7 +271,7 @@ function renderPermissionMenu(body: HTMLElement, h: PermissionHost): void {
   if (risk !== '') off.appendChild(el('div', 'sl-popup-note perm-risk', risk));
   const max = snapshot()?.max ?? '';
   if (max !== '') off.appendChild(el('div', 'sl-popup-note', maxNote(max)));
-  if (h.sessionId === '') off.appendChild(el('div', 'sl-popup-note', '当前没有打开的会话，无法切换'));
+  if (h.sessionId === '') off.appendChild(el('div', 'sl-popup-note', t('statusline.perm.noSession')));
   body.replaceChildren(...off.childNodes);
 }
 
@@ -282,7 +282,7 @@ function presetRow(p: PermissionPreset, h: PermissionHost): HTMLElement {
   b.dataset.preset = p.id;
   b.appendChild(el('span', 'sl-opt-name', p.label || p.id));
   b.appendChild(el('span', 'sl-opt-val', p.id));
-  if (current) b.appendChild(el('span', 'sl-opt-tag', '当前'));
+  if (current) b.appendChild(el('span', 'sl-opt-tag', t('statusline.currentTag')));
   b.disabled = current || h.sessionId === '';
   b.addEventListener('click', () => {
     if (!current && h.sessionId !== '') void pickPreset(p);
@@ -299,22 +299,22 @@ interface PickOutcome {
 async function requestPreset(session: string, preset: string): Promise<PickOutcome> {
   try {
     const r = await api.setSessionPermission(session, preset);
-    if (r.ok === false) return { ok: false, text: '切换失败：服务拒绝了该档位' + RESTORED };
+    if (r.ok === false) return { ok: false, text: t('statusline.withRestoredTier', { text: t('statusline.perm.rejected') }) };
     if (typeof r.preset === 'string' && r.preset !== preset) {
-      return { ok: false, text: '切换失败：服务未接受该档位' + RESTORED };
+      return { ok: false, text: t('statusline.withRestoredTier', { text: t('statusline.perm.notAccepted') }) };
     }
     return { ok: true, text: '' };
   } catch (err) {
     if (err instanceof ApiError) {
       if (err.status === 404 || err.status === 405) {
-        return { ok: false, text: '当前版本不支持切换会话权限档位' + RESTORED };
+        return { ok: false, text: t('statusline.withRestoredTier', { text: t('statusline.perm.unsupported') }) };
       }
       if (err.status === 422) {
-        return { ok: false, text: '切换失败：' + (err.technical || '未知档位') + RESTORED };
+        return { ok: false, text: t('statusline.withRestoredTier', { text: t('statusline.switchFailed', { reason: err.technical || t('statusline.perm.unknownTier') }) }) };
       }
-      return { ok: false, text: '切换失败：' + err.message + RESTORED };
+      return { ok: false, text: t('statusline.withRestoredTier', { text: t('statusline.switchFailed', { reason: err.message }) }) };
     }
-    return { ok: false, text: '切换失败：' + userErrorText(err, '请稍后重试') + RESTORED };
+    return { ok: false, text: t('statusline.withRestoredTier', { text: t('statusline.switchFailed', { reason: userErrorText(err, t('statusline.retryLater')) }) }) };
   }
 }
 
@@ -331,7 +331,7 @@ async function pickPreset(p: PermissionPreset): Promise<void> {
 
   const out = await requestPreset(h.sessionId, p.id);
   if (out.ok) {
-    h.setNote('已切换会话权限档位 · 下一轮生效', 6000);
+    h.setNote(t('statusline.perm.switched'), 6000);
     closePermissionPopup();
     return;
   }

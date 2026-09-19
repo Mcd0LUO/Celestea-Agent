@@ -10,16 +10,22 @@
 // ============================================================================
 import type { OverlayHandle } from '../utils/overlays';
 import type { ConfigPatch, StatusSnapshot } from '../types';
+import { t } from '../i18n'; // i18n P1-a
 
-/** W262：没有 provider 字段的模型（静态兜底目录 / 旧数据）归入的树状分组。 */
-export const OTHER_GROUP = '其他';
+/** W262：没有 provider 字段的模型（静态兜底目录 / 旧数据）归入的树状分组名。 */
+export function otherGroupLabel(): string {
+  return t('statusline.picker.other');
+}
 
-export const EFFORT_OPTIONS: readonly { value: string | null; label: string }[] = [
-  { value: null, label: '标准（清除）' },
-  { value: 'low', label: 'low' },
-  { value: 'high', label: 'high' },
-  { value: 'max', label: 'max' },
-];
+/** 推理档位候选（label 走字典，故做成函数：语言切换后重新取用）。 */
+export function effortOptions(): readonly { value: string | null; label: string }[] {
+  return [
+    { value: null, label: t('statusline.picker.standardClear') },
+    { value: 'low', label: 'low' },
+    { value: 'high', label: 'high' },
+    { value: 'max', label: 'max' },
+  ];
+}
 
 export type SwitchKind = 'model' | 'effort';
 

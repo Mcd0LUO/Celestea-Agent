@@ -60,6 +60,7 @@ import {
 } from './statusline/tps';
 
 import { initGoalBadge, refreshGoalBadge } from './statusline/goal'; // A3：目标徽标
+import { t } from './i18n'; // i18n P1-a：statusline 域文案走字典
 
 const POLL_MS = 2000;
 
@@ -122,7 +123,7 @@ export class Statusline implements PickerHost, ModeHost {
     // W858：档位入口（徽标可选：其它骨架/老页面没有 #slPerm 时安静地不装入口）
     this.perm = createPermissionController(this.el, () => this.session, (t, ms) => this.setNote(t, ms));
     this.ringProg.style.strokeDasharray = String(RING_C);
-    this.el.title = '上下文占用 · 模型 · 思考强度 · 吞吐 · 缓存命中';
+    this.el.title = t('statusline.tooltip');
 
     // W726：点上下文圆环 → 只读完整上下文浮层
     this.ring.setAttribute('role', 'button');
@@ -276,15 +277,13 @@ export class Statusline implements PickerHost, ModeHost {
       .saveConfig(patch)
       .then((d) => {
         this.merge({ model: d.model, reasoning_effort: d.reasoning_effort });
-        this.setNote('已切换', 5000);
+        this.setNote(t('statusline.switched'), 5000);
         window.dispatchEvent(new Event('studio:config-saved'));
       })
       .catch((err: unknown) => {
         this.merge(prev);
-        this.setNote(
-          '切换失败：' + (err instanceof Error ? err.message : String(err)) + '（已恢复原设置）',
-          6000,
-        );
+        const reason = err instanceof Error ? err.message : String(err);
+        this.setNote(t('statusline.withRestoredSettings', { text: t('statusline.switchFailed', { reason }) }), 6000);
       });
   }
 
@@ -297,11 +296,11 @@ export class Statusline implements PickerHost, ModeHost {
    */
   private async openContext(): Promise<void> {
     if (!(await contextSupported())) {
-      this.setNote('当前版本不支持查看上下文', 4000);
+      this.setNote(t('statusline.contextUnsupported'), 4000);
       return;
     }
     if (this.session === '') {
-      this.setNote('当前会话尚未就绪，请稍后再试', 4000);
+      this.setNote(t('statusline.sessionNotReady'), 4000);
       return;
     }
     openContextView(this.session);
@@ -345,9 +344,9 @@ export class Statusline implements PickerHost, ModeHost {
     } catch (err) {
       // /api/status 未上线或后端不可达：保持占位符，不打断聊天
       this.el.classList.add('sl-stale');
-      this.staleMsg = '状态信息暂不可用';
+      this.staleMsg = t('statusline.statusUnavailable');
       this.renderHint();
-      this.el.title = userErrorText(err, '状态信息暂不可用');
+      this.el.title = userErrorText(err, t('statusline.statusUnavailable'));
     }
   }
 
@@ -356,14 +355,14 @@ export class Statusline implements PickerHost, ModeHost {
     renderContextCell(this.ctxEl, this.ring, s.context_usage);
 
     renderModelCell(this.modelEl, s.model || '', this.modelCell);
-    this.modelEl.title = '当前模型：' + (s.model || '—') + '（点击快速切换）';
-    this.modelEl.setAttribute('aria-label', '当前模型 ' + (s.model || '—'));
+    this.modelEl.title = t('statusline.currentModelTitle', { model: s.model || '—' });
+    this.modelEl.setAttribute('aria-label', t('statusline.currentModelAria', { model: s.model || '—' }));
 
     // 思考强度：'max' 直接显示；空/null 表示标准档
     const effort = s.reasoning_effort;
     this.effortEl.textContent = effort ? String(effort) : '—';
-    this.effortEl.title = '思考强度：' + (effort ? String(effort) : '标准') + '（点击快速切换）';
-    this.effortEl.setAttribute('aria-label', '思考强度 ' + (effort ? String(effort) : '标准'));
+    this.effortEl.title = t('statusline.effortTitle', { effort: effort ? String(effort) : t('statusline.standard') });
+    this.effortEl.setAttribute('aria-label', t('statusline.effortAria', { effort: effort ? String(effort) : t('statusline.standard') }));
 
     // W789：吞吐 —— 有效采样原样显示；服务端给 0/缺省（会话 inactive）时显示最近
     // N 次采样的均值并带 `≈` 前缀，不再从「42.5 tok/s」直接跳成「0.0 tok/s」。
@@ -372,7 +371,7 @@ export class Statusline implements PickerHost, ModeHost {
     const tps = tpsDisplay(samples, s.tokens_per_sec, s.busy === true, fixed1);
     this.tpsEl.textContent = tps.text;
     this.tpsEl.title = tps.title;
-    this.tpsEl.setAttribute('aria-label', '吞吐 ' + tps.text);
+    this.tpsEl.setAttribute('aria-label', t('statusline.tpsAria', { text: tps.text }));
 
     // W263 缓存命中率：只改文本（铁律 1/2/5——不重建 DOM，不重渲染背景）
     renderCacheCell(this.cacheEl, s.usage);
@@ -381,7 +380,7 @@ export class Statusline implements PickerHost, ModeHost {
     renderModeBadge(this.modeEl, s.mode);
 
     const steps = s.steps;
-    this.stepsEl.textContent = typeof steps === 'number' && steps >= 1 ? '第 ' + steps + ' 步' : '— 步';
+    this.stepsEl.textContent = typeof steps === 'number' && steps >= 1 ? t('statusline.steps', { n: steps }) : t('statusline.stepsNone');
     this.stepsEl.setAttribute('aria-label', this.stepsEl.textContent);
 
     // W514：后端 busy 字段（多会话状态显示）——只切 class，不改布局

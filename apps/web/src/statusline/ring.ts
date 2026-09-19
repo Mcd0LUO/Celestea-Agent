@@ -10,6 +10,7 @@ import { fmtCompact } from '../utils/dom';
 import { modelIconFor } from '../utils/model-icon';
 import type { ContextUsage, UsageSnapshot } from '../types';
 import { clamp01, iconNode } from './icons';
+import { t } from '../i18n'; // i18n P1-a
 
 const RING_R = 5.5;
 /** 环周长（构造时写进 strokeDasharray，渲染时按占用比算 dashoffset）。 */
@@ -32,23 +33,21 @@ export function renderContextCell(
     ctxEl.textContent = fmtCompact(usage.used) + '/' + fmtCompact(usage.window);
     ring.style.strokeDashoffset = String(RING_C * (1 - ratio));
     ring.classList.toggle('warn', ratio >= WARN_RATIO);
-    ring.title = '上下文占用 ' + Math.round(ratio * 1000) / 10 + '%' +
-      ' · ' + fmtCompact(usage.used) + '/' + fmtCompact(usage.window) +
-      '（点击查看完整上下文）';
+    ring.title = t('statusline.ring.title', { pct: Math.round(ratio * 1000) / 10, used: fmtCompact(usage.used), window: fmtCompact(usage.window), click: t('statusline.ring.clickFull') });
   } else if (usage) {
     // W755：窗口未声明时不画假比率（对齐 DSH 缺容量即不显示环）。
-    ctxEl.textContent = '占用未知';
+    ctxEl.textContent = t('statusline.ring.unknown');
     ring.style.strokeDashoffset = String(RING_C);
     ring.classList.remove('warn');
-    ring.title = '上下文占用未知 · 点击查看完整上下文';
+    ring.title = t('statusline.ring.unknownTitle');
   } else {
     ctxEl.textContent = '—/—';
     ring.style.strokeDashoffset = String(RING_C);
     ring.classList.remove('warn');
-    ring.title = '上下文占用（点击查看完整上下文）';
+    ring.title = t('statusline.ring.noneTitle', { click: t('statusline.ring.clickFull') });
   }
   // W12：aria-label 带完整值（可见的 used/window 可能被省略号截断）。
-  ring.setAttribute('aria-label', (ring.title ?? '').replace('（点击查看完整上下文）', ''));
+  ring.setAttribute('aria-label', (ring.title ?? '').replace(t('statusline.ring.clickFull'), ''));
 }
 
 /**
@@ -82,22 +81,18 @@ export function renderModelCell(cellEl: HTMLElement, name: string, st: ModelCell
  */
 export function renderCacheCell(cacheEl: HTMLElement, u: UsageSnapshot | undefined): void {
   if (!u || !(u.prompt_tokens > 0)) {
-    cacheEl.textContent = '缓存 —';
-    cacheEl.title = '暂无缓存命中数据';
+    cacheEl.textContent = t('statusline.cache.none');
+    cacheEl.title = t('statusline.cache.noneTitle');
     cacheEl.setAttribute('aria-label', cacheEl.title);
     return;
   }
   const pct = Math.round(clamp01(u.cache_hit_ratio) * 100);
-  cacheEl.textContent = '缓存 ' + pct + '%';
-  const t = u.total;
+  cacheEl.textContent = t('statusline.cache.label', { pct });
+  const tot = u.total;
   cacheEl.title =
-    '最近一次请求：命中 ' +
-    u.cache_read +
-    ' / 输入 ' +
-    u.prompt_tokens +
-    ' tokens' +
-    (t
-      ? '（累计 ' + (clamp01(t.cache_hit_ratio) * 100).toFixed(1) + '%，命中 ' + t.cache_read + ' / 输入 ' + t.prompt_tokens + ' tokens）'
+    t('statusline.cache.title', { read: u.cache_read, prompt: u.prompt_tokens }) +
+    (tot
+      ? t('statusline.cache.titleCumulative', { pct: (clamp01(tot.cache_hit_ratio) * 100).toFixed(1), read: tot.cache_read, prompt: tot.prompt_tokens })
       : '');
   cacheEl.setAttribute('aria-label', cacheEl.title);
 }

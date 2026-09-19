@@ -62,6 +62,10 @@ interface GeomMod {
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "apps", "web", "src");
 const at = (rel: string): string => pathToFileURL(join(SRC, rel)).href;
 
+// i18n P1-a：本文件断言中文文案 —— 把界面语言固定为中文（产品默认语言）。
+const i18n = (await import(/* @vite-ignore */ at("i18n/index.ts"))) as { setLocale(l: string): void };
+i18n.setLocale("zh");
+
 const tps = (await import(/* @vite-ignore */ at("statusline/tps.ts"))) as TpsMod;
 const geom = (await import(/* @vite-ignore */ at("ui/grants/geom.ts"))) as GeomMod;
 

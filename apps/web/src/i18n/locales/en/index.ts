@@ -3,5 +3,6 @@
 import type { Key } from '../zh';
 import { common } from './common';
 import { api } from './api';
+import { statusline } from './statusline';
 
-export const en: Record<Key, string> = { ...common, ...api };
+export const en: Record<Key, string> = { ...common, ...api, ...statusline };

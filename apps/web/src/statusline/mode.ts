@@ -19,6 +19,7 @@ import type { SessionMode } from '../types';
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
 import { MODE_CHOICES, MODE_NOTES, modeLabel } from '../ui/mode/copy';
+import { t } from '../i18n'; // i18n P1-a
 
 /** 能力位探测结果缓存时长（与 ui/contextview.ts 的能力位探测同款纪律）。 */
 const CAP_TTL_MS = 60000;
@@ -49,8 +50,8 @@ export function renderModeBadge(node: HTMLElement, mode: unknown): void {
   const text = modeLabel(mode);
   node.textContent = text;
   node.classList.toggle('hidden', text === '');
-  node.classList.toggle('exec', text === '执行');
-  node.title = text === '' ? '' : '工作方式：' + text + '模式（点击切换）';
+  node.classList.toggle('exec', mode === 'execution');
+  node.title = text === '' ? '' : t('statusline.mode.badgeTitle', { mode: text });
 }
 
 // ---- 切换请求（三态分类） ------------------------------------------------------
@@ -76,10 +77,10 @@ export async function requestModeSwitch(
   session: string,
   mode: SessionMode,
 ): Promise<ModeSwitchOutcome> {
-  if (session === '') return { kind: 'error', text: '当前会话尚未就绪，请稍后再试' };
+  if (session === '') return { kind: 'error', text: t('statusline.sessionNotReady') };
   try {
     const r = await api.setSessionMode(session, mode);
-    if (r.ok === false || r.mode !== mode) return { kind: 'error', text: '切换失败，请稍后重试' };
+    if (r.ok === false || r.mode !== mode) return { kind: 'error', text: t('statusline.switchFailedRetry') };
     return { kind: 'ok', mode };
   } catch (err) {
     if (err instanceof ApiError) {
@@ -87,7 +88,7 @@ export async function requestModeSwitch(
       if (err.status === 404 || err.status === 405) return { kind: 'unsupported' };
       if (err.status === 400 || err.status === 422) return { kind: 'invalid' };
     }
-    return { kind: 'error', text: '切换失败：' + userErrorText(err, '请稍后重试') };
+    return { kind: 'error', text: t('statusline.switchFailed', { reason: userErrorText(err, t('statusline.retryLater')) }) };
   }
 }
 
@@ -160,7 +161,7 @@ export function openModePopup(h: ModeHost): void {
   host = h;
   h.root.appendChild(p);
   overlay = pushOverlay(() => closeModePopup());
-  p.appendChild(el('div', 'sl-popup-title', '切换工作方式'));
+  p.appendChild(el('div', 'sl-popup-title', t('statusline.mode.title')));
   const body = el('div', 'sl-popup-body');
   p.appendChild(body);
   renderModeList(body, h.currentMode, true);
@@ -174,7 +175,7 @@ export function openModePopup(h: ModeHost): void {
 function renderModeList(body: HTMLElement, current: string, can: boolean): void {
   const off = document.createElement('div');
   for (const o of MODE_CHOICES) off.appendChild(modeRow(o.value, o.label, o.value === current, can));
-  const note = can ? '当前：' + (modeLabel(current) || '未知') + '模式 · 切换在会话下一轮生效' : MODE_NOTES.unsupported;
+  const note = can ? t('statusline.mode.currentNote', { mode: modeLabel(current) || t('statusline.unknown') }) : MODE_NOTES.unsupported;
   off.appendChild(el('div', 'sl-popup-note', note));
   body.replaceChildren(...off.childNodes);
 }
@@ -184,7 +185,7 @@ function modeRow(value: SessionMode, label: string, current: boolean, can: boole
   const b = el('button', 'sl-opt' + (current ? ' current' : '')) as HTMLButtonElement;
   b.type = 'button';
   b.appendChild(el('span', 'sl-opt-name', label));
-  if (current) b.appendChild(el('span', 'sl-opt-tag', '当前'));
+  if (current) b.appendChild(el('span', 'sl-opt-tag', t('statusline.currentTag')));
   b.disabled = !can || current;
   b.addEventListener('click', () => {
     if (!can || current) return;
@@ -205,7 +206,7 @@ async function pickMode(mode: SessionMode): Promise<void> {
   if (h === null || p === null) return;
   // 会话 id 未解析 ⇒ 必然失败的请求不发、也不先画终态（免得白闪一下）
   if (h.sessionId === '') {
-    h.setNote('当前会话尚未就绪，请稍后再试', 6000);
+    h.setNote(t('statusline.sessionNotReady'), 6000);
     return;
   }
   const prev = h.currentMode;
@@ -216,7 +217,7 @@ async function pickMode(mode: SessionMode): Promise<void> {
 
   const out = await requestModeSwitch(h.sessionId, mode);
   if (out.kind === 'ok') {
-    h.setNote('已切换工作方式 · ' + MODE_NOTES.applied, 6000);
+    h.setNote(t('statusline.mode.switched', { note: MODE_NOTES.applied }), 6000);
     closeModePopup();
     return;
   }

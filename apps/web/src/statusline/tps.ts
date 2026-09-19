@@ -6,9 +6,11 @@
 //   做法：只把 **> 0** 的采样记进小环形缓冲（最近 TPS_WINDOW 次）；当前采样无效时
 //   显示这几次的均值，并带 `≈` 前缀与 title 说明 —— 诚实：这是近期均值，不是瞬时值。
 //
-//   纯函数、零 DOM、零 import：采样与文案都在这里算，statusline.ts 只负责写回元素。
+//   纯函数、零 DOM：采样与文案都在这里算（文案走 i18n），statusline.ts 只负责写回元素。
 //   （格式化函数由调用方传入，单一真源仍是 statusline/icons.ts 的 fixed1。）
 // ============================================================================
+
+import { t } from '../i18n'; // i18n P1-a
 
 /** 环形缓冲容量：保留最近 N 次 > 0 的采样。 */
 export const TPS_WINDOW = 8;
@@ -80,10 +82,10 @@ export function tpsDisplay(
   if (mean === null) {
     return { text: '— tok/s', title: '', approximate: false, samples: 0 };
   }
-  const why = busy ? '本轮暂无新采样' : '会话当前未运行';
+  const why = t(busy ? 'statusline.tps.idle' : 'statusline.tps.inactive');
   return {
     text: '≈ ' + format(mean) + ' tok/s',
-    title: why + ' · 显示最近 ' + state.values.length + ' 次采样的均值',
+    title: t('statusline.tps.meanTitle', { why, n: state.values.length }),
     approximate: true,
     samples: state.values.length,
   };
