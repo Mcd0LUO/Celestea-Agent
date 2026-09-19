@@ -57,7 +57,12 @@ export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
   const pending = pendingCount();
   if (t === '' && pending === 0) return;
   // A3：斜杠命令 / `!` 快捷方式 —— 命中即消费，不走 /api/turn。
+  // 命令消费后输入框必须像正常发送一样清空（否则 `!echo hi` 会留在框里；
+  // 命令路径在下面的 ctx.draft='' / clearInput() 之前 return，所以在这里自己做）。
+  // 附件/引用**不动**：命令与它们无关，误清会丢用户已挂的文件。
   if (isCommandLike(t)) {
+    clearInput();
+    ctx.draft = '';
     void dispatchCommand(t, ctx);
     return;
   }
