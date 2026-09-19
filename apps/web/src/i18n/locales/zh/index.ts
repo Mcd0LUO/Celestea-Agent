@@ -4,6 +4,7 @@ import { api } from './api';
 import { statusline } from './statusline';
 import { settings } from './settings';
 import { chat } from './chat';
+import { shell } from './shell';
 
-export const zh = { ...common, ...api, ...statusline, ...settings, ...chat } as const;
+export const zh = { ...common, ...api, ...statusline, ...settings, ...chat, ...shell } as const;
 export type Key = keyof typeof zh;

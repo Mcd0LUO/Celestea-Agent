@@ -18,7 +18,7 @@ import { api, ApiError, userErrorText } from '../api';
 import type { SessionMode } from '../types';
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
-import { MODE_CHOICES, MODE_NOTES, modeLabel } from '../ui/mode/copy';
+import { modeChoices, modeNotes, modeLabel } from '../ui/mode/copy';
 import { t } from '../i18n'; // i18n P1-a
 
 /** 能力位探测结果缓存时长（与 ui/contextview.ts 的能力位探测同款纪律）。 */
@@ -174,8 +174,8 @@ export function openModePopup(h: ModeHost): void {
 /** 清单渲染（离屏构建 + 单次替换，铁律 1）。`can=false` = 只读降级。 */
 function renderModeList(body: HTMLElement, current: string, can: boolean): void {
   const off = document.createElement('div');
-  for (const o of MODE_CHOICES) off.appendChild(modeRow(o.value, o.label, o.value === current, can));
-  const note = can ? t('statusline.mode.currentNote', { mode: modeLabel(current) || t('statusline.unknown') }) : MODE_NOTES.unsupported;
+  for (const o of modeChoices()) off.appendChild(modeRow(o.value, o.label, o.value === current, can));
+  const note = can ? t('statusline.mode.currentNote', { mode: modeLabel(current) || t('statusline.unknown') }) : modeNotes().unsupported;
   off.appendChild(el('div', 'sl-popup-note', note));
   body.replaceChildren(...off.childNodes);
 }
@@ -217,7 +217,7 @@ async function pickMode(mode: SessionMode): Promise<void> {
 
   const out = await requestModeSwitch(h.sessionId, mode);
   if (out.kind === 'ok') {
-    h.setNote(t('statusline.mode.switched', { note: MODE_NOTES.applied }), 6000);
+    h.setNote(t('statusline.mode.switched', { note: modeNotes().applied }), 6000);
     closeModePopup();
     return;
   }
@@ -227,13 +227,14 @@ async function pickMode(mode: SessionMode): Promise<void> {
     // 老服务：只读降级（弹层留在屏幕上，把清单换成禁用态，不假装成功）
     if (body !== null) renderModeList(body as HTMLElement, prev, false);
   }
+  const notes = modeNotes();
   const text =
     out.kind === 'busy'
-      ? MODE_NOTES.busy
+      ? notes.busy
       : out.kind === 'unsupported'
-        ? MODE_NOTES.unsupported
+        ? notes.unsupported
         : out.kind === 'invalid'
-          ? MODE_NOTES.invalid
+          ? notes.invalid
           : out.text;
   h.setNote(text, 6000);
   if (popup !== p) return; // 期间弹层被关掉/重开：只留状态栏提示

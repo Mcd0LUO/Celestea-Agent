@@ -15,6 +15,7 @@ import { openSession } from '../restore';
 import { updateActiveHighlight, updateBusyDots, note } from './live';
 import { getSessions, setActiveSession, setBatchMode, setSessions, selected } from './store';
 import type { TreeHost } from './types';
+import { t } from '../../i18n';
 
 /** 退出批量勾选模式（清空选择并重绘）。 */
 export function exitBatch(host: TreeHost, container: HTMLElement): void {
@@ -34,7 +35,7 @@ export function refreshChecks(container: HTMLElement): void {
   }
   const bar = container.querySelector<HTMLElement>('.sess-batchbar');
   if (!bar) return;
-  bar.querySelector('.sess-batchbar-count')!.textContent = '已选 ' + selected.size + ' 个会话';
+  bar.querySelector('.sess-batchbar-count')!.textContent = t('shell.tree.selectedCount', { n: selected.size });
   bar.classList.toggle('active', selected.size > 0);
 }
 
@@ -42,9 +43,9 @@ export async function batchDelete(host: TreeHost, container: HTMLElement): Promi
   const ids = Array.from(selected);
   if (!ids.length) return;
   const ok = await confirmDialog({
-    title: '批量删除',
-    message: '将批量删除 ' + ids.length + ' 个会话。删除后可在回收目录恢复，确认？',
-    okLabel: '删除',
+    title: t('shell.tree.batchDeleteTitle'),
+    message: t('shell.tree.batchDeleteConfirm', { n: ids.length }),
+    okLabel: t('settings.action.delete'),
     danger: true,
   });
   if (!ok) return;
@@ -61,11 +62,11 @@ export async function batchDelete(host: TreeHost, container: HTMLElement): Promi
     const resp = await api.batchDeleteSessions(ids);
     // 端点**永远 HTTP 200**：失败只在 {ok:true,deleted:N,failed:[{id,error}]} 里，
     // catch 不会触发 —— 不看响应体就会「点了删除，界面既没报错也没变化」。
-    const fail = batchFailureText('删除', resp);
+    const fail = batchFailureText(t('settings.action.delete'), resp);
     if (fail === '') {
       forgetSessions(ids); // 收尾：选中态/高亮/视图容器（含其中若有当前聚焦会话）
       exitBatch(host, container); // 成功：静默收工（树已就地更新，不做整树重载）
-      note('已删除 ' + ids.length + ' 个会话');
+      note(t('shell.tree.deletedCount', { n: ids.length }));
     } else {
       const keep = batchFailedIds(resp);
       forgetSessions(ids.filter((id) => !keep.includes(id))); // 只收尾真的删掉的那些
@@ -81,7 +82,7 @@ export async function batchDelete(host: TreeHost, container: HTMLElement): Promi
     for (const u of undos.values()) u.restore();
     setSessions(before);
     refreshChecks(container);
-    note('批量删除失败：' + (err instanceof Error ? err.message : String(err)));
+    note(t('shell.tree.batchDeleteFailed', { reason: err instanceof Error ? err.message : String(err) }));
   }
 }
 
@@ -143,23 +144,23 @@ export function openSessionRow(
   S.selSession = id;
   updateActiveHighlight(container);
   updateBusyDots(container);
-  note(meta?.title ? '已切换到会话：' + meta.title : '已切换会话');
+  note(meta?.title ? t('shell.tree.switchedTo', { title: meta.title }) : t('shell.tree.switched'));
   void api
     .activateSession(id)
     .then((r) => {
-      if (r.ok === false) note('视图已打开 · 未能激活');
+      if (r.ok === false) note(t('shell.tree.viewOpenActivateFailed'));
     })
     .catch((err: unknown) => {
       if (err instanceof ApiError && err.status === 409) {
-        note('该会话运行中（视图已打开 · 实时流可见）');
+        note(t('shell.tree.runningViewOpen'));
       } else {
-        note('视图已打开 · 未能激活');
+        note(t('shell.tree.viewOpenActivateFailed'));
       }
     });
 }
 
 export async function archiveSession(_host: TreeHost, container: HTMLElement, id: string, label: string): Promise<void> {
-  const ok = await confirmDialog({ title: '归档会话', message: '确认归档会话「' + label + '」？', okLabel: '归档' });
+  const ok = await confirmDialog({ title: t('shell.tree.archiveTitle'), message: t('shell.tree.archiveConfirm', { label }), okLabel: t('shell.tree.archiveOk') });
   if (!ok) return;
   // 同删除口径（W792）：确认后立即从树里拿掉，请求后台发；失败再插回原位。
   const undo = removeRowOptimistic({ container, id, rowSel: '.sess-leaf' });
@@ -168,28 +169,28 @@ export async function archiveSession(_host: TreeHost, container: HTMLElement, id
   try {
     const resp = await api.archiveSession(id);
     // 单条归档失败走非 2xx（ApiError）→ catch；响应体里的 failed[] 一并兜住，口径统一。
-    const fail = batchFailureText('归档', resp);
+    const fail = batchFailureText(t('shell.tree.archiveOk'), resp);
     if (fail !== '') {
       undo?.restore();
       setSessions(before);
       note(fail);
     } else {
       forgetSession(id); // 归档后它已不在当前会话集合里：焦点回 LOCAL 空态，不自动切会话
-      note('已归档会话：' + label);
+      note(t('shell.tree.archived', { label }));
     }
     refreshArchivePane(); // 归档跑到设置页的归档 pane 里去了，在场就静默刷新
   } catch (err) {
     undo?.restore();
     setSessions(before);
-    note('归档失败：' + (err instanceof Error ? err.message : String(err)));
+    note(t('shell.tree.archiveFailed', { reason: err instanceof Error ? err.message : String(err) }));
   }
 }
 
 export async function deleteSession(_host: TreeHost, container: HTMLElement, id: string, label: string): Promise<void> {
   const ok = await confirmDialog({
-    title: '删除会话「' + label + '」',
-    message: '删除后可在回收目录恢复，确认？',
-    okLabel: '删除',
+    title: t('shell.tree.deleteTitle', { label }),
+    message: t('shell.tree.deleteConfirm'),
+    okLabel: t('settings.action.delete'),
     danger: true,
   });
   if (!ok) return;
@@ -203,80 +204,80 @@ export async function deleteSession(_host: TreeHost, container: HTMLElement, id:
     // 端点**永远 HTTP 200**：失败（不存在的会话 / 删不掉的会话）只在
     // {ok:true,deleted:0,failed:[{id,error}]} 里 —— 不看响应体就会「点了删除，
     // 界面既没报错也没变化」的静默失败。
-    const fail = batchFailureText('删除', resp);
+    const fail = batchFailureText(t('settings.action.delete'), resp);
     if (fail !== '') {
       undo?.restore(); // 4) 失败：把行插回原位，并说明原因
       setSessions(before);
       note(fail);
     } else {
       forgetSession(id); // 收尾：S.selSession / 高亮 / 视图容器都不许再指着它
-      note('已删除会话：' + label);
+      note(t('shell.tree.deletedSession', { label }));
     }
     refreshArchivePane();
   } catch (err) {
     undo?.restore();
     setSessions(before);
-    note('删除失败：' + (err instanceof Error ? err.message : String(err)));
+    note(t('shell.tree.deleteFailed', { reason: err instanceof Error ? err.message : String(err) }));
   }
 }
 
 export async function renameSession(host: TreeHost, container: HTMLElement, id: string, current: string): Promise<void> {
-  const name = window.prompt('重命名会话（新标题）', current);
+  const name = window.prompt(t('shell.tree.renamePrompt'), current);
   if (name === null) return;
-  const t = name.trim();
-  if (t === '' || t === current) return;
+  const next = name.trim();
+  if (next === '' || next === current) return;
   try {
-    await api.renameSession(id, t);
+    await api.renameSession(id, next);
     void host.loadTreeInto(container, null);
   } catch (err) {
-    note('重命名失败：' + (err instanceof Error ? err.message : String(err)));
+    note(t('shell.tree.renameFailed', { reason: err instanceof Error ? err.message : String(err) }));
   }
 }
 
 export async function branchSession(host: TreeHost, container: HTMLElement, id: string): Promise<void> {
-  const t = window.prompt('分支会话（新分支标题，可留空）', '');
-  if (t === null) return;
+  const nb = window.prompt(t('shell.tree.branchPrompt'), '');
+  if (nb === null) return;
   try {
-    const r = await api.branchSession(id, t.trim() === '' ? undefined : t.trim());
+    const r = await api.branchSession(id, nb.trim() === '' ? undefined : nb.trim());
     if (r.ok === false) {
-      note('分支失败，请稍后重试');
+      note(t('shell.tree.branchFailedRetry'));
       return;
     }
     const newId = r.id ?? r.branch;
     if (newId) S.selSession = newId; // 高亮新分支
-    note('已创建分支');
+    note(t('shell.tree.branched'));
     void host.loadTreeInto(container, null);
   } catch (err) {
-    note('分支失败：' + (err instanceof Error ? err.message : String(err)));
+    note(t('shell.tree.branchFailed', { reason: err instanceof Error ? err.message : String(err) }));
   }
 }
 
 export async function deleteWorkspace(host: TreeHost, container: HTMLElement, name: string): Promise<void> {
   const ok = await confirmDialog({
-    title: '删除工作区「' + name + '」',
-    message: '删除后可在回收目录恢复，确认？',
-    okLabel: '删除',
+    title: t('shell.tree.deleteWsTitle', { name }),
+    message: t('shell.tree.deleteConfirm'),
+    okLabel: t('settings.action.delete'),
     danger: true,
   });
   if (!ok) return;
   try {
     await api.deleteWorkspace(name);
-    note('工作区已删除：' + name);
+    note(t('shell.tree.wsDeleted', { name }));
     void host.loadTreeInto(container, null);
   } catch (err) {
-    note('删除失败：' + (err instanceof Error ? err.message : String(err)));
+    note(t('shell.tree.deleteFailed', { reason: err instanceof Error ? err.message : String(err) }));
   }
 }
 
 export async function renameWorkspace(host: TreeHost, container: HTMLElement, name: string): Promise<void> {
-  const n = window.prompt('重命名工作区', name);
+  const n = window.prompt(t('shell.tree.renameWsPrompt'), name);
   if (n === null) return;
-  const t = n.trim();
-  if (t === '' || t === name) return;
+  const nextWs = n.trim();
+  if (nextWs === '' || nextWs === name) return;
   try {
-    await api.renameWorkspace(name, t);
+    await api.renameWorkspace(name, nextWs);
     void host.loadTreeInto(container, null);
   } catch (err) {
-    note('重命名失败：' + (err instanceof Error ? err.message : String(err)));
+    note(t('shell.tree.renameFailed', { reason: err instanceof Error ? err.message : String(err) }));
   }
 }

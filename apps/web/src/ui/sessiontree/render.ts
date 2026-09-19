@@ -39,13 +39,14 @@ import {
 } from './store';
 import type { TreeHost } from './types';
 import { sortSessions, truncateName } from './util';
+import { t } from '../../i18n';
 
 export function renderToolbar(host: TreeHost, container: HTMLElement, mount: HTMLElement = container): void {
   // 新会话按钮（树顶部）
   const nsBtn = el('button', 'btn btn-soft ws-newsess') as HTMLButtonElement;
   nsBtn.type = 'button';
   nsBtn.appendChild(svgIcon('plus'));
-  nsBtn.appendChild(el('span', null, '新会话'));
+  nsBtn.appendChild(el('span', null, t('shell.tree.newSession')));
   nsBtn.addEventListener('click', () => host.newSession());
   mount.appendChild(nsBtn);
 
@@ -54,7 +55,7 @@ export function renderToolbar(host: TreeHost, container: HTMLElement, mount: HTM
   const searchBox = el('div', 'ws-search');
   searchBox.appendChild(svgIcon('search'));
   const input = el('input', 'ws-search-input') as HTMLInputElement;
-  input.placeholder = '搜索工作区/会话';
+  input.placeholder = t('shell.tree.searchPlaceholder');
   input.value = getSearchQuery();
   input.addEventListener('input', () => {
     setSearchQuery(input.value.trim().toLowerCase());
@@ -68,8 +69,8 @@ export function renderToolbar(host: TreeHost, container: HTMLElement, mount: HTM
   const sortBtn = el('button', 'ws-toolbtn') as HTMLButtonElement;
   sortBtn.type = 'button';
   sortBtn.appendChild(svgIcon('sort'));
-  sortBtn.appendChild(el('span', 'ws-toolbtn-label', getSortMode() === 'active' ? '活跃' : '名称'));
-  sortBtn.title = '排序：' + (getSortMode() === 'active' ? '最近活跃' : '名称') + ' · 点击切换';
+  sortBtn.appendChild(el('span', 'ws-toolbtn-label', getSortMode() === 'active' ? t('settings.tag.active') : t('settings.field.name')));
+  sortBtn.title = t('shell.tree.sortTitle', { label: getSortMode() === 'active' ? t('shell.tree.sortRecent') : t('settings.field.name') });
   sortBtn.addEventListener('click', () => {
     setSortMode(getSortMode() === 'active' ? 'name' : 'active');
     void host.loadTreeInto(container, null);
@@ -78,7 +79,7 @@ export function renderToolbar(host: TreeHost, container: HTMLElement, mount: HTM
 
   const wsBtn = el('button', 'ws-toolbtn') as HTMLButtonElement;
   wsBtn.type = 'button';
-  wsBtn.title = '新建工作区';
+  wsBtn.title = t('shell.tree.newWorkspace');
   wsBtn.appendChild(svgIcon('folder-plus'));
   wsBtn.addEventListener('click', () => host.newWorkspace());
   row.appendChild(wsBtn);
@@ -97,7 +98,7 @@ export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInf
   if (!batch) {
     const dot = el('span', 'sess-dot' + (paneBusy(id) ? ' busy' : ''));
     dot.dataset.dot = id;
-    setHint(dot, paneBusy(id) ? '运行中' : '空闲');
+    setHint(dot, paneBusy(id) ? t('shell.tree.running') : t('shell.tree.idle'));
     leaf.appendChild(dot);
   }
   let cb: HTMLInputElement | null = null;
@@ -115,17 +116,17 @@ export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInf
     cb = checkbox;
   }
   leaf.appendChild(svgIcon('file'));
-  const displayName = s.title || truncateName(id) || '(未命名)';
+  const displayName = s.title || truncateName(id) || t('shell.tree.unnamed');
   const name = el('span', 'sess-leaf-name', displayName);
   leaf.appendChild(name);
   const kidCount = getWorkersByParent().get(id) ?? 0;
   if (kidCount > 0) {
     const badge = el('span', 'sess-worker-count', 'W' + kidCount);
-    badge.title = '该会话下有 ' + kidCount + ' 个 worker 子会话';
+    badge.title = t('shell.tree.workerBadgeTitle', { n: kidCount });
     leaf.appendChild(badge);
   }
   const bits: string[] = [];
-  if (s.events !== undefined) bits.push(s.events + ' 次事件');
+  if (s.events !== undefined) bits.push(t('shell.tree.events', { n: s.events }));
   if (bits.length) leaf.appendChild(el('span', 'sess-leaf-meta', bits.join(' · ')));
 
   // W701：已放宽权限的会话显示小盾牌（危险能力用红色小盾）。
@@ -135,25 +136,25 @@ export function renderLeaf(host: TreeHost, container: HTMLElement, s: SessionInf
   leaf.appendChild(grant);
   paintGrantMark(grant, grantMarkOf(id));
 
-  setHint(leaf, displayName + (batch ? '（点击勾选）' : '（点击打开）'));
+  setHint(leaf, displayName + (batch ? t('shell.tree.clickCheck') : t('shell.tree.clickOpen')));
 
   if (!batch) {
     const kebab = el('button', 'sess-kebab', '⋯') as HTMLButtonElement;
     kebab.type = 'button';
-    kebab.title = '会话操作';
+    kebab.title = t('shell.tree.sessionOps');
     kebab.addEventListener('click', (e) => {
       e.stopPropagation();
       openCtxMenu(container, kebab.getBoundingClientRect(), [
         {
-          label: isActive ? '当前会话' : '打开',
+          label: isActive ? t('shell.tree.currentSession') : t('shell.tree.open'),
           disabled: isActive,
           onPick: () =>
             openSessionRow(container, id, { kind: s.kind === 'worker' ? 'worker' : 'session', title: s.title }),
         },
-        { label: '重命名', onPick: () => void renameSession(host, container, id, s.title || truncateName(id)) },
-        { label: '归档', onPick: () => void archiveSession(host, container, id, displayName) },
-        { label: '分支', onPick: () => void branchSession(host, container, id) },
-        { label: '删除', danger: true, onPick: () => void deleteSession(host, container, id, displayName) },
+        { label: t('shell.tree.rename'), onPick: () => void renameSession(host, container, id, s.title || truncateName(id)) },
+        { label: t('shell.tree.archiveOk'), onPick: () => void archiveSession(host, container, id, displayName) },
+        { label: t('shell.tree.branch'), onPick: () => void branchSession(host, container, id) },
+        { label: t('settings.action.delete'), danger: true, onPick: () => void deleteSession(host, container, id, displayName) },
       ]);
     });
     leaf.appendChild(kebab);
@@ -192,21 +193,21 @@ export function renderWorkspaceNode(
   sum.appendChild(el('span', 'ws-count', String(list.length)));
   const kebab = el('button', 'sess-kebab', '⋯') as HTMLButtonElement;
   kebab.type = 'button';
-  kebab.title = '工作区操作';
+  kebab.title = t('shell.tree.workspaceOps');
   kebab.addEventListener('click', (e) => {
     e.stopPropagation();
     openCtxMenu(container, kebab.getBoundingClientRect(), [
-      { label: '新建会话', onPick: () => host.newSession(name) },
-      { label: '重命名', onPick: () => void renameWorkspace(host, container, name) },
+      { label: t('shell.tree.newSession'), onPick: () => host.newSession(name) },
+      { label: t('shell.tree.rename'), onPick: () => void renameWorkspace(host, container, name) },
       {
-        label: '批量删除会话',
+        label: t('shell.tree.batchDeleteSessions'),
         onPick: () => {
           setBatchMode(true);
           selected.clear();
           void host.loadTreeInto(container, null);
         },
       },
-      { label: '删除工作区', danger: true, onPick: () => void deleteWorkspace(host, container, name) },
+      { label: t('shell.tree.deleteWorkspace'), danger: true, onPick: () => void deleteWorkspace(host, container, name) },
     ]);
   });
   sum.appendChild(kebab);
@@ -220,11 +221,11 @@ export function renderWorkspaceNode(
 
 export function renderBatchBar(host: TreeHost, container: HTMLElement, mount: HTMLElement = container): void {
   const bar = el('div', 'sess-batchbar');
-  bar.appendChild(el('span', 'sess-batchbar-count', '已选 0 个会话'));
-  const del = el('button', 'btn btn-danger btn-mini', '删除选中') as HTMLButtonElement;
+  bar.appendChild(el('span', 'sess-batchbar-count', t('shell.tree.selectedZero')));
+  const del = el('button', 'btn btn-danger btn-mini', t('shell.tree.deleteSelected')) as HTMLButtonElement;
   del.type = 'button';
   del.addEventListener('click', () => void batchDelete(host, container));
-  const quit = el('button', 'btn-mini', '取消') as HTMLButtonElement;
+  const quit = el('button', 'btn-mini', t('settings.action.cancel')) as HTMLButtonElement;
   quit.type = 'button';
   quit.addEventListener('click', () => exitBatch(host, container));
   bar.appendChild(del);

@@ -12,8 +12,9 @@ import { openFsBrowser } from '../fsbrowser';
 import { openSession } from '../restore';
 import { note } from './live';
 import { getWsList, setActiveSession } from './store';
-import { MODE_CHOICES } from '../mode/copy';
+import { modeChoices } from '../mode/copy';
 import { buildCreateReq } from '../mode/create-req';
+import { t } from '../../i18n';
 
 /** 新建后需要重新载入侧栏（= 编排入口的 loadSessions）。 */
 export interface NewsessionHost {
@@ -48,12 +49,12 @@ export function isSubmitEnter(e: { key: string; shiftKey: boolean; target: unkno
 export function newSessionDialog(host: NewsessionHost, presetWs?: string): void {
   const scrim = el('div', 'modal-scrim');
   const card = el('div', 'modal-card');
-  card.appendChild(el('div', 'modal-card-title', '新建会话'));
+  card.appendChild(el('div', 'modal-card-title', t('shell.new.title')));
   // W786：标题也走「左列标签 + 右列控件」的两列网格，与下面的工作区/模型/提示词行对齐
   const titleInput = el('input', 'cfg-input') as HTMLInputElement;
-  titleInput.placeholder = '必填';
+  titleInput.placeholder = t('shell.new.titlePlaceholder');
   const titleRow = el('label', 'prov-field');
-  titleRow.appendChild(el('span', 'prov-field-label', '标题'));
+  titleRow.appendChild(el('span', 'prov-field-label', t('shell.field.title')));
   titleRow.appendChild(titleInput);
   card.appendChild(titleRow);
 
@@ -61,7 +62,7 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   wsSel.className = 'cfg-input';
   const optRoot = document.createElement('option');
   optRoot.value = '';
-  optRoot.textContent = 'root（默认工作区）';
+  optRoot.textContent = t('shell.new.rootWorkspace');
   wsSel.appendChild(optRoot);
   for (const w of getWsList()) {
     const o = document.createElement('option');
@@ -71,7 +72,7 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   }
   if (presetWs) wsSel.value = presetWs;
   const wsRow = el('label', 'prov-field');
-  wsRow.appendChild(el('span', 'prov-field-label', '工作区'));
+  wsRow.appendChild(el('span', 'prov-field-label', t('settings.scope.workspace')));
   wsRow.appendChild(wsSel);
   card.appendChild(wsRow);
 
@@ -82,10 +83,10 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   modelSel.className = 'cfg-input';
   const optDef = document.createElement('option');
   optDef.value = '';
-  optDef.textContent = '跟随默认';
+  optDef.textContent = t('shell.new.followDefault');
   modelSel.appendChild(optDef);
   const modelRow = el('label', 'prov-field');
-  modelRow.appendChild(el('span', 'prov-field-label', '模型'));
+  modelRow.appendChild(el('span', 'prov-field-label', t('settings.field.model')));
   modelRow.appendChild(modelSel);
   card.appendChild(modelRow);
   void api
@@ -104,7 +105,7 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
       if (!models.length) {
         const o = document.createElement('option');
         o.value = '';
-        o.textContent = '（暂无可选模型）';
+        o.textContent = t('shell.new.noModels');
         o.disabled = true;
         modelSel.appendChild(o);
       }
@@ -112,7 +113,7 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
     .catch(() => {
       const o = document.createElement('option');
       o.value = '';
-      o.textContent = '（模型列表暂不可用）';
+      o.textContent = t('shell.new.modelsUnavailable');
       o.disabled = true;
       modelSel.appendChild(o);
     });
@@ -122,7 +123,7 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   // 只有「执行模式」才随请求携带 mode（默认路径与今天的请求体逐字节一致，K8）。
   const modeSel = document.createElement('select');
   modeSel.className = 'cfg-input';
-  for (const m of MODE_CHOICES) {
+  for (const m of modeChoices()) {
     const o = document.createElement('option');
     o.value = m.value;
     o.textContent = m.label;
@@ -130,18 +131,18 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   }
   modeSel.value = 'standard';
   const modeRow = el('label', 'prov-field');
-  modeRow.appendChild(el('span', 'prov-field-label', '工作方式'));
+  modeRow.appendChild(el('span', 'prov-field-label', t('shell.field.mode')));
   modeRow.appendChild(modeSel);
   card.appendChild(modeRow);
 
   // 可选提示词（W245 任务2）：跟随默认 + 注册的 prompts（标注全局/工作区）；404 隐藏
   const promptRow = el('label', 'prov-field');
-  promptRow.appendChild(el('span', 'prov-field-label', '提示词'));
+  promptRow.appendChild(el('span', 'prov-field-label', t('shell.field.prompt')));
   const promptSel = document.createElement('select');
   promptSel.className = 'cfg-input';
   const optPrompt = document.createElement('option');
   optPrompt.value = '';
-  optPrompt.textContent = '跟随默认';
+  optPrompt.textContent = t('shell.new.followDefault');
   promptSel.appendChild(optPrompt);
   promptRow.appendChild(promptSel);
   promptRow.style.display = 'none';
@@ -154,7 +155,7 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
       for (const p of ps) {
         const o = document.createElement('option');
         o.value = p.id;
-        o.textContent = p.name + '（' + (p.scope === 'global' ? '全局' : '工作区') + '）' + (p.is_default ? ' · 默认' : '');
+        o.textContent = p.name + ' (' + (p.scope === 'global' ? t('settings.scope.global') : t('settings.scope.workspace')) + ')' + (p.is_default ? ' · ' + t('settings.tag.default') : '');
         promptSel.appendChild(o);
       }
       promptRow.style.display = ''; // 数据就绪才显示（404 保持隐藏）
@@ -166,9 +167,9 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   const status = el('div', 'ws-fs-status');
   card.appendChild(status);
   const actions = el('div', 'modal-card-actions');
-  const cancel = el('button', 'btn btn-soft', '取消') as HTMLButtonElement;
+  const cancel = el('button', 'btn btn-soft', t('settings.action.cancel')) as HTMLButtonElement;
   cancel.type = 'button';
-  const create = el('button', 'btn btn-accent', '创建') as HTMLButtonElement;
+  const create = el('button', 'btn btn-accent', t('shell.action.create')) as HTMLButtonElement;
   create.type = 'button';
   // 任务 3：挂到 body 的弹窗打开时 push 自身 close，Esc 只关栈顶一层
   let overlay: OverlayHandle | null = null;
@@ -182,10 +183,10 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
   overlay = pushOverlay(close);
   cancel.addEventListener('click', close);
   create.addEventListener('click', () => {
-    const t = titleInput.value.trim();
-    if (!t) {
+    const title = titleInput.value.trim();
+    if (!title) {
       status.className = 'ws-fs-status err';
-      status.textContent = '标题不能为空';
+      status.textContent = t('shell.new.titleRequired');
       titleInput.focus();
       return;
     }
@@ -193,11 +194,11 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
     const model = modelSel.value === '' ? undefined : modelSel.value;
     const prompt = promptSel.value === '' ? undefined : promptSel.value;
     create.disabled = true;
-    create.textContent = '创建中…';
+    create.textContent = t('shell.new.creating');
     const mode = modeSel.value;
     // W788：请求体组装收口在纯函数（buildCreateReq），便于机械断言 mode 的携带规则
     const doCreate = (includeOptional: boolean) =>
-      api.createSession(buildCreateReq({ workspace: ws, title: t, model, prompt, mode }, includeOptional));
+      api.createSession(buildCreateReq({ workspace: ws, title, model, prompt, mode }, includeOptional));
     void doCreate(true)
       .catch((err: unknown) => {
         // 降级：服务不认新增的可选字段（model / mode）时（4xx）重试不带它们
@@ -210,14 +211,14 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
       })
       .then(async (r) => {
         if (r.ok === false) {
-          throw new Error(userErrorText(r.error, '服务拒绝了该操作'));
+          throw new Error(userErrorText(r.error, t('shell.new.rejected')));
         }
         // 定位新会话 id（响应优先；缺失则按标题取最新）
         let id = r.id;
         if (!id) {
           try {
             const d = await api.sessions();
-            const cands = (d.sessions ?? []).filter((x) => x.title === t);
+            const cands = (d.sessions ?? []).filter((x) => x.title === title);
             cands.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0));
             id = cands[0]?.id;
           } catch {
@@ -226,32 +227,32 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
         }
         if (!id) {
           status.className = 'ws-fs-status err';
-          status.textContent = '会话已创建，请刷新列表后手动打开';
+          status.textContent = t('shell.new.createdRefresh');
           close();
           void host.loadSessions();
           return;
         }
         // W514：立即打开新会话视图（不等激活结果），激活在后台进行
-        openSession(id, { kind: 'session', title: t });
+        openSession(id, { kind: 'session', title });
         setActiveSession(id);
         S.selSession = id;
-        note('已创建并打开会话：' + t);
+        note(t('shell.new.createdOpened', { title }));
         void api
           .activateSession(id)
           .then((ar) => {
-            if (ar.ok === false) note('视图已打开 · 未能激活');
+            if (ar.ok === false) note(t('shell.tree.viewOpenActivateFailed'));
           })
           .catch((err: unknown) => {
-            note('视图已打开 · ' + userErrorText(err, '未能激活'));
+            note(t('shell.tree.viewOpenFailed', { reason: userErrorText(err, t('shell.new.activateFailed')) }));
           });
         close();
         void host.loadSessions();
       })
       .catch((err: unknown) => {
         status.className = 'ws-fs-status err';
-        status.textContent = '创建失败：' + (err instanceof Error ? err.message : String(err));
+        status.textContent = t('shell.new.failed', { reason: err instanceof Error ? err.message : String(err) });
         create.disabled = false;
-        create.textContent = '创建';
+        create.textContent = t('shell.action.create');
       });
   });
   // W789：弹窗内单行文本输入框里按 Enter = 点「创建」。不复制第二份提交逻辑 ——
@@ -273,11 +274,11 @@ export function newSessionDialog(host: NewsessionHost, presetWs?: string): void 
  *  W701：浏览器本体已抽到 ui/fsbrowser.ts（与「提权 · 选择目录」共用同一体验）。 */
 export function newWorkspaceDialog(host: NewsessionHost): void {
   openFsBrowser({
-    title: '新建工作区 · 选择目录',
-    note: '选中目录即注册该目录为工作区（名称 = 文件夹名）',
-    confirmLabel: '创建',
-    busyLabel: '注册中…',
-    fallbackNote: '可编辑底部路径后点「跳转」，或直接填写名称+路径创建',
+    title: t('shell.new.wsTitle'),
+    note: t('shell.new.wsNote'),
+    confirmLabel: t('shell.action.create'),
+    busyLabel: t('shell.new.wsBusy'),
+    fallbackNote: t('shell.new.wsFallback'),
     onPick: (path, ui) => {
       ui.setBusy(true);
       void api
@@ -285,17 +286,17 @@ export function newWorkspaceDialog(host: NewsessionHost): void {
         .then((r) => {
           if (r.ok === false) {
             ui.status.className = 'ws-fs-status err';
-            ui.status.textContent = '注册失败：' + userErrorText(r.error, '请检查目录路径');
+            ui.status.textContent = t('shell.new.wsRegisterFailed', { reason: userErrorText(r.error, t('shell.new.wsCheckPath')) });
             ui.setBusy(false);
             return;
           }
-          note('工作区已注册：' + path);
+          note(t('shell.new.wsRegistered', { path }));
           ui.close();
           void host.loadSessions();
         })
         .catch((err: unknown) => {
           ui.status.className = 'ws-fs-status err';
-          ui.status.textContent = '注册失败：' + userErrorText(err, '请检查目录路径');
+          ui.status.textContent = t('shell.new.wsRegisterFailed', { reason: userErrorText(err, t('shell.new.wsCheckPath')) });
           ui.setBusy(false);
         });
     },

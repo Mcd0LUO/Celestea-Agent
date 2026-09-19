@@ -16,7 +16,7 @@ interface I18nMod {
   localeDict(l: string): Record<string, string>;
   localeLabel(l: string): string;
 }
-interface SettingsMod { languageField(): ElLike; languageFieldMounted(): boolean; installI18nSettings(): void }
+interface SettingsMod { languageField(): ElLike; languageFieldMounted(): boolean; installI18nSettings(): void; setReloadImpl(fn: () => void): void }
 
 const load = async (): Promise<I18nMod> => (await import(/* @vite-ignore */ at('i18n/index.ts'))) as I18nMod;
 const loadSettings = async (): Promise<SettingsMod> => (await import(/* @vite-ignore */ at('i18n/settings.ts'))) as SettingsMod;
@@ -85,6 +85,25 @@ describe('i18n P0', () => {
     m.setLocale('en'); // 同值不重复通知
     expect(fired).toBe(base + 1);
     off();
+  });
+
+  it('切换语言触发整页重载（方案 A：让所有渲染期 t() 的模块以新语言重画）', async () => {
+    const m = await load();
+    const s = await loadSettings();
+    m.setLocale('zh');
+    const reload = vi.fn();
+    s.setReloadImpl(reload); // 测试缝：jsdom 的 location.reload 不可重定义
+    const host = doc.createElement('div') as unknown as ElLike;
+    doc.body.appendChild(host);
+    host.appendChild(s.languageField());
+    const select = host.querySelector('select') as ElLike;
+    select.value = 'en';
+    select.dispatchEvent(new Ev('change', { bubbles: true }));
+    expect(reload, '语言真的变化时必须整页重载').toHaveBeenCalledTimes(1);
+    expect(m.getLocale()).toBe('en');
+    select.value = 'en';
+    select.dispatchEvent(new Ev('change', { bubbles: true }));
+    expect(reload, '同值不重载').toHaveBeenCalledTimes(1);
   });
 
   it('语言字段：渲染 select 且切换后只重画自身文案（不重建背景）', async () => {

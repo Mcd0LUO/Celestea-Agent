@@ -18,6 +18,7 @@ import {
 } from './store';
 import { parentOf, truncateName, widOf, workerSessions, workerSigOf, workerTitleOf } from './util';
 import { paneBusy, activeSessionId } from '../viewctx';
+import { t } from '../../i18n';
 
 /** 渲染一条 Worker 行（child=true 时缩进到父会话之下）。每行：运行态点 · wid · 标题 · 状态 · 模型。 */
 function renderWorkerRow(host: HTMLElement, w: SessionInfo, child: boolean): HTMLElement {
@@ -28,13 +29,13 @@ function renderWorkerRow(host: HTMLElement, w: SessionInfo, child: boolean): HTM
   row.appendChild(el('span', 'sess-dot' + (busy ? ' busy' : '')));
   row.appendChild(el('span', 'ws-worker-wid', widOf(w)));
   row.appendChild(el('span', 'ws-worker-title', workerTitleOf(w)));
-  const st = el('span', 'ws-worker-state' + (busy ? ' busy' : ''), busy ? '运行中' : '空闲');
+  const st = el('span', 'ws-worker-state' + (busy ? ' busy' : ''), busy ? t('shell.tree.running') : t('shell.tree.idle'));
   row.appendChild(st);
   const bits: string[] = [];
   if (w.model) bits.push(String(w.model));
-  if (w.events !== undefined) bits.push(w.events + ' 次事件');
+  if (w.events !== undefined) bits.push(t('shell.tree.events', { n: w.events }));
   if (bits.length) row.appendChild(el('span', 'ws-worker-meta', bits.join(' · ')));
-  row.title = workerTitleOf(w) + (w.model ? ' · ' + w.model : '') + '（点击打开该 worker 会话视图：只读）';
+  row.title = workerTitleOf(w) + (w.model ? ' · ' + w.model : '') + t('shell.worker.openHint');
   row.addEventListener('click', () => {
     const hostEl = document.getElementById('sessionTree') ?? host;
     openSessionRow(hostEl, id, { kind: 'worker', title: w.title || id });
@@ -54,7 +55,7 @@ export function renderWorkerGroup(host: HTMLElement, workers: SessionInfo[], ope
   det.open = open;
   const sum = document.createElement('summary');
   sum.className = 'ws-worker-summary';
-  sum.appendChild(el('span', null, '后台任务'));
+  sum.appendChild(el('span', null, t('shell.worker.title')));
   sum.appendChild(el('span', 'ws-worker-count', String(workers.length)));
   det.appendChild(sum);
 
@@ -89,7 +90,7 @@ export function renderWorkerGroup(host: HTMLElement, workers: SessionInfo[], ope
       const pname = el('span', 'ws-worker-parent-name', parentSession?.title || truncateName(parentId));
       head.appendChild(pname);
       head.appendChild(el('span', 'ws-worker-count', String(kids.length)));
-      head.title = '点击打开父会话视图';
+      head.title = t('shell.worker.parentHint');
       head.addEventListener('click', () => {
         const hostEl = document.getElementById('sessionTree') ?? host;
         openSessionRow(hostEl, parentId, { kind: 'session', title: parentSession?.title });
@@ -100,7 +101,7 @@ export function renderWorkerGroup(host: HTMLElement, workers: SessionInfo[], ope
     if (orphans.length) {
       const head = el('div', 'ws-worker-parent');
       head.appendChild(el('span', 'ws-lineage-mark', '·'));
-      head.appendChild(el('span', 'ws-worker-parent-name', '未关联父会话'));
+      head.appendChild(el('span', 'ws-worker-parent-name', t('shell.worker.unlinked')));
       det.appendChild(head);
       for (const w of orphans) det.appendChild(renderWorkerRow(host, w, true));
     }

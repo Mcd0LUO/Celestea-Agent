@@ -7,6 +7,7 @@ import { setHint } from '../hint'; // W790：运行态点提示走注册缝
 import { activeSessionId, paneBusy } from '../viewctx';
 import { grantShieldIcon } from './icons';
 import { getActiveSession } from './store';
+import { t } from '../../i18n';
 
 /** 侧栏底部提示行（#sideFoot）。 */
 export function note(text: string): void {
@@ -28,7 +29,7 @@ export function updateBusyDots(container: HTMLElement): void {
     const id = d.dataset.dot ?? '';
     const busy = paneBusy(id);
     d.classList.toggle('busy', busy);
-    setHint(d, busy ? '运行中' : '空闲');
+    setHint(d, busy ? t('shell.tree.running') : t('shell.tree.idle'));
   }
   for (const row of container.querySelectorAll<HTMLElement>('.ws-worker-row')) {
     const id = row.dataset.id ?? '';
@@ -36,7 +37,7 @@ export function updateBusyDots(container: HTMLElement): void {
     row.classList.toggle('running', busy);
     const st = row.querySelector<HTMLElement>('.ws-worker-state');
     if (st) {
-      st.textContent = busy ? '运行中' : '空闲';
+      st.textContent = busy ? t('shell.tree.running') : t('shell.tree.idle');
       st.classList.toggle('busy', busy);
     }
   }
@@ -53,8 +54,8 @@ export function paintGrantMark(node: HTMLElement, mark: GrantMark | null): void 
   node.classList.remove('hidden');
   node.classList.toggle('danger', mark.danger);
   node.title = mark.danger
-    ? '该会话权限已放宽（含危险能力）：' + mark.count + ' 项'
-    : '该会话权限已放宽：' + mark.count + ' 项';
+    ? t('shell.tree.grantDanger', { n: mark.count })
+    : t('shell.tree.grantRelaxed', { n: mark.count });
   if (!node.firstChild) node.appendChild(grantShieldIcon());
 }
 

@@ -45,8 +45,8 @@ interface Doc {
 }
 
 interface CopyMod {
-  MODE_CHOICES: { value: string; label: string }[];
-  MODE_NOTES: Record<string, string>;
+  modeChoices(): { value: string; label: string }[];
+  modeNotes(): Record<string, string>;
   DEFAULT_MODE: string;
   modeLabel(v: unknown): string;
   modeTitle(v: unknown): string;
@@ -154,15 +154,15 @@ describe("W788 · 工作方式文案（纯函数，node 可断言）", () => {
     expect(copy.modeLabel("execution")).toBe("执行");
     // 未知/缺失/非法一律空串 —— 调用方据此隐藏入口，而不是显示错误
     expect([copy.modeLabel("fast"), copy.modeLabel(""), copy.modeLabel(undefined), copy.modeLabel(2)]).toEqual(["", "", "", ""]);
-    expect(copy.MODE_CHOICES.map((o) => o.label)).toEqual(["标准模式", "执行模式（PTC）"]);
+    expect(copy.modeChoices().map((o) => o.label)).toEqual(["标准模式", "执行模式（PTC）"]);
     expect(copy.DEFAULT_MODE).toBe("standard");
     expect(copy.modeTitle("execution")).toBe("执行模式（PTC）");
   });
 
   it("keeps the frozen 409 copy and the old-service copy verbatim (§3.1)", () => {
-    expect(copy.MODE_NOTES.busy).toBe("turn 进行中，无法切换模式");
-    expect(copy.MODE_NOTES.applied).toBe("将在会话下一轮生效");
-    expect(copy.MODE_NOTES.unsupported).toBe("当前版本不支持切换工作方式");
+    expect(copy.modeNotes().busy).toBe("turn 进行中，无法切换模式");
+    expect(copy.modeNotes().applied).toBe("将在会话下一轮生效");
+    expect(copy.modeNotes().unsupported).toBe("当前版本不支持切换工作方式");
   });
 });
 

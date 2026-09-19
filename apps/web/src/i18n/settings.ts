@@ -10,6 +10,30 @@ import { el } from '../utils/dom';
 import { getLocale, localeLabel, onLocaleChange, setLocale, t, type Locale } from './index';
 import { applyI18n } from './dom';
 
+/**
+ * 切换语言后**整页重载**（方案 A）。
+ *   本架构无框架、大量模块在渲染期调用 t()，逐模块订阅重画极易漏（statusline/会话树/
+ *   侧栏/工具卡都没有订阅）。重载后所有模块从 localStorage 读到新语言重新渲染，**必然完整**。
+ *   放在 change 处理器里而非 setLocale() 内部：setLocale() 的单测不受影响。
+ *   代价：重载会丢滚动位置 / 已开面板；会话状态在服务端，重载后由既有恢复路径还原。
+ */
+let reloadImpl: () => void = (): void => {
+  try {
+    location.reload();
+  } catch {
+    /* 非浏览器环境（单测 jsdom）：忽略 */
+  }
+};
+
+/** 仅供测试：替换整页重载实现（默认 location.reload()；jsdom 的 reload 不可重定义）。 */
+export function setReloadImpl(fn: () => void): void {
+  reloadImpl = fn;
+}
+
+function reloadPage(): void {
+  reloadImpl();
+}
+
 /** 已挂载的语言字段（语言切换时逐个重画标签，不重建 DOM）。 */
 const fields = new Set<HTMLElement>();
 let installed = false;
@@ -24,7 +48,12 @@ function buildField(): HTMLElement {
     select.appendChild(opt);
   }
   select.value = getLocale();
-  select.addEventListener('change', () => setLocale(select.value as Locale));
+  select.addEventListener('change', () => {
+    const next = select.value as Locale;
+    if (next === getLocale()) return;
+    setLocale(next);
+    reloadPage();
+  });
   wrap.appendChild(select);
   wrap.appendChild(el('span', 'cfg-hint', t('common.language.hint')));
   fields.add(wrap);

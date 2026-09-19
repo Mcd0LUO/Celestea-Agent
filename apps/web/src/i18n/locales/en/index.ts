@@ -6,5 +6,6 @@ import { api } from './api';
 import { statusline } from './statusline';
 import { settings } from './settings';
 import { chat } from './chat';
+import { shell } from './shell';
 
-export const en: Record<Key, string> = { ...common, ...api, ...statusline, ...settings, ...chat };
+export const en: Record<Key, string> = { ...common, ...api, ...statusline, ...settings, ...chat, ...shell };
