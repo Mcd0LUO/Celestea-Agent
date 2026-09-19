@@ -1,13 +1,20 @@
 // ============================================================================
-// i18n/settings.ts — 设置页「语言」字段（切换入口，挂在 #settingsConfig 顶部）。
-//   切换后只重画本字段自身的文案；**不重建会话**（onLocaleChange 只通知订阅者）。
+// i18n/settings.ts — 设置页「通用偏好」pane 的内容 + 语言字段 + 静态 DOM 填充。
+// ----------------------------------------------------------------------------
+//   用户要求：语言切换要有**独立一页**（不是挂在「通用配置」顶部）。
+//   本模块只放**真正全局**的界面偏好；会话级设置（模型/档位/权限档）不在这里。
+//   语言字段的标签走 t()；切换语言后由 installI18nSettings 统一重画本页文案
+//   （不重建 pane、不重新请求——设置页铁律 7）。
 // ============================================================================
 import { el } from '../utils/dom';
 import { getLocale, localeLabel, onLocaleChange, setLocale, t, type Locale } from './index';
+import { applyI18n } from './dom';
 
-let row: HTMLElement | null = null;
+/** 已挂载的语言字段（语言切换时逐个重画标签，不重建 DOM）。 */
+const fields = new Set<HTMLElement>();
+let installed = false;
 
-function build(): HTMLElement {
+function buildField(): HTMLElement {
   const wrap = el('div', 'cfg-field i18n-field');
   wrap.appendChild(el('span', 'cfg-label', t('common.language')));
   const select = el('select', 'cfg-input') as HTMLSelectElement;
@@ -20,23 +27,51 @@ function build(): HTMLElement {
   select.addEventListener('change', () => setLocale(select.value as Locale));
   wrap.appendChild(select);
   wrap.appendChild(el('span', 'cfg-hint', t('common.language.hint')));
-  row = wrap;
+  fields.add(wrap);
   return wrap;
 }
 
-/** 建语言字段并订阅语言变化（只重画自己）。 */
+function paint(wrap: HTMLElement): void {
+  const label = wrap.querySelector('.cfg-label');
+  const hint = wrap.querySelector('.cfg-hint');
+  const select = wrap.querySelector('select');
+  if (label) label.textContent = t('common.language');
+  if (hint) hint.textContent = t('common.language.hint');
+  if (select instanceof HTMLSelectElement) select.value = getLocale();
+}
+
+/** 建语言字段（标签走 t()）。 */
 export function languageField(): HTMLElement {
-  const wrap = build();
-  onLocaleChange(() => {
-    const label = wrap.querySelector('.cfg-label');
-    const hint = wrap.querySelector('.cfg-hint');
-    if (label) label.textContent = t('common.language');
-    if (hint) hint.textContent = t('common.language.hint');
-  });
-  return wrap;
+  return buildField();
 }
 
-/** 当前字段是否已挂载（诊断）。 */
+/** 当前是否有语言字段已挂载（诊断/测试）。 */
 export function languageFieldMounted(): boolean {
-  return row !== null && row.isConnected;
+  for (const w of fields) if (w.isConnected) return true;
+  return false;
+}
+
+/**
+ * 「通用偏好」pane 内容：**只收真正全局**的界面偏好。
+ * 目前只有语言（见报告：其余候选要么是单主题/拖拽态，要么是会话级）。
+ * 离屏构建 + 单次替换；由 showPane 的 paneLoaded 保证切回不重建。
+ */
+export function mountGeneralPane(container: HTMLElement): void {
+  const off = document.createElement('div');
+  off.appendChild(buildField());
+  container.replaceChildren(...Array.from(off.childNodes));
+}
+
+/**
+ * 装配：填充静态 [data-i18n] 文案，并在语言切换时重画它们与已挂载的语言字段。
+ * 幂等（多次调用只订阅一次）。
+ */
+export function installI18nSettings(): void {
+  if (installed) return;
+  installed = true;
+  applyI18n(document);
+  onLocaleChange(() => {
+    applyI18n(document);
+    for (const w of fields) if (w.isConnected) paint(w);
+  });
 }

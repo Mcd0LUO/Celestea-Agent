@@ -4,5 +4,6 @@ import type { Key } from '../zh';
 import { common } from './common';
 import { api } from './api';
 import { statusline } from './statusline';
+import { settings } from './settings';
 
-export const en: Record<Key, string> = { ...common, ...api, ...statusline };
+export const en: Record<Key, string> = { ...common, ...api, ...statusline, ...settings };

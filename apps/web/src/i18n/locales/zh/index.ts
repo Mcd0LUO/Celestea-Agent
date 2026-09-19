@@ -2,6 +2,7 @@
 import { common } from './common';
 import { api } from './api';
 import { statusline } from './statusline';
+import { settings } from './settings';
 
-export const zh = { ...common, ...api, ...statusline } as const;
+export const zh = { ...common, ...api, ...statusline, ...settings } as const;
 export type Key = keyof typeof zh;

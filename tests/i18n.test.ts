@@ -16,7 +16,7 @@ interface I18nMod {
   localeDict(l: string): Record<string, string>;
   localeLabel(l: string): string;
 }
-interface SettingsMod { languageField(): ElLike; languageFieldMounted(): boolean }
+interface SettingsMod { languageField(): ElLike; languageFieldMounted(): boolean; installI18nSettings(): void }
 
 const load = async (): Promise<I18nMod> => (await import(/* @vite-ignore */ at('i18n/index.ts'))) as I18nMod;
 const loadSettings = async (): Promise<SettingsMod> => (await import(/* @vite-ignore */ at('i18n/settings.ts'))) as SettingsMod;
@@ -97,6 +97,7 @@ describe('i18n P0', () => {
     marker.className = 'bg-marker';
     host.appendChild(marker);
     host.appendChild(s.languageField());
+    s.installI18nSettings(); // 语言切换时重画已挂载字段（单一订阅，见 i18n/settings.ts）
     expect(s.languageFieldMounted()).toBe(true);
     const select = host.querySelector('select') as ElLike;
     expect(select.value).toBe('zh');

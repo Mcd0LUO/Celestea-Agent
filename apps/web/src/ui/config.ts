@@ -15,7 +15,7 @@ import { initProvidersSection, loadProviders } from './providers';
 import { initPromptsSection, loadPrompts } from './prompts';
 import { loadPermissionsSection } from './permissions';
 import { loadPluginsSection } from './plugins'; // W859 设置页「插件」（客户端热开关 + 宿主只读）
-import { languageField } from '../i18n/settings'; // i18n P0：语言切换入口
+import { installI18nSettings, mountGeneralPane } from '../i18n/settings'; // i18n：通用偏好 pane
 
 const page = need<HTMLElement>('#settingsPage');
 const box = need<HTMLElement>('#settingsConfig');
@@ -79,7 +79,6 @@ function toNum(v: string): number | null {
 
 function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTMLElement): void {
   container.replaceChildren();
-  container.appendChild(languageField()); // i18n P0：语言（切换后只重画本字段，不重建会话）
   const form = el('form', 'cfg-form');
 
   // W227 修复：available.models 是 {id,name,reasoning} 对象数组——
@@ -236,7 +235,7 @@ export async function loadConfig(opts: { refresh?: boolean } = {}): Promise<void
 
 // ---- 左导航 + 右内容 -----------------------------------------------------------
 
-const PANES = ['config', 'tools', 'archive', 'providers', 'prompts', 'permissions', 'plugins'] as const;
+const PANES = ['general', 'config', 'tools', 'archive', 'providers', 'prompts', 'permissions', 'plugins'] as const;
 type PaneName = (typeof PANES)[number];
 
 let currentPane: PaneName = 'config';
@@ -253,7 +252,10 @@ const paneLoaded: Partial<Record<PaneName, boolean>> = {};
 
 /** 加载指定 pane 内容（双缓冲；仅在首次或强制刷新时重建，切回零重建）。 */
 function loadPane(name: PaneName): void {
-  if (name === 'config') {
+  if (name === 'general') {
+    // 独立「通用偏好」页：语言等全局偏好（首次进入时挂载；切回零重建由 showPane 保证）。
+    mountGeneralPane(need<HTMLElement>('#settingsGeneral'));
+  } else if (name === 'config') {
     void loadConfig();
   } else if (name === 'tools') {
     void loadToolsSection();
@@ -329,6 +331,7 @@ export function initSettingsPage(): void {
     navEl(n).addEventListener('click', () => showPane(n));
   }
   // Esc 关闭统一由 utils/overlays 层级栈处理（任务 3：唯一 document Esc 监听）
+  installI18nSettings(); // i18n：静态 data-i18n 文案 + 语言切换重画
   initProvidersSection(); // #btnAddProvider
   initPromptsSection(); // #btnNewPrompt + scope 切换
 }

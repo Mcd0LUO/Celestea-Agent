@@ -176,6 +176,8 @@
       </header>
       <div class="settings-layout">
         <nav class="settings-nav" aria-label="设置导航">
+          <!-- i18n：文案由 i18n/settings.ts 的 applyI18n 按 data-i18n 填充（不写死中文） -->
+          <button class="settings-nav-item" type="button" data-page="general" data-i18n="settings.general.title"></button>
           <button class="settings-nav-item active" type="button" data-page="config">通用配置</button>
           <button class="settings-nav-item" type="button" data-page="tools">工具</button>
           <button class="settings-nav-item" type="button" data-page="archive">归档会话</button>
@@ -185,6 +187,13 @@
           <button class="settings-nav-item" type="button" data-page="plugins">插件</button>
         </nav>
         <div class="settings-content">
+          <section class="settings-pane" data-pane="general">
+            <header class="settings-pane-head">
+              <h4 data-i18n="settings.general.title"></h4>
+              <span class="settings-sec-note" data-i18n="settings.general.note"></span>
+            </header>
+            <div class="settings-pane-body" id="settingsGeneral"></div>
+          </section>
           <section class="settings-pane active" data-pane="config">
             <header class="settings-pane-head">
               <h4>运行配置</h4>
