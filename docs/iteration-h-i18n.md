@@ -1,6 +1,6 @@
 # 迭代 H · 国际化（只支持中文 / 英文）
 
-> 状态：**设计（等 G 批落地后执行）**。用户要求：「这一版做完后完善 i18n，只支持中文，英文。」
+> 状态：**已实现（H，v2.7.1）**。本文是设计与验收标准的记录；落地见 apps/web/src/i18n/，规则由 apps/web/tools/check-ui-copy.mjs 机械执行。
 > 前置：`docs/iteration-g-workbench.md`、`apps/web/FRONTEND-RULES.md`。
 
 ---

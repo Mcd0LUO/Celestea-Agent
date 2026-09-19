@@ -256,7 +256,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | 每个内置模板通过 `validateTemplate` | `prompts.test.ts:41` | 两张变体都要过 | 同 |
 | 组装结果 ≤ `PROMPT_MAX_LEN` | `prompts.test.ts:160-167` | 新增两变体断言 | 同 |
 | `contracts/data-files/index.json` 计数 | `tests/contracts.test.ts` | 不变（无新文件） | 不变 |
-| Studio 代码/契约不含 `agentPreset` | 新正则门禁（仿 `ui-copy-tech-notes.md` §209 的建议） | 新增 | 同 |
+| Studio 代码/契约不含 `agentPreset` | 新正则门禁（仿 apps/web/tools/check-ui-copy.mjs 的 RULES 建议） | 新增 | 同 |
 
 ---
 
@@ -372,7 +372,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | `iteration-e-capabilities.md` | mode 与能力 3（账本）在 P2 交汇：账本行带 `mode` 才能回答"执行模式到底省了多少"；本文不复制其 P0 内容，只依赖其 `attempt` 维度约定 |
 | `feature-session-independence.md`（已实现） | 本文的**基座**：每会话实例 + epoch 重建 + SSE `session` 信封使"每会话 mode"成为可能；本文不改其任何裁决 |
 | `feature-session-grants.md`（已实现） | 会话级配置文件的读写/容错/审计纪律**直接复用**（`session.json` 与 `grants.json` 的差别只在容错等级：前者忽略错误，后者整份忽略 + 告警） |
-| `ui-copy-tech-notes.md` | 新增 UI 文案（「工作方式」「标准模式」「执行模式（PTC）」）需过其文案规范；`mode` 值不直接暴露给用户（显示中文标签） |
+| `check-ui-copy.mjs` | 新增 UI 文案（「工作方式」「标准模式」「执行模式（PTC）」）需过 apps/web/tools/check-ui-copy.mjs 的文案规范；`mode` 值不直接暴露给用户（显示中文标签） |
 | W253/W254/W255（harness 侧） | 本文只**承接**其结论：不做 PTC_ONLY 禁令、不做代码生成器、`run_code` 保持并存形态、P2 度量门槛沿用 W254 §9 |
 
 ---

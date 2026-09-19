@@ -26,7 +26,7 @@
 | [`iteration-g-workbench.md`](./iteration-g-workbench.md) | 当前（**已实现，G1–G4**） | 迭代方向 G：命令面板 / `POST /api/exec` 立即执行 / 持久目标 / `GET /api/fs/list` / 多面板工作区；含**冻结的线格式** | 本文；`apps/web/src/ui/workbench/`、`apps/studio/src/handlers/exec.ts` |
 | [`iteration-h-i18n.md`](./iteration-h-i18n.md) | 当前（**已实现，H**） | 迭代方向 H：前端 i18n（zh/en 双语字典、迁移白名单棘轮、`<html lang>` 跟随切换）+ 发布门禁加固 | 本文；`apps/web/src/i18n/`、`apps/web/tools/check-ui-copy.mjs` |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见归档的 DSH 评估（W253/W254，已于 W881 清理出公开仓） |
-| [`ui-copy-tech-notes.md`](./ui-copy-tech-notes.md) | 当前（审计清单） | 共用前端「面向用户可见的技术文案」只读审计：27 个文件 + `index.html` 的问题清单与建议改法 | 本文；前端规则见 `apps/web/FRONTEND-RULES.md` |
+| [`AGENT.md`](./AGENT.md) | 当前 | **开发与提交规范**：完成定义（Definition of Done）、提交消息格式与粒度、发布流程（先 tag 再 build）、派工协议、本机环境坑 | 本文；门禁清单见根 `package.json` 的 `check` |
 | [`DEPENDENCY-POLICY.md`](./DEPENDENCY-POLICY.md) | 当前（W847 W0） | **依赖与工具链策略**：Node 版本带 + 启动守卫、冻结安装（pnpm-workspace.yaml）、升级验证协议与回滚、为什么 audit 不进门禁、外部运行时依赖清点 | 本文 |
 
 上表覆盖 `docs/` 根的全部**当前与设计**文档（本索引除外）；**新增文档必须在上表登记**。

@@ -1,6 +1,6 @@
 # 迭代方向 G · 交互工作台（命令面板 / 多面板工作区 / 目标）
 
-> 状态：**设计（分批实现中）**。本文只描述目标契约与验收标准。
+> 状态：**已实现（G1–G4，v2.7.x）**。本文是目标契约、验收标准与**冻结线格式**的记录；落地见 apps/web/src/ui/workbench/、apps/studio/src/handlers/exec.ts。
 > 前置：`docs/iteration-f-capabilities.md`（F1-F4 体例）、`docs/ARCHITECTURE.md`。
 > 一句话目标：**把对话框从唯一入口变成工作台的一格**——命令可直达、面板可停靠、目标可持久。
 

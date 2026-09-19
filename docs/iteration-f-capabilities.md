@@ -1,6 +1,6 @@
 # 迭代方向 F · 交互与自主能力（选段提及 / 文件侧边预览 / 持久记忆库 / 真机操控）
 
-> 状态：**设计（未实现）**。本文只描述目标契约、分期与验收标准，**不改任何代码、配置或服务**。
+> 状态：**已实现（F1–F4，v2.7.x）**。本文是目标契约与验收标准的记录；落地见 apps/web/src/ui/quote/、apps/web/src/ui/preview/、packages/core/src/memory.ts、packages/tools/src/browser/。
 > 目标：`goal-ab885a1b-2bd5-4366-bd43-f118880561da`（持续迭代，逐项上线）。
 > 前置：`docs/ARCHITECTURE.md`（分层与 seam 纪律）、`docs/iteration-e-capabilities.md`（同体例的上一个迭代方向）、
 > `docs/feature-multimodal-attachments.md`（附件链现状）、`docs/feature-dynamic-tool-disclosure.md`（工具面收口）。
