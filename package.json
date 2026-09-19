@@ -1,6 +1,6 @@
 {
   "name": "celestea-studio-ts",
-  "version": "0.1.0-p0",
+  "version": "2.7.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -19,12 +19,16 @@
     "replay:compare": "tsx scripts/compare-replay.ts",
     "replay:e2e": "tsx scripts/replay-e2e.ts",
     "lint": "eslint .",
-    "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps/studio scripts tests",
+    "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps/studio apps/cli scripts tests",
     "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test && pnpm check:web",
     "check:web": "pnpm --dir apps/web run build && CELESTEA_BUNDLE_STRICT=1 pnpm --dir apps/web run check",
     "node:check": "node scripts/check-node.mjs",
     "version:sync": "node scripts/version.mjs --write",
-    "deps:audit": "pnpm audit; pnpm outdated -r"
+    "deps:audit": "pnpm audit; pnpm outdated -r",
+    "build": "pnpm -r --filter '!celestea-studio-frontend' build",
+    "build:web": "pnpm --dir apps/web run build",
+    "release:check": "node scripts/release-check.mjs",
+    "release": "pnpm run build && pnpm run release:check"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

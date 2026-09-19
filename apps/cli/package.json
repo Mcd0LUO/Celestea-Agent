@@ -24,7 +24,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/make-bin-executable.mjs dist/main.js"
   },
   "dependencies": {
     "@celestea/core": "workspace:*",
