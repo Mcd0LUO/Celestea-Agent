@@ -51,10 +51,12 @@ function hitsIn(files: string[], strip: boolean): string[] {
 }
 
 describe("W795 ① 占位文案已从源码与产物里消失", () => {
-  it("apps/web/src/**/*.ts 与 index.html、app.js：去掉注释后不含任何占位文案", () => {
+  it("apps/web/src/**/*.ts 与 index.html：去掉注释后不含任何占位文案", () => {
+    // app.js/style.css（旧「v2」单体原型）已删除：index.html 只引 /src/main.ts，
+    // 构建产物也不含它们，扫一个不参与构建的文件没有意义。
     const files = walk(join(WEB, "src"))
       .filter((f) => f.endsWith(".ts"))
-      .concat([join(WEB, "index.html"), join(WEB, "app.js")]);
+      .concat([join(WEB, "index.html")]);
     expect(hitsIn(files, true)).toEqual([]);
   });
 
@@ -85,7 +87,7 @@ describe("W795 ① 占位文案已从源码与产物里消失", () => {
     }
     const newest = Math.max(
       ...walk(join(WEB, "src"))
-        .concat([join(WEB, "index.html"), join(WEB, "app.js")])
+        .concat([join(WEB, "index.html")])
         .map((f) => statSync(f).mtimeMs),
     );
     // 陈旧产物不代表当前源码（可能是上一轮构建）：改为显式 skip 并计入 skip 数

@@ -28,7 +28,7 @@ const MAX_NESTED_CALLBACKS = 4;
  * 由它自己的 `apps/web/tsconfig.json` 与 7 道门禁管，不归本仓后端工具链。
  * 因此这里（以及 tsconfig/vitest/depcruise）只收 `apps/studio`，不再用 `apps/*` 通配。
  */
-const SOURCE_GLOBS = ["packages/*/src/**/*.ts", "apps/studio/src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"];
+const SOURCE_GLOBS = ["packages/*/src/**/*.ts", "apps/studio/src/**/*.ts", "apps/cli/src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"];
 /** 测试文件的规模规则照旧，但允许 import 自己被测的包。 */
 const TEST_GLOBS = ["**/*.test.ts", "**/*.test-util.ts", "**/*.spec.ts"];
 
