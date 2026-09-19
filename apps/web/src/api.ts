@@ -57,14 +57,12 @@ import type {
   PermissionPresetsResp,
   SessionPermissionResp,
 } from './types/permission';
+import { t } from './i18n'; // i18n P0：用户可见文案走字典
 
 export class ApiError extends Error {
   readonly status: number;
   readonly data: unknown;
-  /**
-   * 原始技术细节（HTTP 状态行 / 服务端 error 原文 / 浏览器网络异常文本）。
-   * 只供 console 与日志排查，不得拼进任何会渲染给用户的字符串。
-   */
+  /** 原始技术细节（状态行 / 服务端 error / 网络异常文本）：只进 console，绝不进 UI。 */
   readonly technical: string;
 
   constructor(message: string, status = 0, data: unknown = null, technical = '') {
@@ -81,28 +79,28 @@ export class ApiError extends Error {
  * 各 UI 落点统一以「X失败：<短语>」呈现，后缀永远来自这里。
  */
 function userPhrase(status: number): string {
-  if (status === 0) return '无法连接服务，请稍后重试';
-  if (status === 400 || status === 422) return '请求内容有误，请检查后重试';
-  if (status === 401 || status === 403) return '没有权限执行该操作';
-  if (status === 404 || status === 405) return '当前版本不支持该操作';
-  if (status === 409) return '当前状态暂时无法完成该操作，请稍后重试';
-  if (status === 429) return '操作过于频繁，请稍后重试';
-  if (status >= 500) return '服务暂时不可用，请稍后重试';
-  return '服务暂时无法完成请求，请稍后重试';
+  if (status === 0) return t('api.error.connect');
+  if (status === 400 || status === 422) return t('api.error.badRequest');
+  if (status === 401 || status === 403) return t('api.error.forbidden');
+  if (status === 404 || status === 405) return t('api.error.unsupported');
+  if (status === 409) return t('api.error.conflict');
+  if (status === 429) return t('api.error.tooMany');
+  if (status >= 500) return t('api.error.server');
+  return t('api.error.generic');
 }
 
 /**
  * 服务端响应体 error 字段 / 任意底层异常 → 面向用户的固定短语。
  * 原始细节只写 console（开发者排查用），绝不进入 UI 文案。
  */
-export function userErrorText(detail: unknown, phrase = '服务暂时无法完成请求，请稍后重试'): string {
+export function userErrorText(detail: unknown, phrase?: string): string {
   if (detail instanceof ApiError) {
     if (detail.technical) console.warn('[api] 服务端详情：' + detail.technical);
     return detail.message;
   }
   const raw = detail instanceof Error ? detail.message : typeof detail === 'string' ? detail : '';
   if (raw.trim() !== '') console.warn('[api] 服务端详情：' + raw);
-  return phrase;
+  return phrase ?? t('api.error.generic');
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {

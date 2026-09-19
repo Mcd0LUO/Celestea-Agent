@@ -15,6 +15,7 @@ import { initProvidersSection, loadProviders } from './providers';
 import { initPromptsSection, loadPrompts } from './prompts';
 import { loadPermissionsSection } from './permissions';
 import { loadPluginsSection } from './plugins'; // W859 设置页「插件」（客户端热开关 + 宿主只读）
+import { languageField } from '../i18n/settings'; // i18n P0：语言切换入口
 
 const page = need<HTMLElement>('#settingsPage');
 const box = need<HTMLElement>('#settingsConfig');
@@ -78,6 +79,7 @@ function toNum(v: string): number | null {
 
 function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTMLElement): void {
   container.replaceChildren();
+  container.appendChild(languageField()); // i18n P0：语言（切换后只重画本字段，不重建会话）
   const form = el('form', 'cfg-form');
 
   // W227 修复：available.models 是 {id,name,reasoning} 对象数组——
