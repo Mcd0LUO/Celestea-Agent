@@ -295,6 +295,8 @@ apps/studio → runtime.compose(profile)
 - 与 UI 文案门禁的关系：该门禁**刻意豁免** `console.*` 实参（`check-ui-copy.mjs`），
   理由是「开发诊断不是用户可见文案」。两者不冲突：诊断里的中文属于诊断，不属于文案。
   实测 `apps/web/src` 只有 `console.warn`（23 处）、`console.log` 0 处。
+- **可注入的默认 sink 不算「直接 console」**：`apps/studio/src/runtime/image-downgrade.ts` 的
+  `deps.warn ?? ((line) => console.warn(line))` 是**依赖的默认实现**（诊断本身仍走 `deps.bus()`，测试靠注入计数）—— 合规。判据是「能否被调用方替换」，不是「有没有出现 console 字样」。
 
 **6.5.6 `scripts/` 的语言（新规则）**
 | 语言 | 何时用 |
