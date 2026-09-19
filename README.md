@@ -15,6 +15,8 @@ Celestea Agent 把「一个能读写文件、执行命令、跑代码、并行�
 - **多模型 / 多提供商** —— 任意 OpenAI 兼容端点；模型、推理档位、降级链可配，**可逐会话覆盖模型**。
 - **看得见的成本** —— 逐轮 usage 账本与费用视图。
 - **多模态** —— 图片附件；`md`/`txt` 等文本文件直接进上下文；LaTeX 公式（KaTeX + mhchem）。
+- **选段提及** —— 在消息里选中一段文字，点「引用」即可把这段**内容快照**随下一条消息发出；纯文本块、历史可回放。详见 [`docs/feature-selection-quote.md`](docs/feature-selection-quote.md)。
+- **工作区持久记忆** —— 工作区可放一份 `MEMORY.md`（项目层随仓库提交，全局层只在本机），每轮自动作为背景资料注入；没有文件就零开销。详见 [`docs/feature-workspace-memory.md`](docs/feature-workspace-memory.md)。
 - **可插拔** —— 提示词库、前端插件、工具披露策略都长在插件缝上，可热开关。
 - **可选登录门** —— 自带 `/login` + HMAC cookie，可直接对公网暴露（也可只监听环回）。
 
