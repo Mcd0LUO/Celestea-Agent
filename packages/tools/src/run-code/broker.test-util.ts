@@ -17,6 +17,18 @@ import { fnTool } from "../fn-tool.js";
 import { userspaceSandboxWith } from "../sandbox/userspace.js";
 import { RegistryHandle, runCodeToolWithHandle } from "../tools/run-code.js";
 import { ToolRegistryImpl } from "../registry.js";
+import { resolveShellKind } from "../platform/exec.js";
+import { quoteWord } from "../platform/quote.js";
+import { resolveInterpreter } from "./broker.js";
+
+/**
+ * W892: the interpreter as ONE shell word, quoted for the sandbox's own shell.
+ * Windows routinely installs Node under `C:\\Program Files\\nodejs\\node.exe`
+ * (a space), so an unquoted path would be split by cmd.exe/pwsh before it ran.
+ */
+function interpreterWord(interpreter: string, sandbox: Sandbox): string {
+  return quoteWord(resolveShellKind(sandbox.shell).kind, interpreter);
+}
 
 /** W775: let a caller inject the sandbox (e.g. one built with the seccomp whitelist). */
 export interface BrokerHarnessOptions {
@@ -107,25 +119,42 @@ export async function startBrokerHarness(options: BrokerHarnessOptions = {}): Pr
   // CELESTEA_REQUIRE_BROKER_RUNTIME=1 (CI) to make a missing interpreter a
   // collection-time failure instead.
   const skipReasons: string[] = [];
+  /**
+   * W892: probe the interpreter the PRODUCT will actually use, not a POSIX
+   * literal. The old probe ran `/usr/bin/node`, which does not exist on Windows
+   * — so a host with a perfectly good Node reported "not ready" and the whole
+   * TypeScript matrix skipped (a coverage hole, not a red test). `resolveInterpreter`
+   * is the production resolver (PATH first, `process.execPath` fallback), so the
+   * probe and the run now agree on which binary is being measured.
+   *
+   * `quoteWord`/the shell kind are not needed here: these probes are literal
+   * commands, and the interpreter path is quoted for the shell the sandbox uses.
+   */
   const probePython = async (): Promise<boolean> => {
+    const python = resolveInterpreter("python");
     try {
-      const r = await sandbox.run({ command: "python3 -c 'print(1)'" });
-      if (r.exit_code === 0 && r.stdout === "1\n") return true;
-      skipReasons.push("python3 did not answer inside the sandbox");
+      // `--version`, not `-c 'print(1)'`: the interpreter path is quoted for the
+      // sandbox's own shell, and a `-c` SNIPPET would need per-shell quoting of
+      // its own (cmd.exe does not honour single quotes at all). `--version` needs
+      // no argument quoting, so one code path is correct on every shell.
+      const r = await sandbox.run({ command: interpreterWord(python, sandbox) + " --version" });
+      if (r.exit_code === 0 && (r.stdout + r.stderr).includes("Python")) return true;
+      skipReasons.push(python + " did not answer inside the sandbox");
     } catch (error) {
-      skipReasons.push("python3 probe threw: " + String(error));
+      skipReasons.push(python + " probe threw: " + String(error));
     }
     return false;
   };
   const probeNode = async (): Promise<boolean> => {
+    // W774/W892: the TypeScript path needs the same Node the broker uses,
+    // reachable from inside the sandbox (bwrap mounts the host root read-only).
+    const node = resolveInterpreter("typescript");
     try {
-      // W774: the TypeScript path needs the same Node the broker uses, reachable
-      // from inside the sandbox (bwrap mounts the host root read-only).
-      const r = await sandbox.run({ command: "/usr/bin/node --version" });
+      const r = await sandbox.run({ command: interpreterWord(node, sandbox) + " --version" });
       if (r.exit_code === 0 && r.stdout.startsWith("v")) return true;
-      skipReasons.push("/usr/bin/node did not answer inside the sandbox");
+      skipReasons.push(node + " did not answer inside the sandbox");
     } catch (error) {
-      skipReasons.push("/usr/bin/node probe threw: " + String(error));
+      skipReasons.push(node + " probe threw: " + String(error));
     }
     return false;
   };
