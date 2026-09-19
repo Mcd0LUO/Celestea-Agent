@@ -18,6 +18,7 @@
 | 6 | 不许提交派生产物（`dist/`、`apps/studio/webdist/`、`packages/core/contracts/`） | 它们是构建产物，已 gitignore，并由 release 门禁机械兜底 |
 | 7 | 同一时间**只允许一个 builder**（构建 / 测试 / benchmark） | 并发会让时序敏感用例 flaky、让 benchmark 数字失真 |
 | 8 | 不跑 `--no-verify`，不绕过任何门禁 | 门禁存在的唯一理由就是它不给人情 |
+| 9 | **npm 发布必须有人类显式授权**：没有授权绝不推 npm | 发布不可逆（版本不能再发、tarball 永久公开），不能是「走完发布清单」的副作用。机械实现：`pnpm run publish` 在 `CELESTEA_PUBLISH_AUTHORIZED=1` 缺失时 fail-closed |
 
 ---
 
@@ -84,8 +85,8 @@ git commit -m 'chore(release): 2.7.3'
 git tag -a v2.7.3 -F <message-file>
 # 4) build + 机械发布门禁
 pnpm run release
-# 5) 发布（必须 pnpm：npm pack 不重写 workspace:*）
-pnpm -r publish --access public
+# 5) 发布 —— 需要主人授权（铁律 9）。必须走 pnpm：npm pack 不重写 workspace:*
+CELESTEA_PUBLISH_AUTHORIZED=1 pnpm run publish
 # 6) 从**真实 registry** 装一遍验证（不是本地 tarball）
 npm install -g --prefix /tmp/x celestea-agent@2.7.3 && /tmp/x/bin/celestea --version
 ```
