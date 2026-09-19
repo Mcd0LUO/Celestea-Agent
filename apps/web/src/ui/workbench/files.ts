@@ -12,6 +12,7 @@ import { api, userErrorText } from '../../api';
 import { workspacePath } from '../commands/files';
 import type { FsListEntry } from '../../types/fs-list';
 import { nextSeq, type PanelState } from './state';
+import { joinPath, parentOfPath } from '../fs-path'; // 平台路径（win32 盘符/UNC vs POSIX）
 import { openPreview } from '../preview/panel'; // F2：复用既有预览面板（不新写）
 import { classifyByPath, type PreviewKind } from '../preview/detect';
 import { t } from '../../i18n';
@@ -39,12 +40,6 @@ function fmtTime(iso: string | null): string {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 
-function parentOf(path: string): string {
-  const p = path.replace(/\\/g, '/').replace(/\/+$/, '');
-  const i = p.lastIndexOf('/');
-  return i <= 0 ? '/' : p.slice(0, i);
-}
-
 /**
  * 工作区文件的预览类型：扩展名不认识（如 LICENSE / Makefile）或图片（无 URL 可给）时，
  * 一律按**纯文本**渲染（服务端已判定 kind=text/binary；binary 走降级），避免「类型不支持」误判。
@@ -60,7 +55,7 @@ function filePreviewKind(path: string): PreviewKind {
  * 只传路径，预览面板自己负责显示文件名/路径与「已截断」标记。
  */
 function openFilePreview(dir: string, name: string): void {
-  const abs = dir.replace(/\/+$/, '') + '/' + name;
+  const abs = joinPath(dir, name);
   openPreview({
     candidate: { path: abs, kind: filePreviewKind(abs), source: 'label' },
     loadFull: async () => {
@@ -118,7 +113,7 @@ export async function renderFilesPanel(
   const up = el('button', 'wb-crumb', t('chat.wb.up')) as HTMLButtonElement;
   up.type = 'button';
   up.addEventListener('click', () => {
-    data.path = parentOf(path);
+    data.path = parentOfPath(path);
     data.selected = null;
     // 导航取**新** seq：晚到的旧目录结果会被 isCurrent 判为过期而丢弃。
     void renderFilesPanel(body, panel, nextSeq(panel.id), isCurrent);
@@ -151,7 +146,7 @@ function row(
   r.appendChild(el('span', 'wb-time', fmtTime(e.mtime)));
   r.addEventListener('click', () => {
     if (e.type === 'dir') {
-      data.path = dir.replace(/\/+$/, '') + '/' + e.name;
+      data.path = joinPath(dir, e.name);
       data.selected = null;
       void renderFilesPanel(body, panel, nextSeq(panel.id), isCurrent);
     } else {

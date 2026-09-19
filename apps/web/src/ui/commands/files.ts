@@ -15,6 +15,7 @@ import { activePane } from '../viewctx';
 import { getWsList } from '../sessiontree/store';
 import type { PopupItem } from './popup';
 import { t } from '../../i18n';
+import { joinPath } from '../fs-path'; // 平台路径（绝对路径拼接用工作区根自己的分隔符）
 
 /** 目录列举结果（含降级原因）。 */
 export interface DirListing {
@@ -65,7 +66,10 @@ export async function listMentions(after: string): Promise<DirListing> {
   const cut = raw.lastIndexOf('/');
   const dirPart = cut >= 0 ? raw.slice(0, cut + 1) : '';
   const leaf = cut >= 0 ? raw.slice(cut + 1) : raw;
-  const abs = slash(root).replace(/\/+$/, '') + (dirPart === '' ? '' : '/' + dirPart.replace(/^\/+/, '').replace(/\/+$/, ''));
+  // 绝对路径按工作区根自身的平台分隔符逐段拼接（win32 下不再混出 'C:\\Users\\me/src'）。
+  // 注意：item.value（插进输入框的**提及文本**）仍是工作区相对路径、沿用 '/' —— 那是提及的展示约定。
+  let abs = root;
+  for (const seg of dirPart.split('/').filter(Boolean)) abs = joinPath(abs, seg);
   let resp;
   try {
     resp = await api.fsList(abs);

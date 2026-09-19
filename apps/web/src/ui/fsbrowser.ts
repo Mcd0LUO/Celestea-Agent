@@ -13,6 +13,7 @@ import { api, userErrorText } from '../api';
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
 import { t } from '../i18n';
+import { joinPath, rootOfPath, splitPath } from './fs-path'; // 平台路径（win32 盘符/UNC vs POSIX）
 
 /** 确认选目录时交给调用方的交互句柄。 */
 export interface FsBrowserUi {
@@ -85,19 +86,21 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
   card.appendChild(status);
 
   function renderCrumbs(path: string): void {
-    // 面包屑始终以可点击的 '/' 开头（路径为空时也渲染，点击 loadDirs('/')）。
+    // 面包屑以**真实根**开头（POSIX '/' / Windows 'C:\' / UNC '\\server\share\'）：
+    // 根标签与点击目标都来自 rootOfPath，不再写死 '/'。分隔符由路径自身判定。
     // 离屏构建 + 单次替换（铁律 1：不先清空可见容器）。
     const off = document.createElement('div');
-    const parts = path.split('/').filter(Boolean);
-    const rootBtn = el('button', 'ws-fs-crumb' + (parts.length ? '' : ' cur'), '/') as HTMLButtonElement;
+    const root = rootOfPath(path);
+    const parts = splitPath(path);
+    const rootBtn = el('button', 'ws-fs-crumb' + (parts.length ? '' : ' cur'), root) as HTMLButtonElement;
     rootBtn.type = 'button';
     rootBtn.title = t('chat.fsbrowse.root');
-    rootBtn.addEventListener('click', () => void loadDirs('/'));
+    rootBtn.addEventListener('click', () => void loadDirs(root));
     off.appendChild(rootBtn);
-    let acc = '';
+    let acc = root;
     for (let i = 0; i < parts.length; i++) {
       const seg = parts[i]!;
-      acc += '/' + seg;
+      acc = joinPath(acc, seg);
       const b = el('button', 'ws-fs-crumb' + (i === parts.length - 1 ? ' cur' : ''), seg) as HTMLButtonElement;
       b.type = 'button';
       const target = acc;
@@ -153,7 +156,7 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
       status.textContent = t('chat.fsbrowse.failed', { reason: userErrorText(r.error, t('chat.fsbrowse.manualPath')) });
       return;
     }
-    status.textContent = t('chat.fsbrowse.selected', { path: r.path || '/' });
+    status.textContent = t('chat.fsbrowse.selected', { path: r.path || rootOfPath(path) });
     status.className = 'ws-fs-status ok';
     curPath = r.path ?? path;
     addrInput.value = r.path ?? path;
@@ -168,7 +171,7 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
       row.appendChild(icon);
       row.appendChild(el('span', 'ws-fs-dir-name', d));
       row.addEventListener('click', () => {
-        const next = (curPath ? curPath.replace(/\/+$/, '') : '') + '/' + d;
+        const next = joinPath(curPath, d); // 用 curPath 自身平台的分隔符，不混用 '/'
         void loadDirs(next);
       });
       off.appendChild(row);
