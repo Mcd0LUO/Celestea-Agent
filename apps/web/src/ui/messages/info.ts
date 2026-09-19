@@ -7,6 +7,7 @@
 import { el, fmtNow } from '../../utils/dom';
 import type { SessionPane } from '../viewctx';
 import { autoscroll, hideEmptyHint } from './scroll';
+import { t } from '../../i18n';
 
 // ---- 信息块（context/status 类事件：注入、lagged、error 提示等） ------------------
 
@@ -26,7 +27,7 @@ export function renderInfoBlock(
   const col = el('div', 'mcol');
   const msg = el('div', 'msg info' + (cls ? ' ' + cls : '') + (extraClass ? ' ' + extraClass : ''));
   const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', '系统'));
+  cap.appendChild(el('span', 'who', t('chat.msg.system')));
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble info-bubble');

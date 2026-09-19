@@ -27,6 +27,7 @@ import { el, fmtNow } from '../utils/dom';
 import type { SessionPane } from './viewctx';
 import { railSync } from './rail';
 import { autoscroll, hideEmptyHint } from './messages/scroll';
+import { t } from '../i18n';
 
 // ---- thinking（弱化独立段，按事件顺序出现，不再聚合进气泡） ----------------------
 
@@ -53,7 +54,10 @@ export const THINK_FOLD_COLLAPSED = 'collapsed';
 /** 展开态取值（data-fold）：与旧「空心三角 ▾」等价。 */
 export const THINK_FOLD_EXPANDED = 'expanded';
 /** 折叠占位行文案（收起时代替正文显示）。 */
-export const THINK_FOLDED_HINT = '思考已折叠，点击展开';
+/** 折叠占位行文案（函数：语言切换后必须跟着变）。 */
+export function thinkFoldedHint(): string {
+  return t('chat.think.foldedHint');
+}
 
 /** 思考段的折叠零件（root = .mcol 容器）。 */
 export interface ThinkSegDom {
@@ -97,7 +101,7 @@ export function buildThinkSeg(
   const root = el('div', 'mcol');
   const msg = el('div', 'msg think-seg');
   const cap = el('div', 'msg-caption think-head') as HTMLElement;
-  cap.appendChild(el('span', 'who', '思考'));
+  cap.appendChild(el('span', 'who', t('chat.think.title')));
   const foldMark = el('span', 'think-fold-mark');
   foldMark.innerHTML = THINK_CHEVRON_SVG; // W765：SVG chevron（方向由 data-fold 驱动）
   cap.appendChild(foldMark);
@@ -110,7 +114,7 @@ export function buildThinkSeg(
   const body = el('div', 'think-seg-body');
   if (opts.text !== undefined) body.textContent = opts.text;
   bubble.appendChild(body);
-  bubble.appendChild(el('div', 'think-seg-folded', THINK_FOLDED_HINT));
+  bubble.appendChild(el('div', 'think-seg-folded', thinkFoldedHint()));
   msg.appendChild(bubble);
   root.appendChild(msg);
   const seg: ThinkSegDom = { root, msg, head: cap, body, foldMark, text: opts.text ?? '' };
@@ -182,7 +186,7 @@ export function appendThinking(ctx: SessionPane, delta: string): void {
     const seg = buildThinkSeg({ time: fmtNow(), collapsed: !ctx.streaming });
     ctx.el.appendChild(seg.root);
     ctx.thinkSeg = seg;
-    seg.body.textContent = '思考中…'; // 流式思考占位态（弱化）
+    seg.body.textContent = t('chat.think.thinking'); // 流式思考占位态（弱化）
   }
   const seg = ctx.thinkSeg;
   // W752：流式期间保持展开（用户手动收起的除外）——重连补发可能让本段先以折叠态
@@ -206,7 +210,7 @@ export function appendThinking(ctx: SessionPane, delta: string): void {
   }
   if (seg !== null) {
     seg.text += delta || '';
-    seg.body.textContent = seg.text === '' ? '思考中…' : seg.text;
+    seg.body.textContent = seg.text === '' ? t('chat.think.thinking') : seg.text;
   }
   autoscroll(ctx);
   railSync(ctx);

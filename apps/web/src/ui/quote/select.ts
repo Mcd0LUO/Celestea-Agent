@@ -18,6 +18,7 @@ import { popOverlay, pushOverlay, type OverlayHandle } from '../../utils/overlay
 import { flashStatus } from '../statusbar';
 import { addQuote, type AddQuoteResult } from './tray';
 import type { QuoteFormat, QuoteKind, QuoteSource } from './model';
+import { t } from '../../i18n';
 
 interface PendingSel {
   text: string;
@@ -53,12 +54,12 @@ function kindOf(col: Element): QuoteKind {
 
 function labelOf(col: Element, kind: QuoteKind): string {
   if (kind === 'assistant') return 'Studio';
-  if (kind === 'inbox') return '系统';
+  if (kind === 'inbox') return t('chat.msg.system');
   if (kind === 'tool') {
     const name = col.querySelector('.toolcard-name')?.textContent ?? '';
-    return name === '' ? '工具' : '工具 ' + name;
+    return name === '' ? t('chat.quote.tool') : t('chat.quote.toolNamed', { name });
   }
-  return col.querySelector('.msg-caption .who')?.textContent ?? '你';
+  return col.querySelector('.msg-caption .who')?.textContent ?? t('chat.user.you');
 }
 
 /** 轮次 = 该 .mcol 之前（含自身）的用户消息数；取不到则 undefined。 */
@@ -149,8 +150,8 @@ function onFloatClick(): void {
   hideFloat();
   if (!sel) return;
   void addQuote(sel).then((res: AddQuoteResult) => {
-    if (res === 'full') flashStatus('引用已达上限（最多 8 条）', 'err', 4000);
-    else if (res === 'duplicate') flashStatus('这段已经引用过了', 'ok', 3000);
+    if (res === 'full') flashStatus(t('chat.quote.max'), 'err', 4000);
+    else if (res === 'duplicate') flashStatus(t('chat.quote.duplicate'), 'ok', 3000);
   });
 }
 
@@ -161,9 +162,9 @@ export function installQuoteSelection(): void {
   floatEl = document.createElement('button');
   floatEl.type = 'button';
   floatEl.className = 'quote-float hidden';
-  floatEl.textContent = '引用';
-  floatEl.title = '把选中的内容作为引用加入下一条消息';
-  floatEl.setAttribute('aria-label', '引用选中的内容');
+  floatEl.textContent = t('chat.quote.add');
+  floatEl.title = t('chat.quote.addHint');
+  floatEl.setAttribute('aria-label', t('chat.quote.addAria'));
   floatEl.addEventListener('click', onFloatClick);
   document.body.appendChild(floatEl);
   document.addEventListener('mouseup', onMouseUp);

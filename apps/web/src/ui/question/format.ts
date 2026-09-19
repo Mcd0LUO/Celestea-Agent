@@ -17,6 +17,7 @@ import type {
   QuestionItem,
   QuestionOption,
 } from '../../types';
+import { t } from '../../i18n'; // i18n P1-c：文案走字典（非 DOM/api 模块）
 
 /** 提问工具的稳定名字（历史里靠它把「无结果的调用」认成未答提问）。 */
 export const ASK_TOOL_NAME = 'ask_user_question';
@@ -94,10 +95,10 @@ export function summarizeAnswer(items: readonly QuestionAnswerItem[]): string {
   for (const item of items) {
     const labels = [...item.selected];
     const custom = (item.custom ?? '').trim();
-    if (custom !== '') labels.push('「' + custom + '」');
-    if (labels.length > 0) parts.push(labels.join('、'));
+    if (custom !== '') labels.push(t('chat.question.customQuote', { text: custom }));
+    if (labels.length > 0) parts.push(labels.join(t('chat.question.answerSep')));
   }
-  return parts.join('；');
+  return parts.join(t('chat.question.answerJoin'));
 }
 
 /** 剩余毫秒：优先用服务端**读时**算好的 remaining_ms，否则 expires_at - now。 */
@@ -129,15 +130,15 @@ export function deadlineOf(
 /** 倒计时文案（空串 = 该提问没带时限，卡片就不显示倒计时）。 */
 export function countdownText(remainingMs: number | null): string {
   if (remainingMs === null) return '';
-  if (remainingMs <= 0) return '已到时限';
+  if (remainingMs <= 0) return t('chat.question.timedOut');
   const total = Math.floor(remainingMs / 1000);
-  if (total < 60) return '剩 ' + total + ' 秒';
+  if (total < 60) return t('chat.question.seconds', { n: total });
   if (total < 3600) {
     const m = Math.floor(total / 60);
     const s = total % 60;
-    return '剩 ' + m + ':' + (s < 10 ? '0' : '') + s;
+    return t('chat.question.clock', { m, s: (s < 10 ? '0' : '') + s });
   }
-  return '剩 ' + Math.floor(total / 3600) + ' 小时 ' + Math.floor((total % 3600) / 60) + ' 分';
+  return t('chat.question.hoursMinutes', { h: Math.floor(total / 3600), m: Math.floor((total % 3600) / 60) });
 }
 
 /** 是否已到时限（null = 无时限，永远不算到点）。 */

@@ -12,14 +12,15 @@ import { api, ApiError, userErrorText } from '../../api';
 import type { SessionPane } from '../viewctx';
 import { autoscroll } from '../messages';
 import { railSync } from '../rail';
+import { t } from '../../i18n';
 
 /** 默认超时（毫秒）：P0 固定，命令不传就按它。 */
 export const DEFAULT_EXEC_TIMEOUT_MS = 30_000;
 
 function codeLabel(r: { exit_code: number | null; signal: string | null }): string {
-  if (r.signal !== null && r.signal !== '') return '被信号终止（' + r.signal + '）';
-  if (r.exit_code === null) return '退出码未知';
-  return '退出码 ' + String(r.exit_code) + (r.exit_code === 0 ? '（成功）' : '（失败）');
+  if (r.signal !== null && r.signal !== '') return t('chat.run.signal', { signal: r.signal });
+  if (r.exit_code === null) return t('chat.run.exitUnknown');
+  return t('chat.run.exit', { code: r.exit_code, status: r.exit_code === 0 ? t('chat.run.success') : t('chat.run.failure') });
 }
 
 function streamBlock(label: string, text: string, cls: string): HTMLElement | null {
@@ -34,9 +35,9 @@ function sandboxLine(s: { provider?: string; net_isolated?: boolean; tmp_private
   if (!s) return '';
   const parts: string[] = [];
   if (s.provider) parts.push(s.provider);
-  parts.push(s.net_isolated === true ? '网络隔离' : '可联网');
-  if (s.tmp_private === true) parts.push('私有临时目录');
-  if (s.seccomp === true) parts.push('系统调用过滤');
+  parts.push(s.net_isolated === true ? t('chat.run.netIsolated') : t('chat.run.netOnline'));
+  if (s.tmp_private === true) parts.push(t('chat.run.tmpPrivate'));
+  if (s.seccomp === true) parts.push(t('chat.run.seccomp'));
   return parts.join(' · ');
 }
 
@@ -45,7 +46,7 @@ function commandBubble(ctx: SessionPane, command: string): HTMLElement {
   const col = el('div', 'mcol');
   const msg = el('div', 'msg exec');
   const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', '命令'));
+  cap.appendChild(el('span', 'who', t('chat.run.cmd')));
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble exec-bubble');
@@ -89,11 +90,11 @@ function outputBlock(ctx: SessionPane, command: string): { root: HTMLElement; fi
       block.appendChild(head);
       const sb = sandboxLine(r.sandbox);
       if (sb !== '') block.appendChild(el('div', 'exec-sandbox', sb));
-      const out = streamBlock('输出', r.stdout, 'out');
+      const out = streamBlock(t('chat.run.stdout'), r.stdout, 'out');
       if (out) block.appendChild(out);
-      const err = streamBlock('错误输出', r.stderr, 'err');
+      const err = streamBlock(t('chat.run.stderr'), r.stderr, 'err');
       if (err) block.appendChild(err);
-      if (!out && !err) block.appendChild(el('div', 'exec-sandbox', '（没有输出）'));
+      if (!out && !err) block.appendChild(el('div', 'exec-sandbox', t('chat.run.noOutput')));
       autoscroll(ctx, true);
     },
   };
@@ -132,8 +133,8 @@ export async function runUserCommand(ctx: SessionPane, command: string): Promise
     notice(
       ctx,
       unsupported
-        ? '这个版本还不支持直接执行命令，请升级后再试'
-        : '命令没有跑起来：' + userErrorText(err, '请稍后重试'),
+        ? t('chat.run.unsupported')
+        : t('chat.run.failed', { reason: userErrorText(err, t('settings.common.retryLater')) }),
     );
     autoscroll(ctx, true);
   }

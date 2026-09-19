@@ -19,6 +19,7 @@ import type { ToolPayload, ToolResultPayload } from '../types';
 import { noteWorkerSpawn } from './worker-strip';
 import { detectFromTool, PREVIEW_CONTENT_TOOLS } from './preview/detect'; // F2：候选文件识别
 import { openPreview } from './preview/panel'; // F2：右侧覆盖式预览
+import { t } from '../i18n';
 
 export type { ToolCardRef };
 
@@ -114,7 +115,7 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   const col = el('div', 'mcol');
   const msg = el('div', 'msg tool');
   const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', '工具'));
+  cap.appendChild(el('span', 'who', t('chat.tool.title')));
   cap.appendChild(el('span', null, d.name));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble');
@@ -130,7 +131,7 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   head.className = 'toolcard-head';
   head.setAttribute('aria-expanded', 'false');
   const row1 = el('div', 'toolcard-row1');
-  row1.appendChild(el('span', 'step-tag', '第 ' + d.step + ' 步'));
+  row1.appendChild(el('span', 'step-tag', t('chat.tool.step', { n: d.step })));
   // W778：折叠行标签 = desc（缺失回落工具名）；title 里保留工具名，悬停可辨。
   const nameEl = el('span', 'toolcard-name', toolDescLabel(d.desc, d.name));
   nameEl.title = d.name;
@@ -138,11 +139,11 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   const state = el('span', 'toolcard-state');
   // W739：改用离屏构建（原静态 innerHTML 赋值是纯字面量，无注入面，但收敛写入点）
   state.appendChild(el('span', 'ts-dot'));
-  state.appendChild(el('span', 'ts-label', '运行中'));
+  state.appendChild(el('span', 'ts-label', t('chat.tool.running')));
   row1.appendChild(state);
-  const copyBtn = el('button', 'toolcard-copy', '复制') as HTMLButtonElement;
+  const copyBtn = el('button', 'toolcard-copy', t('chat.tool.copy')) as HTMLButtonElement;
   copyBtn.type = 'button';
-  copyBtn.title = '复制参数与结果（JSON）';
+  copyBtn.title = t('chat.tool.copyHint');
   copyBtn.addEventListener('click', (e) => {
     e.preventDefault(); // 阻止 summary 切换展开
     e.stopPropagation();
@@ -163,7 +164,7 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   const body = el('div', 'toolcard-body');
   const argsPv = el('div', 'toolcard-args-preview');
   const a = summaryOf(d.argsText);
-  argsPv.textContent = a ? '参数：' + a : '参数：—';
+  argsPv.textContent = a ? t('chat.tool.args', { text: a }) : t('chat.tool.argsNone');
   body.appendChild(argsPv);
   body.appendChild(el('pre', 'tool-args', d.argsText)); // W764：等宽 pre（不换行 + 横向滚动）
   const resultPv = el('div', 'toolcard-result-preview');
@@ -173,9 +174,9 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   const candidate = detectFromTool(d.name, d.argsText);
   if (candidate !== null && PREVIEW_CONTENT_TOOLS.has(d.name)) {
     const cand = candidate;
-    const pv = el('button', 'toolcard-preview', '预览') as HTMLButtonElement;
+    const pv = el('button', 'toolcard-preview', t('chat.tool.preview')) as HTMLButtonElement;
     pv.type = 'button';
-    pv.title = '侧边预览这个文件';
+    pv.title = t('chat.tool.previewHint');
     pv.addEventListener('click', (ev) => {
       ev.preventDefault();
       const out = card.querySelector<HTMLElement>('.tool-out');
@@ -213,9 +214,9 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
 export function setToolResult(ref: ToolCardRef, resultText: string, failed: boolean, value?: unknown): void {
   ref.card.classList.remove('running');
   ref.card.classList.add(failed ? 'err' : 'ok');
-  ref.label.textContent = failed ? '失败' : '完成';
+  ref.label.textContent = failed ? t('chat.tool.failed') : t('chat.tool.done');
   const r = summaryOf(resultText);
-  ref.resultPv.textContent = r ? '结果：' + r : '';
+  ref.resultPv.textContent = r ? t('chat.tool.result', { text: r }) : '';
   if (r) ref.resultPv.classList.add('has');
   if (!ref.body.querySelector('.tool-out')) {
     ref.body.appendChild(el('pre', 'tool-out' + (failed ? ' err-c' : ''), resultText));
@@ -274,12 +275,12 @@ export function applyToolResult(ctx: SessionPane, p: ToolResultPayload): void {
   if (!rec) return;
   const failed = p.ok === false || !!p.error;
   const label = failed
-    ? '失败'
+    ? t('chat.tool.failed')
     : p.decision === 'deny'
-      ? '拒绝'
+      ? t('chat.tool.denied')
       : p.decision === 'ask'
-        ? '待确认'
-        : '完成';
+        ? t('chat.tool.ask')
+        : t('chat.tool.done');
   setToolResult(rec, p.error ? String(p.error) : toJsonText(p.value), failed || p.decision === 'deny');
   rec.label.textContent = label;
   autoscroll(ctx);

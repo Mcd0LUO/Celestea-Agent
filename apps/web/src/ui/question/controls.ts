@@ -8,6 +8,7 @@
 import { el } from '../../utils/dom';
 import type { QuestionItem, QuestionOption } from '../../types';
 import { pickOf, togglePick, withCustom, type QuestionPick } from './format';
+import { t } from '../../i18n';
 
 /** 作答草稿宿主：卡片把 picks / controls 借给控件层。 */
 export interface PickHost {
@@ -64,7 +65,7 @@ export function buildQuestionBlock(host: PickHost, q: QuestionItem): HTMLElement
   const input = el('input', 'q-custom-input') as HTMLInputElement;
   input.type = 'text';
   input.autocomplete = 'off';
-  input.placeholder = options.length > 0 ? '也可以自己填一句（可选）' : '请填写你的回答';
+  input.placeholder = options.length > 0 ? t('chat.question.customPlaceholder') : t('chat.question.customRequired');
   input.addEventListener('input', () => {
     host.picks[q.id] = withCustom(pickOf(host.picks, q.id), input.value);
     host.onEdit();

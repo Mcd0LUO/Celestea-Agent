@@ -15,6 +15,7 @@ import { openFsBrowser, type FsBrowserUi } from '../fsbrowser';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../../utils/overlays';
 import { renderPreview } from './renderers';
 import type { PreviewCandidate } from './detect';
+import { t } from '../../i18n';
 
 export interface PreviewRequest {
   candidate: PreviewCandidate;
@@ -43,10 +44,10 @@ function copyPath(path: string): void {
 
 function openManager(path: string): void {
   openFsBrowser({
-    title: '文件管理器',
-    note: '目标文件：' + path,
-    confirmLabel: '选择此目录',
-    busyLabel: '处理中…',
+    title: t('chat.preview.manager'),
+    note: t('chat.preview.target', { path }),
+    confirmLabel: t('chat.preview.chooseDir'),
+    busyLabel: t('chat.preview.busy'),
     onPick: (_p: string, ui: FsBrowserUi) => ui.close(),
   });
 }
@@ -62,19 +63,19 @@ function buildPanel(): void {
   head.appendChild(pathEl);
   const close = el('button', 'preview-close', '×') as HTMLButtonElement;
   close.type = 'button';
-  close.title = '关闭预览';
-  close.setAttribute('aria-label', '关闭预览');
+  close.title = t('chat.preview.close');
+  close.setAttribute('aria-label', t('chat.preview.close'));
   close.addEventListener('click', closePreview);
   head.appendChild(close);
   panel.appendChild(head);
   bodyEl = el('div', 'preview-body');
   panel.appendChild(bodyEl);
   const actions = el('div', 'preview-actions');
-  const copy = el('button', 'preview-action', '复制路径') as HTMLButtonElement;
+  const copy = el('button', 'preview-action', t('chat.preview.copyPath')) as HTMLButtonElement;
   copy.type = 'button';
   copy.addEventListener('click', () => copyPath(currentPath));
   actions.appendChild(copy);
-  const open = el('button', 'preview-action', '在文件管理器中打开') as HTMLButtonElement;
+  const open = el('button', 'preview-action', t('chat.preview.openInManager')) as HTMLButtonElement;
   open.type = 'button';
   open.addEventListener('click', () => openManager(currentPath));
   actions.appendChild(open);

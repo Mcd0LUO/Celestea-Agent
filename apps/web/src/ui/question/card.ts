@@ -31,6 +31,7 @@ import {
   unansweredIds,
   type HistoryQuestion,
 } from './format';
+import { t } from '../../i18n';
 
 /**
  * 卡片状态：pending 可作答 → done/expired/closed 终态。
@@ -40,11 +41,10 @@ import {
  */
 export type QuestionCardState = 'pending' | 'done' | 'expired' | 'closed';
 
-const STATE_TEXT: Record<string, string> = {
-  done: '已作答',
-  expired: '已到时限 · 未作答（模型已按超时继续）',
-  closed: '该提问已结束，无需再作答（时限已到或已在别处作答）',
-};
+/** 终态文案（函数：语言切换后必须跟着变）。 */
+function stateText(s: string): string {
+  return s === 'done' ? t('chat.question.answered') : s === 'expired' ? t('chat.question.expired') : s === 'closed' ? t('chat.question.closed') : '';
+}
 
 /** 卡片可用的时序/问题信息（SSE 载荷与恢复列表条目同源）。 */
 export interface CardInfo {
@@ -161,9 +161,9 @@ function setState(h: CardHandle, state: QuestionCardState, resultText?: string):
   const terminal = state !== 'pending';
   for (const c of h.controls) c.disabled = terminal;
   h.submit.disabled = terminal;
-  h.submit.textContent = '提交作答';
+  h.submit.textContent = t('chat.question.submit');
   h.timer.textContent = terminal ? '' : h.timer.textContent;
-  h.result.textContent = terminal ? (resultText ?? STATE_TEXT[state] ?? '') : '';
+  h.result.textContent = terminal ? (resultText ?? stateText(state)) : '';
 }
 
 /** 点提交：未答完就地提示（不预先骂人），到点则转终态而不是送一个必然失败的请求。 */
@@ -175,7 +175,7 @@ function submitOrRefuse(ctx: SessionPane, h: CardHandle): void {
   }
   const missing = unansweredIds(h.questions, h.picks);
   if (missing.length > 0) {
-    h.hint.textContent = '还有 ' + missing.length + ' 个问题没作答：每题选一项，或自己填一句';
+    h.hint.textContent = t('chat.question.missing', { n: missing.length });
     return;
   }
   void submit(ctx, h);
@@ -189,7 +189,7 @@ function submitOrRefuse(ctx: SessionPane, h: CardHandle): void {
 async function submit(ctx: SessionPane, h: CardHandle): Promise<void> {
   const items = answerItemsOf(h.questions, h.picks);
   const sid = ctx.id === LOCAL_ID ? undefined : ctx.id;
-  setState(h, 'done', '已作答：' + summarizeAnswer(items));
+  setState(h, 'done', t('chat.question.answeredWith', { answer: summarizeAnswer(items) }));
   h.hint.textContent = '';
   try {
     await api.answerQuestion(h.id, items, sid);
@@ -203,7 +203,7 @@ async function submit(ctx: SessionPane, h: CardHandle): Promise<void> {
     // 回滚：控件重新可用（settled 也必须清掉 —— 那是「权威结算」的标记）
     h.settled = false;
     setState(h, 'pending');
-    h.hint.textContent = '提交失败：' + userErrorText(err) + '（可重试）';
+    h.hint.textContent = t('chat.question.submitFailed', { reason: userErrorText(err) });
     paintTimer(h, Date.now());
   }
 }
@@ -214,11 +214,11 @@ function buildHead(h: CardHandle, questions: QuestionItem[]): HTMLElement {
   const head = el('div', 'q-head');
   const title = el('div', 'q-title');
   const header = questions[0]?.header;
-  title.textContent = header !== undefined && header !== '' ? header : '需要你的决定';
+  title.textContent = header !== undefined && header !== '' ? header : t('chat.question.needDecision');
   // intent 只改呈现（§3.3）：加一枚类型标记，协议与答案编码完全不变。
   const intent = questions[0]?.intent?.kind;
   if (intent !== undefined && intent !== '') {
-    title.appendChild(el('span', 'q-intent', intent === 'plan-review' ? '方案评审' : intent));
+    title.appendChild(el('span', 'q-intent', intent === 'plan-review' ? t('chat.question.planReview') : intent));
   }
   head.appendChild(title);
   head.appendChild(h.timer);
@@ -230,13 +230,13 @@ function buildCard(ctx: SessionPane, info: CardInfo): CardHandle {
   const root = el('div', 'mcol q-col');
   const msg = el('div', 'msg question');
   const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', '提问'));
+  cap.appendChild(el('span', 'who', t('chat.question.title')));
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble question-bubble');
   const card = el('div', 'q-card');
   card.dataset.state = 'pending';
-  const submitBtn = el('button', 'q-submit btn btn-accent', '提交作答') as HTMLButtonElement;
+  const submitBtn = el('button', 'q-submit btn btn-accent', t('chat.question.submit')) as HTMLButtonElement;
   submitBtn.type = 'button';
   const h: CardHandle = {
     id: info.id,
@@ -378,13 +378,13 @@ export function renderHistoryQuestionCard(
     mount(ctx, h);
   }
   if (row.settled && !row.timedOut) {
-    setState(h, 'done', '已作答：' + row.answerText);
+    setState(h, 'done', t('chat.question.answeredWith', { answer: row.answerText }));
   } else if (row.settled) {
     h.settled = true; // 超时结算：权威终态，恢复路径不得解除
     setState(h, 'expired');
   } else {
     // 有问无答（会话中断）：既没有答案，也不再有可作答的未决项。
-    setState(h, 'expired', '未作答 · 该提问已无法再作答（会话曾中断）');
+    setState(h, 'expired', t('chat.question.interrupted'));
   }
   return h.root;
 }

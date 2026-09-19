@@ -7,6 +7,7 @@
 // ============================================================================
 import { el } from '../../utils/dom';
 import type { SessionPane } from '../viewctx';
+import { t } from '../../i18n';
 
 /** W12：距底阈值（NN/G：只在真正接近底部时跟随，避免把读者拉回）。 */
 export const AT_BOTTOM_PX = 25;
@@ -37,7 +38,7 @@ export function renderEmptyHint(ctx: SessionPane): void {
   hint.appendChild(el('div', 'empty-mark', '◇'));
   hint.appendChild(el('div', 'empty-title', 'Celestea Studio'));
   hint.appendChild(
-    el('div', 'empty-sub', '在下方输入消息开始对话 · Enter 发送 · Shift+Enter 换行'),
+    el('div', 'empty-sub', t('chat.empty.hint')),
   );
   ctx.el.appendChild(hint);
   ctx.hint = hint;

@@ -5,5 +5,6 @@ import { common } from './common';
 import { api } from './api';
 import { statusline } from './statusline';
 import { settings } from './settings';
+import { chat } from './chat';
 
-export const en: Record<Key, string> = { ...common, ...api, ...statusline, ...settings };
+export const en: Record<Key, string> = { ...common, ...api, ...statusline, ...settings, ...chat };

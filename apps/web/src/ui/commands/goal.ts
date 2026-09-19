@@ -11,6 +11,7 @@ import { api, userErrorText } from '../../api';
 import type { SessionPane } from '../viewctx';
 import type { GoalInfo } from '../../types/goal';
 import { activePane, paneOf } from '../viewctx';
+import { t } from '../../i18n';
 
 /** 每个会话的目标（客户端缓存，供徽标/条渲染；服务端仍是真源）。 */
 const goals = new Map<string, GoalInfo | null>();
@@ -65,7 +66,7 @@ export async function applyGoal(ctx: SessionPane, text: string): Promise<GoalInf
   ctx.goal = wanted === '' ? null : wanted;
   try {
     const r = await api.setGoal(session, wanted);
-    if (r.ok === false) throw new Error(r.error ?? '设置失败');
+    if (r.ok === false) throw new Error(r.error ?? t('chat.goal.failed'));
     const g = normalize(r.goal);
     setLocal(session, g);
     ctx.goal = g ? g.text : null;
@@ -73,7 +74,7 @@ export async function applyGoal(ctx: SessionPane, text: string): Promise<GoalInf
   } catch (err) {
     setLocal(session, prev); // 回滚
     ctx.goal = prev ? prev.text : null;
-    throw new Error('目标没有保存：' + userErrorText(err, '请稍后重试'));
+    throw new Error(t('chat.goal.saveFailed', { reason: userErrorText(err, t('settings.common.retryLater')) }));
   }
 }
 
@@ -106,11 +107,11 @@ export function renderGoalBar(): void {
   }
   bar.classList.remove('hidden');
   const off = document.createElement('div');
-  off.appendChild(el('span', 'goal-tag', '目标'));
+  off.appendChild(el('span', 'goal-tag', t('chat.goal.tag')));
   off.appendChild(el('span', 'goal-text', g.text));
-  const done = el('button', 'goal-done', '完成') as HTMLButtonElement;
+  const done = el('button', 'goal-done', t('chat.goal.done')) as HTMLButtonElement;
   done.type = 'button';
-  done.title = '清除当前目标';
+  done.title = t('chat.goal.clearHint');
   done.addEventListener('click', () => {
     const p = activePane() ?? paneOf(pane?.id ?? '');
     if (p) void applyGoal(p, '');

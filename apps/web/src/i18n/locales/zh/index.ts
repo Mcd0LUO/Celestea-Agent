@@ -3,6 +3,7 @@ import { common } from './common';
 import { api } from './api';
 import { statusline } from './statusline';
 import { settings } from './settings';
+import { chat } from './chat';
 
-export const zh = { ...common, ...api, ...statusline, ...settings } as const;
+export const zh = { ...common, ...api, ...statusline, ...settings, ...chat } as const;
 export type Key = keyof typeof zh;

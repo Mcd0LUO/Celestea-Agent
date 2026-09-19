@@ -9,6 +9,7 @@ import { applyGoal, currentGoalText } from './goal';
 import { requestSessionModel } from '../../statusline/session-model';
 import { runCompact } from '../compact';
 import { renderInfoBlock } from '../messages';
+import { t } from '../../i18n';
 
 /** 把一段系统提示写进消息流（/model 的确认与失败都走它，保证可见）。 */
 function note(ctx: CommandContext['ctx'], text: string, cls?: 'err' | 'warn'): void {
@@ -24,12 +25,12 @@ export function registerBuiltinCommands(): void {
 
   registerCommand({
     name: 'run',
-    desc: '直接执行一条命令，输出进对话（不经过模型）',
-    args: '<命令>',
+    desc: t('chat.command.run.desc'),
+    args: t('chat.command.run.args'),
     async run(c) {
       const cmd = c.args.trim();
       if (cmd === '') {
-        note(c.ctx, '用法：/run <命令>，例如 /run echo hi', 'warn');
+        note(c.ctx, t('chat.command.run.usage'), 'warn');
         return true;
       }
       await runUserCommand(c.ctx, cmd);
@@ -39,20 +40,20 @@ export function registerBuiltinCommands(): void {
 
   registerCommand({
     name: 'goal',
-    desc: '设定持久目标，之后每轮都能看到；/goal done 清除',
-    args: '[目标 | done]',
+    desc: t('chat.command.goal.desc'),
+    args: t('chat.command.goal.args'),
     async run(c) {
       const arg = c.args.trim();
       if (arg === '') {
         const cur = currentGoalText(c.ctx);
-        note(c.ctx, cur === '' ? '当前还没有目标，用 /goal <目标> 设定' : '当前目标：' + cur);
+        note(c.ctx, cur === '' ? t('chat.command.goal.none') : t('chat.command.goal.current', { text: cur }));
         return true;
       }
       try {
         const g = await applyGoal(c.ctx, arg === 'done' ? '' : arg);
-        note(c.ctx, g ? '目标已设定：' + g.text : '目标已清除');
+        note(c.ctx, g ? t('chat.command.goal.set', { text: g.text }) : t('chat.command.goal.cleared'));
       } catch (err) {
-        note(c.ctx, err instanceof Error ? err.message : '目标没有保存，请稍后重试', 'err');
+        note(c.ctx, err instanceof Error ? err.message : t('chat.command.goal.saveFailed'), 'err');
       }
       return true;
     },
@@ -60,17 +61,17 @@ export function registerBuiltinCommands(): void {
 
   registerCommand({
     name: 'model',
-    desc: '切换本会话使用的模型',
-    args: '<模型名>',
+    desc: t('chat.command.model.desc'),
+    args: t('chat.command.model.args'),
     async run(c) {
       const model = c.args.trim();
       if (model === '') {
-        note(c.ctx, '用法：/model <模型名>', 'warn');
+        note(c.ctx, t('chat.command.model.usage'), 'warn');
         return true;
       }
       const outcome = await requestSessionModel(c.ctx.id, model);
-      if (outcome.kind === 'ok') note(c.ctx, '已切换本会话模型');
-      else if (outcome.kind === 'busy') note(c.ctx, '本轮还没结束，稍后会自动重试切换', 'warn');
+      if (outcome.kind === 'ok') note(c.ctx, t('chat.command.model.switched'));
+      else if (outcome.kind === 'busy') note(c.ctx, t('chat.command.model.busy'), 'warn');
       else note(c.ctx, outcome.text, 'err');
       return true;
     },
@@ -78,7 +79,7 @@ export function registerBuiltinCommands(): void {
 
   registerCommand({
     name: 'compact',
-    desc: '压缩当前会话的上下文，腾出空间',
+    desc: t('chat.command.compact.desc'),
     args: '',
     async run(c) {
       await runCompact(c.ctx);

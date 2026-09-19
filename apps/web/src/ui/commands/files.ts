@@ -14,6 +14,7 @@ import type { FsListEntry } from '../../types/fs-list';
 import { activePane } from '../viewctx';
 import { getWsList } from '../sessiontree/store';
 import type { PopupItem } from './popup';
+import { t } from '../../i18n';
 
 /** 目录列举结果（含降级原因）。 */
 export interface DirListing {
@@ -42,8 +43,8 @@ export function workspacePath(): string {
 
 /** 目录项的右侧提示：目录「目录」；文件大小。 */
 function metaOf(e: FsListEntry): string {
-  if (e.type === 'dir') return '目录';
-  if (e.size === null) return '文件';
+  if (e.type === 'dir') return t('chat.mention.dir');
+  if (e.size === null) return t('chat.mention.file');
   if (e.size < 1024) return e.size + ' B';
   if (e.size < 1024 * 1024) return (e.size / 1024).toFixed(1) + ' KB';
   return (e.size / (1024 * 1024)).toFixed(1) + ' MB';
@@ -57,7 +58,7 @@ function metaOf(e: FsListEntry): string {
 export async function listMentions(after: string): Promise<DirListing> {
   const root = workspacePath();
   if (root === '') {
-    return { path: '', items: [], notice: '当前工作区还不明确，无法列出文件' };
+    return { path: '', items: [], notice: t('chat.mention.noWorkspace') };
   }
   // 拆出「目录前缀」与「正在输入的末段」：末段用于前缀过滤。
   const raw = slash(after);
@@ -69,10 +70,10 @@ export async function listMentions(after: string): Promise<DirListing> {
   try {
     resp = await api.fsList(abs);
   } catch (err) {
-    return { path: abs, items: [], notice: '文件列举暂不可用，请稍后再试' };
+    return { path: abs, items: [], notice: t('chat.mention.unavailable') };
   }
   if (resp.error !== undefined && resp.error !== '') {
-    return { path: abs, items: [], notice: '这个目录打不开：' + resp.error };
+    return { path: abs, items: [], notice: t('chat.mention.openFailed', { reason: resp.error }) };
   }
   const entries = resp.entries ?? [];
   const prefix = leaf.toLowerCase();
@@ -88,6 +89,6 @@ export async function listMentions(after: string): Promise<DirListing> {
       value: label,
     };
   });
-  const notice = resp.truncated === true ? '这个目录条目太多，只显示了前一部分' : '';
+  const notice = resp.truncated === true ? t('chat.mention.truncated') : '';
   return { path: abs, items, notice };
 }

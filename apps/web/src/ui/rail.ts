@@ -22,6 +22,7 @@ import { hideHint, hoverHint, setHint } from './hint/card';
 import type { HintHandle, HintPlugin } from './hint/registry';
 import { registerHintPlugin } from '../plugins/register'; // W859：经插件模块记账（注销器保存，可热开关）
 import { activePane, type SessionPane } from './viewctx';
+import { t } from '../i18n';
 
 // ---- 紧凑几何（细条 —— 自然高 5px、间隙 4px） ----
 // W867：几何常量与公式搬到 ./rail-geom.ts（纯搬家，逐字未变：零 DOM、可单测）。
@@ -203,7 +204,7 @@ function layout(): void {
     }
     if (st.foldItem) {
       st.foldItem.fold = foldN;
-      st.foldItem.hint = '更早的 ' + foldN + ' 轮已折叠';
+      st.foldItem.hint = t('chat.rail.folded', { n: foldN });
       setHint(st.foldItem.el, st.foldItem.hint);
     }
   } else if (st.foldItem) {
@@ -398,7 +399,7 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
     const bar = document.createElement('div');
     bar.className = 'railv3-item' + (role === 'assistant' ? ' is-reply' : '');
     target.appendChild(bar);
-    const hint = '第 ' + (st.items.length + 1) + ' 轮 · 悬停看预览，点击定位';
+    const hint = t('chat.rail.barHint', { n: st.items.length + 1 });
     setHint(bar, hint);
     st.items.push({
       startCol: col,

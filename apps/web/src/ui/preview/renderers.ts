@@ -8,6 +8,7 @@ import { el, esc } from '../../utils/dom';
 import { renderMarkdownSafe, sanitizeNodes } from '../../utils/sanitize';
 import { highlightCode } from '../../utils/hljs';
 import { extOf, type PreviewKind } from './detect';
+import { t } from '../../i18n';
 
 /** 扩展名 → highlight.js 已注册语言（未登记的语言不调 hljs，渲染为纯文本）。 */
 const LANG_BY_EXT: Record<string, string> = {
@@ -93,16 +94,16 @@ function hasBinary(text: string): boolean {
 export function renderPreview(input: PreviewInput): PreviewContent {
   if (input.kind === 'image') {
     if (input.url) return { node: imageNode(input.url, input.path), degraded: null };
-    return { node: degradedNode('这张图片的字节不在本次会话里，无法放大查看'), degraded: '图片不可预览' };
+    return { node: degradedNode(t('chat.preview.degradeImage')), degraded: t('chat.preview.badgeImage') };
   }
   const text = input.text ?? null;
   if (text === null) {
-    return { node: degradedNode('这个文件的内容不在本次会话里（只预览会话内已经出现过的内容）'), degraded: '内容不在会话里' };
+    return { node: degradedNode(t('chat.preview.degradeNotInSession')), degraded: t('chat.preview.badgeNotInSession') };
   }
-  if (hasBinary(text)) return { node: degradedNode('这是二进制内容，无法按文本预览'), degraded: '二进制内容' };
-  if (text.length > PREVIEW_MAX_CHARS) return { node: degradedNode('文件过大，无法在这里完整预览'), degraded: '文件过大' };
+  if (hasBinary(text)) return { node: degradedNode(t('chat.preview.degradeBinary')), degraded: t('chat.preview.badgeBinary') };
+  if (text.length > PREVIEW_MAX_CHARS) return { node: degradedNode(t('chat.preview.degradeTooLarge')), degraded: t('chat.preview.badgeTooLarge') };
   if (input.kind === 'markdown') return { node: markdownNode(text), degraded: null };
   if (input.kind === 'diff') return { node: diffNode(text), degraded: null };
   if (input.kind === 'code') return { node: codeNode(text, input.path), degraded: null };
-  return { node: degradedNode('这个类型暂时不能预览，可复制路径后在文件管理器里打开'), degraded: '类型不支持' };
+  return { node: degradedNode(t('chat.preview.degradeUnsupported')), degraded: t('chat.preview.badgeUnsupported') };
 }

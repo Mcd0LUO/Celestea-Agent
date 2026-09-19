@@ -12,6 +12,7 @@
 // 把与中间判定无关的这一整段（取内容算式逐字未改）挪出来，新能力才有地方放。
 // ============================================================================
 import { el } from '../utils/dom';
+import { t } from '../i18n';
 
 /** 预览首行截断长度（W238 起未变）。 */
 const PREVIEW_CHARS = 40;
@@ -55,7 +56,7 @@ export function buildRailCard(it: RailCardItem): HTMLElement {
   if (it.fold > 0) {
     const ql = el('div', 'railv3-card-q');
     ql.appendChild(el('span', 'railv3-card-tag', '⋯'));
-    ql.appendChild(el('span', null, '更早的 ' + it.fold + ' 轮已折叠'));
+    ql.appendChild(el('span', null, t('chat.rail.folded', { n: it.fold })));
     card.appendChild(ql);
   } else {
     const q = firstLine(it.startCol);
@@ -78,7 +79,7 @@ export function buildRailCard(it: RailCardItem): HTMLElement {
       card.appendChild(el('div', 'railv3-card-sep'));
       const al = el('div', 'railv3-card-a railv3-card-noa');
       al.appendChild(el('span', 'railv3-card-tag', 'A'));
-      al.appendChild(el('span', null, '（无回复）'));
+      al.appendChild(el('span', null, t('chat.rail.noReply')));
       card.appendChild(al);
     }
   }

@@ -11,10 +11,11 @@ import type { QuoteRef } from '../quote/model';
 import { railAdd, railSync } from '../rail';
 import { autoscroll, hideEmptyHint } from './scroll';
 import { renderAttachmentGrid, type AttachmentView } from '../attachments';
+import { t } from '../../i18n';
 
 /** F1：引用卡 —— 正文不可信，经 esc + sanitizeNodes 进 DOM（绝不 innerHTML）。 */
 function quoteBlockEl(q: QuoteRef): HTMLElement {
-  const label = q.source.label + (q.truncated ? ' · 已截断' : '');
+  const label = q.source.label + (q.truncated ? t('chat.user.truncatedSuffix') : '');
   const html =
     '<div class="quote-head"><span class="quote-src">' + esc(label) + '</span></div>' +
     '<div class="quote-body">' + esc(q.text) + '</div>';
@@ -34,11 +35,12 @@ function quoteBlockEl(q: QuoteRef): HTMLElement {
  */
 export type MsgKind = 'user' | 'steering' | 'queued';
 
-const USER_CAPTION: Record<MsgKind, string> = {
-  user: '你',
-  steering: '插话',
-  queued: '排队',
-};
+/** 车道标题（函数：语言切换后必须跟着变）。 */
+function userCaption(kind: MsgKind): string {
+  if (kind === 'user') return t('chat.user.you');
+  if (kind === 'steering') return t('chat.user.steering');
+  return t('chat.user.queued');
+}
 
 /**
  * 用户侧消息（普通 / 插话 / 排队）。三类在样式与标题前缀上可区分，
@@ -56,7 +58,7 @@ export function addUserMessage(
   const cls = kind === 'user' ? 'msg user' : 'msg user ' + kind + ' interject';
   const msg = el('div', cls);
   const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', USER_CAPTION[kind]));
+  cap.appendChild(el('span', 'who', userCaption(kind)));
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble');
@@ -88,13 +90,15 @@ export function addUserMessage(
  *   · 回执 / 插话 / 压缩摘要是**一次性、给人看的事件**，默认展开（`receipt`
  *     /`steering`/`compact`），否则用户会以为它没发生。
  */
-const INBOX_KIND: Record<string, { title: string; collapsed: boolean }> = {
-  skill: { title: '技能目录', collapsed: true },
-  memory: { title: '记忆 · 每轮注入', collapsed: true },
-  receipt: { title: '回执', collapsed: false },
-  steering: { title: '插话', collapsed: false },
-  compact: { title: '压缩摘要', collapsed: false },
-};
+/** 注入行的 origin → 块标题 + 默认折叠（函数：语言切换后必须跟着变）。 */
+function inboxKind(kind: string): { title: string; collapsed: boolean } | undefined {
+  if (kind === 'skill') return { title: t('chat.inbox.skill'), collapsed: true };
+  if (kind === 'memory') return { title: t('chat.inbox.memory'), collapsed: true };
+  if (kind === 'receipt') return { title: t('chat.inbox.receipt'), collapsed: false };
+  if (kind === 'steering') return { title: t('chat.user.steering'), collapsed: false };
+  if (kind === 'compact') return { title: t('chat.inbox.compact'), collapsed: false };
+  return undefined;
+}
 
 /**
  * inbox 条目（W515/W888）：系统注入 / worker 回执 / 技能目录 / 记忆等**非用户**
@@ -110,12 +114,12 @@ export function renderInboxMessage(
   const target = opts?.into ?? ctx.el;
   if (target === ctx.el) hideEmptyHint(ctx);
   const kind = (opts?.kind ?? '').trim();
-  const meta = INBOX_KIND[kind];
+  const meta = inboxKind(kind);
   const col = el('div', 'mcol');
   const msg = el('div', kind === '' ? 'msg inbox' : 'msg inbox inbox-' + kind);
   const cap = el('div', 'msg-caption');
   const src = (opts?.source ?? '').trim();
-  cap.appendChild(el('span', 'who', meta ? meta.title : src === '' ? '系统' : '回执 · ' + src));
+  cap.appendChild(el('span', 'who', meta ? meta.title : src === '' ? t('chat.msg.system') : t('chat.inbox.receiptSource', { source: src })));
   if (opts?.target) cap.appendChild(el('span', 'inbox-lane', laneLabel(opts.target)));
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
@@ -149,7 +153,7 @@ export function renderInboxMessage(
 
 /** DSH InboxTarget → 展示文案（缺省/未知车道 → 空）。 */
 export function laneLabel(target: string): string {
-  if (target === 'next-step') return '下一步送达';
-  if (target === 'next-turn') return '下一回合送达';
+  if (target === 'next-step') return t('chat.lane.nextStep');
+  if (target === 'next-turn') return t('chat.lane.nextTurn');
   return '';
 }

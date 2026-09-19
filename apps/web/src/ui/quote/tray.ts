@@ -14,6 +14,7 @@ import {
   capQuote, hashQuote, makeQuote, quoteDedupKey,
   type QuoteFormat, type QuoteLineRange, type QuoteRange, type QuoteRef, type QuoteSource,
 } from './model';
+import { t } from '../../i18n';
 
 /** 加入结果：added / duplicate（同内容已引用）/ full（条数或字节超限）。 */
 export type AddQuoteResult = 'added' | 'duplicate' | 'full';
@@ -57,14 +58,14 @@ function placeQuoteTray(): void {
 
 function quoteChip(q: QuoteRef, onRemove: (q: QuoteRef) => void): HTMLElement {
   const chip = el('div', 'quote-chip');
-  chip.appendChild(el('span', 'quote-chip-src', q.source.label + (q.truncated ? ' · 已截断' : '')));
+  chip.appendChild(el('span', 'quote-chip-src', q.source.label + (q.truncated ? t('chat.user.truncatedSuffix') : '')));
   const preview = q.text.replace(/\s+/g, ' ').trim();
-  chip.appendChild(el('span', 'quote-chip-text', preview === '' ? '（空引用）' : preview.slice(0, 40)));
+  chip.appendChild(el('span', 'quote-chip-text', preview === '' ? t('chat.quote.empty') : preview.slice(0, 40)));
   chip.appendChild(el('span', 'quote-chip-bytes', String(q.bytes) + ' B'));
   const rm = el('button', 'quote-chip-remove', '×') as HTMLButtonElement;
   rm.type = 'button';
-  rm.title = '移除这条引用';
-  rm.setAttribute('aria-label', '移除引用：' + q.source.label);
+  rm.title = t('chat.quote.removeHint');
+  rm.setAttribute('aria-label', t('chat.quote.removeAria', { label: q.source.label }));
   rm.addEventListener('click', () => onRemove(q));
   chip.appendChild(rm);
   return chip;

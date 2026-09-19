@@ -26,6 +26,8 @@
 //   节流每帧调用一次，只切换一个类 + 写一次提示文案（不重建 DOM、不写几何）。
 // ============================================================================
 
+import { t } from '../i18n'; // i18n P1-c：文案走字典（本模块仍零 DOM、零状态）
+
 /** 一根长条在中间判定里的输入：消息滚动内容坐标里的条心。 */
 export interface RailCenterItem {
   /** 同一根条在消息滚动内容坐标里的条心（yDoc，见文件头）。 */
@@ -78,7 +80,7 @@ export function railCenterHit<T extends RailCenterItem>(
  * 注：W886 后端点之外（clamped）没有可挂文案的命中条，此分支保留给纯函数调用方。
  */
 export function railCenterLabel(hit: RailCenterHit<unknown>, fold = 0): string {
-  if (hit.clamped) return '视口中间 · 在这几轮之外';
-  if (fold > 0) return '更早的 ' + fold + ' 轮（视口中间）';
-  return '第 ' + hit.round + ' 轮附近（视口中间）';
+  if (hit.clamped) return t('chat.rail.centerOutside');
+  if (fold > 0) return t('chat.rail.centerFolded', { n: fold });
+  return t('chat.rail.centerNear', { n: hit.round });
 }

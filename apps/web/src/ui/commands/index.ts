@@ -14,6 +14,7 @@ import {
 import { activePane, onPaneChange, type SessionPane } from '../viewctx';
 import { renderInfoBlock } from '../messages';
 import { listMentions } from './files';
+import { t } from '../../i18n';
 
 export { onGoalChange, goalOf, renderGoalBar } from './goal';
 import { renderGoalBar as refreshGoalBar, onGoalChange } from './goal';
@@ -69,7 +70,7 @@ export async function dispatchCommand(line: string, ctx?: SessionPane): Promise<
   if (name === '') return false;
   const cmd = listCommands().find((c) => c.name === name);
   if (!cmd) {
-    renderInfoBlock(pane, '没有这个命令：/' + name + '（输入 / 查看全部命令）', 'warn');
+    renderInfoBlock(pane, t('chat.command.unknown', { name }), 'warn');
     return true;
   }
   hideCompletion();
