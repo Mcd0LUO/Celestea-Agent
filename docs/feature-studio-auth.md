@@ -1,5 +1,7 @@
 # Studio 自己的登录 cookie 门（W767）
 
+> 状态：**已实现**（W767）。本文件是设计依据的记录；落地见 @@apps/studio/src/auth/@@ 与 @@apps/studio/src/handlers/auth.ts@@。
+
 > 目标：`studio.celestea.top` 不再依赖 nginx HTTP Basic（无 cookie、每天重登），改由 **Studio 自己**签发 30 天登录 cookie。
 >
 > ⛔ 本篇只描述 **Studio 自己**的机制：凭据文件 `DEFAULT_AUTH_HTPASSWD_FILE`（`/etc/nginx/.htpasswd-studio`）是 Studio 自己的只读输入，secret 落在 Studio 自己的数据目录。不引用、不读取任何其它服务的凭据或门户机制。

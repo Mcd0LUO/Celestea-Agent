@@ -5,7 +5,7 @@
 | 任务 | W801（多模态附件链路：设计，不实现） |
 | 工作区 | `/src/celestea_studio-ts` |
 | 日期 | 2026-09-16 |
-| 状态 | **已实现（P0）**。本文件是设计依据与验收标准的记录；落地见 `apps/web/src/ui/attachments.ts`、`packages/core/src/attachments.ts`。写此表时的「设计稿 / 未实现」是当时的真实状态，已随 W805 落地。 |
+| 状态 | **已实现（P0）**。本文件是设计依据与验收标准的记录；落地见 `apps/web/src/ui/attachments.ts`、`packages/core/src/attachments.ts`。本表写于 W801（当时只做调研），功能已随 W805 落地。 |
 | 上游实例 | `http://127.0.0.1:3001/v1`（newapi 网关，provider id=`celestea`） |
 | 参考实现 | DSH `/opt/dsh-src-015`、`/opt/dsh-src-013`（`/opt/dsh/profiles/web` 对 worker 不可读：`Permission denied`，已避开） |
 

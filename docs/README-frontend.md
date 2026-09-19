@@ -1,5 +1,7 @@
 # 前端仓（Celestea-Studio）· `docs/` 索引
 
+> 状态：**历史参考**。并入前前端仓的 docs 索引，原样保留；现役总索引是 @@README.md@@。
+
 > 📦 **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓
 > （前端 = `apps/web/`；本页原为**该前端仓**的 `docs/` 索引，随并入原样保留）。
 > 页面内出现的 `frontend/` 一律指现在的 `apps/web/`；旧仓（Celestea-Studio）路径均已并入本仓。

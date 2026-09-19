@@ -1,5 +1,7 @@
 # celestea_studio-ts 架构契约
 
+> 状态：**当前**。本仓架构契约的规则正文；机械实现见 @@eslint.config.js@@ 与 @@.dependency-cruiser.cjs@@，例外清单见 §5。
+
 > 建立于 W273（P0）。本文是**规则正文**，`eslint.config.js` 与 `.dependency-cruiser.cjs` 是它的机械实现。
 > 违反本文的代码会在 `pnpm check` 阶段被拦下——**这是构建门槛，不是 review 建议**。
 >

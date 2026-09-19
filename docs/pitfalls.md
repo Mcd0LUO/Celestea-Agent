@@ -1,5 +1,7 @@
 # Celestea Studio · 踩坑档案
 
+> 状态：**当前**。踩坑档案：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证；每条来自真实修复。页内 W781 之前的路径以当时布局读。
+
 > 📦 **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓，前端 = `apps/web/`，
 > 运行数据迁到 `/var/lib/celestea-agent/`。本页所述路径以**并入前**的旧两仓布局为准（历史参考），
 > 现役口径见 [`README.md`](./README-frontend.md) 与 [`../README.md`](../README.md)。

@@ -1,5 +1,7 @@
 # 只读上下文快照：`GET /api/sessions/{id}/context`（W725）
 
+> 状态：**已实现**。本文件是设计依据与验收标准的记录；落地见 @@apps/studio/src/handlers/context.ts@@ 与 @@contracts/endpoints.json@@ 的 @@get_session_context@@。
+
 前端「点上下文圆环看完整上下文」的后端端点。契约已冻结，前端按此逐字实现；
 本文件是该端点的口径说明（`contracts/endpoints.json#get_session_context` 的 docRef）。
 

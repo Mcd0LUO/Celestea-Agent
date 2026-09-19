@@ -14,7 +14,7 @@
 | [`feature-studio-auth.md`](./feature-studio-auth.md) | 当前（已实现，W767） | 特性设计：**Studio 自己的登录 cookie 门**——后端自渲染 `/login`、`POST /auth/login`（`htpasswd -vbi` 校验 + 30 天 HMAC cookie）、`GET /auth/check` 供 nginx `auth_request`；含 nginx 配置与回滚命令 | 本文；[`contracts/endpoints.json`](../contracts/endpoints.json) `get_login` / `post_auth_login` / `get_auth_check` |
 | [`feature-session-context.md`](./feature-session-context.md) | 当前（已实现） | 特性设计：**只读上下文快照** `GET /api/sessions/{id}/context`（W725）——模型实际看到的系统提示词 / 工具面 / 消息流的按需组装口径（不起 turn、不写日志、不耗步骤预算） | [`contracts/endpoints.json`](../contracts/endpoints.json) `get_session_context`；本文 |
 | [`performance-baseline.md`](./performance-baseline.md) | 当前（快照） | 引擎热路径性能基线（`pnpm bench` 产物，含机器/commit 指纹）：状态栏 tick、token 估算与裁剪、会话日志投影、SSE 信封编解码；后续性能回归以此为参照 | 本文；机器可读孪生 `../benchmarks/baseline-*.json` |
-| [`README-frontend.md`](./README-frontend.md) | 当前 | **前端仓（并入前）的 docs 索引**：原先独立仓的文档地图，W781 并入后原样保留 | 本文（现役总索引）；前端规则见 `../apps/web/FRONTEND-RULES.md` |
+| [`README-frontend.md`](./README-frontend.md) | 历史参考 | **前端仓（并入前）的 docs 索引**：原先独立仓的文档地图，W781 并入后原样保留 | 本文（现役总索引）；前端规则见 `../apps/web/FRONTEND-RULES.md` |
 | [`DEVELOPMENT.md`](./DEVELOPMENT.md) | 历史参考 | 旧后端的开发者权威入口（架构总览、模块职责表、关键机制、工作流）；**文中路径以并入前旧布局为准** | 本文；现役见 [`README-frontend.md`](./README-frontend.md) |
 | [`data-files.md`](./data-files.md) | 当前 | **共享数据文件 schema**：`workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json`；数据现位于 `/var/lib/celestea-agent/` | 本文；字段变更以 `../contracts/data-files/` 为准 |
 | [`pitfalls.md`](./pitfalls.md) | 当前 | **踩坑档案**：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证（每条来自真实修复）；前端渲染与数据文件类条目仍适用 | 本文 |

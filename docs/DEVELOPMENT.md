@@ -1,5 +1,7 @@
 # Celestea Studio · 开发文档（权威入口）
 
+> 状态：**历史参考**。旧后端的开发者入口（并入前的两仓布局）；文中路径与行号以当时为准，现役入口见 @@README-frontend.md@@ 与 @@AGENT.md@@。
+
 > 📦 **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓，前端 = `apps/web/`，
 > 运行数据迁到 `/var/lib/celestea-agent/`。本页所述路径以**并入前**的旧两仓布局为准（历史参考），
 > 现役口径见 [`README.md`](./README-frontend.md) 与 [`../README.md`](../README.md)。
