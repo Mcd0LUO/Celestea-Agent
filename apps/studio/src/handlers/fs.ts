@@ -1,11 +1,14 @@
 /**
- * `GET /api/fs/browse` — `src/workspaces.rs:700-766` — and iteration G's
- * `GET /api/fs/list` (the Win-style file manager's read-only listing).
+ * `GET /api/fs/browse` — `src/workspaces.rs:700-766` — iteration G's
+ * `GET /api/fs/list` (the Win-style file manager's read-only listing) and its
+ * follow-up `GET /api/fs/read` (the viewer; see `fs-read.ts`).
  *
  * `browse` lists DIRECTORY names only (the legacy shape). `list` lists
  * directories AND files as `{name,type,size,mtime}`, reusing the same
  * discipline: absolute path, dot-names hidden, symlinks never followed, sorted,
- * capped at `MAX_DIR_ENTRIES` (with an explicit `truncated` flag).
+ * capped at `MAX_DIR_ENTRIES` (with an explicit `truncated` flag). `read`
+ * applies that SAME discipline to one file (never follows a link, same trust
+ * boundary) and shares the `read_file` tool's binary/pagination rules.
  *
  * Wire format is FROZEN by `docs/iteration-g-workbench.md` §0.1:
  *   type: "dir" | "file"      (a symlink is reported as the link itself, i.e.
@@ -30,6 +33,7 @@ import type { RouteTable } from "../routes.js";
 import { isAbsolutePath, parentDir, rootOf } from "../store/session-id.js";
 import { errText } from "../store/result.js";
 import type { Deps } from "./common.js";
+import { registerFsRead } from "./fs-read.js";
 
 interface BrowseBody {
   path: string;
@@ -173,5 +177,5 @@ export function registerFs(app: Hono, _deps: Deps, table: RouteTable): string[] 
     const body: ListBody = { path: raw, parent: browseParent(raw), entries: out.entries, roots: FS_ROOTS, truncated: out.truncated };
     return c.json(body);
   });
-  return [browse.id, list.id];
+  return [browse.id, list.id, registerFsRead(app, _deps, table)];
 }

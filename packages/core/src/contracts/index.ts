@@ -162,7 +162,8 @@ export const FROZEN_COUNTS = {
   // W870: 60 -> 61 (PUT /api/sessions/{id}/model, the session-scoped model switch).
   // G5: 61 -> 62 (GET /api/fs/list, the Win-style file-manager listing);
   // G2: 62 -> 63 (POST /api/exec, immediate shell execution without the model).
-  endpoints: 63,
+  // G5 follow-up: 63 -> 64 (GET /api/fs/read, the file manager viewer).
+  endpoints: 64,
   sseEvents: 9,
   // W884: 13 -> 14 (`load_skill`, the on-demand half of skill progressive
   // disclosure; the catalog half adds no tool).

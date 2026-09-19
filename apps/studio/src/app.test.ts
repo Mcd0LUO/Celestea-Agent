@@ -63,8 +63,8 @@ describe("W729/W791 endpoint invariants", () => {
     // W791 (P1) adds `POST /api/sessions/{id}/mode` (50 -> 51). W9's permission
     // CRUD took it to 57, W860's session-tool switches + plugin inventory to 60,
     // W870's model switch to 61 and G5's `GET /api/fs/list` to 62.
-    expect(API_ENDPOINT_COUNT).toBe(63);
-    expect(loadEndpoints().count).toBe(63);
+    expect(API_ENDPOINT_COUNT).toBe(64);
+    expect(loadEndpoints().count).toBe(64);
     expect(loadEndpoints().endpoints.map((e) => e.id)).toContain("post_session_mode");
   });
 });

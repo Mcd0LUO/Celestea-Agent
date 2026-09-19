@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 63,
+  "count": 64,
   "endpoints": [
     {
       "id": "get_health",
@@ -70,7 +70,7 @@
             "name": "bind",
             "type": "string",
             "required": false,
-            "note": "constant DEFAULT_BIND; does NOT follow STUDIO_BIND"
+            "note": "the ACTUAL listening address host:port (follows the server/CLI --bind/--port; --port 0 reports the ephemeral port); DEFAULT_BIND is only the default"
           },
           {
             "name": "version",
@@ -1910,6 +1910,121 @@
       ],
       "notes": [
         "G5 (docs/iteration-g-workbench.md §0.1): directories AND files with name/type/size/mtime. Same discipline as get_fs_browse: absolute path, dot-names hidden, symlinks not followed, sorted (dirs first), capped at MAX_DIR_ENTRIES. Additive 'roots'/'truncated' fields. No auth; loopback-bound only."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_fs_read",
+      "method": "GET",
+      "path": "/api/fs/read",
+      "group": "fs",
+      "rustHandler": "(none - TypeScript-only, G5)",
+      "docRef": "contracts/endpoints.json#get_fs_read",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "path",
+            "type": "string",
+            "required": true,
+            "note": "absolute path of the file to read"
+          },
+          {
+            "name": "offset",
+            "type": "integer",
+            "required": false,
+            "note": "1-based first line (default 1)"
+          },
+          {
+            "name": "limit",
+            "type": "integer",
+            "required": false,
+            "note": "line budget (default 2000)"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "path",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "size",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "kind",
+            "type": "string",
+            "required": false,
+            "note": "text | binary; binary returns no text"
+          },
+          {
+            "name": "text",
+            "type": "string",
+            "required": false,
+            "note": "the line window; empty for binary"
+          },
+          {
+            "name": "offset",
+            "type": "integer",
+            "required": false,
+            "note": "1-based first line of the window"
+          },
+          {
+            "name": "limit",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "name": "totalLines",
+            "type": "integer",
+            "required": false,
+            "note": "0 for binary"
+          },
+          {
+            "name": "truncated",
+            "type": "boolean",
+            "required": false,
+            "note": "true when the response is a window (more lines and/or the 256 KiB budget)"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "query path is required"
+        },
+        {
+          "status": 400,
+          "error": "path must be absolute"
+        },
+        {
+          "status": 400,
+          "error": "path does not exist"
+        },
+        {
+          "status": 400,
+          "error": "path is a directory, not a file"
+        },
+        {
+          "status": 400,
+          "error": "path is a symbolic link; links are not followed"
+        },
+        {
+          "status": 400,
+          "error": "query offset/limit must be a positive integer"
+        }
+      ],
+      "notes": [
+        "G5 follow-up (the file manager viewer): read-only, absolute path, a directory is an error, symlinks are not followed. Binary detection and the 256 KiB byte budget / offset+limit line pagination follow the read_file TOOL (BINARY_SNIFF_BYTES, MAX_READ_BYTES, DEFAULT_READ_LIMIT); kind=binary returns no text; truncated is explicit. Same trust boundary as get_fs_list: no auth of its own, loopback by default, a non-loopback bind is refused unless a token is configured."
       ],
       "probe": {
         "checked": false,
