@@ -28,7 +28,8 @@
     "build": "pnpm -r --filter '!celestea-studio-frontend' build",
     "build:web": "pnpm --dir apps/web run build",
     "release:check": "node scripts/release-check.mjs",
-    "release": "pnpm run build && pnpm run release:check"
+    "release": "pnpm run build && pnpm run release:check",
+    "publish": "node scripts/publish.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
