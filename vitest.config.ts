@@ -57,7 +57,7 @@ export default defineConfig({
         test: {
           name: "unit",
           setupFiles: [r("./vitest.setup.ts")],
-          include: ["packages/**/*.test.ts", "apps/studio/**/*.test.ts", "tests/**/*.test.ts"],
+          include: ["packages/**/*.test.ts", "apps/studio/**/*.test.ts", "apps/cli/**/*.test.ts", "tests/**/*.test.ts"],
           // 未选入 E2E 时把三个真实后端文件收在这里（它们自我 skip 并打印选入口令），
           // 于是默认跑看到的是**可见的 skip**；选入后才交还给 real-backend project。
           exclude: ["**/node_modules/**", "**/dist/**", ...(E2E ? REAL_BACKEND : [])],
