@@ -130,9 +130,11 @@ describe("3. a healthy fast stream is not killed", () => {
       gapMs: 20,
       end: true,
     });
-    // Deliberately tight guards: the upstream answers immediately and streams
-    // every 20ms, so nothing here should trip.
-    const llm = client(upstream.baseUrl, 2_000, 500);
+    // Guards decoupled from the mock's 20ms frame gap by two orders of magnitude:
+    // the healthy stream must not trip either guard. (A guard in the same
+    // magnitude as the gap — e.g. idleMs 20 — turns this into a load-dependent
+    // coin flip; W887e fixes exactly that.)
+    const llm = client(upstream.baseUrl, 5_000, 5_000);
 
     const events = await collectStream(await llm.generate(request()));
 
@@ -151,14 +153,17 @@ describe("3. a healthy fast stream is not killed", () => {
   });
 
   it("keeps the response-header guard off the body (no total-request timeout)", async () => {
-    // 30ms of streaming after the headers: with responseMs=20 a total-request
-    // timeout would kill it, a headers-only guard must not.
+    // The response guard is HEADERS-ONLY: the headers arrive in ~ms, then the
+    // body streams for 6 x 250ms = 1.5s. responseMs=500 is far above the header
+    // latency and far below the body time, so a total-request timeout would kill
+    // it at 500ms while a headers-only guard must not. (A 20ms guard sat inside
+    // the header-latency noise and was load-flaky; W887e decouples the magnitudes.)
     upstream = await startMockUpstream("frames", {
       frames: fastStreamFrames(["a", "b", "c", "d", "e"]),
-      gapMs: 10,
+      gapMs: 250,
       end: true,
     });
-    const llm = client(upstream.baseUrl, 20, 5_000);
+    const llm = client(upstream.baseUrl, 500, 5_000);
     const events = await collectStream(await llm.generate(request()));
     expect(events.at(-1)?.kind).toBe("done");
   });
