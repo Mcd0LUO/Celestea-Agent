@@ -32,8 +32,25 @@ export function defaultStaticRoot(): string {
 }
 /** `src/main.rs:1311` broadcast capacity; slow clients degrade to `lagged`. */
 export const BUS_CAPACITY = 512;
-/** `src/workspaces.rs:113` informational roots shown by GET /api/fs/browse. */
-export const FS_ROOTS: readonly string[] = ["/src", "/tmp", "/srv", "/home"];
+/**
+ * `src/workspaces.rs:113` informational roots shown by GET /api/fs/browse as
+ * one-click shortcuts (listing is NOT restricted to them; the endpoints have no
+ * auth, which is why the default bind is loopback).
+ *
+ * W885 follow-up: the roots are a PLATFORM question. `/src /tmp /srv /home` are
+ * meaningless on Windows, where the useful shortcuts are the system drive and the
+ * user profile — and the same list supplies the default path when a client sends
+ * none. `platform`/`env` are injectable so the win32 answer is unit-tested on
+ * Linux (the W885 seam). POSIX output is byte-identical to the old constant.
+ */
+export function fsRoots(platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
+  if (platform !== "win32") return ["/src", "/tmp", "/srv", "/home"];
+  const drive = (env["SystemDrive"] ?? "C:").replace(/[\\/]+$/, "");
+  const out = [drive + "\\"];
+  const profile = (env["USERPROFILE"] ?? "").trim();
+  if (profile !== "") out.push(profile.replace(/[\\/]+$/, ""));
+  return out;
+}
 /** `src/workspaces.rs:115` fs browse entry cap. */
 export const MAX_DIR_ENTRIES = 200;
 /** `src/api.rs` MIN_STEPS: POST /api/config can only raise max_steps. */

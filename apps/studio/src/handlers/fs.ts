@@ -28,7 +28,7 @@
 import { lstatSync, readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
-import { FS_ROOTS, MAX_DIR_ENTRIES } from "../config.js";
+import { fsRoots, MAX_DIR_ENTRIES } from "../config.js";
 import type { RouteTable } from "../routes.js";
 import { isAbsolutePath, parentDir, rootOf } from "../store/session-id.js";
 import { errText } from "../store/result.js";
@@ -157,24 +157,27 @@ export function registerFs(app: Hono, _deps: Deps, table: RouteTable): string[] 
   const list = table.get("get_fs_list");
   app.on(browse.method, browse.honoPath, (c) => {
     const asked = (c.req.query("path") ?? "").trim();
-    const raw = asked === "" ? "/" : asked;
+    const roots = fsRoots();
+    // W885 follow-up: with no path the client gets the PLATFORM's root, not "/".
+    const raw = asked === "" ? (roots[0] ?? "/") : asked;
     const out = browseDirs(raw);
     if ("error" in out) {
-      const body: BrowseBody = { path: raw, parent: null, dirs: [], roots: FS_ROOTS, error: out.error };
+      const body: BrowseBody = { path: raw, parent: null, dirs: [], roots, error: out.error };
       return c.json(body, 400);
     }
-    const body: BrowseBody = { path: raw, parent: browseParent(raw), dirs: out.dirs, roots: FS_ROOTS };
+    const body: BrowseBody = { path: raw, parent: browseParent(raw), dirs: out.dirs, roots };
     return c.json(body);
   });
   app.on(list.method, list.honoPath, (c) => {
     const asked = (c.req.query("path") ?? "").trim();
-    const raw = asked === "" ? "/" : asked;
+    const roots = fsRoots();
+    const raw = asked === "" ? (roots[0] ?? "/") : asked;
     const out = listDirectory(raw);
     if ("error" in out) {
-      const body: ListBody = { path: raw, parent: null, entries: [], roots: FS_ROOTS, truncated: false, error: out.error };
+      const body: ListBody = { path: raw, parent: null, entries: [], roots, truncated: false, error: out.error };
       return c.json(body, 400);
     }
-    const body: ListBody = { path: raw, parent: browseParent(raw), entries: out.entries, roots: FS_ROOTS, truncated: out.truncated };
+    const body: ListBody = { path: raw, parent: browseParent(raw), entries: out.entries, roots, truncated: out.truncated };
     return c.json(body);
   });
   return [browse.id, list.id, registerFsRead(app, _deps, table)];
