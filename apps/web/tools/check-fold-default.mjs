@@ -263,7 +263,7 @@ async function loadBundle() {
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'w752-fold-'));
   const out = path.join(tmp, 'bundle.mjs');
   const entry = `
-export { buildThinkSeg, appendThinking, endTurn, THINK_FOLD_COLLAPSED, THINK_FOLD_EXPANDED, THINK_FOLDED_HINT } from './src/ui/messages.ts';
+export { buildThinkSeg, appendThinking, endTurn, THINK_FOLD_COLLAPSED, THINK_FOLD_EXPANDED, thinkFoldedHint } from './src/ui/messages.ts';
 export { buildToolCard, setToolResult, toolDescLabel, descFromArgs } from './src/ui/toolcards.ts';
 export { restoreSessionHistory } from './src/ui/restore.ts';
 `;
@@ -347,7 +347,7 @@ async function main() {
   );
   eq(
     restoredThink.querySelector('.think-seg-folded').textContent,
-    M.THINK_FOLDED_HINT,
+    M.thinkFoldedHint(),
     '恢复路径：折叠占位文案在位',
   );
   eq(

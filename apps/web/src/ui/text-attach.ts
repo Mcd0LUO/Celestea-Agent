@@ -10,6 +10,7 @@
 // ============================================================================
 import { fmtBytes, type AttachmentView } from './attachment-view';
 import type { PendingAttachment } from './attachments';
+import { t } from '../i18n';
 
 /** 文本文件字节上限（256 KiB）：文本会整段进上下文，一次发送不能任其膨胀。 */
 export const MAX_TEXT_FILE_BYTES = 256 * 1024;
@@ -42,16 +43,16 @@ export function isAttachmentCandidate(file: { name: string; type: string }): boo
 export function textRejectReason(file: { name: string; type: string; size: number }): string {
   if (file.size > MAX_TEXT_FILE_BYTES) {
     return looksTextFile(file)
-      ? '文本文件不超过 ' + fmtBytes(MAX_TEXT_FILE_BYTES) + '（当前 ' + fmtBytes(file.size) + '）'
-      : '仅支持图片与文本文件（.md / .txt / .json 等），单个文本不超过 ' + fmtBytes(MAX_TEXT_FILE_BYTES);
+      ? t('chat.attach.textTooLarge', { size: fmtBytes(MAX_TEXT_FILE_BYTES), current: fmtBytes(file.size) })
+      : t('chat.attach.textOnlySupport', { size: fmtBytes(MAX_TEXT_FILE_BYTES) });
   }
-  if (file.size === 0) return '空文件没有内容可发送';
+  if (file.size === 0) return t('chat.attach.emptyFile');
   return '';
 }
 
 /** 新建一条文本待发项：url 留空（文本没有缩略图，也不占预览 URL 名额）。 */
 export function textPendingItem(file: File, error: string): PendingAttachment {
-  return { file, name: file.name || '文本文件', url: '', bytes: file.size, id: '', error, kind: 'text' };
+  return { file, name: file.name || t('chat.attach.textFile'), url: '', bytes: file.size, id: '', error, kind: 'text' };
 }
 
 /** 文本里允许出现的控制字符：制表 / 换行 / 回车 / 换页 / ESC（ANSI 着色的日志不误伤）。 */
@@ -76,7 +77,7 @@ export async function readTextFile(file: { arrayBuffer(): Promise<ArrayBuffer> }
 /** 文本项异步落定：读出正文；读不出就地标红（入口据此重绘成红项 + 可见提示）。 */
 export async function settleTextItem(item: PendingAttachment): Promise<void> {
   const text = await readTextFile(item.file);
-  if (text === null) item.error = '不是可读的 UTF-8 文本（二进制文件不支持）';
+  if (text === null) item.error = t('chat.attach.notUtf8');
   else item.text = text;
 }
 
@@ -137,7 +138,7 @@ export function injectTextAttachments(text: string, items: readonly PendingAttac
   const blocks: string[] = [];
   for (const it of items) {
     if (it.kind !== 'text' || it.text === undefined) continue;
-    const mime = it.file.type !== '' ? it.file.type : '未知类型';
+    const mime = it.file.type !== '' ? it.file.type : t('chat.attach.unknownType');
     const head = '[文件 ' + it.name + '（' + mime + '，' + it.bytes + ' 字节）]';
     blocks.push(TEXT_BLOCK_DELIMITER + '\n' + head + '\n' + escapeDelimiterLines(it.text) + '\n' + TEXT_BLOCK_DELIMITER);
   }

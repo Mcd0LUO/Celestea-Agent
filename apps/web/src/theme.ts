@@ -3,17 +3,22 @@
 // 第 26 轮（W256）：仅保留单主题 mono（黑白 ins 风）；夜航（night）主题已删除。
 // ============================================================================
 
+import { t } from './i18n';
+
 export interface ThemeDef {
   id: string;
   label: string;
   hint: string;
 }
 
-export const THEMES: readonly ThemeDef[] = [
-  { id: 'mono', label: '黑白', hint: '黑白 ins 风 · 纯灰阶浅色，零彩色点缀' },
-  // W12：深色主题 —— 只覆盖 static/alias token（见 styles/tokens.css），组件零改动。
-  { id: 'dark', label: '暗色', hint: '深灰多层级 · 语义 token 覆盖' },
-];
+/** 主题定义（函数：文案走 t()，语言切换后必须跟着变）。 */
+export function themes(): readonly ThemeDef[] {
+  return [
+    { id: 'mono', label: t('theme.mono.label'), hint: t('theme.mono.hint') },
+    // W12：深色主题 —— 只覆盖 static/alias token（见 styles/tokens.css），组件零改动。
+    { id: 'dark', label: t('theme.dark.label'), hint: t('theme.dark.hint') },
+  ];
+}
 
 const STORAGE_KEY = 'celestea-studio.theme';
 
@@ -36,7 +41,7 @@ export function initTheme(defaultId = 'mono'): string {
   let id = defaultId;
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved && THEMES.some((t) => t.id === saved)) id = saved;
+    if (saved && themes().some((x) => x.id === saved)) id = saved;
   } catch {
     /* ignore */
   }
@@ -49,19 +54,19 @@ export function initTheme(defaultId = 'mono'): string {
 export function setupThemeSwitcher(button: HTMLElement): void {
   const render = (): void => {
     const cur = currentTheme();
-    const t = THEMES.find((x) => x.id === cur) ?? THEMES[0]!;
-    button.textContent = t.label;
-    button.title = '主题 · ' + t.hint + (THEMES.length > 1 ? '（点击切换）' : '（当前唯一主题）');
+    const theme = themes().find((x) => x.id === cur) ?? themes()[0]!;
+    button.textContent = theme.label;
+    button.title = t('theme.title', { hint: theme.hint, suffix: themes().length > 1 ? t('theme.clickToSwitch') : t('theme.onlyTheme') });
   };
   render();
-  if (THEMES.length < 2) {
+  if (themes().length < 2) {
     // 仅剩单主题：不注册点击行为，避免无意义的重绘/闪动
     button.setAttribute('aria-disabled', 'true');
     return;
   }
   button.addEventListener('click', () => {
-    const idx = THEMES.findIndex((t) => t.id === currentTheme());
-    const next = THEMES[(idx + 1) % THEMES.length]!;
+    const idx = themes().findIndex((x) => x.id === currentTheme());
+    const next = themes()[(idx + 1) % themes().length]!;
     applyTheme(next.id);
     render();
   });

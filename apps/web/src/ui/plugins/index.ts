@@ -13,7 +13,7 @@
 //   保持空（回来即画，失败画如实空态）。
 // ============================================================================
 import { userErrorText } from '../../api';
-import { CLIENT_PLUGINS, isClientPluginOn, setClientPlugin } from '../../plugins';
+import { clientPlugins, isClientPluginOn, setClientPlugin } from '../../plugins';
 import type { ClientPluginDescriptor } from '../../plugins';
 import { el, need } from '../../utils/dom';
 import { fetchHostPlugins, type HostPluginRow } from './host';
@@ -90,7 +90,7 @@ export async function loadPluginsSection(): Promise<void> {
 
   const clientSec = section(t('settings.plugins.clientTitle'), t('settings.plugins.clientNote'));
   const list = el('div', 'plug-list');
-  for (const d of CLIENT_PLUGINS) list.appendChild(clientRow(d, setStatus));
+  for (const d of clientPlugins()) list.appendChild(clientRow(d, setStatus));
   clientSec.appendChild(list);
   clientSec.appendChild(status);
 

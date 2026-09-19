@@ -4,6 +4,7 @@
 // ============================================================================
 import { S } from '../state';
 import { fmtTime, need } from '../utils/dom';
+import { t } from '../i18n';
 
 const StatusText = need<HTMLElement>('#statusText');
 const StatusDot = need<HTMLElement>('#statusDot');
@@ -16,7 +17,7 @@ export function setStatus(text: string, cls?: string): void {
 }
 
 export function setStatusTurn(n: number | null): void {
-  StatusTurn.textContent = typeof n === 'number' && n >= 1 ? '第 ' + n + ' 轮' : '第 — 轮';
+  StatusTurn.textContent = typeof n === 'number' && n >= 1 ? t('shell.status.turn', { n }) : t('shell.status.turnNone');
 }
 
 function tickTimer(): void {
@@ -71,7 +72,7 @@ export function flashStatus(text: string, cls: string, ms = 6000): void {
   flashTimer = window.setTimeout(() => {
     flashTimer = null;
     if (S.streaming) return; // turn 正在跑：状态栏归 turn 生命周期管
-    if (S.conn === 'online') setStatus('就绪 · 在线', 'ok');
-    else if (S.conn === 'down') setStatus('重连中…', 'err');
+    if (S.conn === 'online') setStatus(t('shell.status.online'), 'ok');
+    else if (S.conn === 'down') setStatus(t('shell.status.reconnecting'), 'err');
   }, ms);
 }

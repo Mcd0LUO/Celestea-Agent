@@ -21,6 +21,7 @@ import { api, userErrorText } from '../api';
 import type { ContextMessage, ContextToolInfo, SessionContextResp } from '../types';
 import { el, fmtCompact } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
+import { t } from '../i18n';
 
 /** 能力位缓存时长：避免每次点击都打一次健康检查。 */
 const CAP_TTL_MS = 60000;
@@ -63,9 +64,9 @@ export function openContextView(sessionId: string): void {
 
   // ---- 顶栏与骨架（正文稍后单次替换） ----
   const head = el('div', 'ctx-head');
-  head.appendChild(el('span', 'ctx-title', '完整上下文'));
-  head.appendChild(el('span', 'ctx-tag', '只读'));
-  const closeBtn = el('button', 'btn btn-soft btn-mini ctx-close', '关闭') as HTMLButtonElement;
+  head.appendChild(el('span', 'ctx-title', t('chat.ctx.title')));
+  head.appendChild(el('span', 'ctx-tag', t('chat.ctx.readonly')));
+  const closeBtn = el('button', 'btn btn-soft btn-mini ctx-close', t('chat.ctx.close')) as HTMLButtonElement;
   closeBtn.type = 'button';
   head.appendChild(closeBtn);
   card.appendChild(head);
@@ -85,7 +86,7 @@ export function openContextView(sessionId: string): void {
   const body = el('div', 'ctx-body');
   card.appendChild(body);
 
-  const foot = el('div', 'ctx-foot', '只读快照 · 不发送、不修改任何内容');
+  const foot = el('div', 'ctx-foot', t('chat.ctx.foot'));
   card.appendChild(foot);
 
   scrim.appendChild(card);
@@ -127,15 +128,14 @@ export function openContextView(sessionId: string): void {
       body.replaceChildren(...off.childNodes);
       foot.textContent =
         (typeof res.session === 'string' && res.session !== ''
-          ? '会话 ' + res.session + ' · '
-          : '') +
-        '只读快照 · 不发送、不修改任何内容' +
-        (res.truncated === true ? ' · 部分条目过长已截断' : '');
+          ? t('chat.ctx.footWithSession', { id: res.session })
+          : t('chat.ctx.foot')) +
+        (res.truncated === true ? t('chat.ctx.truncatedSuffix') : '');
     })
     .catch((err: unknown) => {
       if (!alive()) return; // 浮层已关闭：不打扰用户
       body.replaceChildren(
-        el('div', 'ctx-error', userErrorText(err, '暂时无法读取上下文，请稍后重试')),
+        el('div', 'ctx-error', userErrorText(err, t('chat.ctx.loadFailed'))),
       );
     });
 }
@@ -150,7 +150,7 @@ function renderMeta(
 ): void {
   const model = typeof res.model === 'string' && res.model !== '' ? res.model : '—';
   modelEl.textContent = model;
-  modelEl.title = '当前模型：' + model;
+  modelEl.title = t('chat.ctx.currentModel', { model });
 
   const c = res.context ?? {};
   const parts: string[] = [];
@@ -164,15 +164,15 @@ function renderMeta(
   if (ratio !== null && Number.isFinite(ratio)) parts.push(fmtPct(ratio) + '%');
   const usageText = el('span', 'ctx-usage-text', parts.length ? parts.join(' · ') : '—');
   usageEl.replaceChildren(usageText);
-  usageEl.title = '上下文用量（已用 / 容量）';
-  if (c.estimated === true) usageEl.appendChild(el('span', 'ctx-badge', '估算'));
+  usageEl.title = t('chat.ctx.usageTitle');
+  if (c.estimated === true) usageEl.appendChild(el('span', 'ctx-badge', t('chat.ctx.estimated')));
 
   const n = res.counts ?? {};
   const sysChars = typeof n.system_chars === 'number' ? n.system_chars : len(res.system);
   const tools = typeof n.tool_count === 'number' ? n.tool_count : (res.tools ?? []).length;
   const msgs = typeof n.message_count === 'number' ? n.message_count : (res.messages ?? []).length;
-  countsEl.textContent = '系统 ' + fmtInt(sysChars) + ' 字符 · 工具 ' + tools + ' · 消息 ' + msgs;
-  countsEl.title = '本轮上下文的条目数量';
+  countsEl.textContent = t('chat.ctx.counts', { sys: fmtInt(sysChars), tools, msgs });
+  countsEl.title = t('chat.ctx.countsTitle');
 }
 
 // ---- 系统提示词 --------------------------------------------------------------
@@ -184,11 +184,11 @@ function renderSystem(res: SessionContextResp): HTMLElement {
   det.className = 'ctx-fold ctx-fold-sys';
   det.open = true; // 系统提示词默认展开；其余默认折叠，用户按需展开
   const sum = el('summary', 'ctx-fold-head');
-  sum.appendChild(el('span', 'ctx-fold-name', '系统提示词'));
-  sum.appendChild(el('span', 'ctx-count', fmtInt(text.length) + ' 字符'));
+  sum.appendChild(el('span', 'ctx-fold-name', t('chat.ctx.systemPrompt')));
+  sum.appendChild(el('span', 'ctx-count', t('chat.ctx.chars', { n: fmtInt(text.length) })));
   det.appendChild(sum);
   const pre = el('pre', 'ctx-pre ctx-pre-sys');
-  pre.textContent = text === '' ? '（空）' : text;
+  pre.textContent = text === '' ? t('chat.ctx.empty') : text;
   det.appendChild(pre);
   sec.appendChild(det);
   return sec;
@@ -201,31 +201,31 @@ function renderTools(res: SessionContextResp): HTMLElement {
   const tools: ContextToolInfo[] = Array.isArray(res.tools) ? res.tools : [];
 
   const head = el('div', 'ctx-sec-head');
-  head.appendChild(el('span', 'ctx-sec-name', '工具清单'));
-  head.appendChild(el('span', 'ctx-count', tools.length + ' 个'));
+  head.appendChild(el('span', 'ctx-sec-name', t('chat.ctx.toolList')));
+  head.appendChild(el('span', 'ctx-count', t('chat.ctx.count', { n: tools.length })));
   if (tools.some((t) => t.truncated === true)) {
-    head.appendChild(el('span', 'ctx-badge', '部分已截断'));
+    head.appendChild(el('span', 'ctx-badge', t('chat.ctx.partialTruncated')));
   }
   sec.appendChild(head);
 
   if (!tools.length) {
-    sec.appendChild(el('div', 'ctx-note', '本轮没有可用工具'));
+    sec.appendChild(el('div', 'ctx-note', t('chat.ctx.noTools')));
     return sec;
   }
 
   const list = el('div', 'ctx-tools');
-  tools.forEach((t, i) => {
+  tools.forEach((tool, i) => {
     const det = document.createElement('details');
     det.className = 'ctx-fold ctx-tool';
     const sum = el('summary', 'ctx-tool-head');
     sum.appendChild(el('span', 'ctx-tool-idx', '#' + (i + 1)));
-    sum.appendChild(el('span', 'ctx-tool-name', t.name || '（未命名）'));
-    sum.appendChild(el('span', 'ctx-tool-desc', oneLine(t.description)));
-    if (t.truncated === true) sum.appendChild(el('span', 'ctx-badge', '已截断'));
+    sum.appendChild(el('span', 'ctx-tool-name', tool.name || t('chat.ctx.unnamed')));
+    sum.appendChild(el('span', 'ctx-tool-desc', oneLine(tool.description)));
+    if (tool.truncated === true) sum.appendChild(el('span', 'ctx-badge', t('chat.ctx.truncatedBadge')));
     det.appendChild(sum);
 
     const pre = el('pre', 'ctx-pre ctx-pre-schema');
-    pre.textContent = schemaText(t.parameters);
+    pre.textContent = schemaText(tool.parameters);
     det.appendChild(pre);
     list.appendChild(det);
   });
@@ -234,23 +234,25 @@ function renderTools(res: SessionContextResp): HTMLElement {
 }
 
 function schemaText(params: unknown): string {
-  if (params === undefined || params === null) return '无参数结构';
-  if (typeof params === 'string') return params === '' ? '无参数结构' : params;
+  if (params === undefined || params === null) return t('chat.ctx.noSchema');
+  if (typeof params === 'string') return params === '' ? t('chat.ctx.noSchema') : params;
   try {
-    return JSON.stringify(params, null, 2) ?? '无参数结构';
+    return JSON.stringify(params, null, 2) ?? t('chat.ctx.noSchema');
   } catch {
-    return '参数结构无法展示';
+    return t('chat.ctx.schemaUnavailable');
   }
 }
 
 // ---- 消息流 ------------------------------------------------------------------
 
 /** 分组顺序：用户 → 助手 → 工具结果；未知 role 各自成组放在末尾。 */
-const ROLE_GROUPS: readonly { key: string; label: string }[] = [
-  { key: 'user', label: '用户' },
-  { key: 'assistant', label: '助手' },
-  { key: 'tool', label: '工具结果' },
-];
+function roleGroups(): readonly { key: string; label: string }[] {
+  return [
+    { key: 'user', label: t('chat.ctx.roleUser') },
+    { key: 'assistant', label: t('chat.ctx.roleAssistant') },
+    { key: 'tool', label: t('chat.ctx.roleTool') },
+  ];
+}
 
 interface MsgRef {
   m: ContextMessage;
@@ -263,19 +265,19 @@ function renderMessages(res: SessionContextResp): HTMLElement {
   const msgs: ContextMessage[] = Array.isArray(res.messages) ? res.messages : [];
 
   const head = el('div', 'ctx-sec-head');
-  head.appendChild(el('span', 'ctx-sec-name', '消息流'));
-  head.appendChild(el('span', 'ctx-count', msgs.length + ' 条'));
+  head.appendChild(el('span', 'ctx-sec-name', t('chat.ctx.messages')));
+  head.appendChild(el('span', 'ctx-count', t('chat.ctx.countItems', { n: msgs.length })));
   if (msgs.some((m) => m.truncated === true)) {
-    head.appendChild(el('span', 'ctx-badge', '部分已截断'));
+    head.appendChild(el('span', 'ctx-badge', t('chat.ctx.partialTruncated')));
   }
   sec.appendChild(head);
 
   if (!msgs.length) {
-    sec.appendChild(el('div', 'ctx-note', '本轮还没有消息'));
+    sec.appendChild(el('div', 'ctx-note', t('chat.ctx.noMessages')));
     return sec;
   }
 
-  for (const g of ROLE_GROUPS) {
+  for (const g of roleGroups()) {
     const items: MsgRef[] = [];
     msgs.forEach((m, i) => {
       if (roleKey(m) === g.key) items.push({ m, idx: i });
@@ -286,12 +288,12 @@ function renderMessages(res: SessionContextResp): HTMLElement {
   const extras = new Map<string, MsgRef[]>();
   msgs.forEach((m, i) => {
     const key = roleKey(m);
-    if (ROLE_GROUPS.some((g) => g.key === key)) return;
+    if (roleGroups().some((g) => g.key === key)) return;
     const list = extras.get(key);
     if (list) list.push({ m, idx: i });
     else extras.set(key, [{ m, idx: i }]);
   });
-  for (const [key, items] of extras) sec.appendChild(renderGroup(key === '' ? '其它' : key, items));
+  for (const [key, items] of extras) sec.appendChild(renderGroup(key === '' ? t('chat.ctx.roleOther') : key, items));
   return sec;
 }
 
@@ -299,7 +301,7 @@ function renderGroup(label: string, items: readonly MsgRef[]): HTMLElement {
   const group = el('div', 'ctx-group');
   const gh = el('div', 'ctx-group-head');
   gh.appendChild(el('span', 'ctx-group-name', label));
-  gh.appendChild(el('span', 'ctx-count', items.length + ' 条'));
+  gh.appendChild(el('span', 'ctx-count', t('chat.ctx.countItems', { n: items.length })));
   group.appendChild(gh);
 
   for (const { m, idx } of items) {
@@ -311,15 +313,15 @@ function renderGroup(label: string, items: readonly MsgRef[]): HTMLElement {
     if (m.role === 'tool' && typeof m.tool_name === 'string' && m.tool_name !== '') {
       sum.appendChild(el('span', 'ctx-msg-tool', m.tool_name));
     }
-    sum.appendChild(el('span', 'ctx-count', fmtInt(text.length) + ' 字符'));
-    if (m.truncated === true) sum.appendChild(el('span', 'ctx-badge', '已截断'));
+    sum.appendChild(el('span', 'ctx-count', t('chat.ctx.chars', { n: fmtInt(text.length) })));
+    if (m.truncated === true) sum.appendChild(el('span', 'ctx-badge', t('chat.ctx.truncatedBadge')));
     sum.appendChild(el('span', 'ctx-msg-preview', preview(text)));
     if (typeof m.tool_call_id === 'string' && m.tool_call_id !== '') {
-      sum.title = '调用标识：' + m.tool_call_id;
+      sum.title = t('chat.ctx.callId', { id: m.tool_call_id });
     }
     det.appendChild(sum);
     const pre = el('pre', 'ctx-pre ctx-pre-msg');
-    pre.textContent = text === '' ? '（空）' : text;
+    pre.textContent = text === '' ? t('chat.ctx.empty') : text;
     det.appendChild(pre);
     group.appendChild(det);
   }
@@ -338,14 +340,14 @@ function roleKey(m: ContextMessage): string {
 /** 摘要行预览：单行化 + 截断（正文全文在展开后的等宽块里）。 */
 function preview(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
-  if (flat === '') return '（空）';
+  if (flat === '') return t('chat.ctx.empty');
   return flat.length > 90 ? flat.slice(0, 90) + '…' : flat;
 }
 
 /** 工具的一句话说明（缺省给固定短语，不显示空行）。 */
 function oneLine(text: unknown): string {
   const s = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
-  return s === '' ? '（无说明）' : s;
+  return s === '' ? t('chat.ctx.noDescription') : s;
 }
 
 function len(s: unknown): number {

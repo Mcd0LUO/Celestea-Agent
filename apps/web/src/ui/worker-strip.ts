@@ -21,6 +21,7 @@
 // ============================================================================
 import type { SessionInfo } from '../types';
 import { el } from '../utils/dom';
+import { t } from '../i18n';
 import { openSession } from './restore';
 import { activePane, paneBusy, type SessionPane } from './viewctx';
 
@@ -111,9 +112,9 @@ function rowEl(r: StripRow): HTMLElement {
   row.appendChild(el('span', 'sess-dot' + (busy ? ' busy' : '')));
   row.appendChild(el('span', 'ws-strip-wid', r.wid));
   row.appendChild(el('span', 'ws-strip-title', r.title));
-  row.appendChild(el('span', 'ws-strip-meta', r.status === '' ? (busy ? '运行中' : '空闲') : r.status));
+  row.appendChild(el('span', 'ws-strip-meta', r.status === '' ? (busy ? t('shell.tree.running') : t('shell.tree.idle')) : r.status));
   row.title =
-    r.wid + ' · ' + r.title + (r.model ? ' · ' + r.model : '') + '（点击打开该 worker 会话，可直接对它说话）';
+    r.wid + ' · ' + r.title + (r.model ? ' · ' + r.model : '') + t('shell.worker.stripHint');
   row.addEventListener('click', () => {
     openSession(r.id, { kind: 'worker', title: r.title });
   });
@@ -137,7 +138,7 @@ function render(): void {
   listEl.replaceChildren(...Array.from(off.childNodes));
   countEl.textContent = String(rows.length);
   const running = rows.filter((r) => paneBusy(r.id)).length;
-  if (leadEl !== null) leadEl.textContent = running > 0 ? '后台任务 · ' + running + ' 运行中' : '后台任务';
+  if (leadEl !== null) leadEl.textContent = running > 0 ? t('shell.worker.stripTitle', { n: running }) : t('shell.worker.stripTitlePlain');
 }
 
 /**
@@ -179,7 +180,7 @@ export function initWorkerStrip(): HTMLElement | null {
   const built = el('div', 'ws-strip hidden');
   built.id = 'wsStrip';
   const head = el('div', 'ws-strip-head');
-  leadEl = el('span', 'ws-strip-lead', '后台任务');
+  leadEl = el('span', 'ws-strip-lead', t('shell.worker.stripTitlePlain'));
   countEl = el('span', 'ws-strip-count', '');
   listEl = el('div', 'ws-strip-list');
   head.appendChild(leadEl);

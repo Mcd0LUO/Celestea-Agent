@@ -8,6 +8,8 @@
 //   · seq: 每个面板独立竞态序号（切换目录 / 加载时晚到的旧结果一律丢弃）。
 // 状态变更加订阅者；渲染层（panel.ts）只读本层、不反向写。
 // ============================================================================
+import { t } from '../../i18n'; // i18n Batch5：面板默认标题走字典
+
 export type PanelKind = 'files' | 'terminal' | 'browser';
 export type DockSide = 'right' | 'bottom';
 
@@ -62,7 +64,7 @@ export function focusPanel(id: string): void {
 
 /** 默认标题（按 kind + 序号）。 */
 function defaultTitle(kind: PanelKind, n: number): string {
-  const base = kind === 'files' ? '文件管理器' : kind === 'terminal' ? '终端' : '浏览器';
+  const base = kind === 'files' ? t('chat.wb.menu.files') : kind === 'terminal' ? t('chat.wb.menu.terminal') : t('chat.wb.menu.browser');
   return base + ' ' + String(n);
 }
 

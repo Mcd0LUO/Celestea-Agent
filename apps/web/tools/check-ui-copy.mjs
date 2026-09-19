@@ -84,51 +84,10 @@ export const RULES = [
  * 新增含中文的文件必须先把文案抽到 i18n/locales，或（确需）在 review 后加进本表。
  */
 export const PENDING_MIGRATION = [
-  'api.ts',
-  'chat.ts',
-  'main.ts',
-  'plugins/apply.ts',
-  'plugins/descriptor.ts',
-  'plugins/store.ts',
-  'theme.ts',
-  'ui/attachment-view.ts',
-  'ui/attachments.ts',
-  'ui/batchresult.ts',
-  // ↑ 用户可见文案已迁移；仍含 console.warn 开发诊断串（AST 仍计中文）—— 非用户可见口径
-  'ui/chatcol.ts',
-  'ui/compact.ts',
-  'ui/confirm.ts',
-  'ui/contextview.ts',
-  'ui/fsbrowser.ts',
-  'ui/grants/caps.ts',
-  'ui/grants/copy.ts',
-  'ui/grants/flow.ts',
-  'ui/grants/panel/body.ts',
-  'ui/grants/panel/phrase.ts',
-  'ui/grants/panel/quick.ts',
-  'ui/grants/panel/rows.ts',
-  'ui/grants/panel/shield.ts',
-  'ui/grants/panel/warnings.ts',
-  'ui/grants/presets.ts',
-  'ui/grants/scope.ts',
-  'ui/inputbar.ts',
   'ui/quote/model.ts',
   // ↑ 引用块的 wire 格式（序列化 + 正则解析）：协议 token，**不译**（翻译会破坏往返）
-  'ui/restore.ts',
-  'ui/send.ts',
-  'ui/sessionbar.ts',
-  'ui/sessions.ts',
-  'ui/sidebar.ts',
-  'ui/statusbar.ts',
   'ui/text-attach.ts',
-  'ui/viewctx.ts',
-  'ui/workbench/browser.ts',
-  'ui/workbench/files.ts',
-  'ui/workbench/menu.ts',
-  'ui/workbench/panel.ts',
-  'ui/workbench/state.ts',
-  'ui/workbench/terminal.ts',
-  'ui/worker-strip.ts',
+  // ↑ 仍含 4 处 wire 格式 token（注入块定界行 / 转义标记 /「[文件 …]」头）：协议不译
 ];
 
 /** 相对 SRC 的 POSIX 路径。 */
@@ -160,6 +119,30 @@ function rulesOf(problems, text, where, exempt) {
   }
 }
 
+/**
+ * 是否处在 `console.*` 调用的实参里。
+ *   开发诊断（console.log/warn/error）**不会渲染给用户**，故不计入护栏 A（也不算 RULES）。
+ *   注意：`throw new Error('中文')` **不豁免** —— 本仓多处 `err.message` 会经
+ *   catch 渲染到界面（如 commands/goal.ts 的「目标没有保存：…」），属用户可见。
+ *   向上只穿过表达式节点，遇到语句/源文件边界即停，避免误吞同语句里的其它字面量。
+ */
+function inConsoleCall(node) {
+  let p = node.parent;
+  while (p) {
+    if (
+      ts.isCallExpression(p) &&
+      ts.isPropertyAccessExpression(p.expression) &&
+      ts.isIdentifier(p.expression.expression) &&
+      p.expression.expression.text === 'console'
+    ) {
+      return true;
+    }
+    if (ts.isStatement(p) || ts.isSourceFile(p)) return false;
+    p = p.parent;
+  }
+  return false;
+}
+
 /** 收集一个字符串/模板节点的文本片段。 */
 function piecesOf(node) {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
@@ -188,6 +171,7 @@ function scanComponent(problems, file, rel, allow) {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return; // 模块路径
     const pieces = piecesOf(node);
     if (pieces !== null) {
+      if (inConsoleCall(node)) return; // 开发诊断：不渲染给用户，护栏 A 与 RULES 都不适用
       const exempt = allowMarked(lines, node, sf);
       const cjk = pieces.find((p) => CJK.test(p));
       if (cjk !== undefined) {
@@ -301,10 +285,15 @@ export function runGate(root = ROOT) {
     const file = path.join(src, rel);
     try {
       const text = readFileSync(file, 'utf8');
+      const lines = text.split('\n');
       const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true);
       const visit = (node) => {
         const pieces = piecesOf(node);
-        if (pieces !== null) { if (pieces.some((p) => CJK.test(p))) hasCjk = true; return; }
+        if (pieces !== null) {
+          // 与护栏 A 同口径：console 实参与 copy-gate-allow 行都不算「未迁移的中文」。
+          if (!inConsoleCall(node) && !allowMarked(lines, node, sf) && pieces.some((p) => CJK.test(p))) hasCjk = true;
+          return;
+        }
         ts.forEachChild(node, visit);
       };
       visit(sf);

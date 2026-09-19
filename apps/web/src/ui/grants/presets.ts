@@ -2,19 +2,14 @@
 // ui/grants/presets.ts — 「快捷授权」预设组合（W751 任务 1c）
 //
 //   一条预设 = 若干**现有** cap 的授予组合 + 一个统一有效期。
-//   W773：**预设一律永久**（`ttlSec: 0`，与主路径「直接授予」一致）；想限时请用
-//   面板上该能力位的「临时授权…」走单项临时授予。
+//   W773：**预设一律永久**（`ttlSec: 0`）；想限时请用面板上该能力位的「临时授权…」。
 //   本模块是纯数据 + 纯函数（零 DOM，可在 node 里直接加载做断言），因此：
 //     · 只允许引用 caps.ts 里已有的 cap，绝不发明新 cap；
-//     · 文案是固定常量（安全不变量：不采用任何工具输出/模型文本）；
-//     · 真正的授予动作在 ./flow.ts 的 startPreset 里逐项 POST（后端本来就是逐项接口）。
-//
-//   参数来源（与面板逐项授予**完全一致**，不另造一套）：
-//     scopeKind='dir'   → 复用面板的目录选择弹窗（ui/fsbrowser.pickDirectory）；
-//     scopeKind='hosts' → 复用面板已有的站点校验（ui/grants/scope.validateHosts）+ 本预设默认站点；
-//     scopeKind='none'  → 布尔能力，无范围。
+//     · 文案是固定句式（安全不变量：不采用任何工具输出/模型文本）；
+//     · **文案惰性解析**（presets() 函数而非常量）：语言切换后必须跟着变。
 // ============================================================================
 import type { GrantCap } from '../../types';
+import { t } from '../../i18n';
 
 /** 预设步骤的作用范围来源。 */
 export type PresetScopeKind = 'none' | 'dir' | 'hosts';
@@ -29,7 +24,7 @@ export interface PresetStep {
 export interface GrantPreset {
   id: string;
   label: string;
-  /** 一句话说明（固定常量；写明代价与范围，不采用任何外部文本）。 */
+  /** 一句话说明（固定句式；写明代价与范围，不采用任何外部文本）。 */
   hint: string;
   /** 统一 TTL（秒）；实际值再按该能力的服务端上限收敛，见 presetTtlSec。 */
   ttlSec: number;
@@ -42,50 +37,50 @@ export const LOCAL_HOSTS: readonly string[] = ['localhost', '127.0.0.1'];
 /**
  * 四个一键组合（顺序即面板展示顺序）。
  *
- * 语义注意一（W773）：每条预设的 `ttlSec` 都是 0 = **永久**（撤销前一直有效），
- * 与单项「授予」按钮一致；不再有任何预设自带倒计时。
- *
- * 语义注意二（安全面，见报告）：后端的 `net_hosts` 是**并集放宽**（并入站点放行清单），
- * 不是白名单收窄 —— 因此「本机服务」= 联网 + 放行本机站点，而不是「只能访问本机」。
- * 真正把会话限制成「仅本机」需要部署侧同时配置站点放行清单（运维姿态），前端不假装能做到。
+ * 语义注意一（W773）：每条预设的 `ttlSec` 都是 0 = **永久**（撤销前一直有效）。
+ * 语义注意二（安全面）：后端的 `net_hosts` 是**并集放宽**，不是白名单收窄 ——
+ *   「本机服务」= 联网 + 放行本机站点，而不是「只能访问本机」。
  */
-export const PRESETS: readonly GrantPreset[] = [
-  {
-    id: 'read-workspace',
-    label: '只读工作区',
-    hint: '选一个目录（建议选本会话的工作区）读取其中文件，不能修改；撤销前一直有效。',
-    ttlSec: 0,
-    steps: [{ cap: 'read_roots', scopeKind: 'dir' }],
-  },
-  {
-    id: 'write-output',
-    label: '写输出目录',
-    hint: '选一个目录（建议选工作区的输出目录）在其中创建与修改文件；撤销前一直有效。',
-    ttlSec: 0,
-    steps: [{ cap: 'write_roots', scopeKind: 'dir' }],
-  },
-  {
-    id: 'net',
-    label: '联网',
-    hint: '访问互联网与内网（含本机服务）；撤销前一直有效。',
-    ttlSec: 0,
-    steps: [{ cap: 'network', scopeKind: 'none' }],
-  },
-  {
-    id: 'localhost',
-    label: '本机服务',
-    hint: '访问网络，并把 localhost 与 127.0.0.1 放进站点放行清单；撤销前一直有效。',
-    ttlSec: 0,
-    steps: [
-      { cap: 'network', scopeKind: 'none' },
-      { cap: 'net_hosts', scopeKind: 'hosts', hosts: LOCAL_HOSTS },
-    ],
-  },
-];
+export function presets(): readonly GrantPreset[] {
+  return [
+    {
+      id: 'read-workspace',
+      label: t('grants.preset.readWorkspace.label'),
+      hint: t('grants.preset.readWorkspace.hint'),
+      ttlSec: 0,
+      steps: [{ cap: 'read_roots', scopeKind: 'dir' }],
+    },
+    {
+      id: 'write-output',
+      label: t('grants.preset.writeOutput.label'),
+      hint: t('grants.preset.writeOutput.hint'),
+      ttlSec: 0,
+      steps: [{ cap: 'write_roots', scopeKind: 'dir' }],
+    },
+    {
+      id: 'net',
+      label: t('grants.preset.net.label'),
+      hint: t('grants.preset.net.hint'),
+      ttlSec: 0,
+      steps: [{ cap: 'network', scopeKind: 'none' }],
+    },
+    {
+      id: 'localhost',
+      label: t('grants.preset.localhost.label'),
+      hint: t('grants.preset.localhost.hint'),
+      ttlSec: 0,
+      steps: [
+        { cap: 'network', scopeKind: 'none' },
+        { cap: 'net_hosts', scopeKind: 'hosts', hosts: LOCAL_HOSTS },
+      ],
+    },
+  ];
+}
 
-export const PRESET_BY_ID: ReadonlyMap<string, GrantPreset> = new Map(
-  PRESETS.map((p) => [p.id, p]),
-);
+/** 预设 id → 预设（每次现取，跟随语言）。 */
+export function presetById(): ReadonlyMap<string, GrantPreset> {
+  return new Map(presets().map((p) => [p.id, p]));
+}
 
 /** 预设涉及的能力位（去重，保持步骤顺序）。 */
 export function presetCaps(preset: GrantPreset): GrantCap[] {

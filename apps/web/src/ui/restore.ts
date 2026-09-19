@@ -11,6 +11,7 @@
 import { api } from '../api';
 import { attachmentViewsOf } from './attachments';
 import { el } from '../utils/dom';
+import { t } from '../i18n';
 import type { HistoryMsg } from '../types';
 import {
   activatePane,
@@ -107,7 +108,7 @@ function appendToolLine(text: string, container: HTMLElement): void {
   const col = el('div', 'mcol');
   const msg = el('div', 'msg tool');
   const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', '工具'));
+  cap.appendChild(el('span', 'who', t('chat.tool.title')));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble');
   const body = el('div', 'content restore-tool');
@@ -142,7 +143,7 @@ function renderToolMessage(ctx: SessionPane, m: HistoryMsg, container: HTMLEleme
     return;
   }
   appendToolLine(
-    '工具结果（无对应调用记录）：' +
+    t('shell.restore.orphanResult') +
       (m.tool_error ? String(m.tool_error) : toJsonText(m.tool_value)),
     container,
   );
@@ -235,7 +236,7 @@ export async function restoreSessionHistory(
     if (!ctx.streaming) {
       appendNote(
         ctx,
-        '历史恢复暂不可用',
+        t('shell.restore.unavailable'),
       );
     }
     return;
@@ -251,7 +252,7 @@ export async function restoreSessionHistory(
   const off = document.createElement('div');
   if (all.length > MAX_RESTORE) {
     off.appendChild(
-      el('div', 'restore-fold', '更早的历史已折叠 · 仅显示最近 ' + MAX_RESTORE + ' 条'),
+      el('div', 'restore-fold', t('shell.restore.folded', { n: MAX_RESTORE })),
     );
   }
   const recent = all.length > MAX_RESTORE ? all.slice(all.length - MAX_RESTORE) : all;
@@ -260,14 +261,14 @@ export async function restoreSessionHistory(
   for (const m of recent) renderOne(ctx, m, off, questions);
   if (ctx.restoreOps.size) {
     for (const ref of ctx.restoreOps.values()) {
-      setToolResult(ref, '（无结果记录）', false);
+      setToolResult(ref, t('shell.restore.noResult'), false);
     }
     ctx.restoreOps.clear();
   }
   if (recent.length) {
     const sep = el('div', 'live-sep');
-    sep.appendChild(el('span', null, '以下为本次会话'));
-    sep.title = '上方为更早的消息';
+    sep.appendChild(el('span', null, t('shell.restore.sessionStart')));
+    sep.title = t('shell.restore.earlier');
     off.appendChild(sep);
   }
   if (guard && !guard()) return;
@@ -277,7 +278,7 @@ export async function restoreSessionHistory(
   if (!recent.length) {
     renderEmptyHint(ctx);
     const sep = el('div', 'live-sep');
-    sep.appendChild(el('span', null, '以下为本次会话'));
+    sep.appendChild(el('span', null, t('shell.restore.sessionStart')));
     ctx.el.appendChild(sep);
   }
   ctx.dedup.tail = recent.length ? (recent[recent.length - 1] ?? null) : null;
@@ -328,7 +329,7 @@ export async function restoreActiveHistory(): Promise<void> {
   const id = await resolveActiveSession();
   if (id === null) {
     const ctx = activePane();
-    if (ctx && !ctx.streaming) appendNote(ctx, '未找到活跃会话 · 发送第一条消息后自动建立');
+    if (ctx && !ctx.streaming) appendNote(ctx, t('shell.restore.noActive'));
     return;
   }
   const pane = adoptPane(id);

@@ -1,10 +1,9 @@
 // ============================================================================
 // ui/attachments.ts — W805 多模态附件前端半边（P0，零新端点）：
-//   三入口落点 / 按会话隔离的待发状态 / 能力位（部署级 + 逐模型乐观默认）/
-//   历史只渲染元数据（设计 §7.4）。乐观发送与回滚的编排在 ui/send.ts。
-//   渲染零件（气泡网格 / 待发条 / 放大浮层）见 ./attachment-view。
+//   三入口 / 按会话隔离的待发状态 / 能力位 / 历史只渲染元数据（§7.4）；渲染零件见 ./attachment-view。
 // ============================================================================
 import { api } from '../api';
+import { t } from '../i18n';
 import { activePane, onPaneChange } from './viewctx';
 import { fmtBytes, type AttachmentView } from './attachment-view';
 import type { AttachmentRef, ImageMediaType, TurnAttachmentInput } from '../types/attachment';
@@ -120,10 +119,10 @@ export function modelAllowsImages(model: string): boolean {
 
 /** 入口被禁用的可执行原因（'' = 可用）。 */
 export function imageEntryDisabledReason(): string {
-  if (!deployMultimodal) return '当前服务未启用图片附件';
+  if (!deployMultimodal) return t('chat.attach.imageEntryDisabled');
   const model = currentModel();
   if (model !== '' && !modelAllowsImages(model)) {
-    return '当前模型 "' + model + '" 的输入能力不含图像，图片入口已禁用；可在模型设置里加入 "image"，或切换到支持图像的模型。';
+    return t('chat.attach.modelNoImages', { model });
   }
   return '';
 }
@@ -137,17 +136,18 @@ export function imageCapableModels(): string[] {
 
 export function isImageDowngrade(p: { reason?: unknown; message?: unknown }): boolean {
   if (p.reason === DOWNGRADE_REASON) return true;
-  return typeof p.message === 'string' && p.message.indexOf('拒绝了图像输入') >= 0;
+  // 匹配**服务端原文**的防御性回退（旧服务），不是 UI 文案：
+  return typeof p.message === 'string' && p.message.indexOf('拒绝了图像输入') >= 0; // copy-gate-allow
 }
 
 /** 信息块文案：服务端定稿 message + hint，再补一条可切换模型清单。 */
 export function downgradeNotice(p: { message?: unknown; hint?: unknown; model?: unknown }): string {
-  const msg = typeof p.message === 'string' && p.message !== '' ? p.message : '模型拒绝了图像输入，本轮已自动降级为仅文本继续，图片未送达模型。';
+  const msg = typeof p.message === 'string' && p.message !== '' ? p.message : t('chat.attach.downgradeDefault');
   const hint = typeof p.hint === 'string' ? p.hint : '';
   // D2：排除本次肇事模型 —— 能力位是乐观默认，刚被上游 400 拒绝的模型本会出现在清单里。
   const debris = typeof p.model === 'string' ? p.model : '';
   const models = imageCapableModels().filter((id) => id !== debris);
-  const suggest = models.length > 0 ? '可切换到：' + models.join('、') : '';
+  const suggest = models.length > 0 ? t('chat.attach.suggestSwitch', { models: models.join(t('chat.question.answerSep')) }) : '';
   return [msg, hint, suggest].filter((s) => s !== '').join('\n');
 }
 
@@ -225,9 +225,9 @@ function looksImage(file: File): boolean {
 }
 
 function rejectReason(file: File, validCount: number, batch: number): string {
-  if (validCount + batch > MAX_ATTACHMENTS) return '最多 ' + MAX_ATTACHMENTS + ' 个附件（图片与文本合计）';
+  if (validCount + batch > MAX_ATTACHMENTS) return t('chat.attach.maxCount', { n: MAX_ATTACHMENTS });
   if (!looksImage(file)) return textRejectReason(file);
-  if (file.size > MAX_ATTACHMENT_BYTES) return '单张不超过 ' + fmtBytes(MAX_ATTACHMENT_BYTES);
+  if (file.size > MAX_ATTACHMENT_BYTES) return t('chat.attach.maxBytes', { size: fmtBytes(MAX_ATTACHMENT_BYTES) });
   return '';
 }
 
@@ -266,7 +266,7 @@ export function addFiles(files: ArrayLike<File>): number {
     const text = error === '' && !looksImage(file);
     const item = text
       ? textPendingItem(file, error)
-      : { file, name: file.name || '图片', url: objectUrl(file), bytes: file.size, id: '', error };
+      : { file, name: file.name || t('chat.attach.imageName'), url: objectUrl(file), bytes: file.size, id: '', error };
     list.push(item);
     if (text) {
       if (error === '') void settleTextItem(item).then(notifyTextSettled);
@@ -349,7 +349,7 @@ export function clearPendingImages(): number {
 export class AttachmentReadError extends Error {
   readonly names: readonly string[];
   constructor(names: readonly string[]) {
-    super('附件读取失败（' + (names.join('、') || '未知文件') + '），已中止本轮发送');
+    super(t('chat.attach.readFailed', { names: names.join(t('chat.question.answerSep')) || t('chat.attach.unknownFile') }));
     this.name = 'AttachmentReadError';
     this.names = names;
   }

@@ -31,6 +31,7 @@ import {
 // W867（追加）：展示夹的落位 / 尺寸 / 渲染接线整段在 ./attach-tray.ts，本文件只调用。
 import { createAttachTray, refreshAttachmentTray } from './attach-tray';
 import { initQuoteTray } from './quote/tray'; // F1：选段提及的待发引用 chip 收纳区
+import { t } from '../i18n';
 import { interceptKey as interceptCommandKey } from './commands'; // A3：命令补全框按键拦截
 export { refreshAttachmentTray }; // 既有调用方（chat.ts / send.ts / 测试）不变
 
@@ -50,13 +51,20 @@ export interface InputBarHandlers {
 export type InputMode = 'idle' | 'interject' | 'worker';
 
 const MAX_HEIGHT = 240;
-const PLACEHOLDER_IDLE = '输入消息，Enter 发送，Shift+Enter 换行';
-// W846：运行态「文案只出现一处」——「运行中…」由 statusbar 的 #statusText 单点表达，
-// 占位符只说明输入行为（车道），不再重复状态词。
-const PLACEHOLDER_STEER = 'Enter 插话（下一步送达）· Ctrl/Cmd+Enter 排队（下一回合送达）';
-const PLACEHOLDER_QUEUE = 'Enter 排队（本轮结束后送达）· Ctrl/Cmd+Enter 插话（下一步送达）';
-// W866：worker 会话不再是「只读视图」——占位符说明**会送到哪里**，不承诺运行态。
-const PLACEHOLDER_WORKER = '对 worker 说点什么（送入它的收件箱，它空闲时会开新一轮）';
+/** 占位符（函数：语言切换后必须跟着变；W846 只说明输入行为，不重复状态词）。 */
+function placeholderIdle(): string {
+  return t('chat.input.placeholderIdle');
+}
+function placeholderSteer(): string {
+  return t('chat.input.placeholderSteer');
+}
+function placeholderQueue(): string {
+  return t('chat.input.placeholderQueue');
+}
+/** W866：worker 会话可输入，占位符说明**会送到哪里**。 */
+function placeholderWorker(): string {
+  return t('chat.input.placeholderWorker');
+}
 
 let bar: HTMLElement | null = null;
 let inputEl: HTMLTextAreaElement | null = null;
@@ -91,31 +99,35 @@ function renderSubmitUi(): void {
     // W847：≤640 只显示内联图标，文字落在 .sl-mode-label（视觉隐藏、无障碍名保留）。
     // 旧夹具没有 label span 时回退 textContent，行为与几何不变。
     const label = modeBtn.querySelector<HTMLElement>('.sl-mode-label');
-    if (label) label.textContent = submitMode === 'steer' ? '插话' : '排队';
-    else modeBtn.textContent = submitMode === 'steer' ? '插话' : '排队';
+    if (label) label.textContent = submitMode === 'steer' ? t('chat.input.interject') : t('chat.input.queue');
+    else modeBtn.textContent = submitMode === 'steer' ? t('chat.input.interject') : t('chat.input.queue');
     modeBtn.title =
       submitMode === 'steer'
-        ? '当前：插话（Enter）· 下一步送达 · 点击改为排队'
-        : '当前：排队（Enter）· 本轮结束后送达 · 点击改为插话';
+        ? t('chat.input.modeSteerTitle')
+        : t('chat.input.modeQueueTitle');
     modeBtn.classList.toggle('queue', submitMode === 'queue');
   }
   if (inputEl && inputMode === 'interject') {
-    inputEl.placeholder = submitMode === 'steer' ? PLACEHOLDER_STEER : PLACEHOLDER_QUEUE;
+    inputEl.placeholder = submitMode === 'steer' ? placeholderSteer() : placeholderQueue();
   }
   if (sendBtn) {
     // W866：worker 视图也走同一条「发送」——按钮不再进入禁用态（禁用只属于
     // 连协议都不支持的旧服务，那种情况由发送路径自己回滚并说明）。
     sendBtn.disabled = false;
     sendBtn.textContent =
-      inputMode === 'worker' ? '发送' : inputMode === 'interject' ? (submitMode === 'steer' ? '插话' : '排队') : '发送';
+      inputMode === 'worker'
+        ? t('chat.input.send')
+        : inputMode === 'interject'
+          ? (submitMode === 'steer' ? t('chat.input.interject') : t('chat.input.queue'))
+          : t('chat.input.send');
     sendBtn.title =
       inputMode === 'worker'
-        ? '发送到该 worker 的收件箱（Enter）'
+        ? t('chat.input.sendWorkerTitle')
         : inputMode === 'interject'
           ? submitMode === 'steer'
-            ? '插话（Enter）：注入运行中的轮次，下一步送达'
-            : '排队（Enter）：本轮结束后作为下一回合送达'
-          : '发送（Enter）';
+            ? t('chat.input.steerTitle')
+            : t('chat.input.queueTitle')
+          : t('chat.input.sendTitle');
   }
 }
 
@@ -206,12 +218,12 @@ export function setInputMode(mode: InputMode): void {
   if (input) {
     input.placeholder =
       mode === 'worker'
-        ? PLACEHOLDER_WORKER
+        ? placeholderWorker()
         : mode === 'interject'
           ? submitMode === 'steer'
-            ? PLACEHOLDER_STEER
-            : PLACEHOLDER_QUEUE
-          : PLACEHOLDER_IDLE;
+            ? placeholderSteer()
+            : placeholderQueue()
+          : placeholderIdle();
     input.readOnly = false; // 三种模式都可打字（草稿保活）
   }
   renderSubmitUi();
@@ -241,7 +253,7 @@ export function refreshAttachmentEntry(): void {
     // W869：入口对「文本文件」始终可用（理由见文件头注释），图像能力位降级为按钮提示。
     attachBtn.classList.toggle('hidden', false);
     attachBtn.disabled = false;
-    attachBtn.title = reason === '' ? '添加附件（图片 / 文本文件，可粘贴 / 拖拽 / 选择）' : reason;
+    attachBtn.title = reason === '' ? t('chat.input.attachTitle') : reason;
   }
   // 旧服务未声明多模态：只清图片，不清本就可用的文本项（W869）。
   if (!allowed) clearPendingImages();
@@ -278,7 +290,7 @@ function acceptFiles(files: ArrayLike<File>): void {
   const rejected = addFiles(kept);
   refreshAttachmentTray();
   if (droppedImages > 0) noteAttachment(reason);
-  else if (rejected > 0) noteAttachment('有 ' + rejected + ' 个文件不符合要求，已在待发区标红');
+  else if (rejected > 0) noteAttachment(t('chat.input.rejectedCount', { n: rejected }));
 }
 
 /** 入口是否收下这个文件：文本文件不看能力位；图片仍要图像能力位可用（W805）。 */
@@ -337,8 +349,8 @@ function initAttachmentEntries(input: HTMLTextAreaElement, host: HTMLElement): v
   attachBtn.type = 'button';
   attachBtn.className = 'btn btn-soft btn-icon attach-inline';
   attachBtn.innerHTML = ATTACH_CLIP_SVG; // 内联回形针（常量字面量，无注入面）
-  attachBtn.title = '添加附件（图片 / 文本文件，可粘贴 / 拖拽 / 选择）';
-  attachBtn.setAttribute('aria-label', '添加附件'); // 图标按钮的无障碍名（W869：不再只收图片）
+  attachBtn.title = t('chat.input.attachTitle');
+  attachBtn.setAttribute('aria-label', t('chat.input.attachAria')); // 图标按钮的无障碍名（W869：不再只收图片）
   attachBtn.addEventListener('click', () => acceptFileDialog());
   // W847：优先注入 .input-box（框内左下角、绝对定位）；旧夹具无 .input-box → 回退 .input-side。
   if (box) box.appendChild(attachBtn);

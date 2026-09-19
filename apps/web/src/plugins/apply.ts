@@ -9,7 +9,8 @@
 //     且**不写偏好**，下次打开页面仍是原状态；
 //   · 未知 id 拒绝（不猜、不静默成功）。
 // ============================================================================
-import { CLIENT_PLUGINS, CLIENT_PLUGIN_IDS, clientPluginById } from './descriptor';
+import { clientPlugins, clientPluginIds, clientPluginById } from './descriptor';
+import { t } from '../i18n';
 import { activatePlugin, deactivatePlugin, isRegistered, registerHintPlugin } from './register';
 import { setDisabled } from './store';
 
@@ -21,7 +22,7 @@ export interface ToggleResult {
 
 /** 装配内建客户端插件（ui/hint 的 initHints 调用；幂等，只挂当前启用的）。 */
 export function startClientPlugins(): void {
-  for (const d of CLIENT_PLUGINS) registerHintPlugin(d.create());
+  for (const d of clientPlugins()) registerHintPlugin(d.create());
 }
 
 /** 该插件此刻是否真的挂着（不是看偏好；诊断/测试/设置页初值都用它）。 */
@@ -32,17 +33,17 @@ export function isClientPluginOn(id: string): boolean {
 /** 幂等开关：真的注册/注销，成功后写偏好；失败保持原状态并返回说明。 */
 export function setClientPlugin(id: string, on: boolean): ToggleResult {
   const d = clientPluginById(id);
-  if (d === null) return { ok: false, text: '没有找到这个插件，保持原样。' };
+  if (d === null) return { ok: false, text: t('plugins.notFound') };
   try {
     if (on) activatePlugin(id);
     else deactivatePlugin(id);
   } catch (err) {
     restore(id, !on);
     console.warn('[plugins] 切换失败：' + (err instanceof Error ? err.message : String(err)));
-    return { ok: false, text: '「' + d.label + '」切换失败，已恢复原来的状态。' };
+    return { ok: false, text: t('plugins.toggleFailed', { label: d.label }) };
   }
-  setDisabled(id, !on, CLIENT_PLUGIN_IDS);
-  return { ok: true, text: '已' + (on ? '开启' : '关闭') + '「' + d.label + '」' };
+  setDisabled(id, !on, clientPluginIds());
+  return { ok: true, text: t('plugins.toggled', { state: on ? t('plugins.on') : t('plugins.off'), label: d.label }) };
 }
 
 /** 兜底把实际挂载状态拉回期望值（失败路径专用；再失败只记日志，不掩盖原始错误）。 */

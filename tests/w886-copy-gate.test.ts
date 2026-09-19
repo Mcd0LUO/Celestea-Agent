@@ -92,7 +92,7 @@ describe("W886 · check-ui-copy", () => {
   });
 
   it("护栏 A：白名单内的路径含中文仍放行", () => {
-    const root = fixture({ "ui/send.ts": "export const x = '中文旧文案';\n" });
+    const root = fixture({ "ui/quote/model.ts": "export const x = '中文旧文案';\n" });
     const r = gate.runGate(root);
     expect(r.problems).toEqual([]);
   });

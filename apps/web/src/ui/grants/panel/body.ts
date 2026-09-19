@@ -10,7 +10,8 @@
 // ============================================================================
 import { el } from '../../../utils/dom';
 import { popOverlay, pushOverlay } from '../../../utils/overlays';
-import { CAPS } from '../caps';
+import { caps } from '../caps';
+import { t } from '../../../i18n';
 import {
   getData,
   getDataSession,
@@ -66,13 +67,13 @@ export async function openPanel(host: GrantsHost): Promise<void> {
   domHost.appendChild(popup);
   setPanelOverlay(pushOverlay(() => closePanel()));
 
-  popup.appendChild(el('div', 'sl-popup-title', '本会话权限'));
+  popup.appendChild(el('div', 'sl-popup-title', t('grants.body.title')));
   const body = el('div', 'sl-popup-body');
   popup.appendChild(body);
 
   if (host.focusedSession() === '') {
     body.replaceChildren(
-      el('div', 'sl-popup-note', '尚未打开任何会话：请先在左侧选择一个会话。'),
+      el('div', 'sl-popup-note', t('grants.body.noSession')),
     );
     positionPanel();
     attachPosition();
@@ -105,13 +106,13 @@ export function renderPanel(host: GrantsHost): void {
   off.appendChild(renderPresets(host));
 
   off.appendChild(
-    el('div', 'grant-intro', '默认情况下，本会话只能读写工作区目录，不能访问网络。'),
+    el('div', 'grant-intro', t('grants.body.introDefault')),
   );
   off.appendChild(
     el(
       'div',
       'grant-intro',
-      '以下授权只对当前会话生效，可随时撤销；变更将在会话下一轮开始时生效。',
+      t('grants.body.introScope'),
     ),
   );
 
@@ -122,16 +123,16 @@ export function renderPanel(host: GrantsHost): void {
 
   // 结果预览（§3.4）：把「能力」翻译成「这个会话接下来能做什么」。
   const preview = el('div', 'grant-preview');
-  preview.appendChild(el('span', 'grant-preview-label', '结果预览'));
+  preview.appendChild(el('span', 'grant-preview-label', t('grants.body.previewLabel')));
   preview.appendChild(el('span', null, previewText()));
   off.appendChild(preview);
 
   if (getData() === null) {
     off.appendChild(
-      el('div', 'sl-popup-note', '当前无法读取本会话权限，请稍后重试。'),
+      el('div', 'sl-popup-note', t('grants.body.unreadable')),
     );
   } else {
-    for (const def of CAPS) {
+    for (const def of caps()) {
       if (def.cap === 'unsandboxed' && getData()?.unsandboxed_available !== true) continue;
       // W819-8：预留能力位不再作为可授项列出；仅当本会话已有存量条目时渲染，
       // 好让运维仍能看见并撤销它。
@@ -142,9 +143,9 @@ export function renderPanel(host: GrantsHost): void {
 
   const foot = el('div', 'grant-foot');
   foot.appendChild(
-    el('div', 'grant-foot-note', '变更将在会话下一轮开始时生效。'),
+    el('div', 'grant-foot-note', t('grants.body.footNote')),
   );
-  const all = el('button', 'btn-mini grant-danger-btn', '全部撤销') as HTMLButtonElement;
+  const all = el('button', 'btn-mini grant-danger-btn', t('grants.body.revokeAll')) as HTMLButtonElement;
   all.type = 'button';
   all.disabled = activeGrants().length === 0;
   all.addEventListener('click', () => void host.revoke(null));

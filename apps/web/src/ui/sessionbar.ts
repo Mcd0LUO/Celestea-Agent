@@ -7,6 +7,7 @@
 import { el, need } from '../utils/dom';
 import { activePane, allPanes, paneBusy, type SessionPane } from './viewctx';
 import { openSession } from './restore';
+import { t } from '../i18n';
 
 let nameEl: HTMLElement | null = null;
 let kindEl: HTMLElement | null = null;
@@ -15,9 +16,9 @@ let othersEl: HTMLElement | null = null;
 let lastOthersKey = '\u0000';
 
 function labelOf(pane: SessionPane): string {
-  const t = (pane.title ?? '').trim();
-  if (t) return t;
-  if (pane.id === '') return '当前会话（未解析）';
+  const title = (pane.title ?? '').trim();
+  if (title) return title;
+  if (pane.id === '') return t('shell.sessbar.unresolved');
   const i = pane.id.lastIndexOf('/');
   return i >= 0 ? pane.id.slice(i + 1) : pane.id;
 }
@@ -26,9 +27,9 @@ export function initSessionBar(): void {
   const bar = need<HTMLElement>('#sessionBar');
   nameEl = el('span', 'sess-bar-name', '—');
   kindEl = el('span', 'sess-bar-kind hidden', 'WORKER');
-  stateEl = el('span', 'sess-bar-state', '空闲');
+  stateEl = el('span', 'sess-bar-state', t('shell.sessbar.idle'));
   othersEl = el('span', 'sess-bar-others');
-  const lead = el('span', 'sess-bar-lead', '会话');
+  const lead = el('span', 'sess-bar-lead', t('shell.sessbar.session'));
   bar.replaceChildren(lead, kindEl, nameEl, stateEl, othersEl);
 }
 
@@ -38,7 +39,7 @@ export function updateSessionBar(): void {
   if (!nameEl || !stateEl || !kindEl || !othersEl) return;
   if (!pane) {
     nameEl.textContent = '—';
-    stateEl.textContent = '空闲';
+    stateEl.textContent = t('shell.sessbar.idle');
     stateEl.className = 'sess-bar-state';
     kindEl.classList.add('hidden');
     othersEl.replaceChildren();
@@ -47,12 +48,12 @@ export function updateSessionBar(): void {
   }
   const busy = pane.streaming || paneBusy(pane.id);
   nameEl.textContent = labelOf(pane);
-  nameEl.title = pane.id || '（未解析）';
+  nameEl.title = pane.id || t('shell.sessbar.unresolvedShort');
   kindEl.classList.toggle('hidden', pane.kind !== 'worker');
   // W846：聚焦会话「运行中」的**文字**由 statusbar 的 #statusText 单点表达；
   // 本行只留状态点（.busy → ::before 绿点 + 呼吸，W790 语义不变），
   // 避免同一状态在状态区出现两次。非本地的「后台运行」另给文字以与纯运行区分。
-  stateEl.textContent = busy ? (pane.streaming ? '' : '后台运行') : '空闲';
+  stateEl.textContent = busy ? (pane.streaming ? '' : t('shell.sessbar.background')) : t('shell.sessbar.idle');
   stateEl.className = 'sess-bar-state' + (busy ? ' busy' : '');
 
   const others = allPanes().filter((p) => p !== pane && (p.streaming || paneBusy(p.id)));
@@ -65,11 +66,11 @@ export function updateSessionBar(): void {
   }
   const off = document.createDocumentFragment();
   off.appendChild(el('span', 'sess-bar-sep', '·'));
-  off.appendChild(el('span', 'sess-bar-note', '另有 ' + others.length + ' 个会话运行中：'));
+  off.appendChild(el('span', 'sess-bar-note', t('shell.sessbar.others', { n: others.length })));
   for (const p of others) {
     const chip = el('button', 'sess-bar-chip', labelOf(p)) as HTMLButtonElement;
     chip.type = 'button';
-    chip.title = '切换到 ' + (p.id || '该会话');
+    chip.title = t('shell.sessbar.switchTo', { name: p.id || t('shell.sessbar.thatSession') });
     chip.addEventListener('click', () => {
       openSession(p.id, { kind: p.kind, title: p.title });
     });

@@ -28,6 +28,7 @@
 // ============================================================================
 import { api } from '../api';
 import { el, need } from '../utils/dom';
+import { t } from '../i18n';
 import { activeSessionId, onBusyChange, setPaneMeta, setRemoteBusy } from './viewctx';
 import { updateSessionBar } from './sessionbar';
 import { ensureGrantMarks, GRANTS_CHANGED_EVENT } from './grants';
@@ -96,7 +97,7 @@ export async function loadTreeInto(container: HTMLElement, countEl: HTMLElement 
   } catch (err) {
     stopWorkerPoll();
     const off = document.createElement('div');
-    off.appendChild(el('div', 'side-note err', '会话列表暂不可用'));
+    off.appendChild(el('div', 'side-note err', t('shell.sessions.unavailable')));
     off.appendChild(el('div', 'side-note', err instanceof Error ? err.message : String(err)));
     container.replaceChildren(...off.childNodes);
     if (countEl) countEl.textContent = '—';
@@ -165,7 +166,7 @@ function renderTree(container: HTMLElement, countEl: HTMLElement | null): void {
     rendered += list.length;
   }
   if (!rendered) {
-    tree.appendChild(el('div', 'side-note', getSearchQuery() ? '无匹配结果' : '无会话记录 · 点击「新会话」创建'));
+    tree.appendChild(el('div', 'side-note', getSearchQuery() ? t('shell.sessions.noMatch') : t('shell.sessions.empty')));
   }
   off.appendChild(tree);
 

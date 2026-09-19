@@ -95,7 +95,7 @@ export async function renderFilesPanel(
 ): Promise<void> {
   const data = dataOf(panel);
   if (data.path === '') {
-    body.replaceChildren(el('div', 'wb-notice', '当前工作区还不明确，无法打开文件管理器'));
+    body.replaceChildren(el('div', 'wb-notice', t('chat.wb.noWorkspace')));
     return;
   }
   const path = data.path;
@@ -104,18 +104,18 @@ export async function renderFilesPanel(
     resp = await api.fsList(path);
   } catch {
     if (!isCurrent(panel.id, seq)) return;
-    body.replaceChildren(el('div', 'wb-notice', '文件列举暂不可用，请稍后再试'));
+    body.replaceChildren(el('div', 'wb-notice', t('chat.wb.listUnavailable')));
     return;
   }
   if (!isCurrent(panel.id, seq)) return; // 竞态：晚到的旧目录结果丢弃
   if (resp.error !== undefined && resp.error !== '') {
-    body.replaceChildren(el('div', 'wb-notice', '这个目录打不开：' + resp.error));
+    body.replaceChildren(el('div', 'wb-notice', t('chat.wb.dirOpenFailed', { reason: resp.error })));
     return;
   }
   const entries = resp.entries ?? [];
   const off = document.createElement('div');
   const bar = el('div', 'wb-crumbs');
-  const up = el('button', 'wb-crumb', '↑ 上级') as HTMLButtonElement;
+  const up = el('button', 'wb-crumb', t('chat.wb.up')) as HTMLButtonElement;
   up.type = 'button';
   up.addEventListener('click', () => {
     data.path = parentOf(path);
@@ -128,9 +128,9 @@ export async function renderFilesPanel(
   label.title = path;
   bar.appendChild(label);
   off.appendChild(bar);
-  if (resp.truncated === true) off.appendChild(el('div', 'wb-notice', '这个目录条目太多，只显示了前一部分'));
+  if (resp.truncated === true) off.appendChild(el('div', 'wb-notice', t('chat.wb.dirTruncated')));
   const list = el('div', 'wb-list');
-  if (entries.length === 0) list.appendChild(el('div', 'wb-notice', '（这个目录是空的）'));
+  if (entries.length === 0) list.appendChild(el('div', 'wb-notice', t('chat.wb.dirEmpty')));
   for (const e of entries) list.appendChild(row(e, data, path, body, panel, isCurrent));
   off.appendChild(list);
   body.replaceChildren(...Array.from(off.childNodes));

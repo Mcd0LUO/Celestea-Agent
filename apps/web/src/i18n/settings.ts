@@ -8,7 +8,7 @@
 // ============================================================================
 import { el } from '../utils/dom';
 import { getLocale, localeLabel, onLocaleChange, setLocale, t, type Locale } from './index';
-import { applyI18n } from './dom';
+import { applyDocumentLang, applyI18n } from './dom';
 
 /**
  * 切换语言后**整页重载**（方案 A）。
@@ -98,9 +98,15 @@ export function mountGeneralPane(container: HTMLElement): void {
 export function installI18nSettings(): void {
   if (installed) return;
   installed = true;
-  applyI18n(document);
+  paintStaticDom();
   onLocaleChange(() => {
-    applyI18n(document);
+    paintStaticDom();
     for (const w of fields) if (w.isConnected) paint(w);
   });
+}
+
+/** 静态 DOM 的整页重画：data-i18n* 文案 + `<html lang>`。 */
+function paintStaticDom(): void {
+  applyI18n(document);
+  applyDocumentLang(document);
 }

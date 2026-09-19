@@ -11,6 +11,7 @@
 import { TEXT_HINT_ID, textCardPlugin } from '../ui/hint/builtin';
 import { RAIL_HINT_ID, railHintPlugin } from '../ui/rail';
 import type { HintPlugin } from '../ui/hint/registry';
+import { t } from '../i18n';
 
 /** 一个可热开关的客户端插件。 */
 export interface ClientPluginDescriptor {
@@ -27,27 +28,32 @@ export interface ClientPluginDescriptor {
 }
 
 /** 登记表（顺序 = 设置页展示顺序）。 */
-export const CLIENT_PLUGINS: readonly ClientPluginDescriptor[] = [
-  {
-    id: TEXT_HINT_ID,
-    label: '文字卡片',
-    hint: '悬停时统一用卡片显示提示文字；关闭后回退为浏览器自带的提示。',
-    hot: true,
-    create: () => textCardPlugin(),
-  },
-  {
-    id: RAIL_HINT_ID,
-    label: '预览卡片',
-    hint: '左侧长条悬停时显示消息预览；关闭后回退为文字卡片。',
-    hot: true,
-    create: () => railHintPlugin(),
-  },
-];
+/** 登记表（顺序 = 设置页展示顺序；函数：文案走 t()）。 */
+export function clientPlugins(): readonly ClientPluginDescriptor[] {
+  return [
+    {
+      id: TEXT_HINT_ID,
+      label: t('plugins.desc.textCard.label'),
+      hint: t('plugins.desc.textCard.hint'),
+      hot: true,
+      create: () => textCardPlugin(),
+    },
+    {
+      id: RAIL_HINT_ID,
+      label: t('plugins.desc.railPreview.label'),
+      hint: t('plugins.desc.railPreview.hint'),
+      hot: true,
+      create: () => railHintPlugin(),
+    },
+  ];
+}
 
 /** 全部已知 id（偏好持久化时用它过滤未知项）。 */
-export const CLIENT_PLUGIN_IDS: readonly string[] = CLIENT_PLUGINS.map((p) => p.id);
+export function clientPluginIds(): readonly string[] {
+  return clientPlugins().map((p) => p.id);
+}
 
 /** 按 id 查登记项（未知 id 返回 null，调用方据此拒绝开关）。 */
 export function clientPluginById(id: string): ClientPluginDescriptor | null {
-  return CLIENT_PLUGINS.find((p) => p.id === id) ?? null;
+  return clientPlugins().find((p) => p.id === id) ?? null;
 }

@@ -31,6 +31,7 @@ import {
 import { dispatchCommand, isCommandLike } from './commands'; // A3：斜杠命令派发
 import { getLegacyOwner, setLegacyOwner } from './legacy-owner';
 import { msgOf, sid } from './session-util';
+import { t as tr } from '../i18n'; // 本文件多处用 t 作消息文本参数，i18n 以 tr 别名避免遮蔽
 import { note } from './sessiontree/live';
 import { resetTurnStep } from './toolcards';
 import { updateSessionBar } from './sessionbar';
@@ -74,7 +75,7 @@ export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
   }
   if (ctx.streaming && pending > 0) {
     // 后端在运行中拒绝带附件的请求（插话只支持文字）—— 前端先拦，不制造必然 409。
-    const hint = '本轮还没结束：附件需等本轮结束后发送（插话只支持文字）';
+    const hint = tr('chat.send.busyWithAttachments');
     flashStatus(hint, 'err', 6_000);
     note(hint);
     return;
@@ -100,12 +101,12 @@ function startTurn(ctx: SessionPane, t: string): void {
   setPaneStreaming(ctx, true);
   ctx.turn = null;
   ctx.t0 = Date.now();
-  ctx.phase = '启动中…';
+  ctx.phase = tr('chat.send.starting');
   resetTurnStep(ctx);
   if (isActivePane(ctx)) {
     S.t0 = ctx.t0;
     setBusy(true);
-    setStatus('启动中…', 'busy');
+    setStatus(tr('chat.send.starting'), 'busy');
     startElapsedTimer();
   }
   updateSessionBar();
@@ -117,10 +118,10 @@ function startTurn(ctx: SessionPane, t: string): void {
     .then((r) => {
       if (r.session) adoptLocalIfUnbound(r.session);
       if (ctx.turn === null && r.turn !== undefined) ctx.turn = r.turn;
-      ctx.phase = '运行中…';
+      ctx.phase = tr('chat.send.running');
       if (isActivePane(ctx)) {
         setStatusTurn(ctx.turn !== null ? ctx.turn : (r.turn ?? 0));
-        setStatus('运行中…', 'busy');
+        setStatus(tr('chat.send.running'), 'busy');
       }
     })
     .catch((err: unknown) => failTurn({ ctx, key, col, text: t, items, quotes, err }));
@@ -136,7 +137,7 @@ function startTurn(ctx: SessionPane, t: string): void {
 async function sendToWorker(ctx: SessionPane, t: string, mode: SubmitMode): Promise<void> {
   if (t === '') return;
   if (pendingCount() > 0) {
-    const hint = 'worker 会话不收图片附件（收件箱只收文字）';
+    const hint = tr('chat.send.workerNoImages');
     if (isActivePane(ctx)) flashStatus(hint, 'err', 6_000);
     renderInfoBlock(ctx, hint, 'warn');
     return;
@@ -145,24 +146,24 @@ async function sendToWorker(ctx: SessionPane, t: string, mode: SubmitMode): Prom
   const col = addUserMessage(ctx, t, { kind: mode === 'queue' ? 'queued' : 'user', quotes });
   clearInput();
   ctx.draft = '';
-  const noteEl = renderInterjectNote(ctx, '发送中 · 等待送达…', undefined, col);
+  const noteEl = renderInterjectNote(ctx, tr('chat.send.delivering'), undefined, col);
   setLegacyOwner(ctx);
   try {
     const r = await api.turn(serializeQuotes(t, quotes), sid(ctx));
     const settled = r.status !== undefined && r.status !== '' && r.status !== 'RUNNING';
     noteEl.textContent =
       settled
-        ? '已送达 · 该 worker 已结束（' + r.status + '），消息留在它的收件箱里'
-        : '已送达 · 将作为它的一轮对话处理';
+        ? tr('chat.send.workerSettled', { status: r.status ?? '' })
+        : tr('chat.send.workerDelivered');
     noteEl.className = 'interject-note ok';
-    if (isActivePane(ctx)) flashStatus(settled ? '已送达（该 worker 已结束）' : '已送达 worker', 'ok', 4_000);
+    if (isActivePane(ctx)) flashStatus(settled ? tr('chat.send.workerSettledShort') : tr('chat.send.workerDeliveredShort'), 'ok', 4_000);
   } catch (err: unknown) {
     col.remove();
     noteEl.parentElement?.remove();
     ctx.interjectNote = null;
     if (quotes.length > 0) restoreQuotes(ctx.id, quotes);
     restoreDraft(ctx, t);
-    const hint = '未送达（' + msgOf(err) + '）：已将内容还原到输入框';
+    const hint = tr('chat.send.notDelivered', { reason: msgOf(err) });
     if (isActivePane(ctx)) {
       setStatus(hint, 'err');
       window.setTimeout(() => flashStatus(hint, 'err', 6_000), 0);
@@ -183,7 +184,7 @@ function failTurn(o: {
 }): void {
   const { ctx, key, col, text, items, quotes, err } = o;
   setPaneStreaming(ctx, false);
-  ctx.phase = '发送失败';
+  ctx.phase = tr('chat.send.failedPrefix').replace(/[：: ]+$/, '');
   if (getLegacyOwner() === ctx) setLegacyOwner(null);
   const rolled = items.length > 0 || quotes.length > 0;
   if (rolled) {
@@ -194,7 +195,7 @@ function failTurn(o: {
     refreshAttachmentTray();
     refreshQuoteTray();
   }
-  const hint = '发送失败：' + msgOf(err) + (rolled ? '；待发内容已放回，可重试' : '');
+  const hint = tr('chat.send.failedPrefix') + msgOf(err) + (rolled ? tr('chat.send.failedRolledSuffix') : '');
   if (isActivePane(ctx)) {
     setBusy(false);
     stopElapsedTimer();
@@ -217,12 +218,12 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
   clearInput();
   refreshAttachmentTray();
   ctx.draft = '';
-  const waitText = mode === 'queue' ? '已排队 · 等待本轮结束…' : '已插话 · 等待送达…';
-  const doneText = mode === 'queue' ? '已排队 · 本轮结束后送达' : '已插话 · 将在下一步送达';
+  const waitText = mode === 'queue' ? tr('chat.send.queuedWaiting') : tr('chat.send.interjectedWaiting');
+  const doneText = mode === 'queue' ? tr('chat.send.queuedDone') : tr('chat.send.interjectedDone');
   const noteEl = renderInterjectNote(ctx, waitText, undefined, col);
   setLegacyOwner(ctx);
   if (isActivePane(ctx)) {
-    flashStatus(mode === 'queue' ? '已排队，将在本轮结束后送达' : '已插话，将在下一步送达', 'busy', 4_000);
+    flashStatus(mode === 'queue' ? tr('chat.send.queuedShort') : tr('chat.send.interjectedShort'), 'busy', 4_000);
   }
   const ok = (text: string): void => {
     noteEl.textContent = text;
@@ -238,12 +239,12 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
       return;
     }
     if (r.placement === 'steering') {
-      ok('已插话 · 将在下一步送达');
+      ok(tr('chat.send.interjectedDone'));
       return;
     }
     if (r.placement === undefined) {
       if (r.injected === true) {
-        ok('已插话 · 将在下一步送达');
+        ok(tr('chat.send.interjectedDone'));
         return;
       }
       if (r.queued === true || mode === 'queue') {
@@ -254,8 +255,8 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
     // placement === 'context'（或旧服务的新轮路径）：本次输入就是新一轮。
     ctx.turn = r.turn ?? ctx.turn;
     setPaneStreaming(ctx, true);
-    ctx.phase = '运行中…';
-    ok('已作为新一轮发送');
+    ctx.phase = tr('chat.send.running');
+    ok(tr('chat.send.asNewTurn'));
     updateSessionBar();
   } catch (err: unknown) {
     if (mode === 'queue') {
@@ -263,7 +264,7 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
         const r2 = await api.turn(wire, sid(ctx), 'steer');
         if (r2.injected !== false) {
           const lane = laneLabel(r2.inbox_target ?? 'next-step');
-          ok('当前版本不支持排队 → 已按插话送达' + (lane ? '（' + lane + '）' : ''));
+          ok(tr('chat.send.queueUnsupported', { lane: lane ? tr('chat.send.laneSuffix', { lane }) : '' }));
           return;
         }
       } catch {
@@ -275,7 +276,7 @@ async function injectInput(ctx: SessionPane, t: string, mode: SubmitMode): Promi
     ctx.interjectNote = null;
     if (quotes.length > 0) restoreQuotes(ctx.id, quotes);
     restoreDraft(ctx, t);
-    const hint = (mode === 'queue' ? '排队未送达（' : '插话未送达（') + msgOf(err) + '）：已将内容还原到输入框';
+    const hint = tr(mode === 'queue' ? 'chat.send.queueNotDelivered' : 'chat.send.steerNotDelivered', { reason: msgOf(err) });
     if (isActivePane(ctx)) {
       setStatus(hint, 'err');
       window.setTimeout(() => flashStatus(hint, 'err', 6_000), 0);

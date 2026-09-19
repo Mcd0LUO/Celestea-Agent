@@ -6,6 +6,7 @@
 import { el } from '../../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../../utils/overlays';
 import { openPanel, type PanelKind } from './state';
+import { t } from '../../i18n';
 
 let menuEl: HTMLElement | null = null;
 let overlay: OverlayHandle | null = null;
@@ -38,9 +39,9 @@ export function toggleWorkbenchMenu(): void {
   if (menuEl === null) {
     menuEl = el('div', 'wb-menu hidden');
     menuEl.id = 'wbMenu';
-    menuEl.appendChild(item('files', '文件管理器', '浏览当前工作区的文件夹与文件'));
-    menuEl.appendChild(item('terminal', '终端', '执行一条命令，输出进面板'));
-    menuEl.appendChild(item('browser', '浏览器', '打开一个网页'));
+    menuEl.appendChild(item('files', t('chat.wb.menu.files'), t('chat.wb.menu.filesDesc')));
+    menuEl.appendChild(item('terminal', t('chat.wb.menu.terminal'), t('chat.wb.menu.terminalDesc')));
+    menuEl.appendChild(item('browser', t('chat.wb.menu.browser'), t('chat.wb.menu.browserDesc')));
     document.body.appendChild(menuEl);
   }
   if (!menuEl.classList.contains('hidden')) {
@@ -54,8 +55,8 @@ export function toggleWorkbenchMenu(): void {
 }
 
 function onOutside(e: Event): void {
-  const t = e.target;
-  if (menuEl && t instanceof Node && (menuEl.contains(t) || (t instanceof Element && t.closest('#btnWorkbench')))) return;
+  const target = e.target;
+  if (menuEl && target instanceof Node && (menuEl.contains(target) || (target instanceof Element && target.closest('#btnWorkbench')))) return;
   document.removeEventListener('pointerdown', onOutside, true);
   closeMenu();
 }

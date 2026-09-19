@@ -6,6 +6,11 @@ import { at } from './lib/w795-dom.js';
 interface I18nMod { t(key: string, params?: Record<string, string | number>): string; setLocale(l: string): void; localeDict(l: string): Record<string, string> }
 interface CopyMod { toolDenyLabel(name: string): string }
 interface BatchMod { batchFailureText(verb: string, resp: unknown): string }
+// 根 tsconfig 的 lib 只有 ES2023（无 DOM），所以 DOM 走 globalThis 的结构类型转换
+// —— 与本仓既有 jsdom 测试（archive-manage / frontend-batch-*）同一约定。
+interface ElLike { lang: string }
+interface DocLike { documentElement: ElLike }
+const doc = (globalThis as unknown as { document: DocLike }).document;
 
 const load = async (): Promise<I18nMod> => (await import(/* @vite-ignore */ at('i18n/index.ts'))) as I18nMod;
 
@@ -46,5 +51,20 @@ describe('i18n P1-b · 设置页域', () => {
     const en = Object.keys(m.localeDict('en')).sort();
     expect(en).toEqual(zh);
     expect(zh.filter((k) => k.startsWith('settings.'))).toContain('settings.providers.defaultApplied');
+  });
+
+  // 真机复核（headless shell + CDP）发现：index.html 写死 <html lang="zh-CN">，切到
+  // 英文后不更新 —— 读屏器按中文音读、浏览器翻译器不提供翻译。这条锁住修复。
+  it('<html lang> 跟着语言切换（英文界面不得自称 zh-CN）', async () => {
+    doc.documentElement.lang = 'zh-CN';
+    const m = await load();
+    const s = (await import(/* @vite-ignore */ at('i18n/settings.ts'))) as { installI18nSettings(): void };
+    m.setLocale('zh');
+    s.installI18nSettings();
+    expect(doc.documentElement.lang).toBe('zh-CN');
+    m.setLocale('en');
+    expect(doc.documentElement.lang).toBe('en');
+    m.setLocale('zh');
+    expect(doc.documentElement.lang).toBe('zh-CN');
   });
 });

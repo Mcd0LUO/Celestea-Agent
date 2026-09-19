@@ -7,38 +7,39 @@
 //   移到 ../request.ts —— 与授予请求体同层，便于机械断言「默认永久」。
 // ============================================================================
 import type { GrantScope } from '../../../types';
-import { CAPS, listOf, scopeOf, type CapDef } from '../caps';
+import { caps, listOf, scopeOf, type CapDef } from '../caps';
+import { t } from '../../../i18n';
 import { activeFor, activeGrants } from './active';
 
 /** 当前生效集 → 一句话预览（固定常量句式，范围值只作数据填入）。 */
 export function previewText(): string {
   const active = activeGrants();
-  if (!active.length) return '本会话现在只能读写工作区目录，不能访问网络。';
+  if (!active.length) return t('grants.phrase.default');
   const parts: string[] = [];
-  for (const def of CAPS) {
+  for (const def of caps()) {
     const g = activeFor(def.cap);
     if (!g) continue;
     parts.push(phraseFor(def, scopeOf(g)));
   }
-  if (!parts.length) return '本会话现在只能读写工作区目录，不能访问网络。';
-  return '本会话现在可以：' + parts.join('；') + '。除此之外的权限与现在相同。';
+  if (!parts.length) return t('grants.phrase.default');
+  return t('grants.phrase.canNow') + parts.join(t('grants.copy.listSep')) + t('grants.phrase.suffix');
 }
 
 /** 单项能力的「可以做什么」短语（固定句式 + 范围数据）。 */
 export function phraseFor(def: CapDef, scope: GrantScope): string {
   switch (def.cap) {
     case 'network':
-      return '访问互联网与内网';
+      return t('grants.phrase.network');
     case 'write_roots':
-      return '在 ' + listOf(scope.roots).join('、') + ' 中创建与修改文件';
+      return t('grants.phrase.writeRoots', { roots: listOf(scope.roots).join(t('grants.copy.listSep')) });
     case 'read_roots':
-      return '读取 ' + listOf(scope.roots).join('、') + ' 中的文件';
+      return t('grants.phrase.readRoots', { roots: listOf(scope.roots).join(t('grants.copy.listSep')) });
     case 'net_hosts':
-      return '访问 ' + listOf(scope.hosts).join('、');
+      return t('grants.phrase.netHosts', { hosts: listOf(scope.hosts).join(t('grants.copy.listSep')) });
     case 'tool_extra':
-      return '使用额外工具 ' + listOf(scope.tools).join('、');
+      return t('grants.phrase.toolExtra', { tools: listOf(scope.tools).join(t('grants.copy.listSep')) });
     case 'unsandboxed':
-      return '不经额外隔离运行命令';
+      return t('grants.phrase.unsandboxed');
   }
 }
 

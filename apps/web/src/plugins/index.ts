@@ -8,8 +8,8 @@
 //   注销器由 ./register 保存 —— 这就是「关掉后真的不再参与解析」的实现方式。
 // ============================================================================
 export {
-  CLIENT_PLUGINS,
-  CLIENT_PLUGIN_IDS,
+  clientPlugins,
+  clientPluginIds,
   clientPluginById,
   type ClientPluginDescriptor,
 } from './descriptor';

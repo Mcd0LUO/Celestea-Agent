@@ -29,7 +29,8 @@ import type { EffectiveGrants, GrantCap, GrantEntry, GrantReq, GrantScope } from
 import { confirmDialog } from '../confirm';
 import { pickDirectory } from '../fsbrowser';
 import { flashStatus } from '../statusbar';
-import { CAP_BY_NAME, PERMANENT_TEXT, markFromEffective, nowSec, type CapDef } from './caps';
+import { capByName, markFromEffective, nowSec, permanentText, type CapDef } from './caps';
+import { t } from '../../i18n';
 import {
   confirmMessageFor,
   presetConfirmMessage,
@@ -76,7 +77,7 @@ export async function startGrant(host: GrantsHost, def: CapDef): Promise<void> {
 
   let scope: GrantScope = {};
   if (def.kind === 'dirs') {
-    const path = await pickDirectory('选择要放宽的目录', '只能选择目录；' + PERMANENT_TEXT);
+    const path = await pickDirectory(t('grants.flow.chooseDir'), t('grants.flow.chooseDirNote', { permanent: permanentText() }));
     if (path === null || path.trim() === '') return;
     scope = { roots: [path.trim()] };
   } else if (def.kind === 'hosts') {
@@ -102,13 +103,13 @@ export async function startGrant(host: GrantsHost, def: CapDef): Promise<void> {
   // 只有用户在「临时授权…」里显式选了时长，才会出现具体到期时刻。
   const expiresAt = ttl === 0 ? null : nowSec() + ttl;
   const ok = await confirmDialog({
-    title: '确认放宽权限 · ' + def.label,
+    title: t('grants.flow.confirmTitle', { label: def.label }),
     message: confirmMessageFor(def, scope, expiresAt),
-    note: previewForPending(def, scope) + '\n变更将在会话下一轮开始时生效。',
+    note: previewForPending(def, scope) + '\n' + t('grants.flow.effectiveNote'),
     snapshot: JSON.stringify(getData()?.effective ?? {}, null, 2),
-    snapshotLabel: '结果预览 · 生效快照（原样取自服务）',
+    snapshotLabel: t('grants.flow.snapshotLabel'),
     // W751：不再传 requireText —— 危险能力只保留这一次点击确认（无逐字输入框）。
-    okLabel: '授予',
+    okLabel: t('grants.rows.grant'),
     danger: true,
   });
   if (!ok) return;
@@ -123,7 +124,7 @@ export async function startGrant(host: GrantsHost, def: CapDef): Promise<void> {
     if (r === null) {
       // 理论上不可达（submitGrant 要么返回要么抛）；真到了这里也不许停在半成品。
       optimisticUngrant(def.cap);
-      const text = '放宽失败：' + userErrorText(undefined, '请稍后重试');
+      const text = t('grants.flow.grantFailed', { reason: userErrorText(undefined, t('settings.common.retryLater')) });
       setPanelNote({ text, cls: 'err' });
       paintOptimistic(host);
       return;
@@ -138,7 +139,7 @@ export async function startGrant(host: GrantsHost, def: CapDef): Promise<void> {
   } catch (err) {
     // 失败回滚：把这一项退回动作前的样子，并说明原因（先回滚再报错，界面不留半成品）
     optimisticUngrant(def.cap);
-    const text = '放宽失败：' + userErrorText(err, '请稍后重试');
+    const text = t('grants.flow.grantFailed', { reason: userErrorText(err, t('settings.common.retryLater')) });
     setPanelNote({ text, cls: 'err' });
     flashStatus(text, 'err', 8000);
     paintOptimistic(host);
@@ -188,15 +189,15 @@ export async function startPreset(host: GrantsHost, preset: GrantPreset): Promis
     expiresAt: step.ttl === 0 ? null : at + step.ttl,
   }));
   const ok = await confirmDialog({
-    title: '确认快捷授权 · ' + preset.label,
+    title: t('grants.flow.confirmPresetTitle', { label: preset.label }),
     message: presetConfirmMessage(preset.label, plannedGrants),
     note:
-      '授予后一次生效：' +
-      planned.map((p) => phraseFor(p.def, p.scope)).join('；') +
-      '。\n变更将在会话下一轮开始时生效。',
+      t('grants.flow.presetNote', { list: planned.map((p) => phraseFor(p.def, p.scope)).join(t('grants.copy.listSep')) }) +
+      '\n' +
+      t('grants.flow.effectiveNote'),
     snapshot: JSON.stringify(getData()?.effective ?? {}, null, 2),
-    snapshotLabel: '结果预览 · 生效快照（原样取自服务）',
-    okLabel: '授予',
+    snapshotLabel: t('grants.flow.snapshotLabel'),
+    okLabel: t('grants.rows.grant'),
     danger: true,
   });
   if (!ok) return;
@@ -227,16 +228,14 @@ export async function startPreset(host: GrantsHost, preset: GrantPreset): Promis
       // 只回滚失败的那一项：其余步骤（含尚未发出的）保持乐观已授予
       optimisticUngrant(p.def.cap);
       setPresetRun(null);
-      const reason = userErrorText(err, '请稍后重试');
-      const text =
-        '快捷授权中断：「' +
-        p.def.label +
-        '」没有授予成功（' +
-        reason +
-        '）。' +
-        (done.length > 0
-          ? '已成功：' + done.join('、') + '（可在下面逐项撤销）。'
-          : '本次没有产生任何授权。');
+      const reason = userErrorText(err, t('settings.common.retryLater'));
+      const text = t('grants.flow.presetInterrupted', {
+        label: p.def.label,
+        reason,
+        done: done.length > 0
+          ? t('grants.flow.presetDone', { list: done.join(t('grants.copy.listSep')) })
+          : t('grants.flow.presetNoGrant'),
+      });
       setPanelNote({ text, cls: 'err' });
       flashStatus(text, 'err', 10000);
       paintOptimistic(host);
@@ -245,7 +244,7 @@ export async function startPreset(host: GrantsHost, preset: GrantPreset): Promis
     }
   }
   setPresetRun(null);
-  const text = '快捷授权完成：已放宽 ' + done.join('、') + '。';
+  const text = t('grants.flow.presetComplete', { list: done.join(t('grants.copy.listSep')) });
   setPanelNote({ text, cls: 'busy' });
   flashStatus(text, 'ok', 6000);
   await host.refresh(true);
@@ -253,19 +252,19 @@ export async function startPreset(host: GrantsHost, preset: GrantPreset): Promis
 
 /** 解析一步的范围（复用面板既有的目录选择/站点校验逻辑与默认值）；null = 放弃整组。 */
 async function planStep(preset: GrantPreset, step: PresetStep): Promise<PlannedStep | null> {
-  const def = CAP_BY_NAME.get(step.cap);
+  const def = capByName().get(step.cap);
   if (!def) {
-    setPanelNote({ text: '这个快捷授权包含当前不可用的能力，已取消。', cls: 'err' });
+    setPanelNote({ text: t('grants.flow.presetUnavailable'), cls: 'err' });
     return null;
   }
   let scope: GrantScope = {};
   if (step.scopeKind === 'dir') {
     const path = await pickDirectory(
-      '选择要放宽的目录 · ' + preset.label,
-      '本次快捷授权只会用到这一个目录；' + PERMANENT_TEXT,
+      t('grants.flow.chooseDirPreset', { label: preset.label }),
+      t('grants.flow.chooseDirPresetNote', { permanent: permanentText() }),
     );
     if (path === null || path.trim() === '') {
-      setPanelNote({ text: '已取消快捷授权：没有选择目录。', cls: 'err' });
+      setPanelNote({ text: t('grants.flow.presetNoDir'), cls: 'err' });
       return null;
     }
     scope = { roots: [path.trim()] };
@@ -275,7 +274,7 @@ async function planStep(preset: GrantPreset, step: PresetStep): Promise<PlannedS
     const v = validateHosts(raw);
     if (v.error !== '') {
       inlineError.set(step.cap, v.error);
-      setPanelNote({ text: '快捷授权已取消：「' + def.label + '」的站点范围不合法。', cls: 'err' });
+      setPanelNote({ text: t('grants.flow.presetBadHosts', { label: def.label }), cls: 'err' });
       return null;
     }
     scope = { hosts: v.values };
@@ -292,11 +291,11 @@ async function submitGrant(
 ): Promise<{ effective?: EffectiveGrants; grant?: GrantEntry } | null> {
   const scopeHash = await scopeHashOf(def.cap, scope);
   for (let attempt = 0; attempt < 2; attempt++) {
-    const t = await api.grantToken(session, def.cap, scopeHash);
-    if (!t.token) throw new ApiError(userErrorText(t.error, '无法发起授权，请稍后重试'));
+    const tok = await api.grantToken(session, def.cap, scopeHash);
+    if (!tok.token) throw new ApiError(userErrorText(tok.error, t('grants.flow.cannotStart')));
     try {
-      const r = await api.grantCap(session, req, t.token);
-      if (r.ok === false) throw new ApiError(userErrorText(r.error, '放宽失败，请稍后重试'));
+      const r = await api.grantCap(session, req, tok.token);
+      if (r.ok === false) throw new ApiError(userErrorText(r.error, t('grants.flow.grantFailedRetry')));
       return { effective: r.effective, grant: r.grant };
     } catch (err) {
       // 令牌过期/已被使用：重新取一枚再试一次（确认动作本身已经完成）
@@ -317,7 +316,7 @@ setPresetRunner((host, preset) => startPreset(host, preset));
 export async function revoke(host: GrantsHost, cap: GrantCap | null): Promise<void> {
   const session = host.focusedSession();
   if (session === '') return;
-  const def = cap ? CAP_BY_NAME.get(cap) : undefined;
+  const def = cap ? capByName().get(cap) : undefined;
   // W795 乐观：撤销不需要二次确认 ⇒ 点下去这一帧就把该项（或全部）画成已撤销，
   // 请求在后台发；失败则把乐观层摘掉（界面回到撤销前的样子）并说明原因。
   optimisticRevoke(cap);
@@ -326,14 +325,14 @@ export async function revoke(host: GrantsHost, cap: GrantCap | null): Promise<vo
     const r = await api.revokeCap(session, cap ? { cap } : {});
     optimisticSettle(cap); // 撤销请求已结束：快照随后可确认「它确实没了」
     const n = (r.revoked ?? []).length;
-    const text = cap && def ? '已撤销：' + def.label : n > 1 ? '已撤销 ' + n + ' 项放宽权限' : '已撤销放宽权限';
+    const text = cap && def ? t('grants.flow.revokedOne', { label: def.label }) : n > 1 ? t('grants.flow.revokedMany', { n }) : t('grants.flow.revoked');
     setPanelNote({ text, cls: 'busy' });
     flashStatus(text, 'ok', 6000);
     if (r.effective) setMark(session, markFromEffective(r.effective));
     await host.refresh(true);
   } catch (err) {
     optimisticUnrevoke(cap);
-    const text = '撤销失败：' + userErrorText(err, '请稍后重试');
+    const text = t('grants.flow.revokeFailed', { reason: userErrorText(err, t('settings.common.retryLater')) });
     setPanelNote({ text, cls: 'err' });
     flashStatus(text, 'err', 8000);
     paintOptimistic(host);

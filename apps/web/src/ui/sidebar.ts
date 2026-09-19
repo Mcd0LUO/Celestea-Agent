@@ -7,6 +7,7 @@
 //      （断点数值口径登记在 styles/responsive.css 顶部，二者必须一致。）
 // ============================================================================
 import { need } from '../utils/dom';
+import { t } from '../i18n';
 
 const STORAGE_COLLAPSED = 'celestea-studio.sidebar-collapsed';
 const STORAGE_WIDTH = 'celestea-studio.sidebar-width';
@@ -51,8 +52,8 @@ export function initSidebar(): void {
   const applyCollapsed = () => {
     app.classList.toggle('sidebar-collapsed', collapsed);
     app.style.setProperty('--sidebar-w', collapsed ? '0px' : sidebar.style.width || '316px');
-    btn.textContent = collapsed ? '展开' : '收起';
-    btn.title = collapsed ? '展开左侧面板' : '收起左侧面板';
+    btn.textContent = collapsed ? t('shell.sidebar.expand') : t('shell.sidebar.collapse');
+    btn.title = collapsed ? t('shell.sidebar.expandTitle') : t('shell.sidebar.collapseTitle');
   };
   const applyWidth = (w: number) => {
     const px = clampWidth(w) + 'px';

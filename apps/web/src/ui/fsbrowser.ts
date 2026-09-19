@@ -12,6 +12,7 @@
 import { api, userErrorText } from '../api';
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
+import { t } from '../i18n';
 
 /** 确认选目录时交给调用方的交互句柄。 */
 export interface FsBrowserUi {
@@ -70,9 +71,9 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
   const tree = el('div', 'ws-fs-tree');
   const addrRow = el('div', 'ws-fs-addr');
   const addrInput = el('input', 'cfg-input') as HTMLInputElement;
-  addrInput.placeholder = '目录路径（可编辑后跳转）';
+  addrInput.placeholder = t('chat.fsbrowse.pathPlaceholder');
   addrInput.value = '';
-  const goBtn = el('button', 'btn btn-soft btn-mini', '跳转') as HTMLButtonElement;
+  const goBtn = el('button', 'btn btn-soft btn-mini', t('chat.fsbrowse.go')) as HTMLButtonElement;
   goBtn.type = 'button';
   addrRow.appendChild(addrInput);
   addrRow.appendChild(goBtn);
@@ -90,7 +91,7 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
     const parts = path.split('/').filter(Boolean);
     const rootBtn = el('button', 'ws-fs-crumb' + (parts.length ? '' : ' cur'), '/') as HTMLButtonElement;
     rootBtn.type = 'button';
-    rootBtn.title = '根目录 /';
+    rootBtn.title = t('chat.fsbrowse.root');
     rootBtn.addEventListener('click', () => void loadDirs('/'));
     off.appendChild(rootBtn);
     let acc = '';
@@ -135,10 +136,10 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
     } catch {
       rollbackCrumbs(prevCrumbs);
       status.className = 'ws-fs-status err';
-      status.textContent = '文件浏览暂不可用 · 请直接在下方输入路径';
+      status.textContent = t('chat.fsbrowse.unavailable');
       const off = document.createElement('div');
       off.appendChild(
-        el('div', 'side-note', opts.fallbackNote ?? '可编辑底部路径后点「跳转」再确认'),
+        el('div', 'side-note', opts.fallbackNote ?? t('chat.fsbrowse.fallback')),
       );
       tree.replaceChildren(...off.childNodes);
       return;
@@ -149,17 +150,17 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
       // 地址栏与待选路径仍保留用户的目标 —— 「确认」用的就是它，手输降级不受影响。
       rollbackCrumbs(prevCrumbs);
       status.className = 'ws-fs-status err';
-      status.textContent = '浏览失败：' + userErrorText(r.error, '请手动输入目录路径');
+      status.textContent = t('chat.fsbrowse.failed', { reason: userErrorText(r.error, t('chat.fsbrowse.manualPath')) });
       return;
     }
-    status.textContent = '已选择目录：' + (r.path || '/');
+    status.textContent = t('chat.fsbrowse.selected', { path: r.path || '/' });
     status.className = 'ws-fs-status ok';
     curPath = r.path ?? path;
     addrInput.value = r.path ?? path;
     renderCrumbs(r.path ?? path);
     const off = document.createElement('div');
     const dirs = r.dirs ?? [];
-    if (!dirs.length) off.appendChild(el('div', 'side-note', '（该目录下没有子目录）'));
+    if (!dirs.length) off.appendChild(el('div', 'side-note', t('chat.fsbrowse.noSubdirs')));
     for (const d of dirs) {
       const row = el('div', 'ws-fs-dir');
       const icon = el('span', 'ws-fs-dir-icon');
@@ -184,7 +185,7 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
   });
 
   const actions = el('div', 'modal-card-actions');
-  const cancel = el('button', 'btn btn-soft', '取消') as HTMLButtonElement;
+  const cancel = el('button', 'btn btn-soft', t('settings.action.cancel')) as HTMLButtonElement;
   cancel.type = 'button';
   const confirm = el('button', 'btn btn-accent', opts.confirmLabel) as HTMLButtonElement;
   confirm.type = 'button';
@@ -208,7 +209,7 @@ export function openFsBrowser(opts: FsBrowserOpts): void {
     const path = curPath || addrInput.value.trim();
     if (!path) {
       status.className = 'ws-fs-status err';
-      status.textContent = '请先选择/输入目录路径';
+      status.textContent = t('chat.fsbrowse.needPath');
       addrInput.focus();
       return;
     }
@@ -243,8 +244,8 @@ export function pickDirectory(title: string, note?: string): Promise<string | nu
     openFsBrowser({
       title,
       note,
-      confirmLabel: '选择此目录',
-      busyLabel: '处理中…',
+      confirmLabel: t('chat.preview.chooseDir'),
+      busyLabel: t('chat.preview.busy'),
       onPick: (path, ui) => {
         picked = path;
         ui.close();

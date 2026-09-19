@@ -8,8 +8,9 @@
 //   W760 只搬家：DOM 结构、类名、文案、禁用规则逐字未改。
 // ============================================================================
 import { el } from '../../../utils/dom';
-import { CAPS, PERMANENT_LABEL, TTL_CHOICES, listOf, scopeOf } from '../caps';
-import { PRESETS, presetSatisfied, type ActiveCapView, type GrantPreset } from '../presets';
+import { caps, permanentLabel, ttlChoices, ttlLabel, listOf, scopeOf } from '../caps';
+import { t } from '../../../i18n';
+import { presets, presetSatisfied, type ActiveCapView, type GrantPreset } from '../presets';
 import { getPresetRun, getPresetRunner, setPanelNote, type GrantsHost } from '../state';
 import { activeFor } from './active';
 
@@ -18,7 +19,7 @@ import { activeFor } from './active';
 /** 生效集 → 供纯函数判定的只读视图（站点类带上生效站点，用于「等效已生效」）。 */
 function activeViews(): ActiveCapView[] {
   const out: ActiveCapView[] = [];
-  for (const def of CAPS) {
+  for (const def of caps()) {
     const g = activeFor(def.cap);
     if (!g) continue;
     out.push({
@@ -34,10 +35,10 @@ function activeViews(): ActiveCapView[] {
  * W773：预设一律永久（`ttlSec: 0`）⇒ 显示「永久」；保留非 0 分支以防将来出现限时预设。
  */
 export function presetTtlLabel(preset: GrantPreset): string {
-  if (preset.ttlSec <= 0) return PERMANENT_LABEL;
-  const hit = TTL_CHOICES.find((c) => c.sec === preset.ttlSec);
-  if (hit) return '有效期 ' + hit.label;
-  return '有效期 ' + Math.max(1, Math.round(preset.ttlSec / 60)) + ' 分钟';
+  if (preset.ttlSec <= 0) return permanentLabel();
+  const hit = ttlChoices().find((c) => c.sec === preset.ttlSec);
+  if (hit) return t('grants.quick.ttlPrefix', { label: ttlLabel(hit) });
+  return t('grants.quick.ttlMinutes', { n: Math.max(1, Math.round(preset.ttlSec / 60)) });
 }
 
 /**
@@ -48,13 +49,13 @@ export function presetTtlLabel(preset: GrantPreset): string {
 export function renderPresets(host: GrantsHost): HTMLElement {
   const box = el('div', 'grant-presets');
   const head = el('div', 'grant-presets-head');
-  head.appendChild(el('span', 'grant-presets-title', '快捷授权'));
-  head.appendChild(el('span', 'grant-presets-ttl-note', '一条组合 = 按顺序逐项放宽，每项都可单独撤销'));
+  head.appendChild(el('span', 'grant-presets-title', t('grants.quick.title')));
+  head.appendChild(el('span', 'grant-presets-ttl-note', t('grants.quick.note')));
   box.appendChild(head);
 
   const run = getPresetRun();
   const active = activeViews();
-  for (const preset of PRESETS) {
+  for (const preset of presets()) {
     const btn = el('button', 'grant-preset') as HTMLButtonElement;
     btn.type = 'button';
     const satisfied = presetSatisfied(preset, active);
@@ -67,7 +68,7 @@ export function renderPresets(host: GrantsHost): HTMLElement {
     const top = el('span', 'grant-preset-top');
     top.appendChild(el('span', 'grant-preset-label', preset.label));
     if (satisfied) {
-      top.appendChild(el('span', 'grant-preset-tag', '已生效'));
+      top.appendChild(el('span', 'grant-preset-tag', t('grants.quick.applied')));
     }
     top.appendChild(el('span', 'grant-preset-ttl', presetTtlLabel(preset)));
     btn.appendChild(top);
@@ -81,7 +82,7 @@ export function renderPresets(host: GrantsHost): HTMLElement {
 async function runPreset(host: GrantsHost, preset: GrantPreset): Promise<void> {
   const runner = getPresetRunner();
   if (!runner) {
-    setPanelNote({ text: '快捷授权暂不可用，请改用下面的逐项授予。', cls: 'err' });
+    setPanelNote({ text: t('grants.quick.unavailable'), cls: 'err' });
     host.renderPanel();
     return;
   }

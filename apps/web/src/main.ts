@@ -42,6 +42,7 @@ import { initRail } from './ui/rail';
 import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
 import { installCommands, renderGoalBar } from './ui/commands'; // A3：斜杠命令 + 持久目标
 import { initWorkbench } from './ui/workbench'; // G4：多面板工作区
+import { t } from './i18n';
 import { installQuoteSelection } from './ui/quote/select'; // F1：选段提及（选区浮标）
 import { versionLabel, describeLabel, BUILD_TIME, APP_DIRTY } from './version'; // W887 构建期版本标签
 import { initSidebar } from './ui/sidebar';
@@ -58,10 +59,10 @@ function refreshHealthChip(): void {
     .then((h) => {
       // /api/status 未上线前，用 health 的模型填补 statusline（模型只在 #slModel 一处）
       if (h.model) statusline.merge({ model: h.model });
-      if (!S.streaming) setStatus('就绪 · 在线', 'ok');
+      if (!S.streaming) setStatus(t('shell.status.online'), 'ok');
     })
     .catch(() => {
-      if (!S.streaming) setStatus('无法连接服务', 'err');
+      if (!S.streaming) setStatus(t('chat.status.disconnected'), 'err');
     });
 }
 
@@ -102,7 +103,7 @@ function init(): void {
   const verEl = document.getElementById('brandVersion');
   if (verEl) {
     verEl.textContent = versionLabel();
-    verEl.title = 'Celestea Studio · 构建于 ' + BUILD_TIME + ' · ' + describeLabel() + (APP_DIRTY ? ' · 工作区有未提交改动' : '');
+    verEl.title = t('chat.version.title', { time: BUILD_TIME, version: describeLabel(), dirty: APP_DIRTY ? t('chat.version.dirty') : '' });
   }
 
   // 7) 消息 rail（左侧灵动长条）+ 聊天主循环 + 启动恢复（按活跃会话） + SSE

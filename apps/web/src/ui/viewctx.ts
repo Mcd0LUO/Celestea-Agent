@@ -2,12 +2,12 @@
 // ui/viewctx.ts — W514 多会话视图容器（单一职责）：每个会话（含 engine worker）
 //   一个独立的滚动容器 .sess-pane，切换 = hidden 属性切换（零重渲染）——各自的流/
 //   工具卡/思考段/滚动位/输入草稿都留在自己的容器里，后台会话照常收 SSE 增量。
-//   本模块只负责「容器 + 激活 + 运行态 + 草稿 + 事件」，不渲染消息内容（在
-//   ui/messages.ts / ui/restore.ts）；chrome 通过 onPaneChange / onBusyChange 被动同步。
-//   优雅降级：后端未给 session/kind/busy 时只有一个 LOCAL 容器（id=''），行为同现状。
+//   本模块只负责「容器 + 激活 + 运行态 + 草稿 + 事件」，不渲染消息内容（ui/messages.ts /
+//   ui/restore.ts）；chrome 通过 onPaneChange / onBusyChange 被动同步。降级：无 session 时只有 LOCAL 容器（id=''）。
 // ============================================================================
 import { S } from '../state';
 import { el } from '../utils/dom';
+import { t } from '../i18n';
 import type { StatusSnapshot } from '../types';
 import type { AssistantView, DedupState, ThinkSeg, ToolCardRef } from './view';
 import { newRenderCadence, type RenderCadence } from './messages/cadence'; // W867：渲染节拍字段族
@@ -83,7 +83,7 @@ function buildEmptyHint(): HTMLElement {
   hint.appendChild(el('div', 'empty-mark', '◇'));
   hint.appendChild(el('div', 'empty-title', 'Celestea Studio'));
   hint.appendChild(
-    el('div', 'empty-sub', '在下方输入消息开始对话 · Enter 发送 · Shift+Enter 换行'),
+    el('div', 'empty-sub', t('chat.empty.hint')),
   );
   return hint;
 }

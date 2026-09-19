@@ -7,6 +7,7 @@
 import { nowSec } from '../caps';
 import { getShieldBadge, getShieldButton } from '../state';
 import { EXPIRING_SEC, activeGrants } from './active';
+import { t } from '../../../i18n';
 
 // ---- 盾牌按钮（§3.1 三态） -----------------------------------------------------
 
@@ -25,9 +26,9 @@ export function renderShield(): void {
   if (badge) badge.textContent = count > 0 ? String(count) : '';
   btn.title =
     count === 0
-      ? '本会话权限：默认（仅工作区，无网络）'
+      ? t('grants.shield.default')
       : expiring
-        ? '本会话有权限即将失效 · 点击查看'
-        : '本会话已放宽 ' + count + ' 项权限 · 点击查看';
+        ? t('grants.shield.expiring')
+        : t('grants.shield.granted', { n: count });
   btn.setAttribute('aria-label', btn.title);
 }

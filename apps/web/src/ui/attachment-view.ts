@@ -8,6 +8,7 @@
 // ============================================================================
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
+import { t } from '../i18n';
 import type { AttachmentRef, ImageMediaType } from '../types/attachment';
 import type { PendingAttachment } from './attachments';
 
@@ -57,9 +58,9 @@ function foldButton(
   btn.type = 'button';
   btn.dataset['fold'] = folded ? 'collapsed' : 'expanded';
   btn.setAttribute('aria-expanded', folded ? 'false' : 'true');
-  btn.title = folded ? '展开附件' : '收起附件';
+  btn.title = folded ? t('chat.attach.expand') : t('chat.attach.collapse');
   btn.setAttribute('aria-label', btn.title);
-  btn.appendChild(el('span', 'attach-mode-label', '附件 ' + count));
+  btn.appendChild(el('span', 'attach-mode-label', t('chat.attach.count', { n: count })));
   btn.appendChild(el('span', 'attach-mode-fold', folded ? '▸' : '▾'));
   btn.addEventListener('click', () => {
     container.classList.toggle('collapsed');
@@ -71,16 +72,16 @@ function foldButton(
 function pendingItem(item: PendingAttachment, onRemove: (p: PendingAttachment) => void): HTMLElement {
   const node = el('div', 'attach-item' + (item.error !== '' ? ' err' : ''));
   // W869：文本待发项给「文」字形（与历史附件网格同一形态），图片走空 url ⇒ 原占位。
-  node.appendChild(thumb(item.url, item.name, item.name, item.kind === 'text' ? '文' : undefined));
+  node.appendChild(thumb(item.url, item.name, item.name, item.kind === 'text' ? t('chat.attach.textGlyph') : undefined));
   const meta = el('div', 'attach-meta');
   meta.appendChild(el('div', 'attach-name', item.name));
-  const sub = item.error !== '' ? item.error : (item.kind === 'text' ? fmtBytes(item.bytes) + ' · 文本' : fmtBytes(item.bytes));
+  const sub = item.error !== '' ? item.error : (item.kind === 'text' ? fmtBytes(item.bytes) + t('chat.attach.textSuffix') : fmtBytes(item.bytes));
   meta.appendChild(el('div', 'attach-sub', sub));
   node.appendChild(meta);
   const rm = el('button', 'attach-remove', '×') as HTMLButtonElement;
   rm.type = 'button';
   // W867 的 aria-label（指名到具体文件） + W869 的分类文案，两边都保留。
-  rm.title = item.kind === 'text' ? '移除这个文本文件' : '移除这张图片';
+  rm.title = item.kind === 'text' ? t('chat.attach.removeText') : t('chat.attach.removeImage');
   rm.setAttribute('aria-label', rm.title + '：' + item.name);
   rm.addEventListener('click', () => onRemove(item));
   node.appendChild(rm);
@@ -89,13 +90,13 @@ function pendingItem(item: PendingAttachment, onRemove: (p: PendingAttachment) =
 
 function attachmentItem(v: AttachmentView): HTMLElement {
   const isText = v.kind === 'text';
-  const label = v.name ?? (isText ? '文本文件' : '图片');
+  const label = v.name ?? (isText ? t('chat.attach.textFile') : t('chat.attach.imageName'));
   const node = el('div', 'attach-item');
   // W869：文本项没有图可放，用与历史占位同形的方块（'文'）—— 不动几何、不动 CSS。
-  node.appendChild(thumb(isText ? '' : (v.url ?? ''), label, label, isText ? '文' : '图'));
+  node.appendChild(thumb(isText ? '' : (v.url ?? ''), label, label, isText ? t('chat.attach.textGlyph') : t('chat.attach.imageGlyph')));
   const meta = el('div', 'attach-meta');
   meta.appendChild(el('div', 'attach-name', label));
-  meta.appendChild(el('div', 'attach-sub', isText ? fmtBytes(v.bytes ?? 0) + ' · 文本' : subLabel(v)));
+  meta.appendChild(el('div', 'attach-sub', isText ? fmtBytes(v.bytes ?? 0) + t('chat.attach.textSuffix') : subLabel(v)));
   node.appendChild(meta);
   return node;
 }
@@ -104,7 +105,7 @@ function attachmentItem(v: AttachmentView): HTMLElement {
 function genericMark(name: string): string {
   const base = name.trim().replace(/^.*[\\/]/, '');
   const ch = Array.from(base)[0];
-  return ch === undefined || ch === '' ? '附' : ch.toUpperCase();
+  return ch === undefined || ch === '' ? t('chat.attach.glyphFallback') : ch.toUpperCase();
 }
 
 /** 只看扩展名，不碰 attachments.ts 的 MEDIA_TYPES / accept 判定（那是 W869 的领地）。 */
@@ -126,7 +127,7 @@ function thumb(url: string, alt: string, title: string, glyph?: string): HTMLEle
   // 非图片显示文件名首字 —— 两条路径都**不假装有图**。
   const ph = el('div', 'attach-thumb attach-thumb-meta');
   // W869：显式 glyph 优先（文本项 '文'）；否则按扩展名 —— 非图片显示文件名首字。
-  ph.textContent = glyph ?? (looksLikeImage(title) ? '图' : genericMark(title));
+  ph.textContent = glyph ?? (looksLikeImage(title) ? t('chat.attach.imageGlyph') : genericMark(title));
   ph.title = title;
   return ph;
 }
@@ -134,7 +135,7 @@ function thumb(url: string, alt: string, title: string, glyph?: string): HTMLEle
 function subLabel(v: AttachmentView): string {
   if (v.ref) return v.ref.width + '×' + v.ref.height + ' · ' + v.ref.media_type;
   if (v.bytes !== undefined) return fmtBytes(v.bytes);
-  return '图片';
+  return t('chat.attach.imageName');
 }
 
 function openLightbox(url: string, name: string): void {

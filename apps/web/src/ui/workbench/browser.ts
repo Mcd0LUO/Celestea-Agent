@@ -9,6 +9,7 @@
 // ============================================================================
 import { el } from '../../utils/dom';
 import { nextSeq, type PanelState } from './state';
+import { t } from '../../i18n';
 
 let loadTimeoutMs = 4000;
 
@@ -18,10 +19,10 @@ export function setLoadTimeout(ms: number): void {
 }
 
 function normalizeUrl(raw: string): string {
-  const t = raw.trim();
-  if (t === '') return '';
-  if (/^https?:\/\//i.test(t)) return t;
-  return 'https://' + t;
+  const s = raw.trim();
+  if (s === '') return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  return 'https://' + s;
 }
 
 /** 渲染浏览器面板内容。 */
@@ -32,9 +33,9 @@ export function renderBrowserPanel(body: HTMLElement, panel: PanelState, isCurre
   const row = el('div', 'wb-url-row');
   const input = el('input', 'wb-url-input') as HTMLInputElement;
   input.type = 'text';
-  input.placeholder = '输入网址，例如 example.com';
+  input.placeholder = t('chat.wb.urlPlaceholder');
   input.value = current;
-  const open = el('button', 'wb-btn wb-url-open', '打开') as HTMLButtonElement;
+  const open = el('button', 'wb-btn wb-url-open', t('chat.wb.open')) as HTMLButtonElement;
   open.type = 'button';
   row.appendChild(input);
   row.appendChild(open);
@@ -44,7 +45,7 @@ export function renderBrowserPanel(body: HTMLElement, panel: PanelState, isCurre
   const frame = el('iframe', 'wb-frame') as HTMLIFrameElement;
   frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
   off.appendChild(frame);
-  const external = el('button', 'wb-btn wb-url-external hidden', '在新标签打开') as HTMLButtonElement;
+  const external = el('button', 'wb-btn wb-url-external hidden', t('chat.wb.openExternal')) as HTMLButtonElement;
   external.type = 'button';
   off.appendChild(external);
   body.replaceChildren(...Array.from(off.childNodes));
@@ -72,7 +73,7 @@ export function renderBrowserPanel(body: HTMLElement, panel: PanelState, isCurre
     window.setTimeout(() => {
       if (!isCurrent(panel.id, seq) || done) return;
       // 跨域下无法读具体原因：保守提示「可能不允许被嵌入」并给出口。
-      show('这个网站可能不允许被嵌入（页面安全策略），可点「在新标签打开」', url);
+      show(t('chat.wb.frameBlocked'), url);
     }, loadTimeoutMs);
   };
 

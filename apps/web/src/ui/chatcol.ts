@@ -16,6 +16,7 @@
 //   不生效），手柄同时 display:none，避免「能拖但没反应」的误导；回桌面档自动恢复。
 // ============================================================================
 import { el } from '../utils/dom';
+import { t } from '../i18n';
 
 /** 持久化键（命名空间与 sidebar 的 celestea-studio.* 一致）。 */
 export const CHAT_COL_STORAGE_KEY = 'celestea-studio.chat-col-width';
@@ -142,8 +143,8 @@ export function initChatCol(): void {
   grip.tabIndex = 0;
   grip.setAttribute('role', 'separator');
   grip.setAttribute('aria-orientation', 'vertical');
-  grip.setAttribute('aria-label', '正文列宽');
-  grip.title = '拖动调整正文列宽 · 双击复位';
+  grip.setAttribute('aria-label', t('shell.chatcol.label'));
+  grip.title = t('shell.chatcol.hint');
   host.appendChild(grip);
   bindDrag(grip);
   bindKeys(grip);

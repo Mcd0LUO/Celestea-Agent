@@ -9,6 +9,7 @@
 import { el } from '../../../utils/dom';
 import { listOf } from '../caps';
 import { getData } from '../state';
+import { t } from '../../../i18n';
 
 /**
  * 警示区（W757）：把服务端返回的 `warnings` 如实列出来。
@@ -20,7 +21,7 @@ export function warningBox(): HTMLElement | null {
   const items = listOf(getData()?.warnings);
   if (items.length === 0) return null;
   const box = el('div', 'grant-preview');
-  box.appendChild(el('span', 'grant-preview-label', '提示'));
+  box.appendChild(el('span', 'grant-preview-label', t('grants.warnings.label')));
   for (const text of items) box.appendChild(el('div', 'grant-impact', text));
   return box;
 }

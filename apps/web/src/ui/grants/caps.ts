@@ -1,15 +1,20 @@
 // ============================================================================
 // ui/grants/caps.ts — 能力位定义与生效快照的纯读取（W748 从 ui/grants.ts 拆出）
 //
-//   只做搬家：文案、阈值、数据结构、判定语义与拆分前**逐字一致**。
-//   本模块零 DOM、零网络：只有常量 + 纯函数（可在 node 里直接加载）。
+//   只做搬家：阈值、数据结构、判定语义与拆分前**逐字一致**。
+//   本模块零 DOM、零网络：只有函数 + 纯函数（可在 node 里直接加载）。
+//
+//   i18n（P1-d/Batch4）：**所有面向用户文案改为惰性函数**（caps()/ttlChoices()/
+//   permanentText()…）。绝不能写成 `const X = t(...)` —— 那会固化模块加载时的语言，
+//   语言切换后面板徽标/明细/确认/回执全部停在旧语言（真 bug）。
 // ============================================================================
 import type { EffectiveGrants, GrantCap, GrantEntry, GrantScope } from '../../types';
+import { t } from '../../i18n';
 
 /** 危险能力（侧栏红色小盾 + 二次确认，设计 §3.1/§3.3；W751 起不再要求逐字确认词）。 */
 export const DANGER_CAPS: ReadonlySet<string> = new Set(['network', 'write_roots', 'unsandboxed']);
 
-/** 每项能力的用户语言定义（名称 / 一句话影响 / 表单形态；文案逐字取自设计 §3.2）。 */
+/** 每项能力的用户语言定义（名称 / 一句话影响 / 表单形态）。 */
 export interface CapDef {
   cap: GrantCap;
   label: string;
@@ -39,110 +44,133 @@ export interface CapDef {
   maxTtl: number;
 }
 
-export const CAPS: readonly CapDef[] = [
-  {
-    cap: 'network',
-    label: '访问网络',
-    impact: '允许会话中运行的命令访问互联网与内网（含本机服务）。',
-    extra: '⚠ 撤销前一直有效。',
-    kind: 'bool',
-    danger: true,
-    confirmWord: '',
-    defaultTtl: 0,
-    maxTtl: 3600,
-  },
-  {
-    cap: 'write_roots',
-    label: '额外可写目录',
-    impact: '允许会话在所选目录中创建与修改文件。',
-    kind: 'dirs',
-    danger: true,
-    confirmWord: '',
-    defaultTtl: 0,
-    maxTtl: 86400,
-  },
-  {
-    cap: 'read_roots',
-    label: '额外只读目录',
-    impact: '允许会话读取该目录内的文件（不能修改）。',
-    kind: 'dirs',
-    danger: false,
-    confirmWord: '',
-    defaultTtl: 0,
-    maxTtl: 86400,
-  },
-  {
-    cap: 'net_hosts',
-    label: '访问指定网站',
-    // W757：原文案「只对下面列出的站点生效」是错误暗示 —— 站点清单是**并集放宽**
-    // （并入放行清单，永不收窄），且在未配置站点策略的部署下完全不生效。
-    impact: '把下列站点加入会话的网络放行清单（并集放宽，不会收窄；是否生效取决于部署的站点策略）。',
-    kind: 'hosts',
-    danger: false,
-    confirmWord: '',
-    defaultTtl: 0,
-    maxTtl: 86400,
-  },
-  {
-    cap: 'tool_extra',
-    label: '启用额外工具',
-    // W819-8：没有工具暴露面消费它，授予是空操作 —— 不再列为可授。
-    impact: '预留能力：为将来的 browser/net 工具准备，当前没有任何工具消费它，授予不会生效。',
-    kind: 'tools',
-    danger: false,
-    reserved: true,
-    confirmWord: '',
-    defaultTtl: 0,
-    maxTtl: 86400,
-  },
-  {
-    cap: 'unsandboxed',
-    label: '降低隔离运行',
-    impact: '允许会话中的命令不经额外隔离运行。',
-    kind: 'bool',
-    danger: true,
-    confirmWord: '',
-    defaultTtl: 0,
-    maxTtl: 900,
-  },
-];
+/** 能力位定义（函数：文案走 t()，语言切换后必须跟着变）。 */
+export function caps(): readonly CapDef[] {
+  return [
+    {
+      cap: 'network',
+      label: t('grants.cap.network.label'),
+      impact: t('grants.cap.network.impact'),
+      extra: t('grants.cap.network.extra'),
+      kind: 'bool',
+      danger: true,
+      confirmWord: '',
+      defaultTtl: 0,
+      maxTtl: 3600,
+    },
+    {
+      cap: 'write_roots',
+      label: t('grants.cap.writeRoots.label'),
+      impact: t('grants.cap.writeRoots.impact'),
+      kind: 'dirs',
+      danger: true,
+      confirmWord: '',
+      defaultTtl: 0,
+      maxTtl: 86400,
+    },
+    {
+      cap: 'read_roots',
+      label: t('grants.cap.readRoots.label'),
+      impact: t('grants.cap.readRoots.impact'),
+      kind: 'dirs',
+      danger: false,
+      confirmWord: '',
+      defaultTtl: 0,
+      maxTtl: 86400,
+    },
+    {
+      cap: 'net_hosts',
+      label: t('grants.cap.netHosts.label'),
+      // W757：站点清单是**并集放宽**（并入放行清单，永不收窄），未配置站点策略的部署下不生效。
+      impact: t('grants.cap.netHosts.impact'),
+      kind: 'hosts',
+      danger: false,
+      confirmWord: '',
+      defaultTtl: 0,
+      maxTtl: 86400,
+    },
+    {
+      cap: 'tool_extra',
+      label: t('grants.cap.toolExtra.label'),
+      // W819-8：没有工具暴露面消费它，授予是空操作 —— 不再列为可授。
+      impact: t('grants.cap.toolExtra.impact'),
+      kind: 'tools',
+      danger: false,
+      reserved: true,
+      confirmWord: '',
+      defaultTtl: 0,
+      maxTtl: 86400,
+    },
+    {
+      cap: 'unsandboxed',
+      label: t('grants.cap.unsandboxed.label'),
+      impact: t('grants.cap.unsandboxed.impact'),
+      kind: 'bool',
+      danger: true,
+      confirmWord: '',
+      defaultTtl: 0,
+      maxTtl: 900,
+    },
+  ];
+}
 
-export const CAP_BY_NAME = new Map<string, CapDef>(CAPS.map((c) => [c.cap, c]));
+/** 能力名 → 定义（每次现取，跟随语言）。 */
+export function capByName(): ReadonlyMap<string, CapDef> {
+  return new Map(caps().map((c) => [c.cap, c]));
+}
 
 /**
- * W819-8：面板真正**可授**的能力位。预留位（tool_extra）仍留在 CAPS 里，
+ * W819-8：面板真正**可授**的能力位。预留位（tool_extra）仍留在 caps() 里，
  * 以便存量条目能显示与撤销，但绝不出现在可授集合里。
  */
-export const OFFERED_CAPS: readonly CapDef[] = CAPS.filter((c) => c.reserved !== true);
+export function offeredCaps(): readonly CapDef[] {
+  return caps().filter((c) => c.reserved !== true);
+}
 
 /**
  * 有效期选项（秒 → 用户语言标签）。**0 = 永久，且是第一位**（W773：主路径直接授予，
- * 不再强迫用户先选时长）。
+ * 不再强迫用户先选时长）。`sec` 是语义真源；`label` 惰性解析。
  */
-export const TTL_CHOICES: readonly { sec: number; label: string }[] = [
-  { sec: 0, label: '永久' },
-  { sec: 900, label: '15 分钟' },
-  { sec: 1800, label: '30 分钟' },
-  { sec: 3600, label: '1 小时' },
-  { sec: 86400, label: '24 小时' },
-];
+export function ttlChoices(): readonly { sec: number; label: string }[] {
+  return [
+    { sec: 0, label: permanentLabel() }, // 单一真源：与 permanentLabel() 同一条路径（门禁传递覆盖）
+    { sec: 900, label: t('grants.ttl.min15') },
+    { sec: 1800, label: t('grants.ttl.min30') },
+    { sec: 3600, label: t('grants.ttl.hour1') },
+    { sec: 86400, label: t('grants.ttl.hour24') },
+  ];
+}
 
 /** 临时授权可选的时长（不含永久）——只出现在「临时授权…」次级入口里（W773）。 */
-export const TTL_TEMP_CHOICES: readonly { sec: number; label: string }[] = TTL_CHOICES.filter(
-  (c) => c.sec > 0,
-);
+export function ttlTempChoices(): readonly { sec: number; label: string }[] {
+  return ttlChoices().filter((c) => c.sec > 0);
+}
+
+/** 档位标签（现取，跟随语言）。 */
+export function ttlLabel(choice: { sec: number; label: string }): string {
+  return choice.label;
+}
 
 /** 「临时授权」展开时的初始时长（分钟档里最常用的 30 分钟，再按该能力的上限收敛）。 */
 export const TEMP_DEFAULT_SEC = 1800;
 
-/** 永久授权的用户语言（唯一真源：面板徽标/明细/确认/回执都取自这里）。 */
-export const PERMANENT_LABEL = '永久';
+/** 永久授权的用户语言（函数：唯一真源，语言切换后必须跟着变）。 */
+export function permanentLabel(): string {
+  return t('grants.permanent.label');
+}
 /** 永久授权的补充说明（「可随时撤销」：避免读者以为授权不可撤回）。 */
-export const PERMANENT_NOTE = '可随时撤销';
+export function permanentNote(): string {
+  return t('grants.permanent.note');
+}
 /** 独立成句的永久短语：'永久（可随时撤销）'。 */
-export const PERMANENT_TEXT = PERMANENT_LABEL + '（' + PERMANENT_NOTE + '）';
+export function permanentText(): string {
+  return t('grants.permanent.text');
+}
 /** 跟在范围明细后面的括号短语：'（永久，可随时撤销）'。 */
-export const PERMANENT_PAREN = '（' + PERMANENT_LABEL + '，' + PERMANENT_NOTE + '）';
+export function permanentParen(): string {
+  return t('grants.permanent.paren');
+}
+
 export interface GrantMark {
   /** 生效条数（已过期的不计，设计 §3.2）。 */
   count: number;
@@ -150,6 +178,7 @@ export interface GrantMark {
   danger: boolean;
   caps: string[];
 }
+
 export function nowSec(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -177,12 +206,16 @@ export function isPermanentExpiry(expiresAt: number | null | undefined): boolean
  * 唯一真源：确认弹窗与面板明细都取这里，永久文案不会在某处退化成时间。
  */
 export function untilPhrase(expiresAt: number | null | undefined): string {
-  return isPermanentExpiry(expiresAt) ? '撤销前一直有效' : '至 ' + hhmm(expiresAt as number);
+  return isPermanentExpiry(expiresAt)
+    ? t('grants.until.permanent')
+    : t('grants.until.at', { time: hhmm(expiresAt as number) });
 }
 
 /** 括号版到期短语（跟在范围明细后面）：永久 → 「（永久，可随时撤销）」。 */
 export function expiryParen(expiresAt: number | null | undefined): string {
-  return isPermanentExpiry(expiresAt) ? PERMANENT_PAREN : '（至 ' + hhmm(expiresAt as number) + '）';
+  return isPermanentExpiry(expiresAt)
+    ? permanentParen()
+    : t('grants.until.paren', { time: hhmm(expiresAt as number) });
 }
 
 /** 生效条数：已过期的不计入（§3.2 / §3.1）。 */
@@ -202,13 +235,13 @@ export function listOf(v: unknown): string[] {
 
 /** 生效快照 → 侧栏标记（不含过期项）。 */
 export function markFromEffective(eff: EffectiveGrants | undefined): GrantMark {
-  const caps: string[] = [];
-  if (!eff) return { count: 0, danger: false, caps };
-  if (eff.network === true) caps.push('network');
-  if (listOf(eff.read_roots).length) caps.push('read_roots');
-  if (listOf(eff.write_roots).length) caps.push('write_roots');
-  if (listOf(eff.net_hosts).length) caps.push('net_hosts');
-  if (listOf(eff.tool_extra).length) caps.push('tool_extra');
-  if (eff.unsandboxed === true) caps.push('unsandboxed');
-  return { count: caps.length, danger: caps.some((c) => DANGER_CAPS.has(c)), caps };
+  const list: string[] = [];
+  if (!eff) return { count: 0, danger: false, caps: list };
+  if (eff.network === true) list.push('network');
+  if (listOf(eff.read_roots).length) list.push('read_roots');
+  if (listOf(eff.write_roots).length) list.push('write_roots');
+  if (listOf(eff.net_hosts).length) list.push('net_hosts');
+  if (listOf(eff.tool_extra).length) list.push('tool_extra');
+  if (eff.unsandboxed === true) list.push('unsandboxed');
+  return { count: list.length, danger: list.some((c) => DANGER_CAPS.has(c)), caps: list };
 }

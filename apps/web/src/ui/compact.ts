@@ -14,6 +14,7 @@ import { flashStatus, setStatus } from './statusbar';
 import { activePane, isActivePane, paneOf, type SessionPane } from './viewctx';
 import { resolveActiveSession, restoreSessionHistory } from './restore';
 import { msgOf, sid } from './session-util';
+import { t } from '../i18n';
 
 // ---- W259 /compact -------------------------------------------------------------
 
@@ -33,7 +34,7 @@ export function onCompact(p: CompactPayload): void {
   if (ctx.streaming) return;
   void (async () => {
     await restoreSessionHistory(ctx);
-    if (isActivePane(ctx)) flashStatus(p.note || '上下文已压缩', 'ok');
+    if (isActivePane(ctx)) flashStatus(p.note || t('shell.compact.done'), 'ok');
   })();
 }
 
@@ -51,22 +52,22 @@ export async function runCompact(ctx: SessionPane): Promise<void> {
     if (id === undefined) {
       const resolved = await resolveActiveSession();
       if (resolved === null) {
-        flashStatus('压缩失败：未找到活跃会话', 'err', 8000);
+        flashStatus(t('shell.compact.noSession'), 'err', 8000);
         return;
       }
       id = resolved;
     }
-    setStatus('压缩中…', 'busy');
+    setStatus(t('shell.compact.busy'), 'busy');
     const r = await api.compactSession(id);
     if (r.compacted === false) {
-      flashStatus(r.note || '历史不足，无需压缩', 'ok');
+      flashStatus(r.note || t('shell.compact.notNeeded'), 'ok');
       return;
     }
     localCompactAt.set(id, Date.now());
-    flashStatus(r.note || '历史已压缩', 'ok');
+    flashStatus(r.note || t('shell.compact.historyDone'), 'ok');
     await restoreSessionHistory(ctx); // 消息区 reload
   } catch (err) {
-    flashStatus('压缩失败：' + msgOf(err), 'err', 8_000);
+    flashStatus(t('shell.compact.failed', { reason: msgOf(err) }), 'err', 8_000);
   } finally {
     compacting = false;
   }

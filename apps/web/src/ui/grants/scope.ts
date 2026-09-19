@@ -2,6 +2,8 @@
 // ui/grants/scope.ts — 范围输入校验（本地、提交前；设计 §3.2/§5.4）
 //   （W748 从 ui/grants.ts 拆出；纯函数、零 DOM：判定与错误文案逐字未改。）
 // ============================================================================
+import { t } from '../../i18n';
+
 // ---- 范围校验（本地、提交前；§3.2） --------------------------------------------
 
 /** 疑似凭据（与设计 §5.4 同口径）：命中即拒绝提交，且不回显该值。 */
@@ -42,15 +44,15 @@ export function splitList(raw: string): string[] {
 
 export function validateHosts(raw: string): { values: string[]; error: string } {
   const parts = splitList(raw);
-  if (!parts.length) return { values: [], error: '请至少填写一个站点' };
+  if (!parts.length) return { values: [], error: t('grants.scope.needHost') };
   const out: string[] = [];
   for (let i = 0; i < parts.length; i++) {
     const v = parts[i]!;
     if (looksLikeCredential(v)) {
-      return { values: [], error: '第 ' + (i + 1) + ' 项疑似包含凭据，不能作为站点提交' };
+      return { values: [], error: t('grants.scope.hostCred', { n: i + 1 }) };
     }
     if (!isHostOrCidr(v)) {
-      return { values: [], error: '第 ' + (i + 1) + ' 项不是有效的主机名、IP 或网段' };
+      return { values: [], error: t('grants.scope.hostInvalid', { n: i + 1 }) };
     }
     out.push(v);
   }
@@ -61,14 +63,14 @@ const TOOL_RE = /^[a-zA-Z0-9_.:-]{1,64}$/;
 
 export function validateTools(raw: string): { values: string[]; error: string } {
   const parts = splitList(raw);
-  if (!parts.length) return { values: [], error: '请至少填写一个工具名' };
+  if (!parts.length) return { values: [], error: t('grants.scope.needTool') };
   const out: string[] = [];
   for (let i = 0; i < parts.length; i++) {
     const v = parts[i]!;
     if (looksLikeCredential(v)) {
-      return { values: [], error: '第 ' + (i + 1) + ' 项疑似包含凭据，不能提交' };
+      return { values: [], error: t('grants.scope.toolCred', { n: i + 1 }) };
     }
-    if (!TOOL_RE.test(v)) return { values: [], error: '第 ' + (i + 1) + ' 项不是有效的工具名' };
+    if (!TOOL_RE.test(v)) return { values: [], error: t('grants.scope.toolInvalid', { n: i + 1 }) };
     out.push(v);
   }
   return { values: Array.from(new Set(out)), error: '' };

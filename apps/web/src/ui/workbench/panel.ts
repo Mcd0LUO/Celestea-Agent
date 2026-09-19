@@ -17,6 +17,7 @@ import {
 import { renderFilesPanel } from './files';
 import { renderTerminalPanel } from './terminal';
 import { renderBrowserPanel } from './browser';
+import { t } from '../../i18n';
 
 let host: HTMLElement | null = null;
 let dock: HTMLElement | null = null;
@@ -31,14 +32,14 @@ function head(panel: PanelState): HTMLElement {
   h.appendChild(el('span', 'wb-title', panel.title));
   const dockBtn = el('button', 'wb-btn wb-dock', panel.dock === 'right' ? '⇩' : '⇨') as HTMLButtonElement;
   dockBtn.type = 'button';
-  dockBtn.title = panel.dock === 'right' ? '停到底部' : '停到右侧';
+  dockBtn.title = panel.dock === 'right' ? t('chat.wb.dockBottom') : t('chat.wb.dockRight');
   dockBtn.setAttribute('aria-label', dockBtn.title);
   dockBtn.addEventListener('click', () => setPanelDock(panel.id, panel.dock === 'right' ? 'bottom' : 'right'));
   h.appendChild(dockBtn);
   const close = el('button', 'wb-btn wb-close', '×') as HTMLButtonElement;
   close.type = 'button';
-  close.title = '关闭面板';
-  close.setAttribute('aria-label', '关闭面板');
+  close.title = t('chat.wb.close');
+  close.setAttribute('aria-label', t('chat.wb.close'));
   close.addEventListener('click', () => closePanel(panel.id));
   h.appendChild(close);
   // 拖动标题栏 → 按落点切换停靠边（right ↔ bottom）；rAF 节流，不逐 mousemove 写样式。
@@ -75,7 +76,7 @@ function onDockMove(e: MouseEvent): void {
       host.appendChild(hintEl);
     }
     hintEl.className = 'wb-drop-hint ' + target;
-    hintEl.textContent = target === 'bottom' ? '停到底部' : '停到右侧';
+    hintEl.textContent = target === 'bottom' ? t('chat.wb.dockBottom') : t('chat.wb.dockRight');
   });
 }
 

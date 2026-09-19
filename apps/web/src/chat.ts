@@ -2,8 +2,7 @@
 // chat.ts — turn 生命周期 + SSE 接线（编排层，W514 多会话版）：
 //   收到 SSE 事件 → 按 session 路由到对应「会话视图容器」→ 更新该容器
 //   （流/思考/工具卡）与（仅当它是当前聚焦容器时）statusline / 状态栏 / 输入栏。
-//   发送编排（含附件乐观路径与回滚）已拆到 ui/send.ts —— 本文件只留 SSE 与 chrome 同步。
-//   旧后端（无 session 字段）→ 全部回落单会话行为（legacyOwner 记录归属，见 ui/legacy-owner）。
+//   发送编排已拆到 ui/send.ts；旧后端（无 session）全部回落单会话行为（legacyOwner，见 ui/legacy-owner）。
 // ============================================================================
 import { api } from './api';
 import { SseClient } from './sse';
@@ -73,11 +72,12 @@ import {
 import { railActivate, railRebind } from './ui/rail';
 import { updateSessionBar } from './ui/sessionbar';
 import { updateWorkerStrip } from './ui/worker-strip'; // W866：本会话 worker 快捷条
+import { t } from './i18n';
 
-const PHASE_LABELS: Record<string, string> = { // A1：completed 与「空闲」等价，不再产生文案
-  cancelled: '已取消',
-  error: '出错',
-};
+/** 终态标签（函数：语言切换后必须跟着变；A1：completed 与「空闲」等价，不再产生文案）。 */
+function phaseLabels(): Record<string, string> {
+  return { cancelled: t('chat.phase.cancelled'), error: t('chat.phase.error') };
+}
 
 // ---- 会话路由 ------------------------------------------------------------------
 
@@ -115,15 +115,15 @@ function syncChrome(pane: SessionPane): void {
   statusline.setSession(pane.id);
   if (pane.streaming) {
     startElapsedTimer();
-    setStatus(pane.phase || '运行中…', 'busy');
+    setStatus(pane.phase || t('chat.phase.running'), 'busy');
   } else {
     stopElapsedTimer();
     if (pane.phase) {
-      setStatus(pane.phase, pane.phase === PHASE_LABELS['error'] || pane.phase === PHASE_LABELS['cancelled'] ? 'err' : 'ok');
+      setStatus(pane.phase, pane.phase === phaseLabels()['error'] || pane.phase === phaseLabels()['cancelled'] ? 'err' : 'ok');
     } else if (S.conn === 'online') {
-      setStatus('就绪 · 在线', 'ok');
+      setStatus(t('shell.status.online'), 'ok');
     } else if (S.conn === 'down') {
-      setStatus('重连中…', 'err');
+      setStatus(t('shell.status.reconnecting'), 'err');
     }
   }
   updateSessionBar();
@@ -136,7 +136,7 @@ function finalizeTurn(ctx: SessionPane, phase: string): void {
   const wasStreaming = ctx.streaming;
   setPaneStreaming(ctx, false);
   ctx.turn = null;
-  ctx.phase = PHASE_LABELS[phase] ?? ''; // A1：completed → ''（空闲态）
+  ctx.phase = phaseLabels()[phase] ?? ''; // A1：completed → ''（空闲态）
   const a = ctx.assistant;
   if (a) {
     if (assistantHasContent(a)) finalizeAssistant(ctx, a);
@@ -151,7 +151,7 @@ function finalizeTurn(ctx: SessionPane, phase: string): void {
     finishElapsedTimer(); // W263：保留本轮最终耗时（下一轮 start 时重置）
     // A1：completed 无文案 → 回落空闲/在线（不再出现「完成」）
     if (ctx.phase !== '') setStatus(ctx.phase, phase === 'error' || phase === 'cancelled' ? 'err' : 'ok');
-    else setStatus(S.conn === 'down' ? '重连中…' : '就绪 · 在线', S.conn === 'down' ? 'err' : 'ok');
+    else setStatus(S.conn === 'down' ? t('shell.status.reconnecting') : t('shell.status.online'), S.conn === 'down' ? 'err' : 'ok');
   }
   if (wasStreaming) autoscroll(ctx, true);
   updateSessionBar();
@@ -174,13 +174,13 @@ export function onStatus(ctx: SessionPane, p: StatusPayload): void { // export�
     }
     ctx.turn = p.turn ?? null;
     ctx.t0 = Date.now();
-    ctx.phase = '运行中…';
+    ctx.phase = t('chat.phase.running');
     setPaneStreaming(ctx, true);
     resetTurnStep(ctx); // W263：新一轮工具步数清零
     if (isActivePane(ctx)) {
       S.t0 = ctx.t0;
       setBusy(true);
-      setStatus('运行中…', 'busy');
+      setStatus(t('chat.phase.running'), 'busy');
       setStatusTurn(ctx.turn);
       startElapsedTimer();
     }
@@ -193,11 +193,11 @@ export function onStatus(ctx: SessionPane, p: StatusPayload): void { // export�
   if (p.phase === 'completed' || p.phase === 'cancelled' || p.phase === 'error') {
     finalizeTurn(ctx, p.phase || '');
     if (p.phase === 'error') {
-      renderInfoBlock(ctx, '本轮出错：' + (p.error || '未知错误'), 'err');
+      renderInfoBlock(ctx, t('chat.status.turnError', { reason: p.error || t('chat.status.unknownError') }), 'err');
     }
   }
   if (p.phase === 'lagged') {
-    renderInfoBlock(ctx, '部分输出因网络延迟被合并', 'warn');
+    renderInfoBlock(ctx, t('chat.status.lagged'), 'warn');
   }
   if (p.hint) {
     renderInfoBlock(ctx, String(p.hint), 'warn');
@@ -278,9 +278,9 @@ export function connectSse(): SseClient {
   sse.onConn((state) => {
     S.conn = state;
     if (state === 'online') {
-      setStatus(S.streaming ? '运行中…' : '就绪 · 在线', S.streaming ? 'busy' : 'ok');
+      setStatus(S.streaming ? t('chat.phase.running') : t('shell.status.online'), S.streaming ? 'busy' : 'ok');
     } else if (state === 'down') {
-      setStatus('重连中…', 'err');
+      setStatus(t('shell.status.reconnecting'), 'err');
     }
   });
   sse.on('status', (p) => {
@@ -338,7 +338,7 @@ export function connectSse(): SseClient {
       // 上下文注入/裁剪等系统事件 → 信息块按序出现在对应会话的流中
       renderInfoBlock(
         ctxFor(p),
-        p.text || '上下文事件',
+        p.text || t('chat.status.contextEvent'),
         p.cls === 'err' ? 'err' : p.cls === 'warn' ? 'warn' : undefined,
       );
     } catch (err) {
@@ -374,9 +374,9 @@ export function connectSse(): SseClient {
 export function requestCancel(): void {
   const ctx = activePane();
   if (!ctx || !ctx.streaming) return;
-  setStatus('取消中…', 'busy');
+  setStatus(t('chat.status.cancelling'), 'busy');
   void api.cancel(sid(ctx)).catch((err: unknown) => {
-    setStatus('取消失败：' + msgOf(err), 'err');
+    setStatus(t('chat.status.cancelFailed', { reason: msgOf(err) }), 'err');
   });
 }
 

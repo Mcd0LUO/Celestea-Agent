@@ -8,9 +8,9 @@
 import { el } from '../../../utils/dom';
 import type { GrantEntry } from '../../../types';
 import {
-  PERMANENT_LABEL,
-  PERMANENT_TEXT,
-  TTL_TEMP_CHOICES,
+  permanentLabel,
+  permanentText,
+  ttlTempChoices,
   expiryParen,
   hhmm,
   isPermanentExpiry,
@@ -22,6 +22,7 @@ import { drafts, inlineError, tempOpen, ttlPick, type GrantsHost } from '../stat
 import { maxTtlOf, tempDefaultTtl } from '../request';
 import { activeFor, expiredFor } from './active';
 import { netHostsIneffective } from './warnings';
+import { t } from '../../../i18n';
 
 /** 一行 = 能力名 + 状态徽标 + 一句话影响 + （范围明细）+ 动作按钮（§3.2）。 */
 export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
@@ -34,14 +35,14 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
   head.appendChild(el('span', 'grant-row-name', def.label));
   head.appendChild(badgeFor(def, active, expired));
   if (def.cap === 'net_hosts' && netHostsIneffective()) {
-    const mark = el('span', 'grant-badge', '当前部署下不生效');
-    mark.title = '本部署未启用站点策略，这份站点清单不会改变会话可访问的范围。';
+    const mark = el('span', 'grant-badge', t('grants.rows.ineffective'));
+    mark.title = t('grants.rows.ineffectiveTitle');
     head.appendChild(mark);
   }
   if (def.reserved === true) {
     // W819-8：预留能力位如实标注，且下面不再给「授予」入口。
-    const mark = el('span', 'grant-badge', '预留未生效');
-    mark.title = '该能力还没有任何工具消费它：授予不会改变会话能做什么。';
+    const mark = el('span', 'grant-badge', t('grants.rows.reserved'));
+    mark.title = t('grants.rows.reservedTitle');
     head.appendChild(mark);
   }
   row.appendChild(head);
@@ -57,7 +58,7 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
   for (const g of expired) {
     const v = listOf(scopeOf(g).roots).concat(listOf(scopeOf(g).hosts), listOf(scopeOf(g).tools));
     row.appendChild(
-      el('div', 'grant-detail', '已过期：' + (v.length ? v.join('、') : def.label)),
+      el('div', 'grant-detail', t('grants.rows.expiredPrefix', { what: v.length ? v.join(t('grants.copy.listSep')) : def.label })),
     );
   }
 
@@ -67,7 +68,7 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
     input.type = 'text';
     input.spellcheck = false;
     input.placeholder =
-      def.kind === 'hosts' ? '站点或网段，用逗号或换行分隔' : '工具名，用逗号或换行分隔';
+      def.kind === 'hosts' ? t('grants.rows.hostPlaceholder') : t('grants.rows.toolPlaceholder');
     input.value = drafts.get(def.cap) ?? '';
     input.addEventListener('input', () => {
       drafts.set(def.cap, input.value);
@@ -81,7 +82,7 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
 
   const actions = el('div', 'grant-row-actions');
   if (active) {
-    const rev = el('button', 'btn-mini', '撤销') as HTMLButtonElement;
+    const rev = el('button', 'btn-mini', t('grants.rows.revoke')) as HTMLButtonElement;
     rev.type = 'button';
     rev.addEventListener('click', () => void host.revoke(def.cap));
     actions.appendChild(rev);
@@ -91,10 +92,10 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
     const grant = el(
       'button',
       'btn-mini' + (def.danger ? ' grant-danger-btn' : ''),
-      def.kind === 'dirs' ? '选择目录' : '授予',
+      def.kind === 'dirs' ? t('grants.rows.chooseDir') : t('grants.rows.grant'),
     ) as HTMLButtonElement;
     grant.type = 'button';
-    grant.title = '直接授予：' + PERMANENT_TEXT;
+    grant.title = t('grants.rows.grantTitle', { permanent: permanentText() });
     grant.addEventListener('click', () => {
       ttlPick.set(def.cap, 0); // 显式回到永久（用户此前可能在「临时」里选过时长）
       void host.startGrant(def);
@@ -102,7 +103,7 @@ export function renderRow(def: CapDef, host: GrantsHost): HTMLElement {
     actions.appendChild(grant);
     actions.appendChild(tempToggle(def, host));
     if (def.cap === 'unsandboxed') {
-      actions.appendChild(el('span', 'grant-impact', '只能使用一次；' + PERMANENT_TEXT));
+      actions.appendChild(el('span', 'grant-impact', t('grants.rows.onceOnly', { permanent: permanentText() })));
     }
   }
   row.appendChild(actions);
@@ -118,19 +119,19 @@ function badgeFor(def: CapDef, active: GrantEntry | null, expired: GrantEntry[])
     const badge = el('span', 'grant-badge on', badgeText(def, active));
     return badge;
   }
-  if (expired.length) return el('span', 'grant-badge expired', '已过期');
-  return el('span', 'grant-badge', '未授予');
+  if (expired.length) return el('span', 'grant-badge expired', t('grants.rows.expired'));
+  return el('span', 'grant-badge', t('grants.rows.notGranted'));
 }
 
 function badgeText(def: CapDef, g: GrantEntry): string {
   if (def.kind === 'hosts' || def.kind === 'tools') {
     const n = listOf(scopeOf(g)[def.kind === 'hosts' ? 'hosts' : 'tools']).length;
-    return '已授予 ' + (n || 1) + ' 项';
+    return t('grants.rows.grantedCount', { n: n || 1 });
   }
   // W773：永久条目显示「永久」而不是时刻；有期限的仍显示到点时间。
   return isPermanentExpiry(g.expires_at)
-    ? '已授予 · ' + PERMANENT_LABEL
-    : '已授予至 ' + hhmm(g.expires_at as number);
+    ? t('grants.rows.grantedPermanent', { permanent: permanentLabel() })
+    : t('grants.rows.grantedUntil', { time: hhmm(g.expires_at as number) });
 }
 
 function detailFor(def: CapDef, g: GrantEntry, values: string[]): string {
@@ -138,9 +139,9 @@ function detailFor(def: CapDef, g: GrantEntry, values: string[]): string {
   const exp = expiryParen(g.expires_at);
   switch (def.cap) {
     case 'write_roots':
-      return values.join('、') + ' — 已允许在其中创建与修改文件' + exp;
+      return t('grants.rows.detailWrite', { values: values.join(t('grants.copy.listSep')), exp });
     case 'read_roots':
-      return values.join('、') + ' — 已允许读取（不能修改）' + exp;
+      return t('grants.rows.detailRead', { values: values.join(t('grants.copy.listSep')), exp });
     case 'net_hosts':
       return values.join('、') + exp;
     case 'tool_extra':
@@ -153,7 +154,7 @@ function detailFor(def: CapDef, g: GrantEntry, values: string[]): string {
 /** 「临时授权…」的开关（W773）：面板默认不展开时长选项，展开态记在 state.tempOpen。 */
 function tempToggle(def: CapDef, host: GrantsHost): HTMLElement {
   const open = tempOpen.has(def.cap);
-  const btn = el('button', 'btn-mini', open ? '收起时长' : '临时授权…') as HTMLButtonElement;
+  const btn = el('button', 'btn-mini', open ? t('grants.rows.tempCollapse') : t('grants.rows.tempOpen')) as HTMLButtonElement;
   btn.type = 'button';
   btn.addEventListener('click', () => {
     if (open) tempOpen.delete(def.cap);
@@ -166,10 +167,10 @@ function tempToggle(def: CapDef, host: GrantsHost): HTMLElement {
 /** 展开后的时长区：选一个时长 → 「按此时长授予」（此时才发出非 0 的 ttl_sec）。 */
 function tempBox(def: CapDef, host: GrantsHost): HTMLElement {
   const box = el('div', 'grant-temp');
-  box.appendChild(el('div', 'grant-impact', '临时授权：到期后自动收回，可随时撤销。'));
+  box.appendChild(el('div', 'grant-impact', t('grants.rows.tempNote')));
   const line = el('div', 'grant-hosts-row');
   line.appendChild(ttlSelect(def));
-  const go = el('button', 'btn-mini', '按此时长授予') as HTMLButtonElement;
+  const go = el('button', 'btn-mini', t('grants.rows.tempGrant')) as HTMLButtonElement;
   go.type = 'button';
   go.addEventListener('click', () => void host.startGrant(def));
   line.appendChild(go);
@@ -188,7 +189,7 @@ function ttlSelect(def: CapDef): HTMLElement {
   const picked = ttlPick.get(def.cap);
   const cur = picked !== undefined && picked > 0 ? picked : tempDefaultTtl(def);
   let matched = false;
-  for (const c of TTL_TEMP_CHOICES) {
+  for (const c of ttlTempChoices()) {
     if (c.sec > max) continue;
     const o = document.createElement('option');
     o.value = String(c.sec);
@@ -200,7 +201,7 @@ function ttlSelect(def: CapDef): HTMLElement {
     const fallback = Math.max(1, Math.min(cur, max));
     const o = document.createElement('option');
     o.value = String(fallback);
-    o.textContent = Math.max(1, Math.round(fallback / 60)) + ' 分钟';
+    o.textContent = t('grants.rows.minutes', { n: Math.max(1, Math.round(fallback / 60)) });
     sel.appendChild(o);
     sel.value = String(fallback);
   } else {

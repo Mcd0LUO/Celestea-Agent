@@ -10,6 +10,7 @@
 // ============================================================================
 import { el } from '../utils/dom';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../utils/overlays';
+import { t } from '../i18n';
 
 export interface ConfirmOpts {
   title?: string;
@@ -44,7 +45,7 @@ export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
     if (opts.note) card.appendChild(el('div', 'confirm-note', opts.note));
 
     if (opts.snapshot) {
-      card.appendChild(el('div', 'confirm-snapshot-label', opts.snapshotLabel ?? '生效结果'));
+      card.appendChild(el('div', 'confirm-snapshot-label', opts.snapshotLabel ?? t('shell.confirm.result')));
       const pre = el('pre', 'confirm-snapshot');
       pre.textContent = opts.snapshot;
       card.appendChild(pre);
@@ -55,7 +56,7 @@ export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
     if (requireText !== '') {
       const row = el('div', 'confirm-word-row');
       const label = document.createElement('label');
-      label.textContent = opts.requireHint ?? '请输入「' + requireText + '」以确认';
+      label.textContent = opts.requireHint ?? t('shell.confirm.require', { word: requireText });
       const input = el('input', 'cfg-input') as HTMLInputElement;
       input.type = 'text';
       input.autocomplete = 'off';
@@ -63,14 +64,14 @@ export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
       row.appendChild(label);
       row.appendChild(input);
       card.appendChild(row);
-      card.appendChild(el('div', 'confirm-word-hint', '逐字输入后「确认」才会可用'));
+      card.appendChild(el('div', 'confirm-word-hint', t('shell.confirm.requireHint')));
       wordInput = input;
     }
 
     const actions = el('div', 'modal-card-actions');
-    const ok = el('button', 'btn ' + (opts.danger ? 'btn-danger' : 'btn-accent'), opts.okLabel ?? '确认') as HTMLButtonElement;
+    const ok = el('button', 'btn ' + (opts.danger ? 'btn-danger' : 'btn-accent'), opts.okLabel ?? t('settings.action.confirm')) as HTMLButtonElement;
     ok.type = 'button';
-    const cancel = el('button', 'btn btn-soft', '取消') as HTMLButtonElement;
+    const cancel = el('button', 'btn btn-soft', t('settings.action.cancel')) as HTMLButtonElement;
     cancel.type = 'button';
 
     let done = false;

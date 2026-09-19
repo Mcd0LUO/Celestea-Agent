@@ -11,6 +11,7 @@
 import { el } from '../../utils/dom';
 import { api, ApiError, userErrorText } from '../../api';
 import { nextSeq, type PanelState } from './state';
+import { t } from '../../i18n';
 
 interface TermLine {
   cmd: string;
@@ -45,12 +46,12 @@ function lineBlock(l: TermLine): HTMLElement {
 export function renderTerminalPanel(body: HTMLElement, panel: PanelState, isCurrent: (id: string, seq: number) => boolean): void {
   const data = dataOf(panel);
   const off = document.createElement('div');
-  off.appendChild(el('div', 'wb-term-note', '一次性执行（不是交互式终端）：输入一条命令，回车运行。'));
+  off.appendChild(el('div', 'wb-term-note', t('chat.wb.term.note')));
   const row = el('div', 'wb-term-row');
   const input = el('input', 'wb-term-input') as HTMLInputElement;
   input.type = 'text';
-  input.placeholder = '输入命令，例如 ls -la';
-  const run = el('button', 'wb-btn wb-term-run', '运行') as HTMLButtonElement;
+  input.placeholder = t('chat.wb.term.placeholder');
+  const run = el('button', 'wb-btn wb-term-run', t('chat.wb.term.run')) as HTMLButtonElement;
   run.type = 'button';
   row.appendChild(input);
   row.appendChild(run);
@@ -84,7 +85,7 @@ async function exec(
   out: HTMLElement,
 ): Promise<void> {
   const pending = el('div', 'wb-term-line');
-  pending.appendChild(el('div', 'wb-term-meta', '运行中'));
+  pending.appendChild(el('div', 'wb-term-meta', t('chat.wb.term.running')));
   out.appendChild(pending);
   let line: TermLine;
   try {
@@ -93,7 +94,7 @@ async function exec(
       cmd,
       out: r.stdout ?? '',
       err: r.stderr ?? '',
-      code: r.signal !== null && r.signal !== '' ? '信号 ' + r.signal : '退出码 ' + String(r.exit_code),
+      code: r.signal !== null && r.signal !== '' ? t('chat.wb.term.signal', { signal: r.signal }) : t('chat.wb.term.exitCode', { code: String(r.exit_code) }),
       ms: r.duration_ms,
       failed: r.exit_code !== 0 || (r.signal !== null && r.signal !== ''),
     };
@@ -102,8 +103,8 @@ async function exec(
     line = {
       cmd,
       out: '',
-      err: unsupported ? '这个版本还不支持直接执行命令' : userErrorText(err, '命令没有跑起来'),
-      code: '失败',
+      err: unsupported ? t('chat.wb.term.unsupported') : userErrorText(err, t('chat.wb.term.notStarted')),
+      code: t('chat.tool.failed'),
       ms: 0,
       failed: true,
     };
