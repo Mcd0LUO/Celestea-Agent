@@ -59,6 +59,8 @@ import {
   type TpsSamples,
 } from './statusline/tps';
 
+import { initGoalBadge, refreshGoalBadge } from './statusline/goal'; // A3：目标徽标
+
 const POLL_MS = 2000;
 
 /** W514：状态字段筛选（statusline 渲染 + chat.ts 的每会话快照共用）。 */
@@ -205,6 +207,7 @@ export class Statusline implements PickerHost, ModeHost {
 
   /** Begin polling /api/status. */
   start(): void {
+    initGoalBadge(); // A3：目标徽标（#slGoal 存在时装配）
     this.poll();
     this.timer = window.setInterval(() => this.poll(), POLL_MS);
   }
@@ -218,6 +221,7 @@ export class Statusline implements PickerHost, ModeHost {
     const next = id ?? '';
     if (this.session === next) return;
     this.session = next;
+    refreshGoalBadge(); // A3：目标徽标按聚焦会话切换
     const cached = this.cache.get(next);
     this.snapshot = {
       model: this.snapshot.model,

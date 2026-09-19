@@ -1,0 +1,127 @@
+/* ============================================================================
+ * styles/commands.css — A3：斜杠命令补全框 / 终端输出块 / 持久目标条。
+ *   颜色全走 tokens.css 的 --c-* 令牌。
+ * ============================================================================ */
+
+/* ---- 命令补全框（贴输入框上沿，视口坐标 fixed） ---- */
+.cmd-popup {
+  position: fixed;
+  z-index: 40;
+  min-width: 320px;
+  max-width: min(520px, 80vw);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-md);
+  background: var(--c-surface-raised);
+  box-shadow: var(--shadow-panel);
+}
+.cmd-popup.hidden { display: none; }
+.cmd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.cmd-row.active { background: var(--c-accent-soft); }
+.cmd-name { font-family: var(--mono); font-size: 12.5px; color: var(--c-text-1); flex: 0 0 auto; }
+.cmd-desc { font-size: 12px; color: var(--c-text-2); min-width: 0; }
+.cmd-args { font-family: var(--mono); font-size: 11px; color: var(--c-text-3); margin-left: auto; flex: 0 0 auto; }
+
+/* ---- 终端输出块（与模型消息视觉上可区分） ---- */
+.msg.exec .bubble { width: 100%; max-width: 100%; }
+.bubble.exec-bubble {
+  background: var(--c-code-bg);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+}
+.exec-cmd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--c-text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.exec-block { display: flex; flex-direction: column; gap: 6px; }
+.exec-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.exec-head .exec-cmd { flex: 1 1 auto; min-width: 0; }
+.exec-code { font-family: var(--mono); font-size: 11px; }
+.exec-code.ok { color: var(--c-ok); }
+.exec-code.err { color: var(--c-err); }
+.exec-dur { font-family: var(--mono); font-size: 11px; color: var(--c-text-3); }
+.exec-sandbox { font-size: 11px; color: var(--c-text-3); }
+.exec-stream { border-top: 1px solid var(--c-border-subtle); padding-top: 4px; }
+.exec-stream-label { font-size: 10.5px; color: var(--c-text-3); font-family: var(--mono); }
+.exec-stream-body {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--c-text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.exec-stream.err .exec-stream-body { color: var(--c-err); }
+.msg.exec.exec-note .bubble { background: var(--c-surface-raised); border: none; }
+
+/* ---- 持久目标条（会话页顶部，一眼可见） ---- */
+.goal-bar {
+  position: fixed;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(760px, 82vw);
+  padding: 5px 10px;
+  border: 1px solid var(--c-accent-ring);
+  border-radius: 999px;
+  background: var(--c-surface-raised);
+  box-shadow: var(--shadow-panel);
+}
+.goal-bar.hidden { display: none; }
+.goal-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--c-accent);
+  border: 1px solid var(--c-accent-ring);
+  border-radius: var(--r-sm);
+  padding: 0 4px;
+  flex: 0 0 auto;
+}
+.goal-text { font-size: 12.5px; color: var(--c-text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-done {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  color: var(--c-text-3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.goal-done:hover { color: var(--c-text-1); }
+
+/* ---- statusline 目标徽标（#slGoal；有目标才显示） ---- */
+.sl-goal {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  max-width: 200px;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--c-accent-ring);
+  border-radius: 999px;
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.sl-goal.hidden { display: none; }
+.sl-goal-badge { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

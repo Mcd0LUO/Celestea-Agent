@@ -155,28 +155,34 @@ describe('W867（追加）· ②附件收纳展示夹（悬浮、不挤输入框
     doc.body.replaceChildren();
   });
 
-  it('展示夹挂在 .input-box 内且出流：#inputbar 的直接子节点不变（不抢 #input 的 flex 槽位）', async () => {
+  it('A2 内嵌：展示夹是 #inputbar 的直接子项、插在 .input-box 之前、独占一行且不挤 #input', async () => {
     const { bar } = await bootBar();
     const t = tray();
     expect(t, '展示夹必须建出来').not.toBeNull();
-    expect(t?.parentElement?.className, '定位基准 = .input-box').toContain('input-box');
+    // A2：内嵌 ≠ 浮层。它不再挂在 .input-box 内，而是 #inputbar 的直接子项。
+    expect(t?.parentElement?.id, '定位基准 = #inputbar（内嵌行）').toBe('inputbar');
     const barKids = Array.from(doc.querySelectorAll('#inputbar > *')).map((c) => c.className);
-    // 既有出流子项：.attach-note（提示）与 .attach-file（隐藏 <input type=file>）—— 两者都在
-    // 本次改动之前就存在、都不占宽度分配；关键是**展示夹本身不在里面**。
-    expect(barKids, '#inputbar 的直接子项不含展示夹').toEqual([
+    // 顺序不变式：展示夹紧挨在 .input-box 之前（独占自己那一行）。
+    expect(barKids).toEqual([
       'attach-note hidden',
+      'attach-tray hidden',
       'input-box',
       'input-side',
       'attach-file hidden',
     ]);
-    expect(doc.querySelector('#inputbar > .attach-tray'), '展示夹**不得**是 #inputbar 的直接子项（否则参与宽度分配）').toBeNull();
+    const trayIdx = barKids.indexOf('attach-tray hidden');
+    expect(barKids[trayIdx + 1], '展示夹紧挨在 .input-box 之前').toBe('input-box');
     const trayCss = rule(css('attachments.css'), '.attach-tray');
-    expect(trayCss, '出流 = 绝对定位（不参与 #inputbar 的宽度分配）').toContain('position: absolute');
+    // A2 内嵌的关键几何：整行占位（flex-basis:100%）+ 自身不再是绝对定位浮层。
+    expect(trayCss, '内嵌行：独占一行（不参与 #input 的 flex 分配）').toContain('flex: 0 0 100%');
+    expect(trayCss, 'A2 起不再是浮层：不得再绝对定位').not.toContain('position: absolute');
+    expect(rule(css('layout.css'), '#inputbar'), '允许换行，内嵌条才能独立成行').toContain('flex-wrap: wrap');
     expect(trayCss, '单行 + 横向滚动（多行会盖住输入区）').toContain('flex-wrap: nowrap');
     expect(trayCss).toContain('overflow-x: auto');
-    expect(trayCss, '贴住输入框上沿：由 ui/inputbar.ts 量出的 --tray-h 决定').toContain('bottom: var(--tray-h');
+    expect(trayCss, '紧凑条：有高度上限').toContain('max-height');
     bar.refreshAttachmentTray(); // 空态：仍然是隐藏的，不占位
     expect(tray()?.classList.contains('hidden')).toBe(true);
+    expect(rule(css('attachments.css'), '.attach-tray.hidden'), '空列表完全隐藏、不占高度').toContain('display: none');
   });
 
   it('一条附件一条目、可单个移除；清空后整条隐藏', async () => {
@@ -226,17 +232,20 @@ describe('W867（追加）· ②附件收纳展示夹（悬浮、不挤输入框
     expect(trayItems().every((n) => n.querySelector('img.attach-thumb') === null), '不假装有图').toBe(true);
   });
 
-  it('输入框长高后展示夹重新贴位（--tray-h 跟随 .input-box 实测高度）', async () => {
+  it('A2 内嵌：不再写任何内联定位（--tray-h 已废弃；行内布局不受输入框高度影响）', async () => {
     const { bar, att } = await bootBar();
     seedPending(att, [item('a.png', 'a')]);
     const box = doc.querySelector('.input-box') as ElLike;
     const trayH = (): string =>
       (tray()?.style as unknown as { getPropertyValue(p: string): string })?.getPropertyValue('--tray-h') ?? '';
+    // 输入框长高/缩回都不该影响展示夹：内嵌行由 CSS 排版，不再量 .input-box 高度。
     (box as unknown as { getBoundingClientRect(): { height: number } }).getBoundingClientRect = () => ({ height: 132 });
     bar.refreshAttachmentTray();
-    expect(trayH(), '输入框长高 → 展示夹跟着抬高').toBe('132px');
+    expect(trayH(), 'A2 起不再写 --tray-h（浮层贴位机制已删）').toBe('');
     (box as unknown as { getBoundingClientRect(): { height: number } }).getBoundingClientRect = () => ({ height: 52 });
     bar.refreshAttachmentTray();
-    expect(trayH(), '输入框缩回 → 展示夹跟着贴回').toBe('52px');
+    expect(trayH()).toBe('');
+    expect(tray()?.classList.contains('hidden'), '有附件仍可见（只是不靠定位）').toBe(false);
+    expect(trayItems().length).toBe(1);
   });
 });

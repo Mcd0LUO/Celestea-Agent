@@ -28,12 +28,9 @@ export interface SessionPane {
     /** 滚动容器（.sess-pane；hidden 切换，DOM 永不重建） + 容器内空态提示 */
   el: HTMLElement;
   hint: HTMLElement;
-  /** 当前流式文本段（null = 无进行中的段） */
-  assistant: AssistantView | null;
-  /** 当前思考段（每轮结束清除，DOM 保留） */
-  thinkSeg: ThinkSeg | null;
-  /** 同轮最近文本段（thinking 重排锚点） */
-  lastTextCol: HTMLElement | null;
+  assistant: AssistantView | null; // 当前流式文本段（null = 无）
+  thinkSeg: ThinkSeg | null; // 当前思考段（每轮结束清除，DOM 保留）
+  lastTextCol: HTMLElement | null; // 同轮最近文本段（thinking 重排锚点）
   /** 文本段渲染节拍（每容器独立；读写方只有 ui/messages/assistant.ts） */
   render: RenderCadence;
   /** 工具卡索引（tool_call_id → 卡片） */
@@ -48,6 +45,8 @@ export interface SessionPane {
   phase: string;
   /** 输入草稿（切换会话时保存/恢复） */
   draft: string;
+  /** A3：持久目标文本（null = 无；服务端回声为准）。 */
+  goal: string | null;
   /** 滚动位（隐藏时保存，显示时恢复） */
   scrollTop: number;
   /** 隐藏时是否贴底 + 是否已从后端恢复过历史 + 历史恢复的竞态序号（晚到结果一律丢弃） */
@@ -114,6 +113,7 @@ function buildPane(id: string, kind: string, title: string): SessionPane {
     t0: 0,
     phase: '',
     draft: '',
+    goal: null,
     scrollTop: 0,
     stickBottom: true,
     restored: false,

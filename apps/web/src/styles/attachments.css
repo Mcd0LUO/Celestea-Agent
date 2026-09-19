@@ -4,30 +4,30 @@
 
 .attach-file { display: none; }
 
-/* W867（追加）：收纳展示夹 —— 悬浮在输入框**上方**的一条紧凑缩略图带。
-   为什么绝对定位：W847 的「输入框宽度逐像素不变」不变量要求附件条**出流**，
-   既不能挤 #input 的 flex 槽位，也不能把输入框顶高（原实现是 #inputbar 里的普通
-   子项、flex-wrap 换行多行 → 挤占输入区）。
-   定位由 ui/inputbar.ts 的 placeTray() 按 .input-box 实际矩形写入（--tray-h / bottom /
-   left / right），所以无论输入框多高都贴得住。 */
+/* A2：收纳展示夹改为**内嵌**在消息框与输入框之间的紧凑条（不再是浮层、不遮挡输入区）。
+   出流方案：它是 #inputbar 的直接子项、插在 .input-box **之前**；#inputbar 允许换行
+   ⇒ 本条 flex-basis:100% 独占一行，.input-box + .input-side 在下一行按原规则分配宽度
+   ⇒ W847 的「#input 宽度逐像素不变」不变量仍成立（改前是绝对定位浮在上方，改后是
+   同行列内的独立行，两种情况都不挤 #input 的 flex 槽位）。空列表 .hidden 时
+   display:none，不占任何高度。 */
 .attach-tray {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: var(--tray-h, 0px);
-  z-index: 3;
+  flex: 0 0 100%;
+  min-width: 0;
   display: flex;
   flex-wrap: nowrap; /* 单行 + 横向滚动（多行会盖住输入区） */
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 6px;
+  padding: 4px 6px;
+  max-height: 56px;
+  overflow-y: hidden;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   border: var(--hairline) solid var(--border-l1);
   border-radius: var(--r-md);
   background: var(--c-surface-raised);
-  box-shadow: var(--shadow-panel);
 }
+/* 内嵌后不再有浮层阴影/贴位变量（A2：删掉 box-shadow 与 --tray-h 定位）。 */
+.attach-note { flex: 0 0 100%; order: -1; }
 .attach-tray.hidden { display: none; }
 .attach-tray.collapsed .attach-item:not(.attach-mode) { display: none; }
 

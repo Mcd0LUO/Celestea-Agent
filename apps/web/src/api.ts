@@ -43,6 +43,8 @@ import type {
   TurnResp,
   WorkspacesResp,
 } from './types';
+import type { ExecReq, ExecResp } from './types/exec'; // A3：用户直发命令
+import type { GoalResp } from './types/goal'; // A3：持久目标
 // W859：宿主插件清单类型（端点尚未发布；整包按 unknown 校验，见 ./types/plugin）
 import type { PluginsResp } from './types/plugin';
 // W858：权限族类型整族在 ./types/permission（types.ts 有模块体积棘轮，本轮不追加行数；
@@ -271,13 +273,11 @@ export const api = {
    */
   setSessionModel: (id: string, model: string) =>
     putJson<SessionModelResp>('/api/sessions/' + encodeURIComponent(id) + '/model', { model }),
-  /** 重命名会话（W243）：POST /api/sessions/{id}/rename {"new_title"}。 */
-  renameSession: (id: string, newTitle: string) =>
+  renameSession: (id: string, newTitle: string) => // W243：POST …/rename
     postJson<ClearResp>('/api/sessions/' + encodeURIComponent(id) + '/rename', {
       new_title: newTitle,
     }),
-  /** 分支会话（W243）：POST /api/sessions/{id}/branch {"title"?}。 */
-  branchSession: (id: string, title?: string) =>
+  branchSession: (id: string, title?: string) => // W243：POST …/branch
     postJson<ClearResp & { id?: string; branch?: string }>(
       '/api/sessions/' + encodeURIComponent(id) + '/branch',
       title ? { title } : {},
@@ -286,19 +286,19 @@ export const api = {
     postJson<ClearResp>('/api/sessions/' + encodeURIComponent(id) + '/archive', {}),
   unarchiveSession: (id: string) =>
     postJson<ClearResp>('/api/sessions/' + encodeURIComponent(id) + '/unarchive', {}),
-  /** 激活会话（W237）：POST /api/sessions/{id}/activate；409=轮次中。 */
-  activateSession: (id: string) =>
+  activateSession: (id: string) => // W237：POST …/activate；409=轮次中
     postJson<ActivateResp>('/api/sessions/' + encodeURIComponent(id) + '/activate', {}),
-  /** 上下文压缩（W259）：POST /api/sessions/{id}/compact；409=turn 进行中。 */
-  compactSession: (id: string) =>
+  compactSession: (id: string) => // W259：POST …/compact；409=轮次中
     postJson<CompactResp>('/api/sessions/' + encodeURIComponent(id) + '/compact', {}),
+  /** A3：用户直发命令（**不经模型**）；404/501 = 该部署未提供 → 调用方给可读提示。 */
+  exec: (req: ExecReq) => postJson<ExecResp>('/api/exec', req),
+  /** A3：设置/清除该会话的持久目标（text='' = 清除；200 回 goal，null = 无）。 */
+  setGoal: (id: string, text: string) =>
+    postJson<GoalResp>('/api/sessions/' + encodeURIComponent(id) + '/goal', { text }),
   /** 目录浏览（W237）：GET /api/fs/browse?path=（懒加载列目录，只显示目录）。 */
   fsBrowse: (path?: string) =>
     requestJson<FsBrowseResp>('/api/fs/browse' + (path ? '?path=' + encodeURIComponent(path) : '')),
-  /**
-   * 批量归档（W792 起按 BatchOpResp 建模）：200 + `{ok:true,archived:N,failed:[...]}`
-   * —— **部分失败仍返回 ok:true**，失败项只在 `failed[]`，调用方必须呈现它。
-   */
+  /** 批量归档（W792）：部分失败仍 ok:true，失败项只在 failed[]，调用方必须呈现。 */
   batchArchiveSessions: (ids: string[]) =>
     postJson<BatchOpResp>('/api/sessions/batch-archive', { ids } as BatchIdsReq),
   /** 批量删除（W792 起按 BatchOpResp 建模）：同上，成功条数在 `deleted`。 */

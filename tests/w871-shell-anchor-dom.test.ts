@@ -130,8 +130,10 @@ describe('W871 ① · .chat-shell 的范围 = 底部发送栏，不是整个会�
     expect(bar).toContain('padding: 10px 14px 12px');
     expect(rule(css('layout.css'), '.input-box')).toContain('flex: 1 1 auto');
     expect(rule(css('layout.css'), '#input')).toContain('flex: 1');
-    expect(rule(css('attachments.css'), '.attach-tray'), '展示夹仍出流').toContain('position: absolute');
-    expect(doc.querySelector('#inputbar > .attach-tray')).toBeNull();
+    // A2：展示夹改为内嵌行 —— 仍出流（flex-basis:100% 独占一行，不参与 #input 的 flex
+    // 分配），但已**不是**绝对定位浮层；#input 宽度的两个真源声明照旧。
+    expect(rule(css('attachments.css'), '.attach-tray'), 'A2 内嵌：独占一行、不抢 #input 槽位').toContain('flex: 0 0 100%');
+    expect(rule(css('attachments.css'), '.attach-tray'), 'A2 起不再是浮层').not.toContain('position: absolute');
   });
 });
 

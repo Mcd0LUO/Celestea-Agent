@@ -157,8 +157,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 .dot.err  { background: var(--c-err); }
 
 /* ---- 输入区 ---- */
+/* A2：附件内嵌条要独占一行 ⇒ #inputbar 允许换行；.input-box + .input-side 仍同排，
+   输入行的宽度分配与换行前逐像素一致（.input-box 有 min-width:0，恒能装下）。
+   flex-direction 仍是 row（换行而非竖排），既有 row 子项语义不变。 */
 #inputbar {
-  display: flex; gap: 10px; align-items: stretch;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch;
   padding: 10px 14px 12px;
   background: var(--composer-bg);
   flex: 0 0 auto;

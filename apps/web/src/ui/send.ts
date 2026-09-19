@@ -28,7 +28,7 @@ import {
   setInputValue,
   type SubmitMode,
 } from './inputbar';
-import { runCompact } from './compact';
+import { dispatchCommand, isCommandLike } from './commands'; // A3：斜杠命令派发
 import { getLegacyOwner, setLegacyOwner } from './legacy-owner';
 import { msgOf, sid } from './session-util';
 import { note } from './sessiontree/live';
@@ -56,8 +56,9 @@ export function dispatchSend(text: string, mode: SubmitMode = 'steer'): void {
   if (!ctx) return;
   const pending = pendingCount();
   if (t === '' && pending === 0) return;
-  if (t === '/compact') {
-    void runCompact(ctx);
+  // A3：斜杠命令 / `!` 快捷方式 —— 命中即消费，不走 /api/turn。
+  if (isCommandLike(t)) {
+    void dispatchCommand(t, ctx);
     return;
   }
   // W866：worker 会话是**可对话**的（不再是只读面板）。它有自己的串行收件箱，

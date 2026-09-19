@@ -31,6 +31,7 @@ import {
 // W867（追加）：展示夹的落位 / 尺寸 / 渲染接线整段在 ./attach-tray.ts，本文件只调用。
 import { createAttachTray, refreshAttachmentTray } from './attach-tray';
 import { initQuoteTray } from './quote/tray'; // F1：选段提及的待发引用 chip 收纳区
+import { interceptKey as interceptCommandKey } from './commands'; // A3：命令补全框按键拦截
 export { refreshAttachmentTray }; // 既有调用方（chat.ts / send.ts / 测试）不变
 
 /**
@@ -141,6 +142,7 @@ export function initInputBar(h: InputBarHandlers): void {
     h.cancel();
   });
   input.addEventListener('keydown', (e) => {
+    if (interceptCommandKey(e)) return; // A3：补全框先消费 ↑↓/Enter/Tab/Esc
     if (e.key !== 'Enter' || e.shiftKey) return;
     e.preventDefault();
     // Ctrl/Cmd+Enter = 另一条车道（两态都要可直达，不必先切按钮）

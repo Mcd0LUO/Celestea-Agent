@@ -72,11 +72,9 @@ import {
 } from './ui/viewctx';
 import { railActivate, railRebind } from './ui/rail';
 import { updateSessionBar } from './ui/sessionbar';
-// W866：会话页左上角的「本会话 worker 快捷条」
-import { updateWorkerStrip } from './ui/worker-strip';
+import { updateWorkerStrip } from './ui/worker-strip'; // W866：本会话 worker 快捷条
 
-const PHASE_LABELS: Record<string, string> = {
-  completed: '完成',
+const PHASE_LABELS: Record<string, string> = { // A1：completed 与「空闲」等价，不再产生文案
   cancelled: '已取消',
   error: '出错',
 };
@@ -138,7 +136,7 @@ function finalizeTurn(ctx: SessionPane, phase: string): void {
   const wasStreaming = ctx.streaming;
   setPaneStreaming(ctx, false);
   ctx.turn = null;
-  ctx.phase = PHASE_LABELS[phase] || phase;
+  ctx.phase = PHASE_LABELS[phase] ?? ''; // A1：completed → ''（空闲态）
   const a = ctx.assistant;
   if (a) {
     if (assistantHasContent(a)) finalizeAssistant(ctx, a);
@@ -151,13 +149,15 @@ function finalizeTurn(ctx: SessionPane, phase: string): void {
     S.assistant = null;
     setBusy(false);
     finishElapsedTimer(); // W263：保留本轮最终耗时（下一轮 start 时重置）
-    setStatus(ctx.phase, phase === 'error' || phase === 'cancelled' ? 'err' : 'ok');
+    // A1：completed 无文案 → 回落空闲/在线（不再出现「完成」）
+    if (ctx.phase !== '') setStatus(ctx.phase, phase === 'error' || phase === 'cancelled' ? 'err' : 'ok');
+    else setStatus(S.conn === 'down' ? '重连中…' : '就绪 · 在线', S.conn === 'down' ? 'err' : 'ok');
   }
   if (wasStreaming) autoscroll(ctx, true);
   updateSessionBar();
 }
 
-function onStatus(ctx: SessionPane, p: StatusPayload): void {
+export function onStatus(ctx: SessionPane, p: StatusPayload): void { // export：A1 用例的测试缝
   // W805（设计 §7.6）：上游「图像不支持」降级帧的 phase 也是 'error'，但它不是
   // 轮次结束（envelope.turn=0，是进程级提示）—— 先拦下，只做可见提示。
   if (isImageDowngrade(p)) {
