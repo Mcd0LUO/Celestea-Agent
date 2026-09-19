@@ -25,7 +25,9 @@
  * these functions run (see `handlers/session-move.ts`).
  */
 
-import { copyFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
+import { copyFileSync, mkdirSync, existsSync } from "node:fs";
+
+import { renameWithRetry } from "@celestea/core";
 import { join } from "node:path";
 import { isDirectory, isFile, removeDir } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, type StoreResult } from "./result.js";
@@ -68,7 +70,7 @@ export class SessionOps {
     if (base === res.session) return ok(res.id);
     const newDir = this.sessions.uniqueDir(res.wsPath, base, parentOf(res.dir));
     try {
-      renameSync(res.dir, newDir);
+      renameWithRetry(res.dir, newDir);
     } catch (e) {
       return fail(500, `move failed: ${errText(e)}`);
     }
@@ -80,7 +82,7 @@ export class SessionOps {
       // N1 (W815): a failed meta write must not leave the directory moved — the
       // caller (and `active_session`) still addresses the OLD id, so undo it.
       try {
-        renameSync(newDir, res.dir);
+        renameWithRetry(newDir, res.dir);
       } catch (e) {
         return fail(500, `${titled.error}; rollback failed: ${errText(e)}`);
       }
@@ -142,7 +144,7 @@ export class SessionOps {
   private move(res: ResolvedSession, from: string, to: string): StoreResult<void> {
     try {
       mkdirSync(parentOf(to), { recursive: true });
-      renameSync(from, to);
+      renameWithRetry(from, to);
       return ok(undefined);
     } catch (e) {
       return fail(500, `move failed: ${errText(e)}`);

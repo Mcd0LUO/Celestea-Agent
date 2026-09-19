@@ -25,10 +25,10 @@
  * (`contracts/data-files/index.json` durability map).
  */
 
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { outcomePhase, type TurnOutcome } from "@celestea/core";
+import { outcomePhase, renameWithRetry, type TurnOutcome } from "@celestea/core";
 
 /** File name inside a session directory (contract). */
 export const CHECKPOINT_FILE_NAME = "checkpoint.json";
@@ -146,7 +146,7 @@ export function writeCheckpointFile(path: string, value: Checkpoint): void {
   const tmp = `${path}.tmp-${process.pid}`;
   writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600);
-  renameSync(tmp, path);
+  renameWithRetry(tmp, path);
 }
 
 /** Read + validate; missing / corrupt / foreign files are never an exception. */

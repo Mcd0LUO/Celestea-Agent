@@ -13,6 +13,8 @@
  */
 
 import { renameSync } from "node:fs";
+
+import { renameWithRetry } from "@celestea/core";
 import { writeJsonAtomic, isDirectory, isFile, listEntries, readJsonIfExists } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, serverError, type StoreResult } from "./result.js";
 import {
@@ -242,7 +244,7 @@ export class WorkspacesStore {
     }
     const previousActive = this.data.active_session;
     try {
-      renameSync(from, target);
+      renameWithRetry(from, target);
     } catch (e) {
       return fail(500, `move failed: ${errText(e)}`);
     }
@@ -259,7 +261,7 @@ export class WorkspacesStore {
       row.path = from;
       this.data.active_session = previousActive;
       try {
-        renameSync(target, from);
+        renameWithRetry(target, from);
       } catch (e) {
         return fail(500, `${saved.error}; rollback failed: ${errText(e)}`);
       }

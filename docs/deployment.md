@@ -65,13 +65,22 @@ pnpm --filter @celestea/studio start   # 源码默认监听 127.0.0.1:3778
 - **非环回绑定默认拒绝启动**（`celestea web --bind 0.0.0.0` 需要 token）：
   那不只是「开了个网页」，而是把命令执行面暴露出去。
 
-### 4.1 Windows 上的差异
+### 4.1 Windows 上的运行与限制
 
-| 能力 | Linux | Windows |
-|---|---|---|
-| OS 级隔离 | `bwrap` + `prlimit` | 无（走 userspace 降级，rlimit 不可用则记日志继续） |
-| 命令执行 shell | `/bin/sh -c` | gitbash > pwsh > cmd（都没有则结构化报错并给出安装提示） |
-| 数据根默认 | `~/.celestea` | `%USERPROFILE%\.celestea` |
-| 登录门（`htpasswd`） | 可用 | 需要自行提供 `htpasswd` 二进制；缺失时校验失败即拒绝 |
+Windows 上**能跑**（`.github/workflows/ci.yml` 有 `windows-latest` 的 `pnpm check`），
+但「沙箱」退化为**权限档位 + 工具白名单**，**不要**把它当多租户隔离。
 
-因此 **Windows 上「沙箱」退化为权限档位 + 工具白名单**，不要把它当作多租户隔离。
+| 能力 | Linux | Windows | 影响 |
+|---|---|---|---|
+| OS 级隔离 | `bwrap` + `prlimit` | 无（走 userspace 降级） | 文件系统/网络命名空间隔离不存在；`CELESTEA_SANDBOX_FALLBACK=fail` 会直接拒绝执行 |
+| 资源上限 | `prlimit` / `ulimit` / seccomp | 无（尽力而为，缺失记日志继续） | CPU / 内存 / 文件数 / 输出上限**不生效**，`cpu_exceeded` 不会触发 |
+| 进程树回收 | 进程组信号 `kill(-pid)` | 无 POSIX 进程组 | 关闭浏览器/子进程要逐进程终止，残留风险更高 |
+| 命令执行 shell | `/bin/sh -c` | gitbash > pwsh > cmd（都缺则结构化报错 + 安装提示） | 工具调用的命令行语义随 shell 变 |
+| 数据根默认 | `~/.celestea` | `%USERPROFILE%\.celestea` | 也可用 `CELESTEA_HOME` 覆盖 |
+| Playwright 浏览器缓存 | `~/.cache/ms-playwright` | `%LOCALAPPDATA%\ms-playwright` | 由 `playwrightCacheRoot()` 按平台解析；`PLAYWRIGHT_BROWSERS_PATH` 可覆盖 |
+| 原子写（tmp+rename） | `rename(2)` 原子 | `MoveFileEx` 可能被占用句柄挡下（EPERM/EBUSY） | `renameWithRetry()` 短退避重试；仍失败按原有结构化错误上报 |
+| 登录门（`htpasswd`） | 系统自带 | 需自行提供 `htpasswd` 二进制 | 缺失时校验失败即拒绝 |
+| 服务托管 | systemd `celestea-studio-ts.service` | 无 systemd | 用 `celestea web` 或 `pnpm --filter @celestea/studio start`（要常驻可挂 Windows 服务/任务计划） |
+
+**在 Windows 上从源码跑**：`pnpm install` → `pnpm --dir apps/web run build` → `pnpm --filter @celestea/studio start`
+（默认 `127.0.0.1:3778`）。这台机器的路径 / 端口 / 装了哪些工具写在 `docs/AGENT.local.md`（不入库），不写进本文。

@@ -19,6 +19,8 @@ import {
   headlessShellSubdir,
   launchBrowser,
   parseDevToolsEndpoint,
+  playwrightCacheRoot,
+  signalBrowser,
   type BrowserProcess,
 } from "./launch.js";
 
@@ -108,6 +110,89 @@ describe("F4 launch -- endpoint parsing and discovery", () => {
     expect(findHeadlessShell({ root: "/cache", platform: "linux", arch: "x64", list, exists: (path) => path === older })).toBe(older);
     expect(findHeadlessShell({ root: "/cache", platform: "linux", arch: "x64", list, exists: () => false })).toBeNull();
     expect(findHeadlessShell({ root: "/cache", platform: "linux", arch: "x64", list: () => [], exists: () => true })).toBeNull();
+  });
+
+  it("resolves the per-OS Playwright cache root (W891)", () => {
+    const home = "C:\\Users\\op";
+    const env: Record<string, string | undefined> = {};
+    expect(playwrightCacheRoot({ platform: "win32", homedir: home, env })).toBe(
+      "C:\\Users\\op\\AppData\\Local\\ms-playwright",
+    );
+    expect(playwrightCacheRoot({ platform: "darwin", homedir: "/Users/op", env })).toBe("/Users/op/Library/Caches/ms-playwright");
+    expect(playwrightCacheRoot({ platform: "linux", homedir: "/home/op", env })).toBe("/home/op/.cache/ms-playwright");
+    // PLAYWRIGHT_BROWSERS_PATH wins over the per-OS default, but an explicit root wins over both.
+    const withEnv: Record<string, string | undefined> = { PLAYWRIGHT_BROWSERS_PATH: "D:\\pw" };
+    expect(playwrightCacheRoot({ platform: "win32", homedir: home, env: withEnv })).toBe("D:\\pw");
+    expect(playwrightCacheRoot({ root: "/cache", platform: "win32", homedir: home, env: withEnv })).toBe("/cache");
+  });
+
+  it("finds a Windows-layout headless shell with backslash separators", () => {
+    const shell = "C:\\Users\\op\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1243\\chrome-headless-shell-win64\\chrome-headless-shell.exe";
+    const list = () => ["chromium_headless_shell-1243"];
+    const found = findHeadlessShell({
+      platform: "win32",
+      arch: "x64",
+      homedir: "C:\\Users\\op",
+      env: {},
+      list,
+      exists: (path) => path === shell,
+    });
+    expect(found).toBe(shell);
+  });
+});
+
+describe("W891 -- process-tree teardown is a platform decision", () => {
+  it("POSIX: signals the whole process group and never taskkills", () => {
+    const proc = new FakeProcess(4242);
+    const groups: Array<[number, NodeJS.Signals]> = [];
+    let trees = 0;
+    signalBrowser(proc, "SIGTERM", {
+      platform: "linux",
+      killGroup: (pid, signal) => groups.push([pid, signal]),
+      killTree: () => {
+        trees++;
+        return true;
+      },
+    });
+    expect(groups).toEqual([[4242, "SIGTERM"]]);
+    expect(trees).toBe(0);
+    expect(proc.signals).toEqual([]);
+  });
+
+  it("win32: taskkills the tree and never uses the (meaningless) negative pid", () => {
+    const proc = new FakeProcess(4242);
+    const killed: number[] = [];
+    let groups = 0;
+    signalBrowser(proc, "SIGTERM", {
+      platform: "win32",
+      killGroup: () => {
+        groups++;
+      },
+      killTree: (pid) => {
+        killed.push(pid);
+        return true;
+      },
+    });
+    expect(killed).toEqual([4242]);
+    expect(groups).toBe(0);
+    expect(proc.signals).toEqual([]);
+  });
+
+  it("win32: falls back to the direct child when taskkill cannot reach the tree", () => {
+    const proc = new FakeProcess(4242);
+    signalBrowser(proc, "SIGKILL", { platform: "win32", killTree: () => false });
+    expect(proc.signals).toEqual(["SIGKILL"]);
+  });
+
+  it("POSIX: falls back to the direct child when the group signal fails", () => {
+    const proc = new FakeProcess(4242);
+    signalBrowser(proc, "SIGKILL", {
+      platform: "linux",
+      killGroup: () => {
+        throw new Error("ESRCH");
+      },
+    });
+    expect(proc.signals).toEqual(["SIGKILL"]);
   });
 });
 

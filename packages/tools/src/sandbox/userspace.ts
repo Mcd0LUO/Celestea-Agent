@@ -60,6 +60,13 @@ export interface UserspaceMeta extends SandboxMeta {
   cpu_sec: number;
   rlimit_via: RlimitVia;
   address_space_limited: boolean;
+  /**
+   * W891: false when the host has NO rlimit mechanism (Windows, or a Linux host
+   * with neither prlimit nor a shell with usable ulimit builtins). The run still
+   * proceeds — userspace is the degraded fallback — but the degradation is now a
+   * fact on the result, not just one stderr line nobody reads.
+   */
+  rlimits_applied: boolean;
 }
 
 export class UserspaceSandbox implements Sandbox {
@@ -111,6 +118,11 @@ export class UserspaceSandbox implements Sandbox {
       cpu_sec: this.limits.cpuSec,
       rlimit_via: diag.via,
       address_space_limited: diag.address_space_limited,
+      // "none" means the plan is a no-op: either the operator disabled limits,
+      // or no mechanism exists. Both are honest, but only the latter is a
+      // DEGRADATION, so this is true only when limits were requested AND a
+      // mechanism was actually available.
+      rlimits_applied: this.rlimits && diag.via !== "none",
     };
   }
 

@@ -30,9 +30,9 @@
  * `tsvPath = null` keeps the whole table in memory (tests, ephemeral hosts).
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { SessionLog, WorkerEntry, WorkerStatus } from "@celestea/core";
+import { renameWithRetry, type SessionLog, type WorkerEntry, type WorkerStatus } from "@celestea/core";
 import { runDriverLoop, type DriverExit, type WorkerDrivers } from "./driver.js";
 import { executeReceipt, lastAssistantSummary, type ReceiptRequest, type ReceiptResult } from "./receipt.js";
 import { SessionMailbox } from "./mailbox.js";
@@ -519,7 +519,7 @@ export class WorkerRegistry {
       const tmp = `${this.path}.tmp-${this.ownPid}-${this.now()}`;
       // W831 R3 B4 (W813 P1-persist-foreign): carry unparsed lines through.
       writeFileSync(tmp, serializeRegistryTsv(merged) + read.raw.map((line) => line + "\n").join(""), "utf8");
-      renameSync(tmp, this.path);
+      renameWithRetry(tmp, this.path);
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : String(error);

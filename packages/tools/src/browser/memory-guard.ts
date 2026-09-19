@@ -21,6 +21,9 @@
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { isWindows } from "../platform/paths.js";
+import { taskkillTree } from "../sandbox/child.js";
+
 export type MemoryGuardKind = "cgroup-v2" | "rss-watchdog" | "none";
 
 /** What backstop is actually in force (reported in every browser result). */
@@ -219,11 +222,18 @@ function childPids(pid: number, procRoot: string): number[] {
 }
 
 function defaultKillTree(pid: number): void {
-  try {
-    process.kill(-pid, "SIGKILL");
-    return;
-  } catch {
-    /* not a group leader */
+  // W891: on Windows there is no POSIX process group (and no /proc), so the
+  // group branch is skipped entirely rather than attempted-and-caught; taskkill
+  // walks the real parent-child chain instead.
+  if (isWindows()) {
+    if (taskkillTree(pid)) return;
+  } else {
+    try {
+      process.kill(-pid, "SIGKILL");
+      return;
+    } catch {
+      /* not a group leader */
+    }
   }
   try {
     process.kill(pid, "SIGKILL");

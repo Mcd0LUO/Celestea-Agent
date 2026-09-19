@@ -13,9 +13,9 @@
  * stale partial write.
  */
 
-import { closeSync, copyFileSync, existsSync, fsyncSync, openSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, fsyncSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { serializeSessionEvent, type SessionEvent } from "@celestea/core";
+import { renameWithRetry, serializeSessionEvent, type SessionEvent } from "@celestea/core";
 
 /** Single-copy backup of the pre-compaction log. */
 export const COMPACT_BACKUP_FILE = "cli-main.jsonl.precompact";
@@ -71,7 +71,7 @@ export function rewriteAtomic(path: string, events: readonly SessionEvent[], pid
   backupCurrent(path, join(dir, COMPACT_BACKUP_FILE));
   writeDurable(tmp, serializeEventLog(events));
   try {
-    renameSync(tmp, path);
+    renameWithRetry(tmp, path);
   } catch (e) {
     rmSync(tmp, { force: true });
     throw e instanceof Error ? e : new Error(String(e));

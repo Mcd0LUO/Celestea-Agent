@@ -19,6 +19,8 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { isWindows, pathApi } from "../platform/paths.js";
+import { taskkillTree } from "../sandbox/child.js";
 import { CdpClient, openWebSocketTransport, type CdpTransport, type OpenTransportOptions } from "./cdp.js";
 
 /** Default time to wait for the DevTools endpoint. */
@@ -70,6 +72,10 @@ export interface FindShellInput {
   root?: string;
   platform?: string;
   arch?: string;
+  /** Injected env for the \`PLAYWRIGHT_BROWSERS_PATH\` override; defaults to \`process.env\`. */
+  env?: Record<string, string | undefined>;
+  /** Injected home dir for the default cache root; defaults to \`os.homedir()\`. */
+  homedir?: string;
   list?: (dir: string) => string[];
   exists?: (path: string) => boolean;
 }
@@ -121,15 +127,49 @@ export function headlessShellSubdir(platform: string = process.platform, arch: s
   return arch === "arm64" ? "chrome-headless-shell-linux-arm64" : "chrome-headless-shell-linux64";
 }
 
+/**
+ * The Playwright browser cache root for a platform (W891 Windows slice).
+ *
+ * Playwright resolves its cache per OS — \`%LOCALAPPDATA%\\ms-playwright\` on
+ * Windows, \`~/Library/Caches/ms-playwright\` on macOS, \`~/.cache/ms-playwright\`
+ * elsewhere — and \`PLAYWRIGHT_BROWSERS_PATH\` overrides all three. Before this the
+ * locator hardcoded the Linux path, so a Windows host with a normal Playwright
+ * install reported "browser not found". Inputs are injectable (the W885 seam) so
+ * the win32 branch is unit-testable on Linux.
+ */
+export function playwrightCacheRoot(
+  input: { root?: string; platform?: string; env?: Record<string, string | undefined>; homedir?: string } = {},
+): string {
+  if (input.root !== undefined) return input.root;
+  const env = input.env ?? process.env;
+  const override = env["PLAYWRIGHT_BROWSERS_PATH"];
+  if (override !== undefined && override.trim() !== "") return override.trim();
+  const platform = input.platform ?? process.platform;
+  const home = input.homedir ?? homedir();
+  const join = pathApi(platform).join;
+  if (platform === "win32") return join(home, "AppData", "Local", "ms-playwright");
+  if (platform === "darwin") return join(home, "Library", "Caches", "ms-playwright");
+  return join(home, ".cache", "ms-playwright");
+}
+
 /** Highest-versioned chrome-headless-shell under the Playwright cache. */
 export function findHeadlessShell(input: FindShellInput = {}): string | null {
-  const root = input.root ?? join(homedir(), ".cache", "ms-playwright");
+  const platform = input.platform ?? process.platform;
+  const root = playwrightCacheRoot({
+    ...(input.root === undefined ? {} : { root: input.root }),
+    platform,
+    ...(input.env === undefined ? {} : { env: input.env }),
+    ...(input.homedir === undefined ? {} : { homedir: input.homedir }),
+  });
   const list = input.list ?? defaultList;
   const exists = input.exists ?? existsSync;
-  const subdir = headlessShellSubdir(input.platform ?? process.platform, input.arch ?? process.arch);
+  const subdir = headlessShellSubdir(platform, input.arch ?? process.arch);
+  const join = pathApi(platform).join;
   const versions = list(root).filter((name) => name.startsWith("chromium_headless_shell-")).sort(compareVersionDesc);
+  // Windows ships the same binary with a .exe suffix; the rest of the layout is identical.
+  const binary = isWindows(platform) ? "chrome-headless-shell.exe" : "chrome-headless-shell";
   for (const version of versions) {
-    const candidate = join(root, version, subdir, "chrome-headless-shell");
+    const candidate = join(root, version, subdir, binary);
     if (exists(candidate)) return candidate;
   }
   return null;
@@ -247,14 +287,36 @@ export async function terminateBrowserProcess(proc: BrowserProcess, graceMs: num
   if (!(await exited)) signalBrowser(proc, "SIGKILL");
 }
 
-function signalBrowser(proc: BrowserProcess, signal: NodeJS.Signals): void {
+/**
+ * W891: Windows has no POSIX process group, and `process.kill(-pid)` there does not
+ * mean "the group" — it is not a supported target. `taskkill /T` walks the
+ * parent-child chain instead (best effort, same TOCTOU caveat as the sandbox
+ * child wrapper). Without this the launched browser's renderer children leak on
+ * close, which is exactly the leak the group signal exists to prevent.
+ */
+export interface SignalBrowserDeps {
+  /** Injected platform (tests); defaults to the host. */
+  platform?: string;
+  /** Injected group-kill (tests); defaults to `process.kill(-pid, signal)`. */
+  killGroup?: (pid: number, signal: NodeJS.Signals) => void;
+  /** Injected tree-kill (tests); defaults to `taskkillTree`. */
+  killTree?: (pid: number) => boolean;
+}
+
+export function signalBrowser(proc: BrowserProcess, signal: NodeJS.Signals, deps: SignalBrowserDeps = {}): void {
   const pid = proc.pid;
   if (pid !== undefined) {
-    try {
-      process.kill(-pid, signal);
-      return;
-    } catch {
-      // not a group leader (or already gone): fall through to the direct child
+    if (isWindows(deps.platform ?? process.platform)) {
+      // taskkill has no signal choice; a SIGTERM request still has to be a /F
+      // kill, because Windows has no cooperative SIGTERM for a GUI process.
+      if ((deps.killTree ?? taskkillTree)(pid)) return;
+    } else {
+      try {
+        (deps.killGroup ?? ((p, s) => process.kill(-p, s)))(pid, signal);
+        return;
+      } catch {
+        // not a group leader (or already gone): fall through to the direct child
+      }
     }
   }
   try {

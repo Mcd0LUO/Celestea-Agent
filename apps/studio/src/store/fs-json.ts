@@ -9,8 +9,11 @@
  * warning (prompts).
  */
 
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+
+import { renameWithRetry } from "@celestea/core";
+
 import { errText } from "./result.js";
 
 export interface ReadOutcome<T> {
@@ -66,7 +69,7 @@ export function writeTextAtomic(path: string, body: string, opts: WriteOptions =
       closeSync(fd);
     }
   }
-  renameSync(tmp, path);
+  renameWithRetry(tmp, path);
 }
 
 /** Plain (non-atomic) write, matching `session.json` semantics. */

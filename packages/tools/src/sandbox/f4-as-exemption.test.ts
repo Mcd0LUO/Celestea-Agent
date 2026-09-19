@@ -174,4 +174,27 @@ describe("F4 · describe() is the diagnostic path", () => {
     const userspace = new UserspaceSandbox(buildSandboxConfig({ workdir: "/tmp", root: "/tmp" }), { probe: probeWith(), limits: LIMITS, rlimits: false });
     expect(userspace.describe().address_space_limited).toBe(false);
   });
+
+  /**
+   * W891: on a host with NO rlimit mechanism (Windows, or a bare Linux without
+   * prlimit and without shell ulimit) the userspace fallback still RUNS, but the
+   * degradation must be a fact on the diagnostic result — before this the only
+   * trace was a stderr line nobody parses.
+   */
+  it("userspace: rlimits_applied is false when the host has no mechanism", () => {
+    const bare = probeWith({ prlimitPath: null, shellUlimitWorks: false });
+    const sandbox = new UserspaceSandbox(buildSandboxConfig({ workdir: "/tmp", root: "/tmp" }), { probe: bare, limits: LIMITS, rlimits: true });
+    expect(sandbox.describe().rlimit_via).toBe("none");
+    expect(sandbox.describe().rlimits_applied).toBe(false);
+  });
+
+  it("userspace: rlimits_applied is true when a mechanism exists", () => {
+    const sandbox = new UserspaceSandbox(buildSandboxConfig({ workdir: "/tmp", root: "/tmp" }), { probe: probeWith(), limits: LIMITS, rlimits: true });
+    expect(sandbox.describe().rlimits_applied).toBe(true);
+  });
+
+  it("userspace: rlimits_applied is false when the operator disabled limits", () => {
+    const sandbox = new UserspaceSandbox(buildSandboxConfig({ workdir: "/tmp", root: "/tmp" }), { probe: probeWith(), limits: LIMITS, rlimits: false });
+    expect(sandbox.describe().rlimits_applied).toBe(false);
+  });
 });
