@@ -8,7 +8,7 @@ Celestea Agent 把「一个能读写文件、执行命令、跑代码、并行�
 ![Celestea Studio 界面：左侧工作区/会话树，右侧对话区（多模态识别 + LaTeX 公式渲染），底部 statusline 与发送栏](docs/assets/studio-overview.png)
 
 - **会话即工作区** —— 每个会话绑定一个真实目录；agent 的每一步（读文件、改代码、跑命令）都发生在那儿，日志逐行落盘、可回放。
-- **16 个内置工具** —— `read_file` `write_file` `list_dir` `load_skill` `run_shell` `run_code` `read_image` `http_request` `process_control` `ask_user_question` `send_message` `spawn_worker` `stop_worker` `worker_status` `browser_open` `browser_act`。
+- **18 个内置工具** —— `read_file` `write_file` `list_dir` `load_skill` `run_shell` `run_code` `read_image` `http_request` `process_control` `remember` `forget` `ask_user_question` `send_message` `spawn_worker` `stop_worker` `worker_status` `browser_open` `browser_act`。
 - **并行子 agent（worker）** —— 一个会话可派出多个 worker 会话并行干活；主会话能读它们的实时状态，也能**直接和它们对话**。
 - **沙箱执行** —— `bwrap` + `prlimit` 隔离文件系统、网络与资源；环境不具备时按策略**降级或拒绝**，不静默放行。
 - **权限档位** —— 内置 `read-only` / `write-read` / `full-access` 三档，可逐会话固定，也可由你在界面上**临时提权**（一次性授权、可撤销、全程审计、**永不可由模型自触发**）。
@@ -36,7 +36,31 @@ Celestea Agent 把「一个能读写文件、执行命令、跑代码、并行�
 | `bwrap`（bubblewrap） | 可选但强烈建议 | 缺了会按 `CELESTEA_SANDBOX_FALLBACK` 降级/拒绝 |
 | `prlimit` | 可选（util-linux） | 资源限额 |
 
-### 安装
+### 安装（推荐：全局安装，不必克隆）
+
+已发布到 npm（`celestea-agent@2.7.1`，含 8 个 `@celestea/*` 依赖包）：
+
+```bash
+npm install -g celestea-agent      # 或 pnpm add -g celestea-agent
+celestea web                       # 起服务并自动打开浏览器
+```
+
+常用参数：
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--port N` | 3777 | HTTP 端口（`0` = 随机空闲端口） |
+| `--bind ADDR` | `127.0.0.1` | 绑定地址 |
+| `--no-open` | — | 不自动打开浏览器 |
+| `--token SEC` | — | 要求 `Authorization` 才能访问 `/api/*`（也读 `CELESTEA_AUTH_TOKEN`） |
+
+> **非环回绑定默认拒绝启动**，除非配了 token。`--bind 0.0.0.0` 不只是「开了个网页」：
+> `POST /api/exec` 会以当前用户身份执行任意命令。放在 nginx 后面并让 nginx 管登录，
+> 是本仓推荐的公网姿势。
+>
+> 版本自检：`celestea --version`（当前 `2.7.1`）；`celestea --help` 有完整用法。
+
+### 从源码运行（开发）
 
 ```bash
 git clone https://github.com/Mcd0LUO/Celestea-Agent.git
