@@ -19,7 +19,9 @@
  *   e. SSE envelope encode (host bus) and wire decode (`parseWire`).
  *
  * Flags: `--compare <baseline.json>` (print % deltas), `--out <path>`,
- * `--doc <path>`, `--no-write` (measure only), `--scales 1000,10000`.
+ * `--doc <path>`, `--no-write` (measure only), `--scales 1000,10000`,
+ * `--repeat N` (whole-suite repeats; keep the best median per case; default 1 —
+ * see `collectCasesRepeated` for why N is the only lever on run-to-run noise).
  */
 
 import { existsSync } from "node:fs";
@@ -39,6 +41,8 @@ interface Options {
   write: boolean;
   compare: string | null;
   scales: number[];
+  /** Whole-suite repeats; the per-case result is the best of these. */
+  repeat: number;
 }
 
 function optionValue(argv: readonly string[], flag: string): string | null {
@@ -54,7 +58,16 @@ function parseOptions(argv: readonly string[]): Options {
     write: !argv.includes("--no-write"),
     compare: optionValue(argv, "--compare"),
     scales: scales === null ? [...SCALES] : scales.split(",").map((n) => Number(n.trim())).filter((n) => n > 0),
+    repeat: repeatCount(optionValue(argv, "--repeat")),
   };
+}
+
+/** `--repeat N`: 1 (default) .. 10; anything unparseable means 1. */
+function repeatCount(raw: string | null): number {
+  if (raw === null) return 1;
+  const n = Number(raw.trim());
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(10, Math.floor(n));
 }
 
 function section(title: string): void {
@@ -102,6 +115,35 @@ function writeArtifacts(options: Options, baseline: Baseline): void {
   console.log(`\nwrote ${options.out} and ${options.doc}`);
 }
 
+/**
+ * Run the whole suite `repeat` times and keep, per case, the run with the
+ * smallest median ("best of N").
+ *
+ * Why this is the only lever that helps: two runs of ONE commit differ by
+ * p50 2.6% / p90 12.6% per case, and the dominant noise is BETWEEN runs (CPU
+ * boost state, cache/ASLR layout, neighbours). Every statistic computed from a
+ * single run inherits that variance, so the fix is to make more than one run and
+ * keep the least-interfered one.
+ *
+ * The cost is N x wall-clock, which is why the default is 1 and the count is
+ * recorded on every row and in the baseline: a best-of-N row is systematically
+ * faster than a best-of-1 row, so `compare` refuses to read the difference as
+ * a code change.
+ */
+async function collectCasesRepeated(fixtures: readonly Fixture[], repeat: number): Promise<BenchCase[]> {
+  if (repeat <= 1) return collectCases(fixtures);
+  const best = new Map<string, BenchCase>();
+  for (let i = 0; i < repeat; i++) {
+    section(`repeat ${i + 1}/${repeat} (best of ${repeat} wins per case)`);
+    for (const row of await collectCases(fixtures)) {
+      const key = `${row.name}|${row.scale}`;
+      const previous = best.get(key);
+      if (previous === undefined || row.median_ms < previous.median_ms) best.set(key, row);
+    }
+  }
+  return [...best.values()].map((row) => ({ ...row, repeats: repeat }));
+}
+
 function compare(options: Options, baseline: Baseline): void {
   if (options.compare === null) return;
   section("comparison");
@@ -118,7 +160,7 @@ async function main(): Promise<void> {
   console.log(`celestea-studio-ts bench | node ${process.version} | scales: ${options.scales.join(", ")} events`);
   const fixtures = await fixturesFor(options.scales);
   reportFixtures(fixtures);
-  const cases = await collectCases(fixtures);
+  const cases = await collectCasesRepeated(fixtures, options.repeat);
   const durationMs = Math.round(Number(nowNs() - startedAt) / 1e6);
   const baseline = buildBaseline(fixtures, cases, durationMs);
   console.log(`\n${cases.length} cases | result drain ${drainedValue().toFixed(3)} (measured calls stay observable: V8 may not elide them)`);

@@ -28,6 +28,14 @@ export interface BenchCase {
   median_ms: number;
   min_ms: number;
   ops_per_s: number;
+  /**
+   * How many whole-suite runs this row is the best of (absent = 1).
+   *
+   * `--repeat N` keeps, per case, the run with the smallest median. A best-of-N
+   * row is systematically faster than a best-of-1 row, so the count travels with
+   * the number and `compare` warns when the two sides disagree.
+   */
+  repeats?: number;
   /** Free-form honesty note (stubs, fallbacks, skipped regimes). */
   note?: string;
   /** Extra measured quantities (ratios, token estimates, growth exponents). */

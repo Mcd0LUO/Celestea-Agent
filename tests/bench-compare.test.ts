@@ -61,6 +61,17 @@ describe('bench compare', () => {
     expect(byName.get('band')?.change_pct).toBe(5);
   });
 
+  it('warns when the two sides used different repeat counts (method, not code)', () => {
+    const one = baseline('a', 'v1', [row('c', 100)]);
+    const three = { ...baseline('b', 'v1', [row('c', 90)]), repeats: 3 };
+    const text = renderComparison(one, three);
+    expect(text).toContain('method: best-of-1 vs best-of-3');
+    expect(text).toContain('repeat counts differ');
+    // Same repeat count on both sides: no method warning.
+    const alsoThree = { ...baseline('c', 'v1', [row('c', 90)]), repeats: 3 };
+    expect(renderComparison(three, alsoThree)).not.toContain('repeat counts differ');
+  });
+
   it('a big move is labelled as beyond noise, not just faster/slower', () => {
     const text = renderComparison(baseline('a', 'v1', [row('c', 100)]), baseline('b', 'v1', [row('c', 50)]));
     expect(text).toContain('beyond run-to-run noise');

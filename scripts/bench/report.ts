@@ -61,6 +61,8 @@ export interface Baseline {
   generated_at: string;
   command: string;
   unit: "ms";
+  /** Whole-suite repeats this baseline is the best of (absent = 1). */
+  repeats?: number;
   /** Wall-clock of the measurement phase (fixtures + cases), not of writing. */
   duration_ms: number;
   machine: MachineInfo;
@@ -119,6 +121,7 @@ export function buildBaseline(fixtures: readonly Fixture[], cases: readonly Benc
     generated_at: new Date().toISOString(),
     command: BENCH_COMMAND,
     unit: "ms",
+    repeats: cases[0]?.repeats ?? 1,
     duration_ms: durationMs,
     machine: machineInfo(),
     fixtures: fixtureSummaries(fixtures),

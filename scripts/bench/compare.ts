@@ -137,10 +137,19 @@ export function renderComparison(baseline: Baseline, current: Baseline): string 
   const rows = compareBaselines(baseline, current);
   const signal = rows.filter((row) => row.status === "signal").length;
   const unclear = rows.filter((row) => row.status === "unclear").length;
+  const repeatsBefore = baseline.repeats ?? 1;
+  const repeatsNow = current.repeats ?? 1;
   return [
     `compare: ${baseline.version} baseline (${baseline.machine.commit}, ${baseline.generated_at})`,
     `     vs: this run (${current.machine.commit}, ${current.generated_at})`,
+    `method: best-of-${repeatsBefore} vs best-of-${repeatsNow}`,
     ...environmentSection(baseline, current),
+    ...(repeatsBefore === repeatsNow
+      ? []
+      : [
+          `!! repeat counts differ — a best-of-${Math.max(repeatsBefore, repeatsNow)} row is systematically`,
+          "!! faster than a best-of-1 row, so part of every delta below is method, not code.",
+        ]),
     `cases: ${rows.length} — ${signal} beyond noise (>=${NOISE_P90_PCT}%), ${unclear} inside the noise band (${NOISE_TYPICAL_PCT}-${NOISE_P90_PCT}%)`,
     "",
     ...rows.map(line),
