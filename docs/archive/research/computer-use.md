@@ -1,5 +1,8 @@
 # Celestea Agent · 真机操控（Computer-Use）开源调研
 
+> 状态：**历史参考**。本文件是调研/迁移阶段的记录，W890 起归档到 `docs/archive/`；现行口径见 [`docs/README.md`](../../README.md)。
+> 📦 **历史文档**。
+
 > 范围：**只做调研**，不改产品代码。本文只覆盖 computer-use；持久记忆库由另一路 worker 负责（见同目录 `memory-store.md`）。
 > 结论先行：**Web 侧走「零依赖 CDP + chrome-headless-shell」是值得的**；元素识别默认走**可访问性树/元素引用（ref）**，纯视觉只作降级；原生桌面走 **Xvfb + X11 注入**，Wayland 在无显示器服务器上不是目标。
 > 调研时间：时间盒内完成，标注「未核实」处不臆断。

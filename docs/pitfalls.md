@@ -4,7 +4,7 @@
 
 > 📦 **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓，前端 = `apps/web/`，
 > 运行数据迁到 `/var/lib/celestea-agent/`。本页所述路径以**并入前**的旧两仓布局为准（历史参考），
-> 现役口径见 [`README.md`](./README-frontend.md) 与 [`../README.md`](../README.md)。
+> 现役口径见 [`archive/README-frontend.md`](./archive/README-frontend.md) 与 [`../README.md`](../README.md)。
 
 
 > **每条都来自真实修复**（见 git log 的 `fix(studio): ...` 提交）。改相关代码之前先读对应条目。
@@ -240,7 +240,7 @@ originalId: p?.id                         // 打开编辑器时记录
 |---|---|
 | `GET /api/health` 的 `bind` 是实际绑定地址 | 是**常量** `DEFAULT_BIND`，不随 `STUDIO_BIND` 变（`src/main.rs:867`） |
 | 前端监听的 `context` 事件 | 后端**从不发送**（`frontend/src/sse.ts:34-43` 是死监听） |
-| `docs/DEVELOPMENT.md` 的 SSE 清单来自 `main.rs` 头部注释 | 那份注释**过期**（漏 `turn_end`/`compact`），以代码为准 |
+| `docs/archive/DEVELOPMENT.md` 的 SSE 清单来自 `main.rs` 头部注释 | 那份注释**过期**（漏 `turn_end`/`compact`），以代码为准 |
 | `POST /api/clear` 会清空 worker 会话 | 不会，只清当前代际绑定的活动会话 |
 | `GET /api/fs/browse` 受 `CELESTEA_TOOL_ROOTS` 限制 | **不受**；`roots` 字段只是建议起点（`src/workspaces.rs:111-113`） |
 | 改 `frontend/src/**` 要重启后端 | **不用**，`pnpm build` 即可（`get_static` 每次读磁盘） |

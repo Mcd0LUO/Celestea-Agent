@@ -1,5 +1,5 @@
 /**
- * Iteration E §4 P0 acceptance tests (D1 of `docs/iteration-e-capabilities.md`
+ * Iteration E §4 P0 acceptance tests (D1 of `docs/iteration-e/04-model-fallback.md`
  * §4.4): the *cause* of an `LlmError` is machine-readable in addition to its
  * message text — `httpStatus` (`null` when no response arrived) and `retryable`
  * (whether another attempt or another target could plausibly help).

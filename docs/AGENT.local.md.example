@@ -31,6 +31,10 @@
 | `HOME` | |
 | 免密 sudo 范围（`sudo -n -l`） | |
 | 文件归属要求（`chown` 的目标，见 `AGENT.md` §6） | |
+| git 提交身份（`git config user.name` / `user.email`） | |
+
+> 提交身份为什么算本机事实：它由这台机器的 `git config` 决定，不是仓库规则（`AGENT.md` §3.3）。
+> 别人 clone 后应该用**他们自己**的身份提交；把某个人的邮箱写进仓库只会让协作时的 `git log` 失真。
 
 ## 3. 本机装了哪些能力（决定你能验证什么）
 

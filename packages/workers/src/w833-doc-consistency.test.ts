@@ -7,7 +7,7 @@
  * table defaults to DISK under W787; only an explicit null is in-memory).
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,7 +38,12 @@ describe("W833 B9: worker table is on-disk by default", () => {
   });
 
   it("docs carry no unqualified tsvPath:null memory claim", () => {
-    const docs = read("docs/iteration-e-capabilities.md");
+    // W890: 该设计文档按章节拆进了 docs/iteration-e/（单篇 ≤ 700 行）；读整个目录，
+    // 这样以后再拆分册也不会让这条断言变成空转。
+    const docs = readdirSync(join(ROOT, "docs/iteration-e"))
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => read("docs/iteration-e/" + f))
+      .join("\n");
     expect(docs).not.toMatch(/studio 侧(显式 )?\x60tsvPath: null\x60（纯内存）/);
     expect(docs).toContain("worker-registry.tsv");
   });

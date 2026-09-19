@@ -68,7 +68,7 @@ export const PATH_ACCESS: ReadonlyMap<string, PathAccess> = new Map<string, Path
   ["read_file", "read"],
   ["list_dir", "read"],
   // W819-7: read_image(path=...) is the documented peer of read_file under
-  // the same sandbox guard (docs/feature-multimodal-attachments.md 5.5);
+  // the same sandbox guard (docs/feature-multimodal-attachments/02-design.md 5.5);
   // leaving it undeclared made the write floor refuse a readable root.
   ["read_image", "read"],
   ["write_file", "write"],

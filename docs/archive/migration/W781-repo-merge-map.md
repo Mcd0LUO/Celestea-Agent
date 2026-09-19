@@ -1,5 +1,8 @@
 # W781：本仓已全量并入 Celestea-Agent（2026-09-14）
 
+> 状态：**历史参考**。本文件是调研/迁移阶段的记录，W890 起归档到 `docs/archive/`；现行口径见 [`docs/README.md`](../../README.md)。
+> 📦 **历史文档**。
+
 本仓（Celestea-Studio，目录 `celestea_studio`）的内容已**全量迁入** `celestea_studio-ts`
 （Celestea-Agent，远端 `Mcd0LUO/Celestea-Agent`）。自此**唯一仓 = Celestea-Agent**。
 
@@ -8,7 +11,7 @@
 | 原位置（本仓） | 新位置（Celestea-Agent） |
 | --- | --- |
 | `frontend/` | `apps/web/` |
-| `docs/DEVELOPMENT.md`、`data-files.md`、`pitfalls.md` | `docs/`（README 并入 `docs/README-frontend.md`） |
+| `docs/DEVELOPMENT.md`、`data-files.md`、`pitfalls.md` | `docs/`（README 并入 `docs/archive/README-frontend.md`） |
 | `docs/archive/**` | `docs/archive/frontend/`（W881 清理：退役历史文档已移出公开仓） |
 | `tools/**` | `scripts/model-sync/`（本次起被 git 真正跟踪） |
 | `notes/**` | `docs/notes/`（仅一篇 3 行插话测试残留，2026-09-15 清理时删除；内容为 `插话测试：立刻记下这条`） |

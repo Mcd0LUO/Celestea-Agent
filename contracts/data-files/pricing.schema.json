@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "pricing.json (model price snapshot for the usage ledger)",
   "source": {
-    "design": "/src/celestea_studio-ts/docs/iteration-e-capabilities.md §3.2.2 (W728 P0)",
+    "design": "docs/iteration-e/03-cost-ledger.md §3.2.2 (W728 P0)",
     "code": "packages/runtime/src/pricing.ts",
     "priceOfRecord": "newapi owns the price of record (LTS biz/newapi.md I1–I3); this snapshot is an engine-side ESTIMATE"
   },

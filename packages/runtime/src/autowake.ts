@@ -1,7 +1,7 @@
 /**
  * Host auto-wake (W769) — the TS counterpart of the legacy `autowake_loop`
  * (`crates/../src/main.rs:1044-1187`, semantics in
- * `docs/DEVELOPMENT.md` §2.6).
+ * `docs/archive/DEVELOPMENT.md` §2.6).
  *
  * The problem it solves: a worker's completion receipt is delivered into its
  * HOST session's mailbox, and the host only drains that mailbox at a turn

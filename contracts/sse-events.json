@@ -4,7 +4,7 @@
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
     "code": "frozen from the retired backend implementation (original source file deleted 2026-09-15): emit + loop_event_to_json, the SSE handler, and the bus capacity constant",
-    "doc": "docs/DEVELOPMENT.md §2.5",
+    "doc": "docs/archive/DEVELOPMENT.md §2.5",
     "liveProbe": {
       "endpoint": "http://127.0.0.1:3777/api/events",
       "mode": "read-only passive connect",

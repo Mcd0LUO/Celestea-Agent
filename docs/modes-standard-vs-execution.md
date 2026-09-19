@@ -6,7 +6,7 @@
 > 范围：`packages/core`（无改动，见 §4）、`packages/tools`、`packages/runtime`、`apps/studio/src/{store,handlers,runtime}`、
 > `contracts/`、共用前端 `apps/web/src/**`；仓库外 `celes-worker-spawn` 插件（`/src/dsh_plugins/celes-worker-spawn`）只作为**映射边界**出现。
 > 前置阅读：`docs/ARCHITECTURE.md`（分层/seam 纪律）、`docs/feature-session-independence.md`（W513，已实现：每会话实例 + SSE `v:2` 信封）、
-> `docs/feature-session-grants.md`（W516，已实现：会话级配置与审计先例）、`docs/iteration-e-capabilities.md`（§5.3 契约清单写法）、
+> `docs/feature-session-grants.md`（W516，已实现：会话级配置与审计先例）、`docs/iteration-e/README.md`（§5.3 契约清单写法）、
 > 已归档的 DSH 评估（W253 PTC 三层拆解、W254 run_code 折叠评估、W255 SDK 契约）已于 W881 清理出公开仓。
 > 一句话目标：**同一份引擎，两种会话工作方式**——标准模式按今天的方式逐步调用工具；执行模式把多步依赖调用折叠进 `run_code` 程序里，并以**会话元数据**固定下来，而不是每轮改口径。
 >
@@ -30,7 +30,7 @@
 
 ---
 
-## 0.1 共同约束（沿用 `iteration-e-capabilities.md` §0.1 的 K 编号体系）
+## 0.1 共同约束（沿用 `docs/iteration-e/README.md` §0.1 的 K 编号体系）
 
 | # | 约束 | 依据 | 对本设计的直接影响 |
 |---|---|---|---|
@@ -99,7 +99,7 @@
 | **失败面** | 单步失败可见、可逐步重试；错在"下一步再修" | 程序语法/形状错误 → 整次 `run_code` 失败（带日志尾部 ≤2 KiB）；也可能出现"程序写不出就放弃"的中间态 | `run_code: code=` 结构化错误类别（`invalid_arg`/`config`/`spawn`/`protocol`/`timeout`/`aborted`）与 `ToolCallError.tool_name` |
 | **审计/回放** | 每步一行 `tool_call`/`tool_result` | **子调用同样全量落日志**（`id=<parent>:c<n>`、`parent_id=<parent>`），但模型只看到外层往返 | jsonl 行数与 `deriveMessages` 投影的差 |
 | **权限/沙箱** | `run_shell` 与各工具按会话 grants | **完全相同**：子调用走同一 guard 链；程序本身与 `run_shell` 同级（可绕 ToolGuard 直接 I/O，W254 §6.1 已承认） | `ToolOutput.decision` 与 grants 审计行 |
-| **成本归属** | 每步一次计费 | 每步一次计费（省的是往返次数与前缀重复，不是单价） | 账本（能力 3，见 `iteration-e-capabilities.md` §3） |
+| **成本归属** | 每步一次计费 | 每步一次计费（省的是往返次数与前缀重复，不是单价） | 账本（能力 3，见 `docs/iteration-e/03-cost-ledger.md` §3） |
 
 **关键诚实结论（token 经济）**：Celestea 只有 10 个工具，**"折叠 schema"本身几乎不省 token**（省 370、加回数百）。真正的 token 收益来自**往返折叠**（5 次往返 → 1 次，前缀重复消失）——W254 §8.1 的 −78% 是**往返度量**，不是 schema 度量。两者不可混算；任何"执行模式省 token"的说法必须先有 A/B 实测（§5-P2、M15）。
 
@@ -219,7 +219,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 
 ---
 
-## 4. 契约影响（逐条，照 `iteration-e-capabilities.md` §5.3 写法）
+## 4. 契约影响（逐条，照 `docs/iteration-e/README.md` §5.3 写法）
 
 约定：**兼容** = 老前端/老客户端不受影响；**变更** = 需同步前端或声明破坏。
 
@@ -369,7 +369,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 
 | 文档 | 关系 |
 |---|---|
-| `iteration-e-capabilities.md` | mode 与能力 3（账本）在 P2 交汇：账本行带 `mode` 才能回答"执行模式到底省了多少"；本文不复制其 P0 内容，只依赖其 `attempt` 维度约定 |
+| `docs/iteration-e/` | mode 与能力 3（账本）在 P2 交汇：账本行带 `mode` 才能回答"执行模式到底省了多少"；本文不复制其 P0 内容，只依赖其 `attempt` 维度约定 |
 | `feature-session-independence.md`（已实现） | 本文的**基座**：每会话实例 + epoch 重建 + SSE `session` 信封使"每会话 mode"成为可能；本文不改其任何裁决 |
 | `feature-session-grants.md`（已实现） | 会话级配置文件的读写/容错/审计纪律**直接复用**（`session.json` 与 `grants.json` 的差别只在容错等级：前者忽略错误，后者整份忽略 + 告警） |
 | `check-ui-copy.mjs` | 新增 UI 文案（「工作方式」「标准模式」「执行模式（PTC）」）需过 apps/web/tools/check-ui-copy.mjs 的文案规范；`mode` 值不直接暴露给用户（显示中文标签） |

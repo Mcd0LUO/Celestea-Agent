@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "fallbacks.json (model fallback chain, sidecar config)",
   "source": {
-    "design": "/src/celestea_studio-ts/docs/iteration-e-capabilities.md §4.2.4 (E-P1, W785)",
+    "design": "docs/iteration-e/04-model-fallback.md §4.2.4 (E-P1, W785)",
     "code": "packages/llm/src/fallback-config.ts (parseConfig/loadFallbackConfig), apps/studio/src/runtime/fallback-host.ts"
   },
   "path": {

@@ -4,7 +4,7 @@
 
 > 📦 **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓，前端 = `apps/web/`，
 > 运行数据迁到 `/var/lib/celestea-agent/`。本页所述路径以**并入前**的旧两仓布局为准（历史参考），
-> 现役口径见 [`README.md`](./README-frontend.md) 与 [`../README.md`](../README.md)。
+> 现役口径见 [`archive/README-frontend.md`](./archive/README-frontend.md) 与 [`../README.md`](../README.md)。
 
 > 🏠 **W880（2026-09-18）：CELESTEA_HOME 数据根**。workspace 里的 celestea 产物（会话目录 / 归档 / 回收站 / prompts / run_code 临时程序）已全部移出工作区，落到跨平台数据根：
 > 1. `$CELESTEA_HOME`（生产 systemd 固定 `/var/lib/celestea-agent`，FHS 的 `/var/lib/<service>`）；

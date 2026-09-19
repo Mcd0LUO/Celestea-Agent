@@ -32,7 +32,7 @@
     "w804Delta": {
       "addedTool": "read_image",
       "count": "11 -> 12",
-      "sourceRef": "docs/feature-multimodal-attachments.md#6",
+      "sourceRef": "docs/feature-multimodal-attachments/02-design.md#6",
       "why": "The model needs to look at a local image (or a user-uploaded attachment by id) and have a vision-capable model actually see it; read_file is UTF-8 text only and rejects binary.",
       "optionalMount": "builtinTools mounts read_image only when the host supplies a session attachment store; the default registry of record stays the 7 contract tools.",
       "endpoints": "P0 adds ZERO endpoints: uploads ride POST /api/turn as inline base64 (attachment refs only in the log), so API_ENDPOINT_COUNT stays 51."
@@ -452,7 +452,7 @@
         "required": [],
         "additionalProperties": false
       },
-      "sourceRef": "docs/feature-multimodal-attachments.md#6"
+      "sourceRef": "docs/feature-multimodal-attachments/02-design.md#6"
     },
     {
       "name": "remember",

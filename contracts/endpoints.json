@@ -3690,7 +3690,7 @@
       "path": "/api/usage/ledger",
       "group": "usage",
       "rustHandler": "(none - TypeScript-only, W785)",
-      "docRef": "docs/iteration-e-capabilities.md#324-聚合视图",
+      "docRef": "docs/iteration-e/03-cost-ledger.md#324-聚合视图",
       "request": {
         "kind": "query",
         "fields": [

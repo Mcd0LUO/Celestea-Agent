@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "checkpoint.json (per-session crash / shutdown sidecar)",
   "source": {
-    "design": "/src/celestea_studio-ts/docs/iteration-e-capabilities.md §1.2.2/§1.2.3 (E-P0③)",
+    "design": "docs/iteration-e/01-checkpoint.md §1.2.2/§1.2.3 (E-P0③)",
     "code": "packages/session/src/checkpoint.ts, packages/session/src/checkpoint-recovery.ts, packages/runtime/src/recovery.ts"
   },
   "path": {

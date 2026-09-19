@@ -1,15 +1,15 @@
 # Celestea Studio · 开发文档（权威入口）
 
-> 状态：**历史参考**。旧后端的开发者入口（并入前的两仓布局）；文中路径与行号以当时为准，现役入口见 @@README-frontend.md@@ 与 @@AGENT.md@@。
+> 状态：**历史参考**。旧后端的开发者入口（并入前的两仓布局）；文中路径与行号以当时为准，现役入口见 [`README-frontend.md`](./README-frontend.md) 与 @@AGENT.md@@。
 
-> 📦 **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓，前端 = `apps/web/`，
+> 📦 **历史文档** ｜ **W781（2026-09-14）**：旧前端仓 Celestea-Studio（并入前位于同级的 `celestea_studio` 目录）已全量并入本仓，前端 = `apps/web/`，
 > 运行数据迁到 `/var/lib/celestea-agent/`。本页所述路径以**并入前**的旧两仓布局为准（历史参考），
-> 现役口径见 [`README.md`](./README-frontend.md) 与 [`../README.md`](../README.md)。
+> 现役口径见 [`README-frontend.md`](./README-frontend.md) 与 [`docs/README.md`](../README.md)。
 
 
 > 🧭 **仓库角色（2026-09-11）**：本仓现役 = **线上前端（`frontend/`）+ 共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）。
 > 本文描述的是**并入前的旧 Studio 后端**（架构 / 构建 / 测试），属**历史参考**。
-> **后端开发请看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md)**（TypeScript 后端，生产）；本仓 `docs/` 索引见 [`README.md`](./README.md)。
+> **后端开发请看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md)**（TypeScript 后端，生产）；本仓 `docs/` 索引见 [`docs/README.md`](../README.md)。
 
 > 本文是 Celestea Studio 的**开发者入口文档**，内容全部来自对 `/src/celestea_studio-ts` 实际代码的核对（文件:行号可回溯）。
 > 契约字段名 / 代码标识符保留英文原文，其余以中文叙述。
@@ -26,10 +26,10 @@
 | 文档 | 内容 | 什么时候读 |
 |---|---|---|
 | **本文 `docs/DEVELOPMENT.md`** | 架构总览、模块职责、关键机制、工作流、测试现状、文档索引 | 第一次上手；改任何东西之前 |
-| [`docs/README.md`](./README.md) | **`docs/` 全量索引**：状态（当前 / 设计 / 历史）、一句话、权威入口 | 找文档时先看它 |
-| [`docs/data-files.md`](./data-files.md) | `workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json` 的 schema 与格式 | 改持久化、迁移、回放 |
-| [`docs/pitfalls.md`](./pitfalls.md) | **踩坑档案**：每一条都来自真实修复（症状 / 根因 / 正确做法 / 代码位置） | 动 providers、compact、SSE、前端渲染之前**必读** |
-| [`apps/web/FRONTEND-RULES.md`](../apps/web/FRONTEND-RULES.md) | 前端渲染**铁律**（验收硬性标准） | 写任何前端 UI 之前 |
+| [`docs/README.md`](../README.md) | **`docs/` 全量索引**：状态（当前 / 设计 / 历史）、一句话、权威入口 | 找文档时先看它 |
+| [`docs/data-files.md`](../data-files.md) | `workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json` 的 schema 与格式 | 改持久化、迁移、回放 |
+| [`docs/pitfalls.md`](../pitfalls.md) | **踩坑档案**：每一条都来自真实修复（症状 / 根因 / 正确做法 / 代码位置） | 动 providers、compact、SSE、前端渲染之前**必读** |
+| [`apps/web/FRONTEND-RULES.md`](../../apps/web/FRONTEND-RULES.md) | 前端渲染**铁律**（验收硬性标准） | 写任何前端 UI 之前 |
 
 **一句话职责边界（旧口径）**：后端是唯一真源（状态、文件、引擎代际都在后端进程里）；前端只是"渲染 + 转发"，不持有业务真值。
 > 2026-09-11 起后端已换为 TypeScript（`celestea-studio-ts`），该边界仍然成立，只是"后端进程"指 TS 服务。
@@ -286,13 +286,13 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 - 版本号（W887）：**单一真源 = git tag**。`scripts/version.mjs` 的 `computeVersion()` 跑 `git describe --tags --always --dirty`（无 git / 无 tag 回落 `apps/web/package.json` 的 `version`），`apps/web/vite.config.ts` 经 `define` 注入 `__APP_VERSION__` / `__APP_COMMITS__` / `__APP_SHA__` / `__APP_DIRTY__` / `__BUILD_TIME__`，`apps/web/src/version.ts` 只读注入值（裸 vite 未注入时回落 `'dev'`）。后端 `GET /api/health.version` 用同一个脚本计算。防漂移门禁见 `tests/w887-version.test.ts`；`pnpm version:sync` 可把 `apps/web/package.json` 的 `version` 写回派生值（**刻意不挂进 `pnpm check`**，门禁不应依赖工作树 git 状态）。
 - 主题：**只有 `mono` 单主题**（`frontend/src/theme.ts:12-14`）；旧 `localStorage` 里的已删主题 id 会自动回落 `mono`。
 
-部署（systemd / nginx / 环境变量 / 重启命令）的旧后端文档已于 W881 清理出公开仓；TS 部署见 [`scripts/run-studio-ts.sh`](../scripts/run-studio-ts.sh)。
+部署（systemd / nginx / 环境变量 / 重启命令）的旧后端文档已于 W881 清理出公开仓；TS 部署见 [`scripts/run-studio-ts.sh`](../../scripts/run-studio-ts.sh)。
 
 ---
 
 ## 4. HTTP API 索引
 
-完整契约（请求体字段、响应体字段、**每个错误分支的 status + error 原文**）的真源是 [`contracts/endpoints.json`](../contracts/endpoints.json)；旧后端的归档契约已于 W881 清理出公开仓。这里只给总表。
+完整契约（请求体字段、响应体字段、**每个错误分支的 status + error 原文**）的真源是 [`contracts/endpoints.json`](../../contracts/endpoints.json)；旧后端的归档契约已于 W881 清理出公开仓。这里只给总表。
 
 | 分组 | 端点 |
 |---|---|
@@ -313,7 +313,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 
 ## 5. 数据文件索引
 
-完整 schema、迁移规则与格式说明在 [`docs/data-files.md`](./data-files.md)。
+完整 schema、迁移规则与格式说明在 [`docs/data-files.md`](../data-files.md)。
 
 | 文件 | 位置（默认） | 权限 | 内容 |
 |---|---|---|---|
@@ -331,7 +331,7 @@ pnpm build                                  # tsc --noEmit && vite build -> fron
 
 ## 6. 踩坑档案
 
-**所有条目都来自真实修复**，完整版在 [`docs/pitfalls.md`](./pitfalls.md)。摘要：
+**所有条目都来自真实修复**，完整版在 [`docs/pitfalls.md`](../pitfalls.md)。摘要：
 
 | # | 坑 | 一句话结论 |
 |---|---|---|

@@ -1,5 +1,8 @@
 # 零依赖 CDP 驱动无头浏览器：本机 spike 报告
 
+> 状态：**历史参考**。本文件是调研/迁移阶段的记录，W890 起归档到 `docs/archive/`；现行口径见 [`docs/README.md`](../../README.md)。
+> 📦 **历史文档**。
+
 | 项 | 值 |
 | --- | --- |
 | 仓库 | /src/celestea_studio-ts（main @ 45cd013） |

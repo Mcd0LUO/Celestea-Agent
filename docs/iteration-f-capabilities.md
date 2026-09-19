@@ -2,8 +2,8 @@
 
 > 状态：**已实现（F1–F4，v2.7.x）**。本文是目标契约与验收标准的记录；落地见 apps/web/src/ui/quote/、apps/web/src/ui/preview/、packages/core/src/memory.ts、packages/tools/src/browser/。
 > 目标：`goal-ab885a1b-2bd5-4366-bd43-f118880561da`（持续迭代，逐项上线）。
-> 前置：`docs/ARCHITECTURE.md`（分层与 seam 纪律）、`docs/iteration-e-capabilities.md`（同体例的上一个迭代方向）、
-> `docs/feature-multimodal-attachments.md`（附件链现状）、`docs/feature-dynamic-tool-disclosure.md`（工具面收口）。
+> 前置：`docs/ARCHITECTURE.md`（分层与 seam 纪律）、`docs/iteration-e/`（同体例的上一个迭代方向）、
+> `docs/feature-multimodal-attachments/`（附件链现状）、`docs/feature-dynamic-tool-disclosure.md`（工具面收口）。
 > 一句话目标：**agent 从「能跑命令」升级为「能看、能引、能记、能动手」**——引得到上下文、看得见文件、记得住事情、操得动机器。
 
 ---
@@ -57,7 +57,7 @@ F3 的 P0 也是只读注入（零新工具/零依赖/零契约）；F4 最难�
 | 端点总数 | **61**，硬断言 | `apps/studio/src/routes.ts:58` |
 | 文件系统端点 | **只有** `/api/fs/browse`，注释明写 "DIRECTORY names only (files are never listed)" | `contracts/endpoints.json:1780`、`apps/studio/src/handlers/fs.ts` 文件头 |
 | 内置工具 | **14** 个（含 W884 新增 `load_skill`） | `packages/tools/src/tools/`、`contracts/tools.json` |
-| 文本附件 | `.md/.txt/.json` 等走「前端读文本 + 发送时注入」；**图片走 attachments 链**（魔数嗅探 + 像素尺寸） | `apps/web/src/ui/text-attach.ts`（W869），`docs/feature-multimodal-attachments.md` |
+| 文本附件 | `.md/.txt/.json` 等走「前端读文本 + 发送时注入」；**图片走 attachments 链**（魔数嗅探 + 像素尺寸） | `apps/web/src/ui/text-attach.ts`（W869），`docs/feature-multimodal-attachments/` |
 | 注入块范式 | 已有唯一字面量定界行 + 正文同形行转义（防伪造边界） | `apps/web/src/ui/text-attach.ts` `TEXT_BLOCK_DELIMITER` / `escapeDelimiterLines` |
 | 选中处理 | **无** `getSelection`、无引用数据模型 | `grep -rn "getSelection" apps/web/src` 零命中 |
 | 浏览器/桌面操控 | **无** CDP/puppeteer/playwright/webdriver 代码 | 全仓 grep 零命中 |
@@ -182,7 +182,7 @@ bwrap + `rlimits=false shareNet=true` ⇒ ALIVE + 网络 200。**不可用**：�
 **P2**：远程/多机、录制回放。
 **未验证（W885 交底）**：真正 run_code broker/LLM 回路、`CELESTEA_SANDBOX_SECCOMP=1`、file:// 下载上传、Windows/macOS、长稳与 RSS。
 
-**验收**：spike 报告（`docs/research/computer-use-spike.md`）先行 → 工具面契约 → 沙箱兼容性测试（含 rlimit 断言）→
+**验收**：spike 报告（`docs/archive/research/computer-use-spike.md`）先行 → 工具面契约 → 沙箱兼容性测试（含 rlimit 断言）→
 进程泄漏测试（跑完断言无残留进程）→ live 端到端（真开一个页面、真点一下、真截一张图）。
 
 ---
