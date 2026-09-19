@@ -24,6 +24,7 @@ import './styles/attachments.css'; // W805 图片附件（待发条 / 气泡网�
 import './styles/quote.css'; // F1 选段提及（引用卡 / 选区浮标 / 待发引用 chip）
 import './styles/preview.css'; // F2 文件侧边预览（覆盖式浮层 / 代码 / 降级）
 import './styles/commands.css'; // A3 斜杠命令补全框 / 终端输出 / 目标条
+import './styles/workbench.css'; // G4 多面板工作区（入口菜单 / 可停靠面板 / 文件管理器）
 import './styles/workerstrip.css'; // W866 会话页左上角 worker 快捷条
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
 
@@ -40,6 +41,7 @@ import { restoreActiveHistory } from './ui/restore';
 import { initRail } from './ui/rail';
 import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
 import { installCommands, renderGoalBar } from './ui/commands'; // A3：斜杠命令 + 持久目标
+import { initWorkbench } from './ui/workbench'; // G4：多面板工作区
 import { installQuoteSelection } from './ui/quote/select'; // F1：选段提及（选区浮标）
 import { versionLabel, describeLabel, BUILD_TIME, APP_DIRTY } from './version'; // W887 构建期版本标签
 import { initSidebar } from './ui/sidebar';
@@ -108,6 +110,7 @@ function init(): void {
   initChat();
   installQuoteSelection(); // F1：选段提及（viewctx 已就绪）
   installCommands(); // A3：斜杠命令补全 + ! 快捷方式（inputbar 已装配）
+  initWorkbench(); // G4：右上角入口 + 多面板工作区
   renderGoalBar(); // A3：目标条（当前会话可能有目标）
   refreshHealthChip();
   void restoreActiveHistory();

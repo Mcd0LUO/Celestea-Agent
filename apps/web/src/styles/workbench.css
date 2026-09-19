@@ -1,0 +1,200 @@
+/* ============================================================================
+ * styles/workbench.css — G4：多面板工作区（右上角入口 + 可停靠面板区 + 文件管理器）。
+ *   布局：.wb-host 是 #main 内的普通 flex 子项（位于 .chat-shell 之后），
+ *   不动 #layout 的 #sidebar + #main 三栏骨架（理由见 ui/workbench/panel.ts 头注）。
+ * ============================================================================ */
+
+/* ---- 右上角入口按钮 ---- */
+.btn-workbench { display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; }
+.btn-workbench svg { display: block; }
+
+/* ---- 入口菜单（右上角按钮下方） ---- */
+.wb-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 240px;
+  padding: 4px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-md);
+  background: var(--c-surface-raised);
+  box-shadow: var(--shadow-panel);
+}
+.wb-menu.hidden { display: none; }
+.wb-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.wb-menu-item:hover { background: var(--c-accent-soft); }
+.wb-menu-label { font-size: 13px; color: var(--c-text-1); }
+.wb-menu-desc { font-size: 11.5px; color: var(--c-text-3); }
+
+/* ---- 面板区（#main 内的可停靠容器；绝对定位，不动 #layout 骨架） ----
+   选择理由与代价（报告里详述）：绝对定位的 dock 区 **零骨架改动、零背景重排**，
+   但面板会覆盖在对话区之上而不是把对话区挤窄（真·挤压布局要改 #main 的子结构，
+   而 w871 断言 .chat-shell 的父节点必须是 #main）。 */
+.wb-host { position: absolute; inset: 0; z-index: 24; pointer-events: none; }
+.wb-host.hidden { display: none; }
+.wb-dock { position: absolute; inset: 0; pointer-events: none; }
+.wb-zone { pointer-events: none; }
+/* 底部：贴底一行（面板横向排开） */
+.wb-zone.bottom {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: row; align-items: stretch;
+  padding: 0 4px 4px;
+}
+/* 右侧：贴右一列（面板纵向排开），下沿让开 bottom 区高度 */
+.wb-zone.right {
+  position: absolute;
+  top: 0; right: 0; bottom: var(--wb-bottom-h, 0px);
+  display: flex; flex-direction: row; align-items: stretch;
+  padding: 4px 4px 0 0;
+}
+
+/* 面板框 */
+.wb-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 0 0 auto;
+  pointer-events: auto; /* dock 宿主穿透，面板本身可交互 */
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-md);
+  background: var(--c-surface-raised);
+  overflow: hidden;
+}
+.wb-panel.focused { border-color: var(--c-accent-ring); }
+.wb-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: var(--hairline) solid var(--border-l1);
+  background: var(--c-layer-2);
+  flex: 0 0 auto;
+}
+.wb-title { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--c-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-btn {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 3px;
+}
+.wb-btn:hover { color: var(--c-text-1); }
+.wb-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 8px; }
+
+/* 分隔条（拖拽 resize） */
+.wb-resizer { flex: 0 0 5px; background: transparent; position: relative; z-index: 2; pointer-events: auto; }
+.wb-resizer.right { cursor: col-resize; }
+.wb-resizer.bottom { cursor: row-resize; }
+.wb-resizer:hover { background: var(--c-accent-soft); }
+
+/* ---- 文件管理器 ---- */
+.wb-crumbs { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-width: 0; }
+.wb-crumb {
+  flex: 0 0 auto;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-raised);
+  color: var(--c-text-2);
+  font-size: 11.5px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.wb-crumb-cur { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; background: none; font-family: var(--mono); color: var(--c-text-3); }
+.wb-list { display: flex; flex-direction: column; }
+.wb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--c-text-2);
+}
+.wb-row:hover { background: var(--c-layer-2); }
+.wb-row.sel { background: var(--c-accent-soft); color: var(--c-text-1); }
+.wb-row.dir .wb-name { color: var(--c-accent); }
+.wb-icon { flex: 0 0 auto; }
+.wb-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-size, .wb-time { flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; color: var(--c-text-3); }
+.wb-time { min-width: 96px; text-align: right; }
+.wb-notice { font-size: 12px; color: var(--c-warn); padding: 4px 2px; }
+.wb-placeholder { font-size: 12px; color: var(--c-text-3); padding: 4px 2px; }
+
+/* 拖动停靠时的落点提示 */
+.wb-drop-hint {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--c-accent);
+  background: var(--c-accent-soft);
+  border: 1px solid var(--c-accent-ring);
+  pointer-events: none;
+}
+.wb-drop-hint.right { top: 0; right: 0; bottom: 0; width: 40%; }
+.wb-drop-hint.bottom { left: 0; right: 0; bottom: 0; height: 40%; }
+
+/* ---- 终端面板（一次性执行，不是交互式 TTY） ---- */
+.wb-term-note { font-size: 11px; color: var(--c-text-3); padding: 2px 2px 6px; }
+.wb-term-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.wb-term-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-code-bg);
+  color: var(--c-text-1);
+}
+.wb-term-run { border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); padding: 3px 10px; color: var(--c-text-1); }
+.wb-term-outwrap { display: flex; flex-direction: column; gap: 8px; }
+.wb-term-line { border-top: 1px solid var(--c-border-subtle); padding-top: 4px; }
+.wb-term-cmd { display: flex; gap: 6px; font-family: var(--mono); font-size: 12px; color: var(--c-text-1); }
+.wb-term-prompt { color: var(--c-accent); }
+.wb-term-out {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--c-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wb-term-out.err { color: var(--c-err); }
+.wb-term-meta { font-family: var(--mono); font-size: 10.5px; color: var(--c-text-3); }
+.wb-term-meta.err { color: var(--c-err); }
+
+/* ---- 浏览器面板 ---- */
+.wb-url-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.wb-url-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-code-bg);
+  color: var(--c-text-1);
+}
+.wb-url-open { border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); padding: 3px 10px; color: var(--c-text-1); }
+.wb-url-external { margin-top: 4px; color: var(--c-accent); }
+.wb-frame { width: 100%; height: calc(100% - 34px); min-height: 200px; border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm); background: var(--c-layer-2); }
