@@ -16,7 +16,8 @@
  *   context-shape.ts the context snapshot body + the 20k-per-entry wire guard
  *   session-move.ts  {id}/rename | {id}/branch | {id}/compact | archive | unarchive | batch-*
  *   workspaces.ts    /api/workspaces (+rename/delete/batch-delete)
- *   fs.ts            GET /api/fs/browse
+ *   fs.ts            GET /api/fs/browse | GET /api/fs/list
+ *   exec.ts          G2: POST /api/exec (immediate shell, permission-gated)
  *   providers.ts     /api/providers (+delete/test/models fetch/default)
  *   prompts.ts       /api/prompts (+delete/default)
  *   worker.ts        /api/worker/spawn | send | status
@@ -38,6 +39,7 @@ import type { RouteTable } from "../routes.js";
 import { registerAuth } from "./auth.js";
 import { registerConfig } from "./config.js";
 import { registerDialog } from "./dialog.js";
+import { registerExec } from "./exec.js";
 import { registerFs } from "./fs.js";
 import { registerGrants } from "./grants.js";
 import { registerHealth } from "./health.js";
@@ -64,6 +66,8 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     ...registerSessionMoves(app, deps, table),
     ...registerWorkspaces(app, deps, table),
     ...registerFs(app, deps, table),
+    // G2: immediate execution for the UI (/run, !cmd) — no model in the loop.
+    ...registerExec(app, deps, table),
     ...registerProviders(app, deps, table),
     ...registerPrompts(app, deps, table),
     ...registerWorker(app, deps, table),

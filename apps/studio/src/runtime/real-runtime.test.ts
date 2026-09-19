@@ -367,7 +367,8 @@ describe("GET /api/sessions/{id}/context over the real engine", () => {
     // W7: 12 -> 13 — `stop_worker` joins the contract-driven worker tools.
     // W884: 13 -> 14 — `load_skill` is mounted (it needs only the session workspace).
     // F4: 14 -> 16 — the browser tools ride the session attachment store.
-    expect(toolViews).toHaveLength(16);
+    // F3: 16 -> 18 — the memory write pair (remember/forget) joins the face.
+    expect(toolViews).toHaveLength(18);
     expect(tools).toContain("ask_user_question");
     expect(tools).toContain("read_image");
     for (const view of toolViews) {

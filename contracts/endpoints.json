@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 61,
+  "count": 63,
   "endpoints": [
     {
       "id": "get_health",
@@ -187,8 +187,8 @@
         "W755: `window_source:profile` is the only case where `ratio` is a real measurement. A session whose profile declares no capacity reports `window:0, ratio:0, window_source:fallback` — the 1000000 CONTEXT_WINDOW_FALLBACK is a DISPLAY default only and never a denominator (the client must not draw a ring when window is 0); `unknown` means the configured value was not usable at all. DSH refuses to render occupancy without a resolved capacity.",
         "W755: `usage.total` is a cross-step, repeatedly-billed sum (every step re-sends the whole prompt), NOT an occupancy reading — never divide it by a context window. Occupancy is `context_usage` only.",
         "W785: `cost` is a PURE ADDITION and is present ONLY when the queried session's rows exist in the process ledger (`session_total`/`turn_total` are `null` — never 0 — when nothing was priced).",
-    "W787: `recovery.degraded` is true when the session log's own `writeErrorCount()>0` (disk and memory diverged, G1-6) OR the sidecar's sticky `degraded.log_write_errors>0`; the sticky value keeps a past fork visible after a healthy restart.",
-    "W787: `recovery.dangling_turns` counts `turn_start` rows minus `turn_end` rows in the LIVE log (the same rule as `analyzeReplay().danglingTurns`), and `recovered_turns` lists the `checkpoint.json` `repaired[]` turn ids — a repaired crash therefore reports `dangling_turns:0` together with a non-empty `recovered_turns`."
+        "W787: `recovery.degraded` is true when the session log's own `writeErrorCount()>0` (disk and memory diverged, G1-6) OR the sidecar's sticky `degraded.log_write_errors>0`; the sticky value keeps a past fork visible after a healthy restart.",
+        "W787: `recovery.dangling_turns` counts `turn_start` rows minus `turn_end` rows in the LIVE log (the same rule as `analyzeReplay().danglingTurns`), and `recovered_turns` lists the `checkpoint.json` `repaired[]` turn ids — a repaired crash therefore reports `dangling_turns:0` together with a non-empty `recovered_turns`."
       ],
       "probe": {
         "checked": true,
@@ -663,7 +663,7 @@
         "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending.",
         "W729: every row carries `mode` (worker rows included); a session without session.json.mode reads as \"standard\".",
         "W791 / W880: `?archived=1` reverses the scanner's dot-dir blind spot: the row set becomes the canonical `<CELESTEA_HOME>/workspaces/<ws>/archive/` directories holding `cli-main.jsonl` (legacy `<ws>/.celestea-archived/` still read), in the SAME shape and sort order as the default rows plus `archived:true` (id/workspace/title/model/mode/size/modified derive identically, `active` is always false, and worker rows are not part of that listing). Deleting an archived session (`POST /api/sessions/batch-delete`) and restoring it (`POST /api/sessions/{id}/unarchive`) both address it by its unchanged id.",
-    "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name."
+        "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name."
       ],
       "probe": {
         "checked": true,
@@ -1840,6 +1840,80 @@
         "checked": true,
         "mode": "read-only error-branch probe",
         "server": "http://127.0.0.1:3777"
+      }
+    },
+    {
+      "id": "get_fs_list",
+      "method": "GET",
+      "path": "/api/fs/list",
+      "group": "fs",
+      "rustHandler": "(none - TypeScript-only, G5)",
+      "docRef": "contracts/endpoints.json#get_fs_list",
+      "request": {
+        "kind": "query",
+        "fields": [
+          {
+            "name": "path",
+            "type": "string",
+            "required": false,
+            "note": "absolute path; omitted/blank lists '/'"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "path",
+            "type": "string",
+            "required": false
+          },
+          {
+            "name": "parent",
+            "type": "string|null",
+            "required": false
+          },
+          {
+            "name": "entries",
+            "type": "array<{name:string,type:string,size:number|null,mtime:string|null}>",
+            "required": false,
+            "note": "directories first then files, each by name; type is 'dir'|'file' (symlinks not followed); mtime is ISO-8601"
+          },
+          {
+            "name": "roots",
+            "type": "array<string>",
+            "required": false,
+            "note": "hard-coded [/src,/tmp,/srv,/home]; informational only"
+          },
+          {
+            "name": "truncated",
+            "type": "boolean",
+            "required": false,
+            "note": "true when entries were cut at MAX_DIR_ENTRIES=200"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "error": "path '{p}' must be absolute"
+        },
+        {
+          "status": 400,
+          "error": "path '{p}' is not an existing directory"
+        },
+        {
+          "status": 400,
+          "error": "cannot read '{p}': {e}"
+        }
+      ],
+      "notes": [
+        "G5 (docs/iteration-g-workbench.md §0.1): directories AND files with name/type/size/mtime. Same discipline as get_fs_browse: absolute path, dot-names hidden, symlinks not followed, sorted (dirs first), capped at MAX_DIR_ENTRIES. Additive 'roots'/'truncated' fields. No auth; loopback-bound only."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
       }
     },
     {
@@ -4086,6 +4160,111 @@
       "notes": [
         "W860: the names come from composeStudio recording pluginNames(storePlugins(...)) + pluginNames(hostPlugins(...)) at mount time — never a hand-maintained constant list.",
         "BOUNDARY: host STARTUP plugins only (the five store plugins + the three host singletons studio/bus, studio/runtime, studio/settings). Plugins the ENGINE mounts while composing a session are NOT part of this inventory."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "post_exec",
+      "method": "POST",
+      "path": "/api/exec",
+      "group": "exec",
+      "rustHandler": "(none - TypeScript-only, G2)",
+      "docRef": "contracts/endpoints.json#post_exec",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "command",
+            "type": "string",
+            "required": true,
+            "note": "shell command line; runs immediately, never through the model"
+          },
+          {
+            "name": "session",
+            "type": "string",
+            "required": false,
+            "note": "session whose permission preset + sandbox scope apply; omitted = the detached scope"
+          },
+          {
+            "name": "workdir",
+            "type": "string",
+            "required": false,
+            "note": "optional cwd inside the sandbox root"
+          },
+          {
+            "name": "timeout_ms",
+            "type": "integer",
+            "required": false,
+            "note": "per-call deadline, bounded by the sandbox max"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "exit_code",
+            "type": "integer|null",
+            "required": true
+          },
+          {
+            "name": "signal",
+            "type": "string|null",
+            "required": true
+          },
+          {
+            "name": "stdout",
+            "type": "string",
+            "required": true,
+            "note": "capped at the sandbox output limit"
+          },
+          {
+            "name": "stderr",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "duration_ms",
+            "type": "integer",
+            "required": true
+          },
+          {
+            "name": "sandbox",
+            "type": "object",
+            "required": true,
+            "note": "contract fields only: provider, net_isolated, tmp_private, seccomp, optional cpu_sec"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 403,
+          "error": "permission preset denies run_shell (code=shell_denied)"
+        },
+        {
+          "status": 400,
+          "error": "structured sandbox refusal (policy fail, bad workdir, timeout arg, output cap)"
+        },
+        {
+          "status": 404,
+          "error": "unknown session"
+        },
+        {
+          "status": 422,
+          "error": "field command must be a non-empty string"
+        }
+      ],
+      "notes": [
+        "G2 (docs/iteration-g-workbench.md section 1): /run and ! execute immediately and never touch /api/turn or the model. Reuses the run_shell execution path (selectSandboxDetailed + sessionSandboxConfig + sanitized env + output cap); a preset that denies run_shell, or a sandbox policy that refuses, is a structured refusal. NOT a tool: absent from contracts/tools.json and the model-visible face."
       ],
       "probe": {
         "checked": false,
