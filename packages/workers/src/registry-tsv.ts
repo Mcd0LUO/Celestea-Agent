@@ -13,9 +13,11 @@
  */
 
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WORKER_STATUSES, type WorkerEntry, type WorkerStatus } from "@celestea/core";
 
-export const REGISTRY_TSV_PATH = "/tmp/celestea-workers-registry.tsv";
+export const REGISTRY_TSV_PATH = join(tmpdir(), "celestea-workers-registry.tsv");
 
 export function isWorkerStatus(v: string): v is WorkerStatus {
   return (WORKER_STATUSES as readonly string[]).includes(v);

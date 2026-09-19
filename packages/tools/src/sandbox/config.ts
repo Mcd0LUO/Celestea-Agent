@@ -35,7 +35,7 @@ export const DEFAULT_MAX_TIMEOUT_MS = 300_000;
 export const DEFAULT_MAX_CPU_SEC = 600;
 export const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
 
-/** Host env vars passed through to the child (whitelist, not blacklist). */
+/** Host env vars passed through to the child on POSIX (whitelist, not blacklist). */
 export const ENV_ALLOWLIST: readonly string[] = [
   "PATH",
   "LANG",
@@ -49,6 +49,55 @@ export const ENV_ALLOWLIST: readonly string[] = [
   "TMPDIR",
   "PWD",
 ];
+
+/**
+ * The same whitelist for Windows — **without which `cmd.exe` cannot start**.
+ *
+ * Windows report (2026-09-19, Windows 11 / Node 26): the POSIX list was the only
+ * list, so the child received `PATH` and almost nothing else. `cmd.exe` finds its
+ * own DLLs through `SystemRoot`, is re-found through `ComSpec`, resolves `foo`
+ * to `foo.exe` through `PATHEXT`, and writes temp files through `TEMP`/`TMP` —
+ * with none of those present, `run_shell` fails on Windows.
+ *
+ * Deliberately a CURATED list, never "pass the whole environment": the POSIX side
+ * excludes `HOME` on purpose. `USERPROFILE`/`APPDATA` are the Windows spellings of
+ * `HOME` and are included because Windows tooling expects them; a POSIX shell
+ * simply does not read them, which is the only reason they were not listed.
+ */
+export const ENV_ALLOWLIST_WIN32: readonly string[] = [
+  "PATH",
+  "PATHEXT",
+  "SystemRoot",
+  "windir",
+  "SystemDrive",
+  "ComSpec",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "USERNAME",
+  "USERDOMAIN",
+  "PROGRAMDATA",
+  "PROGRAMFILES",
+  "PROGRAMFILES(X86)",
+  "OS",
+  "NUMBER_OF_PROCESSORS",
+  "PROCESSOR_ARCHITECTURE",
+  "LANG",
+  "TZ",
+  "TERM",
+];
+
+/**
+ * The whitelist for a platform. `platform` is injectable so the Windows answer is
+ * unit-tested on Linux (the W885 seam); production passes the host's.
+ */
+export function envAllowlist(platform: string = process.platform): readonly string[] {
+  return platform === "win32" ? ENV_ALLOWLIST_WIN32 : ENV_ALLOWLIST;
+}
 
 /**
  * W768: the per-SESSION filesystem scope. One value, resolved by the HOST from
@@ -140,13 +189,19 @@ export function shellInvocation(command: string, input: ShellResolveInput = {}):
   return { program: shell.path, args: [...shell.argv] };
 }
 
-/** Allowlisted host env plus explicit operator additions (never `HOME`). */
+/**
+ * Allowlisted host env plus explicit operator additions (never `HOME`).
+ *
+ * `platform` selects the allowlist (see [envAllowlist]): Windows needs its own
+ * names or the child shell cannot start.
+ */
 export function sanitizedEnv(
   config: SandboxConfig,
   env: NodeJS.ProcessEnv = process.env,
+  platform: string = process.platform,
 ): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const name of ENV_ALLOWLIST) {
+  for (const name of envAllowlist(platform)) {
     const value = env[name];
     if (typeof value === "string" && value !== "") out[name] = value;
   }

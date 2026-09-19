@@ -138,7 +138,7 @@ export class UserspaceSandbox implements Sandbox {
       program: plan.program,
       args: plan.args,
       workdir,
-      env: sanitizedEnv(this.config),
+      env: sanitizedEnv(this.config, this.shell?.env ?? process.env, this.shell?.platform ?? process.platform),
       withStdin,
       label: command,
     });

@@ -158,7 +158,7 @@ export class BwrapSandbox implements Sandbox {
         program: limited.program,
         args: limited.args,
         workdir,
-        env: sanitizedEnv(this.config),
+        env: sanitizedEnv(this.config, this.shell?.env ?? process.env, this.shell?.platform ?? process.platform),
         extraFds: blob === null ? [] : [blob.fd],
         withStdin,
         label: `${bwrapLabel(this.options)} ${preview(command, 128)}`,

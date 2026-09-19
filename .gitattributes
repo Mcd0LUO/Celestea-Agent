@@ -1,0 +1,44 @@
+# .gitattributes — 行尾与二进制归属，**跨平台可复现**。
+#
+# 为什么必须有这个文件（Windows 实测报告）：
+#   Windows 上 git 的 core.autocrlf=true 会把仓库里的文本检出成 CRLF，于是
+#   golden 夹具（cli-main.jsonl）在磁盘上带 \r，而代码重序列化出来的是 LF ——
+#   tests/contract-*parity* 之类的逐字节断言就会红。Linux 开发者永远踩不到。
+#
+# 原则：**仓库里的字节是唯一真源**，检出必须与它一致；谁在什么系统上工作都不改变这一点。
+
+# 默认：仓库里就是 LF，检出也是 LF，不看 core.autocrlf。
+* text=auto eol=lf
+
+# 逐字节断言依赖的夹具：绝不翻译行尾（比 eol=lf 更强，连 diff 都不做文本处理）。
+*.jsonl -text
+*.jsonl diff
+
+# 已有逐字节对拍的 JSON 夹具同理。
+fixtures/**/*.json -text
+
+# 脚本与配置：LF（Linux 上要能直接 exec，CRLF 会让 shebang 失效）。
+*.sh text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.py text eol=lf
+
+# Windows 专用脚本（如果将来加）保留 CRLF 的自由。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制：git 不许碰。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.tgz binary
+
+# 锁文件与生成物：LF，且不要在 diff 里展开（pnpm-lock 很大）。
+pnpm-lock.yaml text eol=lf
+*.generated.ts linguist-generated=true
