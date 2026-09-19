@@ -84,10 +84,38 @@ export function estimateImageTokens(width: number, height: number): number {
   const h = Number.isFinite(height) && height > 0 ? height : 0;
   return IMAGE_BASE_TOKENS + Math.ceil((w * h) / IMAGE_PIXEL_DIVISOR);
 }
-/** Estimate the total token count of a message list. */
-export function estimateMessagesTokens(messages: readonly Message[]): number {
+/**
+ * W889: the per-message estimator is INJECTABLE so a caller (test, diagnostic)
+ * can count how many times the trim pass estimates — the deterministic stand-in
+ * for the old wall-clock "linear-ish" guard. The default is the real estimator,
+ * so production behaviour is unchanged.
+ */
+export type MessageEstimator = (msg: Message) => number;
+
+/**
+ * W889: the estimator the trim pass uses. Injectable via [withMessageEstimator]
+ * so a caller can COUNT estimates (the deterministic complexity guard).
+ */
+let activeEstimator: MessageEstimator = estimateMessageTokens;
+
+/**
+ * Run `fn` with an injected estimator, restoring the previous one afterwards.
+ * Scoped (not a bare setter) so a counter can never leak into another test.
+ */
+export function withMessageEstimator<T>(estimate: MessageEstimator, fn: () => T): T {
+  const previous = activeEstimator;
+  activeEstimator = estimate;
+  try {
+    return fn();
+  } finally {
+    activeEstimator = previous;
+  }
+}
+
+/** Estimate the total token count of a message list (estimator injectable). */
+export function estimateMessagesTokens(messages: readonly Message[], estimate: MessageEstimator = estimateMessageTokens): number {
   let total = 0;
-  for (const msg of messages) total += estimateMessageTokens(msg);
+  for (const msg of messages) total += estimate(msg);
   return total;
 }
 
@@ -166,11 +194,11 @@ export function trimContext(
   const budget = Math.max(1, Math.floor(contextWindowTokens * Math.min(Math.max(threshold, 0), 1)));
   // Unchanged fast path: one O(n) estimate, no split, no suffix (the common case
   // of a session inside its budget must not pay for the trim machinery).
-  if (systemTokens + estimateMessagesTokens(messages) <= budget) {
+  if (systemTokens + estimateMessagesTokens(messages, activeEstimator) <= budget) {
     return { messages: [...messages], outcome: NOT_TRIMMED };
   }
 
-  const split = splitHistory(messages);
+  const split = splitHistory(messages, activeEstimator);
   const systems = split.systems;
   const rest = split.rest;
   if (rest.length === 0) return { messages: [...systems], outcome: NOT_TRIMMED };
@@ -189,10 +217,10 @@ export function trimContext(
   //   - the one trim marker: inserted unconditionally whenever anything is cut.
   // The marker carries this candidate's own removed message/token counts, so it
   // is scored exactly (a few characters, still O(1)); the suffix stays a read.
-  const fixedTokens = systemTokens + estimateMessagesTokens(systems);
+  const fixedTokens = systemTokens + estimateMessagesTokens(systems, activeEstimator);
   const cut = pickCut(cuts, Math.max(0, rest.length - keep), (candidate) => {
     const candidateRemovedTokens = (suffix[0] ?? 0) - (suffix[candidate] ?? 0);
-    const markerTokens = estimateMessageTokens(trimmedMarkerMessage(candidate, candidateRemovedTokens));
+    const markerTokens = activeEstimator(trimmedMarkerMessage(candidate, candidateRemovedTokens));
     return fixedTokens + markerTokens + (suffix[candidate] ?? 0) <= budget;
   });
 
@@ -216,7 +244,7 @@ interface HistorySplit {
 }
 
 /** Split the history in ONE pass, estimating each non-system message once. */
-function splitHistory(messages: readonly Message[]): HistorySplit {
+function splitHistory(messages: readonly Message[], estimate: MessageEstimator): HistorySplit {
   const systems: Message[] = [];
   const rest: Message[] = [];
   const restTokens: number[] = [];
@@ -224,7 +252,7 @@ function splitHistory(messages: readonly Message[]): HistorySplit {
     if (msg.role === "system") systems.push(msg);
     else {
       rest.push(msg);
-      restTokens.push(estimateMessageTokens(msg));
+      restTokens.push(estimate(msg));
     }
   }
   return { systems, rest, restTokens };

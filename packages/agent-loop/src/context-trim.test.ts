@@ -11,6 +11,7 @@ import {
   estimateTokens,
   trimContext,
   trimmedMarkerMessage,
+  withMessageEstimator,
 } from "./context-trim.js";
 
 /** `Message::assistant_tool_call` of one read_file call. */
@@ -285,28 +286,36 @@ describe("trimContext (W762 O(n))", () => {
     expect(result.outcome.removedTokens).toBe(estimateMessagesTokens(messages.slice(1, 1 + result.outcome.removedMessages)));
   });
 
-  it("stays linear-ish: doubling the history must not quadruple the pass (loose guard)", () => {
+  it("does O(n) estimator work: doubling the history must not quadruple the estimate count", () => {
+    // W889: the old guard timed the pass on the wall clock and was load-flaky
+    // (a loaded CI box made a 3ms pass 5x). The estimator is now INJECTABLE, so
+    // this counts the O(n) unit directly — fully deterministic, no clock.
     const build = (size: number): Message[] => {
       const out: Message[] = [];
       for (let i = 0; i < size; i += 1) out.push(userMessage(`m${i} ${rep("z", 50)}`));
       return out;
     };
-    const best = (messages: Message[]): number => {
-      let fastest = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < 3; i += 1) {
-        const started = process.hrtime.bigint();
-        trimContext(messages, 0, 2_000, 0.8, 10);
-        fastest = Math.min(fastest, Number(process.hrtime.bigint() - started) / 1e6);
-      }
-      return fastest;
+    const calls = (size: number): number => {
+      let count = 0;
+      withMessageEstimator(
+        (msg) => {
+          count += 1;
+          return estimateMessageTokens(msg);
+        },
+        () => {
+          trimContext(build(size), 0, 2_000, 0.8, 10);
+        },
+      );
+      return count;
     };
-    const small = build(5_000);
-    const large = build(10_000);
-    best(small);
-    best(large); // warm up both shapes before the timed passes
-    const ratio = best(large) / Math.max(best(small), 0.001);
-    // The old O(n^2) pass scored ~4x here for a 2x input; O(n) scores ~2x. The
-    // 4x ceiling is deliberately loose: a loaded CI box can double a 3ms pass.
-    expect(ratio).toBeLessThan(4);
+    const small = calls(5_000);
+    const large = calls(10_000);
+    // O(n): ~3 estimates per message (fast-path scan + split + one marker per
+    // candidate), so doubling n roughly doubles the count. O(n^2) re-estimates
+    // the whole suffix per candidate and scores ~4x here.
+    expect(large / small).toBeLessThan(3);
+    // Absolute ceiling: linear with a small constant, far below the n^2 regime.
+    expect(large).toBeLessThan(4 * 10_000);
+    expect(small).toBeGreaterThan(0);
   });
 });
