@@ -26,8 +26,8 @@ import { workspaceHome } from "./store/celestea-home.js";
 import { activate, makeEngineHarness, waitIdle } from "./runtime/test-util.js";
 import type { OfflineStep } from "./runtime/offline-llm.js";
 
-const EXECUTION_FACE = ["browser_act", "browser_open", "http_request", "load_skill", "process_control", "run_code", "send_message", "spawn_worker", "stop_worker", "worker_status"];
-const STANDARD_FACE = ["ask_user_question", "browser_act", "browser_open", "http_request", "list_dir", "load_skill", "process_control", "read_file", "read_image", "run_code", "run_shell", "send_message", "spawn_worker", "stop_worker", "worker_status", "write_file"];
+const EXECUTION_FACE = ["browser_act", "browser_open", "forget", "http_request", "load_skill", "process_control", "remember", "run_code", "send_message", "spawn_worker", "stop_worker", "worker_status"];
+const STANDARD_FACE = ["ask_user_question", "browser_act", "browser_open", "forget", "http_request", "list_dir", "load_skill", "process_control", "read_file", "read_image", "remember", "run_code", "run_shell", "send_message", "spawn_worker", "stop_worker", "worker_status", "write_file"];
 const EXECUTION_MARK = "Execution mode — prefer one program over many round trips";
 
 const harnesses: StudioHarness[] = [];
@@ -103,7 +103,7 @@ describe("W791 P1 mode tool face (real engine)", () => {
     const h = engine();
     await activate(h, "sample-ws/plain");
     await activate(h, "sample-ws/std");
-    expect((await getJson(h.app, "/api/tools?session=sample-ws%2Fplain")).body["tools"]).toHaveLength(16);
+    expect((await getJson(h.app, "/api/tools?session=sample-ws%2Fplain")).body["tools"]).toHaveLength(18);
 
     const res = await getJson(h.app, "/api/sessions/sample-ws%2Fplain/mode", jsonRequest("POST", { mode: "execution" }));
     expect(res.status).toBe(200);

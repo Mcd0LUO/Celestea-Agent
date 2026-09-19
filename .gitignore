@@ -19,12 +19,19 @@ fixtures/sessions/*
 # 工作区根可能就是一个 git 仓库（本项目自己就是），会话数据绝不能进版本库。
 # W880：canonical 产物已全部移出工作区，落到 $CELESTEA_HOME
 #   （<home>/workspaces/<ws>/{sessions,archive,trash,run-code}/prompts.json）。
-# 下面三条只覆盖「尚未迁移的旧数据」——迁移切片完成后即可整段删除：
-#   .celestea/          W877 过渡容器 / W876 拟议容器（会话、归档、回收站、prompts、run-code）
-#   .celestea-*         更老的根上产物（.celestea-trash/.celestea-archived/.celestea-prompts.json）
-#   /*-[0-9]*.[0-9]*/   最老的根上会话目录（<标题>-<秒>.<纳秒>）
-.celestea/
+#
+# W887g（收窄）：`.celestea/` 同时是 **project 源层根**（技能 .celestea/skills/ +
+# 记忆 .celestea/memory/，见 packages/core/src/celestea-sources.ts），整目录忽略
+# 会把「project 层随仓库提交」的设计一起挡掉。因此这里**只忽略会话/运行产物子目录**，
+# 放行源层（memory/、skills/ 及其它手写内容）。
+.celestea/sessions/
+.celestea/archive/
+.celestea/trash/
+.celestea/run-code/
+.celestea/prompts.json
+# 更老的根上产物（.celestea-trash/.celestea-archived/.celestea-prompts.json）
 .celestea-*
+# 最老的根上会话目录（<标题>-<秒>.<纳秒>）
 /*-[0-9]*.[0-9]*/
 
 # worker 工作树（W886）：派工时在仓内 <repo>/.worktrees/<wid> 建独立 worktree，

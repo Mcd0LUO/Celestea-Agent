@@ -72,6 +72,12 @@ export const EXECUTION_TOOL_NAMES: readonly string[] = [
   // "prompt must not lie" rule that kept load_skill (W884).
   "browser_open",
   "browser_act",
+  // B2 (F3 P1): remember/forget WRITE the workspace's own memory layer. Folding
+  // them would make persistent memory unreachable in execution mode while the
+  // turn-start memory block still advertises the feature -- the same "prompt
+  // must not lie" rule that kept load_skill (W884) and the browser tools (F4).
+  "remember",
+  "forget",
 ];
 
 /**

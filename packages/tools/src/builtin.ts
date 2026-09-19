@@ -21,6 +21,7 @@ import { httpRequestTool, type HttpRequestToolOptions } from "./tools/http-reque
 import { listDirTool } from "./tools/list-dir.js";
 import { processControlTool } from "./tools/process-control.js";
 import { loadSkillTool } from "./tools/load-skill.js";
+import { forgetTool, rememberTool } from "./tools/memory.js";
 import { readImageTool } from "./tools/read-image.js";
 import { readFileTool } from "./tools/read-file.js";
 import { browserActTool, browserOpenTool } from "./tools/browser.js";
@@ -79,6 +80,18 @@ export function builtinTools(options: BuiltinToolsOptions = {}): Tool[] {
     // W884: the 7th builtin — always mounted so the model face cannot drift
     // between the detached default generation and a real session.
     loadSkillTool({
+      workspace: options.workspace ?? null,
+      ...(options.env === undefined ? {} : { env: options.env }),
+    }),
+    // B2 (F3 P1): the memory write pair. HOST tools like load_skill: the global
+    // memory layer lives OUTSIDE the workspace (so the path guard cannot reach
+    // it), and a generation with no workspace still advertises the names and
+    // fails closed with no_workspace on a call.
+    rememberTool({
+      workspace: options.workspace ?? null,
+      ...(options.env === undefined ? {} : { env: options.env }),
+    }),
+    forgetTool({
       workspace: options.workspace ?? null,
       ...(options.env === undefined ? {} : { env: options.env }),
     }),

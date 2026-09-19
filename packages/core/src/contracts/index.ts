@@ -160,12 +160,15 @@ export interface DataFilesIndex {
 export const FROZEN_COUNTS = {
   // W860: 57 -> 60 (GET|PUT /api/sessions/{id}/tools + GET /api/plugins).
   // W870: 60 -> 61 (PUT /api/sessions/{id}/model, the session-scoped model switch).
-  endpoints: 61,
+  // G5: 61 -> 62 (GET /api/fs/list, the Win-style file-manager listing);
+  // G2: 62 -> 63 (POST /api/exec, immediate shell execution without the model).
+  endpoints: 63,
   sseEvents: 9,
   // W884: 13 -> 14 (`load_skill`, the on-demand half of skill progressive
   // disclosure; the catalog half adds no tool).
   // F4: 14 -> 16 (`browser_open` + `browser_act`, the session browser tools).
-  tools: 16,
+  // B2 (F3 P1): 16 -> 18 (`remember` + `forget`, the workspace-memory write pair).
+  tools: 18,
 } as const;
 
 /** One frozen-count divergence, with everything an operator needs to act. */

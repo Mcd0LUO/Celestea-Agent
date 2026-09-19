@@ -26,17 +26,19 @@ import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.j
 import { activate, makeEngineHarness, readSessionLog, waitIdle } from "./test-util.js";
 import type { OfflineStep } from "./offline-llm.js";
 
-/** The 16 contract tools of a standard-mode session (W7: send_message + stop_worker; W884: load_skill; F4: browser_open/act). */
+/** The 18 contract tools of a standard-mode session (W884: load_skill; F4: browser; B2: remember/forget). */
 const STANDARD_FACE = [
   "ask_user_question",
   "browser_act",
   "browser_open",
+  "forget",
   "http_request",
   "list_dir",
   "load_skill",
   "process_control",
   "read_file",
   "read_image",
+  "remember",
   "run_code",
   "run_shell",
   "send_message",

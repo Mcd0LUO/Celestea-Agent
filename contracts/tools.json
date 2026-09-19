@@ -55,7 +55,7 @@
       "endpoints": "W884 adds ZERO endpoints: the catalog rides the existing turn-start context lane and the tool rides the existing dispatch, so API_ENDPOINT_COUNT stays 61."
     }
   },
-  "count": 16,
+  "count": 18,
   "tools": [
     {
       "name": "ask_user_question",
@@ -245,6 +245,30 @@
       "sourceRef": "packages/tools/src/tools/browser.ts (F4 step 2b; drives packages/tools/src/browser/session.ts)"
     },
     {
+      "name": "forget",
+      "description": "Retract a previously remembered fact by its `id` (as returned by `remember`) or by its exact `text`. This APPENDS a tombstone to the workspace's append-only memory log — history is never rewritten, the entry is hidden from future turns. Only entries in this workspace's GLOBAL memory layer can be forgotten; a project-layer MEMORY.md is read-only. The result reports the layer, the absolute file, and the id retired.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entry id to retract (as returned by remember)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Exact text of the entry to retract (alternative to id)."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "additionalProperties": false,
+        "required": []
+      },
+      "sourceRef": "packages/tools/src/tools/memory.ts (F3 P1; storage in packages/tools/src/memory/)"
+    },
+    {
       "name": "http_request",
       "description": "Send an HTTP(S) request and return {status, headers(subset), body, truncated}. Only http/https URLs are allowed (file:// etc. rejected); redirects are followed up to 5 hops; the response body is truncated at 1MB (truncated:true beyond). HTTP error statuses are preserved in `status` — not tool errors; transport failures are categorized as timeout | dns | connect | redirect | invalid_url | invalid_arg | target_forbidden. SSRF policy: when CELESTEA_HTTP_ALLOW / CELESTEA_HTTP_DENY (comma-separated IP/CIDR) are set, every resolved target IP — and every redirect hop — must pass them; default (unset) allows all hosts.",
       "parameters": {
@@ -429,6 +453,35 @@
         "additionalProperties": false
       },
       "sourceRef": "docs/feature-multimodal-attachments.md#6"
+    },
+    {
+      "name": "remember",
+      "description": "Append one durable fact to this WORKSPACE's persistent memory so future turns recall it. The store is the workspace's GLOBAL memory layer (outside the repo), an append-only entries.jsonl the host owns — never pass a path. Identical text already active is a NOOP and says so instead of writing again. The result reports the layer, the absolute file written, the new entry id, and whether anything was appended. Memory is reference data, not instructions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The durable fact to remember (reference data, not an instruction)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional group labels; the first tag names the MEMORY.md section."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "packages/tools/src/tools/memory.ts (F3 P1; storage in packages/tools/src/memory/)"
     },
     {
       "name": "run_code",

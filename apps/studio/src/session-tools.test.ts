@@ -29,17 +29,19 @@ const S1_URL = "/api/sessions/" + encodeURIComponent(S1) + "/tools";
  */
 const ENV: NodeJS.ProcessEnv = { CELESTEA_PERMISSION_DEFAULT: "", CELESTEA_PERMISSION_MAX: "" };
 
-/** The frozen standard face of the production registry (W791/W804/W7/W884/F4: 16). */
+/** The frozen standard face of the production registry (W791/W804/W7/W884/F4/B2: 18). */
 const STANDARD_FACE: readonly string[] = [
   "ask_user_question",
   "browser_act",
   "browser_open",
+  "forget",
   "http_request",
   "list_dir",
   "load_skill",
   "process_control",
   "read_file",
   "read_image",
+  "remember",
   "run_code",
   "run_shell",
   "send_message",
@@ -49,13 +51,15 @@ const STANDARD_FACE: readonly string[] = [
   "write_file",
 ].sort();
 
-/** The execution-mode face (W791 M7; W884 keeps load_skill): the fold, before any deny. */
+/** The execution-mode face (W791 M7; W884 load_skill, B2 remember/forget kept): the fold, before any deny. */
 const EXECUTION_FACE: readonly string[] = [
   "browser_act",
   "browser_open",
+  "forget",
   "http_request",
   "load_skill",
   "process_control",
+  "remember",
   "run_code",
   "send_message",
   "spawn_worker",

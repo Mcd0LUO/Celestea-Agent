@@ -28,6 +28,7 @@
  *   tools/write-file.ts  write_file                                             (builtin.rs)
  *   tools/list-dir.ts    list_dir                                               (builtin.rs)
  *   tools/load-skill.ts  load_skill: one SKILL.md body on demand (W884)
+ *   tools/memory.ts      remember / forget: append-only workspace memory (F3 P1)
  *   tools/run_shell      run_shell: orchestration over the Sandbox seam         (builtin.rs, sandbox.rs)
  *   tools/process-control.ts  process_control (poll / stdin / kill)             (process.rs)
  *   tools/http-request.ts     http_request (SSRF, timeout, truncation)          (http.rs)
@@ -110,6 +111,35 @@ export { httpRequestSpec, httpRequestTool, type HttpRequestToolOptions } from ".
 export { ASK_USER_DESCRIPTION, askUserSpec, askUserTool, type AskUserToolOptions } from "./tools/ask-user.js";
 export { READ_IMAGE_DESCRIPTION, readImageSpec, readImageTool, type ReadImageToolOptions } from "./tools/read-image.js";
 export { LOAD_SKILL_DESCRIPTION, LOAD_SKILL_ERROR_PREFIX, loadSkillSpec, loadSkillTool, type LoadSkillToolOptions } from "./tools/load-skill.js";
+export {
+  FORGET_DESCRIPTION,
+  MEMORY_ERROR_PREFIX,
+  REMEMBER_DESCRIPTION,
+  forgetSpec,
+  forgetTool,
+  rememberSpec,
+  rememberTool,
+  type MemoryToolOptions,
+} from "./tools/memory.js";
+export {
+  MEMORY_ENTRIES_FILE_NAME,
+  MEMORY_ENTRY_MAX_BYTES,
+  MEMORY_LOG_VERSION,
+  findEntryByText,
+  foldMemoryLog,
+  memoryEntryPaths,
+  memoryLogHeader,
+  memoryTextHash,
+  nextMemoryId,
+  parseMemoryLog,
+  renderMemoryMarkdown,
+  serializeMemoryLine,
+  type MemoryEntryLine,
+  type MemoryForgetLine,
+  type MemoryLogLine,
+  type MemoryLogState,
+} from "./memory/log.js";
+export { appendMemoryLine, memoryStoreOf, nodeMemoryStoreIo, readMemoryLog, readMemoryState, type MemoryStore, type MemoryStoreIo } from "./memory/store.js";
 export { builtinTools, type BuiltinToolsOptions } from "./builtin.js";
 
 // --- attachments (W804): the per-session content-addressed image store ---------
