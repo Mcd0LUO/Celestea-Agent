@@ -54,6 +54,22 @@ export function isAbsolutePath(path: string, input: PathInputLike = undefined): 
   return apiOf(input).isAbsolute(path);
 }
 
+/**
+ * `resolve` under the call's platform.
+ *   W885 follow-up: "make this path absolute/canonical" is the same platform
+ *   question as "is this path absolute" — `node:path`'s bare `resolve` answers
+ *   it for the HOST, which is wrong the moment a win32 path is handled on Linux
+ *   (tests) or the reverse.
+ */
+export function resolvePath(path: string, input: PathInputLike = undefined): string {
+  return apiOf(input).resolve(path);
+}
+
+/** `join` under the call's platform (public form of `under`; W883 E1/E2). */
+export function joinPath(input: PathInputLike, base: string, ...segments: string[]): string {
+  return under(input, base, ...segments);
+}
+
 /** Separators / control chars / whitespace -> '_'; CJK and letters survive. */
 export function sanitizeComponent(s: string): string {
   let out = "";

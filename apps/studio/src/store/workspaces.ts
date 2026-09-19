@@ -13,10 +13,17 @@
  */
 
 import { renameSync } from "node:fs";
-import { resolve } from "node:path";
 import { writeJsonAtomic, isDirectory, isFile, listEntries, readJsonIfExists } from "./fs-json.js";
 import { badRequest, conflict, errText, fail, notFound, ok, serverError, type StoreResult } from "./result.js";
-import { sessionRoots, workspaceBasename } from "./session-id.js";
+import {
+  isAbsolutePath,
+  joinPath,
+  parentDir,
+  resolvePath,
+  sessionRoots,
+  workspaceBasename,
+  type PathInputLike,
+} from "./session-id.js";
 
 export const SESSION_FILE = "cli-main.jsonl";
 
@@ -60,10 +67,10 @@ function parseRegistry(raw: unknown): Omit<RegistryData, "workspaces"> & { works
 }
 
 /** Duplicate folder names make the workspace key ambiguous: hard error. */
-function assertUniqueBasenames(workspaces: readonly RegistryWorkspace[]): void {
+function assertUniqueBasenames(workspaces: readonly RegistryWorkspace[], input: PathInputLike = undefined): void {
   const seen = new Map<string, string>();
   for (const w of workspaces) {
-    const base = workspaceBasename(w.path) ?? w.path;
+    const base = workspaceBasename(w.path, input) ?? w.path;
     const other = seen.get(base);
     if (other !== undefined && other !== w.path) {
       throw new Error(`two workspaces resolve to the same folder name '${base}' (workspace keys must be unique basenames; rename one folder)`);
@@ -72,12 +79,12 @@ function assertUniqueBasenames(workspaces: readonly RegistryWorkspace[]): void {
   }
 }
 
-function loadRegistry(file: string): RegistryData {
+function loadRegistry(file: string, input: PathInputLike = undefined): RegistryData {
   const out = readJsonIfExists(file);
   if (!out.exists) return { workspaces: [], active_session: null };
   if (out.error !== undefined) throw new Error(`workspaces.json '${file}' is malformed: ${out.error}`);
   const data = parseRegistry(out.value);
-  assertUniqueBasenames(data.workspaces);
+  assertUniqueBasenames(data.workspaces, input);
   return data;
 }
 
@@ -86,15 +93,26 @@ function loadRegistry(file: string): RegistryData {
  * `register` used to keep whatever the client sent, so `/tmp/foo/` made the
  * rename target `/tmp/foo/bar` — a child of the source folder (EINVAL).
  */
-function normalizeWorkspacePath(path: string): string {
-  return resolve(path);
+function normalizeWorkspacePath(path: string, input: PathInputLike = undefined): string {
+  return resolvePath(path, input);
 }
 
 export class WorkspacesStore {
   private data: RegistryData;
 
-  constructor(private readonly file: string) {
-    this.data = loadRegistry(file);
+  constructor(
+    private readonly file: string,
+    /**
+     * The path rules of THIS call's platform. Defaults to the host's — production
+     * always wants the host — but it is injectable so the win32 branch is
+     * unit-tested on Linux (the W885 seam). `register()` used to test
+     * `startsWith("/")`, which rejected EVERY Windows absolute path, so a Windows
+     * install could never register a workspace and every "new session" ended in
+     * `404 unknown workspace ''`.
+     */
+    private readonly platform: PathInputLike = undefined,
+  ) {
+    this.data = loadRegistry(file, platform);
   }
 
   /** Snapshot of the registry (callers must not mutate it). */
@@ -107,7 +125,7 @@ export class WorkspacesStore {
   }
 
   workspacePath(name: string): string | undefined {
-    return this.data.workspaces.find((w) => workspaceBasename(w.path) === name)?.path;
+    return this.data.workspaces.find((w) => workspaceBasename(w.path, this.platform) === name)?.path;
   }
 
   private persist(): StoreResult<void> {
@@ -147,7 +165,7 @@ export class WorkspacesStore {
   view(): WorkspacesView {
     return {
       workspaces: this.data.workspaces.map((w) => {
-        const name = workspaceBasename(w.path) ?? w.path;
+        const name = workspaceBasename(w.path, this.platform) ?? w.path;
         return { name, path: w.path, sessions: this.countSessions(w.path) };
       }),
       active_session: this.data.active_session,
@@ -158,15 +176,17 @@ export class WorkspacesStore {
   register(rawPath: string): StoreResult<string> {
     const asked = rawPath.trim();
     if (asked === "") return badRequest("path must not be empty");
-    if (!asked.startsWith("/")) return badRequest(`path '${asked}' must be absolute`);
+    // W885 follow-up: "is this absolute" is a PLATFORM question, not `startsWith("/")`.
+    // On Windows every path is `C:\...`, so the old test rejected all of them.
+    if (!isAbsolutePath(asked, this.platform)) return badRequest(`path '${asked}' must be absolute`);
     // W815-9: canonicalize before storing (see `normalizeWorkspacePath`).
-    const path = normalizeWorkspacePath(asked);
+    const path = normalizeWorkspacePath(asked, this.platform);
     if (!isDirectory(path)) return badRequest(`path '${path}' is not an existing directory`);
-    const base = workspaceBasename(path);
+    const base = workspaceBasename(path, this.platform);
     if (base === null) return badRequest(`path '${path}' has no folder name`);
     const existing = this.data.workspaces.find((w) => w.path === path);
     if (existing !== undefined) return conflict(`path '${path}' is already registered as workspace '${base}'`);
-    const clash = this.data.workspaces.find((w) => workspaceBasename(w.path) === base);
+    const clash = this.data.workspaces.find((w) => workspaceBasename(w.path, this.platform) === base);
     if (clash !== undefined) {
       return conflict(`workspace '${base}' already exists (folder '${path}' and '${clash.path}' share the same folder name; rename one folder first)`);
     }
@@ -178,7 +198,7 @@ export class WorkspacesStore {
 
   /** POST /api/workspaces/{name}/delete — deregister only. */
   deregister(name: string): StoreResult<void> {
-    const idx = this.data.workspaces.findIndex((w) => workspaceBasename(w.path) === name);
+    const idx = this.data.workspaces.findIndex((w) => workspaceBasename(w.path, this.platform) === name);
     if (idx < 0) return notFound(`unknown workspace '${name}'`);
     const [removed] = this.data.workspaces.splice(idx, 1);
     if (this.data.active_session !== null && this.data.active_session.split("/")[0] === name) {
@@ -201,18 +221,22 @@ export class WorkspacesStore {
 
   /** POST /api/workspaces/{name}/rename — really renames the FOLDER. */
   renameWorkspace(name: string, newName: string): StoreResult<void> {
-    const idx = this.data.workspaces.findIndex((w) => workspaceBasename(w.path) === name);
+    const idx = this.data.workspaces.findIndex((w) => workspaceBasename(w.path, this.platform) === name);
     if (idx < 0) return notFound(`unknown workspace '${name}'`);
     const row = this.data.workspaces[idx];
     if (row === undefined) return notFound(`unknown workspace '${name}'`);
-    if (this.data.workspaces.some((w) => workspaceBasename(w.path) === newName)) {
+    if (this.data.workspaces.some((w) => workspaceBasename(w.path, this.platform) === newName)) {
       return conflict(`workspace '${newName}' already exists`);
     }
     // W815-9: normalize a legacy row's path before deriving the sibling target.
-    const from = normalizeWorkspacePath(row.path);
+    const from = normalizeWorkspacePath(row.path, this.platform);
     row.path = from;
-    const parent = from.slice(0, from.lastIndexOf("/")) || "/";
-    const target = `${parent === "/" ? "" : parent}/${newName}`;
+    // W885 follow-up: the sibling target is a PLATFORM question too. The old
+    // `lastIndexOf("/")` found no separator in `C:\Users\me\proj`, so the
+    // "parent" became `C:\Users\me\pro` and the rename moved the folder to a
+    // sibling of a NONEXISTENT directory.
+    const parent = parentDir(from, this.platform);
+    const target = joinPath(this.platform, parent, newName);
     if (target !== row.path && isDirectory(target)) {
       return conflict(`target '${target}' already exists; rename the folder first`);
     }

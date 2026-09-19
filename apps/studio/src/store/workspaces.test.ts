@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WorkspacesStore } from "./workspaces.js";
+import { joinPath, parentDir } from "./session-id.js";
 
 let root: string;
 let file: string;
@@ -168,3 +169,54 @@ describe("workspaces.json v2 registry", () => {
     expect(store.activeSession()).toBe("alpha/s1");
   });
 });
+
+/**
+ * W885 follow-up — Windows.
+ *
+ * `register()` tested `startsWith("/")`, so EVERY Windows absolute path
+ * (`C:\...`) was rejected as "not absolute": no workspace could ever be
+ * registered on Windows, the registry stayed empty, and every "new session" then
+ * failed with `404 unknown workspace ''`. Same class: `renameWorkspace` derived
+ * the sibling target with `lastIndexOf("/")`, which finds no separator in a win32
+ * path and moved the folder beside a NONEXISTENT directory.
+ *
+ * The platform is injectable (the W885 seam), so the win32 rules run on this host.
+ */
+describe("win32 paths (W885 seam)", () => {
+  it("register 不再把 C:\\... 当成「非绝对路径」拒绝", () => {
+    const store = new WorkspacesStore(file, "win32");
+    const res = store.register("C:\\Users\\me\\proj");
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      // The absolute gate must PASS now — the only reason left is that no such
+      // directory exists on this host. Before the fix this said "must be absolute".
+      expect(res.error).not.toMatch(/must be absolute/);
+      expect(res.error).toMatch(/is not an existing directory/);
+    }
+  });
+
+  it("仍然拒绝真正非绝对的 win32 路径", () => {
+    const store = new WorkspacesStore(file, "win32");
+    expect(store.register("Users\\me\\proj")).toEqual({
+      ok: false,
+      status: 400,
+      error: "path 'Users\\me\\proj' must be absolute",
+    });
+  });
+
+  it("读 Windows 注册表：名字 -> 路径 的解析走 win32 规则", () => {
+    writeFileSync(file, JSON.stringify({ workspaces: [{ path: "C:\\Users\\me\\proj" }], active_session: null }));
+    const store = new WorkspacesStore(file, "win32");
+    expect(store.workspacePath("proj")).toBe("C:\\Users\\me\\proj");
+    expect(store.view().workspaces.map((w) => w.name)).toEqual(["proj"]);
+  });
+
+  it("重命名派生的兄弟目录在 win32 下正确（旧实现取错父目录）", () => {
+    expect(parentDir("C:\\Users\\me\\proj", "win32")).toBe("C:\\Users\\me");
+    expect(joinPath("win32", parentDir("C:\\Users\\me\\proj", "win32"), "next")).toBe("C:\\Users\\me\\next");
+    // POSIX 行为逐字不变
+    expect(parentDir("/tmp/foo", "posix")).toBe("/tmp");
+    expect(joinPath("posix", "/tmp", "next")).toBe("/tmp/next");
+  });
+});
+
