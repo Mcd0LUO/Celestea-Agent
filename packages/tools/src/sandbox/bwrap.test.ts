@@ -29,6 +29,9 @@ import type { HostProbe } from "./probe.js";
 
 const WORK = "/src/celestea_studio-ts";
 
+/** W891: /proc/self/fd is the one Linux-only read in this otherwise pure file. */
+const PROC_FD_READABLE = existsSync("/proc/self/fd");
+
 function opts(overrides: Partial<BwrapOptions> = {}): BwrapOptions {
   return { ...DEFAULT_BWRAP_OPTIONS, ...overrides };
 }
@@ -177,7 +180,12 @@ describe("seccomp filter (pure TS cBPF)", () => {
     expect(buildSeccompFilter()[4]?.k).toBe(0x0005_0001);
   });
 
-  it("materializes a readable blob file and cleans it up", () => {
+  it("materializes a readable blob file and cleans it up", (ctx) => {
+    // W891: the read-back uses /proc/self/fd, which exists on Linux only.
+    if (!PROC_FD_READABLE) {
+      ctx.skip("reading an open fd back through /proc/self/fd needs Linux");
+      return;
+    }
     const handle = openSeccompBlob();
     const path = readFileSync(`/proc/self/fd/${handle.fd}`).length;
     expect(path).toBe(332 * 8);

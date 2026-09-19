@@ -7,7 +7,7 @@
  * checkpoint sidecar on disk and `/proc/self/fd`.
  */
 
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,6 +38,9 @@ function scratch(prefix: string): string {
 function persistentBinding(dir: string): ReturnType<typeof createSessionBinding> {
   return createSessionBinding({ sessionId: SESSION, dir, open: () => openSessionLog(dir, { identity: IDENTITY, now: () => 1 }) });
 }
+
+/** W891: /proc/self/fd is the one Linux-only read in this suite. */
+const PROC_FD_READABLE = existsSync("/proc/self/fd");
 
 /** Open fds of THIS process: the external, unforgeable leak signal. */
 function fdCount(): number {
@@ -99,7 +102,13 @@ describe("P1-5: shutdown waits for the in-flight turn before claiming clean", ()
 });
 
 describe("P1-4: session-log fd lifecycle", () => {
-  it("closes every generation log across GenerationHub teardown", async () => {
+  it("closes every generation log across GenerationHub teardown", async (ctx) => {
+    // W891: the leak signal is /proc/self/fd (Linux only) — skip visibly there
+    // rather than counting an unrun assertion as a pass.
+    if (!PROC_FD_READABLE) {
+      ctx.skip("fd accounting reads /proc/self/fd (Linux only)");
+      return;
+    }
     const dir = scratch("r3-g-hub-");
     const binding = persistentBinding(dir);
     const hub = new GenerationHub();
@@ -112,7 +121,11 @@ describe("P1-4: session-log fd lifecycle", () => {
     expect(fdCount() - before).toBeLessThanOrEqual(1);
   });
 
-  it("closes the previous log on rebind and tolerates a double close", async () => {
+  it("closes the previous log on rebind and tolerates a double close", async (ctx) => {
+    if (!PROC_FD_READABLE) {
+      ctx.skip("fd accounting reads /proc/self/fd (Linux only)");
+      return;
+    }
     const dir = scratch("r3-g-rebind-");
     const binding = persistentBinding(dir);
     const runtime = compose({ profile: testProfile(), sessionBinding: binding, workers: false });

@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseToolRoots } from "./path-guard.js";
+import { pathDelimiter } from "../platform/paths.js";
 
 const BS = "\\";
 
@@ -32,13 +33,18 @@ describe("W885 parseToolRoots · win32 keeps drive letters", () => {
 
 describe("W885 parseToolRoots · POSIX is unchanged (regression)", () => {
   it("splits on ':' exactly as before", () => {
-    expect(parseToolRoots("/a,/b ,/c")).toEqual(["/a", "/b", "/c"]);
-    expect(parseToolRoots("/src/a:/src/b:/tmp")).toEqual(["/src/a", "/src/b", "/tmp"]);
-    expect(parseToolRoots("/src/a:/src/b,/tmp")).toEqual(["/src/a", "/src/b", "/tmp"]);
-    expect(parseToolRoots(" :/a::")).toEqual(["/a"]);
+    // W891: inject "linux" so the POSIX separator is what is under test (the
+    // host separator is ";" on Windows).
+    expect(parseToolRoots("/a,/b ,/c", "linux")).toEqual(["/a", "/b", "/c"]);
+    expect(parseToolRoots("/src/a:/src/b:/tmp", "linux")).toEqual(["/src/a", "/src/b", "/tmp"]);
+    expect(parseToolRoots("/src/a:/src/b,/tmp", "linux")).toEqual(["/src/a", "/src/b", "/tmp"]);
+    expect(parseToolRoots(" :/a::", "linux")).toEqual(["/a"]);
   });
 
   it("defaults to the HOST platform when none is passed", () => {
-    expect(parseToolRoots("/a:/b")).toEqual(["/a", "/b"]);
+    // The HOST separator is ":" on POSIX and ";" on Windows; build the input
+    // from pathDelimiter() so the "no injection" behaviour is pinned on both.
+    const sep = pathDelimiter();
+    expect(parseToolRoots(["/a", "/b"].join(sep))).toEqual(["/a", "/b"]);
   });
 });

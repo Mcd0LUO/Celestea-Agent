@@ -27,11 +27,18 @@ afterAll(() => cleanupTempDirs());
 const policyFor = (workspace: string): PathGuard => new PathGuard(new PathGuardPolicy({ workspace }));
 
 describe("W824 guard P0-1: dangling symlink write escape", () => {
-  it("denies a write whose final component links outside to a missing target", async () => {
+  it("denies a write whose final component links outside to a missing target", async (ctx) => {
     const root = makeTempDir("w824-link");
     const ws = makeDir(root, "ws");
     const outside = makeDir(root, "outside");
-    symlinkSync(join(outside, "new.txt"), join(ws, "link"));
+    // W891: an unelevated Windows process cannot create a symlink (EPERM), so
+    // this case SKIPS visibly there; the Linux assertion below is untouched.
+    try {
+      symlinkSync(join(outside, "new.txt"), join(ws, "link"));
+    } catch (error) {
+      ctx.skip(`symlinks are not permitted on this host (${(error as NodeJS.ErrnoException).code ?? String(error)})`);
+      return;
+    }
 
     const resolved = resolveWriteTarget("link", ws);
     expect(resolved).not.toBeNull();

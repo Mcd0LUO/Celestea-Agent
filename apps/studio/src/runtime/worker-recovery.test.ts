@@ -12,7 +12,7 @@
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
 import { observeWorkerTableOnBoot } from "./worker-recovery.js";
@@ -142,11 +142,16 @@ describe("§2.3 P0 ③: boot observation (B4), and it never re-dispatches", () =
 
 describe("§2.2.1: the configured path resolution (worker-table.ts)", () => {
   it("prefers the explicit option, then the env, then <data dir>", () => {
-    expect(workerTablePath({ env: {}, dataDir: "/data" })).toBe("/data/worker-registry.tsv");
-    expect(workerTablePath({ env: { CELESTEA_WORKER_REGISTRY: "/tmp/x.tsv" }, dataDir: "/data" })).toBe("/tmp/x.tsv");
-    expect(workerTablePath({ env: { CELESTEA_WORKER_REGISTRY: "" }, dataDir: "/data" })).toBeNull();
-    expect(workerTablePath({ env: {}, dataDir: "/data", override: null })).toBeNull();
-    expect(workerTablePath({ env: {}, dataDir: null, resultsDir: "/data/worker-results" })).toBe("/data/worker-registry.tsv");
+    // W891: build every absolute path through resolve()/join() so the assertion
+    // holds on Windows too (a bare "/data" is not absolute there).
+    const dataDir = resolve(tmpdir(), "w891-worker-data");
+    const envPath = resolve(tmpdir(), "w891-worker-registry.tsv");
+    const resultsDir = join(dataDir, "worker-results");
+    expect(workerTablePath({ env: {}, dataDir })).toBe(join(dataDir, "worker-registry.tsv"));
+    expect(workerTablePath({ env: { CELESTEA_WORKER_REGISTRY: envPath }, dataDir })).toBe(envPath);
+    expect(workerTablePath({ env: { CELESTEA_WORKER_REGISTRY: "" }, dataDir })).toBeNull();
+    expect(workerTablePath({ env: {}, dataDir, override: null })).toBeNull();
+    expect(workerTablePath({ env: {}, dataDir: null, resultsDir })).toBe(join(dataDir, "worker-registry.tsv"));
     expect(workerTablePath({ env: {}, dataDir: null, resultsDir: null })).toBeNull();
   });
 });

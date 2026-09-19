@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { recordingSessionLog } from "./log.js";
 import { getExtra, receiptDelivered } from "./registry-tsv.js";
@@ -34,7 +34,9 @@ describe("receipt protocol helpers", () => {
   });
 
   it("names the report relative to the results directory", () => {
-    expect(reportRelPath("/tmp/x/results", "W1-a")).toBe("results/W1-a.md");
+    // W891: the product derives `basename(resultsDir)`; the expected string must
+    // not hardcode the POSIX separator (the literal case below is separator-free).
+    expect(reportRelPath(join("/tmp", "x", "results"), "W1-a")).toBe(`${basename(join("/tmp", "x", "results"))}/W1-a.md`);
     expect(reportRelPath("results", "W1-a")).toBe("results/W1-a.md");
   });
 

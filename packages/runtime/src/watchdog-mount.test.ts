@@ -167,8 +167,10 @@ describe("composed watchdog", () => {
     // `workers: false` has no registry to sweep, so there is no watchdog either.
     const unwired = compose({ profile: testProfile(), plugins: [memorySessionPlugin()], workers: false });
     expect(unwired.watchdog).toBeNull();
-    // ... and the harness never touched the shared /tmp registry of the fleet.
+    // ... and the harness never touched the fleet's shared registry (a POSIX
+    // "/tmp/..." literal is not even a valid absolute path on Windows).
     expect(f.registry.tsvPath).not.toBe("/tmp/celestea-workers-registry.tsv");
+    expect(f.registry.tsvPath).not.toContain("celestea-workers-registry");
   });
 });
 

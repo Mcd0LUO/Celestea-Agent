@@ -10,10 +10,12 @@
  */
 
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { afterAll, describe, expect, it } from "vitest";
 
 import type { ToolInput } from "@celestea/core";
 
+import { pathDelimiter } from "../platform/paths.js";
 import { cleanupTempDirs, makeDir, makeTempDir, writeFixture } from "../testing/tmp.test-util.js";
 import { PathGuardPolicy } from "./path-guard.js";
 import { sandboxConfigFromEnv, sessionSandboxConfig } from "../sandbox/config.js";
@@ -35,7 +37,8 @@ afterAll(() => cleanupTempDirs());
 const env: NodeJS.ProcessEnv = {
   CELAESTEA_RUN_SHELL_WORKDIR: wsB,
   CELESTEA_TOOL_WORKDIR: wsB,
-  CELESTEA_TOOL_ROOTS: `${wsB}:${elsewhere}`,
+  // W891: the list separator is ":" on POSIX and ";" on Windows.
+  CELESTEA_TOOL_ROOTS: [wsB, elsewhere].join(pathDelimiter()),
 };
 
 const read = (target: string): ToolInput => ({ call_id: "c1", name: "read_file", args: { path: target } });
@@ -49,9 +52,12 @@ describe("sandbox config scope (W768)", () => {
   });
 
   it("W880: run_code's program dir is under CELESTEA_HOME, keyed by the workspace", () => {
-    const withHome: NodeJS.ProcessEnv = { ...env, CELESTEA_HOME: "/data" };
-    expect(sessionSandboxConfig({ workspace: wsA }, withHome).programDir).toBe("/data/workspaces/ws-a/run-code");
-    expect(sandboxConfigFromEnv(withHome).programDir).toBe("/data/workspaces/ws-b/run-code");
+    // W891: build the expected paths with the host separator; the point is the
+    // CELESTEA_HOME layout, not the POSIX separator.
+    const home = join(tmpdir(), "w891-scope-home");
+    const withHome: NodeJS.ProcessEnv = { ...env, CELESTEA_HOME: home };
+    expect(sessionSandboxConfig({ workspace: wsA }, withHome).programDir).toBe(join(home, "workspaces", "ws-a", "run-code"));
+    expect(sandboxConfigFromEnv(withHome).programDir).toBe(join(home, "workspaces", "ws-b", "run-code"));
   });
 
   it("runs a session in ITS workspace (cwd AND containment root)", () => {

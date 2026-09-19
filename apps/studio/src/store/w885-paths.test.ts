@@ -7,6 +7,8 @@
  * changed Linux behaviour.
  */
 
+import { homedir } from "node:os";
+import { basename, dirname, join, parse } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { browseParent, isBrowsablePath } from "../handlers/fs.js";
@@ -50,13 +52,15 @@ describe("W885 win32 · session vocabulary (W883 E1: hardcoded '/')", () => {
     ]);
   });
 
-  it("still produces the POSIX bytes when no platform is injected", () => {
-    // Uninjected = the HOST: the POSIX join must be what it always was.
-    const home = process.env["CELESTEA_HOME"] ?? `${process.env["HOME"] ?? ""}/.celestea`;
-    expect(sessionsRoot("/ws")).toBe(`${home}/workspaces/ws/sessions`);
-    expect(baseName("/a/b/c")).toBe("c");
-    expect(parentDir("/a/b/c")).toBe("/a/b");
-    expect(rootOf("/a/b")).toBe("/");
+  it("still produces the host bytes when no platform is injected", () => {
+    // W891: uninjected = the HOST. On Linux the values below are byte-identical
+    // to the old POSIX literals; on Windows they follow the host separator, which
+    // is exactly what "no platform injected" means.
+    const home = process.env["CELESTEA_HOME"] ?? join(process.env["HOME"] ?? homedir(), ".celestea");
+    expect(sessionsRoot("/ws")).toBe(join(home, "workspaces", "ws", "sessions"));
+    expect(baseName("/a/b/c")).toBe(basename("/a/b/c"));
+    expect(parentDir("/a/b/c")).toBe(dirname("/a/b/c"));
+    expect(rootOf("/a/b")).toBe(parse("/a/b").root);
   });
 });
 

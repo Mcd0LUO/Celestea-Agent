@@ -135,12 +135,21 @@ describe("G5 follow-up · /api/fs/read", () => {
     expect(relative.body["code"]).toBe("not_absolute");
   });
 
-  it("refuses to follow a symbolic link (same discipline as fs/list)", async () => {
+  it("refuses to follow a symbolic link (same discipline as fs/list)", async (ctx) => {
     const h = makeHarness();
     const target = join(h.root, "real.txt");
     writeFileSync(target, "secret\n");
-    symlinkSync(target, join(h.root, "link.txt"));
-    const res = await read(h, `path=${encodeURIComponent(join(h.root, "link.txt"))}`);
+    const link = join(h.root, "link.txt");
+    // W891: creating a symlink needs SeCreateSymbolicLinkPrivilege on Windows
+    // (an unelevated process gets EPERM), so this is a VISIBLE skip there.
+    // On Linux the original assertion below is untouched.
+    try {
+      symlinkSync(target, link);
+    } catch (error) {
+      ctx.skip(`symlinks are not permitted on this host (${(error as NodeJS.ErrnoException).code ?? String(error)})`);
+      return;
+    }
+    const res = await read(h, `path=${encodeURIComponent(link)}`);
     expect(res.status).toBe(400);
     expect(res.body["code"]).toBe("symlink");
     expect(String(res.body["error"])).toContain("symbolic link");

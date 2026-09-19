@@ -72,15 +72,23 @@ describe("F4b memory guard", () => {
     expect(guard.status().detail.length).toBeGreaterThan(0);
   });
 
-  it("reads the real RSS of this process tree", () => {
-    if (process.platform !== "linux") return;
+  it("reads the real RSS of this process tree", (ctx) => {
+    // W891: /proc is Linux-only; a silent `return` would count as PASSED, so
+    // make the host limit a VISIBLE skip instead.
+    if (process.platform !== "linux") {
+      ctx.skip("VmRSS is read from /proc (Linux only)");
+      return;
+    }
     const kb = readTreeRssKb(process.pid);
     expect(kb).not.toBeNull();
     expect(kb as number).toBeGreaterThan(0);
   });
 
-  it("reads this process's own cgroup path on Linux", () => {
-    if (process.platform !== "linux") return;
+  it("reads this process's own cgroup path on Linux", (ctx) => {
+    if (process.platform !== "linux") {
+      ctx.skip("cgroup path is read from /proc/self/cgroup (Linux only)");
+      return;
+    }
     const path = readOwnCgroupPath();
     expect(typeof path).toBe("string");
     expect(path as string).toContain("/");

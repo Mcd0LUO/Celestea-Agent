@@ -67,9 +67,10 @@ const CONFIG: SandboxConfig = {
   maxTimeoutMs: 1000,
   maxCpuSec: 600,
   maxOutputBytes: 1024,
-  workdir: "/tmp",
-  root: "/tmp",
-  programDir: "/tmp/run-code",
+  // W891: "/tmp" is POSIX-only; the host temp dir exists everywhere.
+  workdir: tmpdir(),
+  root: tmpdir(),
+  programDir: join(tmpdir(), "run-code"),
   extraEnv: [],
 };
 

@@ -13,7 +13,9 @@ import { platformGates, whichUsable } from "./platform-gates.js";
 const gates = platformGates();
 
 describe("W885 platform gates", () => {
-  it("answers the Linux host truthfully (this host: bwrap + prlimit + sh)", () => {
+  // W891: assert each host TRUTHFULLY (POSIX keeps the original assertions;
+  // Windows pins the negatives) so the gate cannot be silently always-true/false.
+  it.skipIf(!gates.posixShell)("answers the POSIX host truthfully (Linux: bwrap + prlimit + sh)", () => {
     expect(gates.posixShell).toBe(true);
     expect(gates.posixScripts).toBe(true);
     expect(gates.posixProcessGroups).toBe(true);
@@ -21,6 +23,16 @@ describe("W885 platform gates", () => {
     expect(gates.posixOnly).toBe(true);
     expect(gates.bwrapUsable).toBe(true);
     expect(gates.prlimitUsable).toBe(true);
+  });
+
+  it.skipIf(gates.posixShell)("answers a Windows host truthfully (no sh, no mode bits)", () => {
+    expect(gates.posixShell).toBe(false);
+    expect(gates.posixScripts).toBe(false);
+    expect(gates.posixProcessGroups).toBe(false);
+    expect(gates.fileModesMeaningful).toBe(false);
+    expect(gates.posixOnly).toBe(false);
+    expect(gates.bwrapUsable).toBe(false);
+    expect(gates.prlimitUsable).toBe(false);
   });
 
   it("memoizes one snapshot", () => {

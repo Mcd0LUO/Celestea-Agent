@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { join, parse, relative } from "node:path";
 
 import type { Tool, ToolInput } from "@celestea/core";
 import { afterAll, describe, expect, it } from "vitest";
@@ -23,14 +23,32 @@ const policy = new PathGuardPolicy({ workspace, readRoots: [whitelist] });
 const path = (name: string): string => join(workspace, name);
 const input = (tool: string, target: string): ToolInput => ({ call_id: "c1", name: tool, args: { path: target } });
 
+/**
+ * W891: creating a symlink is EPERM for an unelevated Windows process. The two
+ * symlink cases below therefore SKIP (visibly) when the fixture cannot be built;
+ * on Linux the original assertions run unchanged.
+ */
+function canSymlink(): boolean {
+  try {
+    const probe = join(workspace, ".w891-symlink-probe");
+    symlinkSync(join(workspace, "inside.txt"), probe);
+    rmSync(probe, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("parseToolRoots", () => {
   it("splits on commas and drops empty entries", () => {
-    expect(parseToolRoots("/a,/b ,/c")).toEqual(["/a", "/b", "/c"]);
+    expect(parseToolRoots("/a,/b ,/c", "linux")).toEqual(["/a", "/b", "/c"]);
     // W513: PATH-style (colon) roots must parse exactly like
     // `std::env::split_paths` — this is what the systemd units actually set.
-    expect(parseToolRoots("/src/a:/src/b:/tmp")).toEqual(["/src/a", "/src/b", "/tmp"]);
-    expect(parseToolRoots("/src/a:/src/b,/tmp")).toEqual(["/src/a", "/src/b", "/tmp"]);
-    expect(parseToolRoots(" :/a::")).toEqual(["/a"]);
+    // W891: ":" is the POSIX list separator; inject the platform so the POSIX
+    // bytes are pinned on a Windows host too (the host separator is ";").
+    expect(parseToolRoots("/src/a:/src/b:/tmp", "linux")).toEqual(["/src/a", "/src/b", "/tmp"]);
+    expect(parseToolRoots("/src/a:/src/b,/tmp", "linux")).toEqual(["/src/a", "/src/b", "/tmp"]);
+    expect(parseToolRoots(" :/a::", "linux")).toEqual(["/a"]);
     expect(parseToolRoots(",, ,")).toEqual([]);
     expect(parseToolRoots(undefined)).toEqual([]);
   });
@@ -54,14 +72,22 @@ describe("PathGuardPolicy", () => {
     expect(policy.checkRead(escape).kind).toBe("deny");
   });
 
-  it("denies a symlink pointing outside the roots", () => {
+  it("denies a symlink pointing outside the roots", (ctx) => {
+    if (!canSymlink()) {
+      ctx.skip("symlinks are not permitted on this host (Windows without SeCreateSymbolicLinkPrivilege)");
+      return;
+    }
     const link = path("link.txt");
     symlinkSync(join(outside, "secret.txt"), link);
     const decision = policy.checkRead(link);
     expect(decision.kind).toBe("deny");
   });
 
-  it("denies a write whose directory symlinks outside the workspace", () => {
+  it("denies a write whose directory symlinks outside the workspace", (ctx) => {
+    if (!canSymlink()) {
+      ctx.skip("symlinks are not permitted on this host (Windows without SeCreateSymbolicLinkPrivilege)");
+      return;
+    }
     const dirLink = path("escape-dir");
     mkdirSync(dirLink, { recursive: true });
     symlinkSync(outside, join(dirLink, "out"));
@@ -294,25 +320,32 @@ describe("write roots (session grants)", () => {
  * denying with the same contract code (nothing is weakened globally).
  */
 describe("allPaths — the whole filesystem as a root (W864)", () => {
-  it("allows read_file/list_dir and write_file anywhere under '/'", () => {
-    expect(existsSync("/etc/hostname"), "/etc/hostname must exist for this proof").toBe(true);
+  // W891: the "whole filesystem" root is the HOST root ("/" on POSIX, "C:\\" on
+  // Windows) and the proof file must exist on that host — `outside/secret.txt`
+  // is a real file the suite plants OUTSIDE the workspace, which is exactly what
+  // the allPaths root is meant to reach. (The old /etc/hostname was POSIX-only.)
+  const hostRoot = parse(workspace).root;
+  const outsideFile = join(outside, "secret.txt");
+
+  it("allows read_file/list_dir and write_file anywhere under the filesystem root", () => {
+    expect(existsSync(outsideFile), `${outsideFile} must exist for this proof`).toBe(true);
     // The exact shape engine-grants.ts composes for an allPaths session:
-    // workspaceWritable:false still leaves the two "/" roots authoritative.
-    const wide = new PathGuardPolicy({ workspace, readRoots: ["/"], writeRoots: ["/"], workspaceWritable: false });
-    expect(wide.checkRead("/etc/hostname")).toEqual({ kind: "allow" });
-    expect(wide.checkRead("/etc")).toEqual({ kind: "allow" });
-    expect(wide.checkWrite("/etc/w864-never-created")).toEqual({ kind: "allow" });
+    // workspaceWritable:false still leaves the root authoritative.
+    const wide = new PathGuardPolicy({ workspace, readRoots: [hostRoot], writeRoots: [hostRoot], workspaceWritable: false });
+    expect(wide.checkRead(outsideFile)).toEqual({ kind: "allow" });
+    expect(wide.checkRead(outside)).toEqual({ kind: "allow" });
+    expect(wide.checkWrite(join(outside, "w864-never-created"))).toEqual({ kind: "allow" });
     expect(wide.checkWrite(join(outside, "new.txt"))).toEqual({ kind: "allow" });
     // Through the production wiring (grants view -> fromEnv), not only the ctor.
-    const viaEnv = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace }, { readRoots: ["/"], writeRoots: ["/"] });
-    expect(viaEnv.checkRead("/etc/hostname")).toEqual({ kind: "allow" });
-    expect(viaEnv.checkWrite("/var/tmp/w864-never-created")).toEqual({ kind: "allow" });
+    const viaEnv = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace }, { readRoots: [hostRoot], writeRoots: [hostRoot] });
+    expect(viaEnv.checkRead(outsideFile)).toEqual({ kind: "allow" });
+    expect(viaEnv.checkWrite(join(outside, "w864-never-created"))).toEqual({ kind: "allow" });
   });
 
   it("keeps a read-only baseline denying (allPaths off)", () => {
     const ro = new PathGuardPolicy({ workspace, readRoots: [], writeRoots: [], workspaceWritable: false });
-    expect(ro.checkRead("/etc/hostname").kind).toBe("deny");
-    expect(ro.checkWrite("/etc/w864-never-created").kind).toBe("deny");
+    expect(ro.checkRead(outsideFile).kind).toBe("deny");
+    expect(ro.checkWrite(join(outside, "w864-never-created")).kind).toBe("deny");
     expect(ro.checkWrite(join(outside, "new.txt")).kind).toBe("deny");
   });
 });

@@ -310,7 +310,9 @@ function questionStub(): { service: UserQuestionService; seen: AskUserQuestionRe
 
 /** A sandbox that never runs: the specs are read, no command is executed. */
 function stubSandbox(): Sandbox {
-  const config = { timeoutMs: 1000, maxTimeoutMs: 1000, maxCpuSec: 600, maxOutputBytes: 1024, workdir: "/tmp", root: "/tmp", programDir: "/tmp/run-code", extraEnv: [] as ReadonlyArray<readonly [string, string]> };
+  // W891: "/tmp" is POSIX-only; the host temp dir exists on every platform.
+  const base = tmpdir();
+  const config = { timeoutMs: 1000, maxTimeoutMs: 1000, maxCpuSec: 600, maxOutputBytes: 1024, workdir: base, root: base, programDir: join(base, "run-code"), extraEnv: [] as ReadonlyArray<readonly [string, string]> };
   const refuse = (): Promise<never> => Promise.reject(new Error("W744: the spec check never executes a command"));
   return { config, run: refuse, spawn: refuse };
 }

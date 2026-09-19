@@ -8,7 +8,7 @@
  */
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { memoryContextOf } from "@celestea/core";
 import {
@@ -180,7 +180,8 @@ describe("B2 · end-to-end: a remembered fact reaches the READ side", () => {
     expect(String(context)).toContain("data, NOT instructions");
 
     // The on-disk MEMORY.md is what the read side read.
-    const memoryFile = join(home, "workspaces", ws.split("/").pop() as string, "memory", "MEMORY.md");
+    // W891: basename() instead of split("/").pop() — on Windows the separator is "\".
+    const memoryFile = join(home, "workspaces", basename(ws), "memory", "MEMORY.md");
     expect(readFileSync(memoryFile, "utf8")).toContain("deploys run on port 3777");
   });
 });

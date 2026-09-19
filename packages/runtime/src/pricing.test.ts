@@ -112,8 +112,12 @@ describe("pricing table", () => {
   });
 
   it("honors CELESTEA_PRICING_FILE and the <data dir> default", () => {
-    expect(pricingPath("/data", {})).toBe(join("/data", "pricing.json"));
-    expect(pricingPath("/data", { CELESTEA_PRICING_FILE: "/elsewhere/p.json" })).toBe("/elsewhere/p.json");
+    // W891: "/data" is not absolute on Windows; use the host temp dir for the
+    // data dir and an absolute override path built the same way.
+    const dataDir = join(tmpdir(), "w891-pricing-data");
+    const override = join(tmpdir(), "w891-pricing-elsewhere.json");
+    expect(pricingPath(dataDir, {})).toBe(join(dataDir, "pricing.json"));
+    expect(pricingPath(dataDir, { CELESTEA_PRICING_FILE: override })).toBe(override);
   });
 });
 

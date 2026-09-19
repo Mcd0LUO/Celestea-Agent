@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
+import { POSIX_SHELL } from "../testing/platform-gates.js";
 import { whichInPath } from "./exec.js";
 
 const BS = "\\";
@@ -45,7 +46,14 @@ describe("W885 whichInPath · POSIX", () => {
     expect(whichInPath("bin/tool", "linux", { PATH: "/usr/bin" }, () => false)).toBeNull();
   });
 
-  it("finds a real executable on a real PATH (no injection)", () => {
+  it("finds a real executable on a real PATH (no injection)", (ctx) => {
+    // W891: the real-filesystem half needs an executable bit and a POSIX ":" PATH;
+    // it is gated (POSIX_SHELL is false on Windows) so the pure cases above still
+    // pin the rules there. This host runs the original assertion.
+    if (!POSIX_SHELL) {
+      ctx.skip("a real executable lookup needs a POSIX host (mode bits + ':' PATH)");
+      return;
+    }
     const dir = realDir();
     writeFileSync(join(dir, "w885-tool"), "#!/bin/sh\n", { mode: 0o755 });
     expect(whichInPath("w885-tool", "linux", { PATH: `${dir}:/usr/bin` })).toBe(join(dir, "w885-tool"));

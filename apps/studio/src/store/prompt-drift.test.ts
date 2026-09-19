@@ -18,6 +18,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -177,10 +178,12 @@ describe("W782 · 部署事实是运行时派生的（单一真源）", () => {
   });
 
   it("单一真源：换一份 config，渲染文本随之改（不是又抄了一份期望值）", async () => {
-    const h = makeHarness({ session: { name: "s1" }, paths: { staticRoot: "/tmp/w782-other-dist" } });
+    // W891: "/tmp/..." is POSIX-only; build the override under the host temp dir.
+    const otherDist = join(tmpdir(), "w782-other-dist");
+    const h = makeHarness({ session: { name: "s1" }, paths: { staticRoot: otherDist } });
     try {
       const out = await renderFor(h, "sample-ws/s1");
-      expect(out).toContain("/tmp/w782-other-dist");
+      expect(out).toContain(otherDist);
       expect(out).not.toContain(join(REPO_ROOT, "apps", "web", "dist"));
     } finally {
       h.cleanup();

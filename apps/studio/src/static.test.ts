@@ -10,7 +10,19 @@ writeFileSync(join(root, "index.html"), "<!doctype html><title>studio</title>");
 writeFileSync(join(root, "assets", "app.js"), "export const x = 1;");
 mkdirSync(join(root, "..", "outside"), { recursive: true });
 writeFileSync(join(root, "..", "outside", "leak.txt"), "LEAK");
-symlinkSync(join(root, "..", "outside"), join(root, "link-out"));
+/**
+ * W891: an unelevated Windows process cannot create a symlink (EPERM), so the
+ * escape-symlink fixture is best-effort and the one case that needs it becomes
+ * a VISIBLE skip there. The Linux assertion is unchanged.
+ */
+const symlinkReady = ((): boolean => {
+  try {
+    symlinkSync(join(root, "..", "outside"), join(root, "link-out"));
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
@@ -51,7 +63,11 @@ describe("static serving", () => {
     expect(serveStaticPath(root, "/assets/../../outside/leak.txt").status).toBe(404);
   });
 
-  it("refuses a symlink that escapes the root", async () => {
+  it("refuses a symlink that escapes the root", async (ctx) => {
+    if (!symlinkReady) {
+      ctx.skip("symlinks are not permitted on this host (Windows without SeCreateSymbolicLinkPrivilege)");
+      return;
+    }
     const res = serveStaticPath(root, "/link-out/leak.txt");
     expect(res.status).toBe(404);
   });

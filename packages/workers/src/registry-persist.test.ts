@@ -7,6 +7,16 @@ import { WorkerRegistry } from "./registry.js";
 import { parseRegistryTsv } from "./registry-tsv.js";
 
 /**
+ * W885/W891: mode bits mean nothing on Windows (W883 E10).
+ *
+ * Deliberately INLINE rather than imported from the tools package: workers is a
+ * tier-1 package, and the architecture rule tier1-no-peer-deps-workers
+ * (.dependency-cruiser.cjs) forbids horizontal package imports — same precedent
+ * as packages/session/src/checkpoint-log.test.ts.
+ */
+const fileModesMeaningful = process.platform !== "win32";
+
+/**
  * W831 R3 (B4) — registry persistence robustness + lifecycle.
  *
  * Moved out of registry.test.ts to keep every file inside the ARCHITECTURE §3
@@ -34,7 +44,13 @@ describe("W831 R3 B4 — registry persistence robustness + lifecycle (W813 P1-pe
    * fails the WRITE too, so only file-unreadable + directory-writable actually
    * triggers read-failure-then-write.)
    */
-  it("W813-9: an unreadable table aborts the write instead of deleting foreign rows", () => {
+  it("W813-9: an unreadable table aborts the write instead of deleting foreign rows", (ctx) => {
+    // W891: chmod(0o000) does not make a file unreadable on Windows, so the
+    // fixture cannot be built there — visible skip, Linux assertion unchanged.
+    if (!fileModesMeaningful) {
+      ctx.skip("a chmod-based read denial needs POSIX mode bits");
+      return;
+    }
     const path = tmpTsv();
     writeFileSync(path, "W9\t2026-09-10_11:00:00Z\tRUNNING\tproc=999\n", "utf8");
     const reg = registry(path);
@@ -97,7 +113,13 @@ describe("W831 R3 B4 — registry persistence robustness + lifecycle (W813 P1-pe
    * nothing warns. The no-throw contract stays; the failure is recorded per row
    * and appended to the alert log (a file, so it survives the restart).
    */
-  it("R2-A4: a failed persist is recorded per row, alerted, and leaves disk RUNNING", () => {
+  it("R2-A4: a failed persist is recorded per row, alerted, and leaves disk RUNNING", (ctx) => {
+    // W891: the failure is induced by making the DIRECTORY read-only via chmod,
+    // which Windows does not honour.
+    if (!fileModesMeaningful) {
+      ctx.skip("a chmod-based write denial needs POSIX mode bits");
+      return;
+    }
     const root = mkdtempSync(join(tmpdir(), "celestea-reg-a4-"));
     const dir = join(root, "data");
     mkdirSync(dir);

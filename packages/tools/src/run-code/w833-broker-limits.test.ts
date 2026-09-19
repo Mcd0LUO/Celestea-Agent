@@ -39,8 +39,13 @@ function registryWithShell(shell: (args: unknown) => Promise<unknown>): ToolRegi
 }
 
 describe("B1 W812 P1-1: the wall clock is independent of the pump", () => {
-  it("cuts a slow sub-call at the wall clock instead of waiting for it", async () => {
-    if (skipTs()) return;
+  it("cuts a slow sub-call at the wall clock instead of waiting for it", async (ctx) => {
+    // W891: a silent `return` counts as PASSED; make the missing interpreter a
+    // visible skip (same condition, just reported honestly).
+    if (skipTs()) {
+      ctx.skip("the TypeScript runtime is unavailable inside the sandbox here");
+      return;
+    }
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -60,8 +65,11 @@ describe("B1 W812 P1-1: the wall clock is independent of the pump", () => {
     expect(elapsed).toBeLessThan(3_500);
   }, 20_000);
 
-  it("times out a reply the child refuses to drain (full pipe) instead of hanging", async () => {
-    if (skipTs()) return;
+  it("times out a reply the child refuses to drain (full pipe) instead of hanging", async (ctx) => {
+    if (skipTs()) {
+      ctx.skip("the TypeScript runtime is unavailable inside the sandbox here");
+      return;
+    }
     const tool = h.mount(h.echoRegistry());
     const code = [
       "  const big = 'A'.repeat(200000);",
@@ -82,8 +90,11 @@ describe("B1 W812 P1-1: the wall clock is independent of the pump", () => {
 });
 
 describe("B1 W812 P2-2: composeRender numbers come from the effective config", () => {
-  it("reports the injected log/sub-output budgets, not the module constants", async () => {
-    if (skipTs()) return;
+  it("reports the injected log/sub-output budgets, not the module constants", async (ctx) => {
+    if (skipTs()) {
+      ctx.skip("the TypeScript runtime is unavailable inside the sandbox here");
+      return;
+    }
     const registry = h.echoRegistry();
     const { tool, handle } = runCodeToolWithHandle({
       sandbox: h.sandbox,

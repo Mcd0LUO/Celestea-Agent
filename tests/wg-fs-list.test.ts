@@ -60,10 +60,17 @@ describe("G5 · /api/fs/list", () => {
     expect(names).not.toContain(".secret");
   });
 
-  it("reports a symlink as a file and never follows it to a directory", async () => {
+  it("reports a symlink as a file and never follows it to a directory", async (ctx) => {
     const h = make();
     mkdirSync(join(h.root, "real-dir"));
-    symlinkSync(join(h.root, "real-dir"), join(h.root, "link-to-dir"));
+    // W891: symlink creation is EPERM for an unelevated Windows process; skip
+    // visibly there and keep the Linux assertion byte-identical.
+    try {
+      symlinkSync(join(h.root, "real-dir"), join(h.root, "link-to-dir"));
+    } catch (error) {
+      ctx.skip(`symlinks are not permitted on this host (${(error as NodeJS.ErrnoException).code ?? String(error)})`);
+      return;
+    }
     const res = await getJson(h.app, `/api/fs/list?path=${encodeURIComponent(h.root)}`);
     const link = (res.body["entries"] as ListEntry[]).find((e) => e.name === "link-to-dir") as ListEntry;
     expect(link.type).toBe("file");

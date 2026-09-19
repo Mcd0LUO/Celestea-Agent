@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakeRuntimeAdapter } from "./fake-runtime-adapter.js";
 import { busyRuntime, FILE_MODES_MEANINGFUL, getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
+import { fsRoots } from "./config.js";
 import { workspaceHome } from "./store/celestea-home.js";
 
 const harnesses: StudioHarness[] = [];
@@ -316,17 +317,16 @@ describe("fs browse", () => {
     mkdirSync(join(h.root, ".hidden"));
     const res = await getJson(h.app, `/api/fs/browse?path=${encodeURIComponent(h.root)}`);
     expect(res.status).toBe(200);
-    expect(res.body["path"]).toBe(h.root);
-    expect(res.body["dirs"]).toEqual(["dist", "sample-ws", "zdir"]);
-    expect(res.body["roots"]).toEqual(["/src", "/tmp", "/srv", "/home"]);
-    expect(res.body["parent"]).toBe(h.root.split("/").slice(0, -1).join("/"));
+    expect(res.body["path"]).toBe(h.root); expect(res.body["dirs"]).toEqual(["dist", "sample-ws", "zdir"]);
+    expect(res.body["roots"]).toEqual(fsRoots()); // W891: HOST-platform roots
+    expect(res.body["parent"]).toBe(dirname(h.root));
   });
 
   it("400s with the frozen body shape for a bad path", async () => {
     const h = make();
     const res = await getJson(h.app, "/api/fs/browse?path=relative");
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ path: "relative", parent: null, dirs: [], roots: ["/src", "/tmp", "/srv", "/home"], error: "path 'relative' must be absolute" });
+    expect(res.body).toEqual({ path: "relative", parent: null, dirs: [], roots: fsRoots(), error: "path 'relative' must be absolute" });
     const missing = await getJson(h.app, `/api/fs/browse?path=${encodeURIComponent(join(h.root, "nope"))}`);
     expect(missing.status).toBe(400);
     expect(String(missing.body["error"])).toContain("is not an existing directory");

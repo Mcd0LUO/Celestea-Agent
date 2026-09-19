@@ -12,7 +12,7 @@
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { serializeEventLog } from "@celestea/runtime";
@@ -23,7 +23,7 @@ import { effectivePermissionOf } from "./engine-permissions.js";
 import { bindingFor, closeLog } from "./engine-session.js";
 import { createSessionGrants } from "./session-grants.js";
 
-const HOME = process.env["HOME"] ?? "/home/nobody";
+const HOME = process.env["HOME"] ?? homedir(); // W891: a real home on every platform
 const NOW = 1_700_000_500;
 const roots: string[] = [];
 

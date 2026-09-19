@@ -2,6 +2,8 @@
  * W6: a CPU-cap kill must be OBSERVABLE in the foreground result, not a bare
  * death. The mapping lives in run_shell (signal + the provider's cpu_sec).
  */
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Sandbox, SandboxRunResult } from "@celestea/core";
 
@@ -14,9 +16,10 @@ function stubSandbox(result: Partial<SandboxRunResult>): Sandbox {
     maxTimeoutMs: 1000,
     maxCpuSec: 600,
     maxOutputBytes: 1024,
-    workdir: "/tmp",
-    root: "/tmp",
-    programDir: "/tmp/run-code",
+    // W891: "/tmp" is POSIX-only; the host temp dir exists everywhere.
+    workdir: tmpdir(),
+    root: tmpdir(),
+    programDir: join(tmpdir(), "run-code"),
     extraEnv: [] as ReadonlyArray<readonly [string, string]>,
   };
   const base: SandboxRunResult = {

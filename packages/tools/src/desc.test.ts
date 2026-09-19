@@ -27,7 +27,9 @@ function builtinSpecs(): ToolSpec[] {
 
 /** A sandbox that never runs: only the specs are read here. */
 function stubSandbox(): Sandbox {
-  const config = { timeoutMs: 1000, maxTimeoutMs: 1000, maxCpuSec: 600, maxOutputBytes: 1024, workdir: "/tmp", root: "/tmp", programDir: "/tmp/run-code", extraEnv: [] as ReadonlyArray<readonly [string, string]> };
+  // W891: the host temp dir, not the POSIX-only "/tmp".
+  const base = tmpdir();
+  const config = { timeoutMs: 1000, maxTimeoutMs: 1000, maxCpuSec: 600, maxOutputBytes: 1024, workdir: base, root: base, programDir: join(base, "run-code"), extraEnv: [] as ReadonlyArray<readonly [string, string]> };
   const refuse = (): Promise<never> => Promise.reject(new Error("W779: the desc check never executes a command"));
   return { config, run: refuse, spawn: refuse };
 }

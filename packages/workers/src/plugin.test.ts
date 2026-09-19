@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Context, TOOL_REGISTRY_SERVICE } from "@celestea/core";
 import { createWorkerRegistry, workersPlugin } from "./plugin.js";
@@ -38,8 +40,10 @@ describe("workersPlugin", () => {
   it("builds a registry from options (or reuses the provided handle)", () => {
     const provided = new WorkerRegistry({ tsvPath: null });
     expect(createWorkerRegistry({ registry: provided })).toBe(provided);
-    const built = createWorkerRegistry({ tsvPath: null, sourceLabel: "W278", resultsDir: "/tmp/r" });
+    // W891: resultsDir is passed through verbatim; "/tmp/r" is POSIX-only.
+    const results = join(tmpdir(), "w891-plugin-results");
+    const built = createWorkerRegistry({ tsvPath: null, sourceLabel: "W278", resultsDir: results });
     expect(built.sourceLabel).toBe("W278");
-    expect(built.resultsDir).toBe("/tmp/r");
+    expect(built.resultsDir).toBe(results);
   });
 });

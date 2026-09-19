@@ -9,7 +9,7 @@
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Profile } from "@celestea/runtime";
@@ -78,7 +78,9 @@ function pinPathOnlySession(dataDir: string, session: string): void {
 }
 
 /** The home the rules are evaluated against (exists → `$HOME` is rejected). */
-const HOME = process.env["HOME"] ?? "/home/nobody";
+// W891: the product resolves `env.HOME ?? homedir()`; the fallback must be a
+// REAL home on this host (there is no /home/nobody on Windows).
+const HOME = process.env["HOME"] ?? homedir();
 
 function envOf(dataDir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME, ...extra };

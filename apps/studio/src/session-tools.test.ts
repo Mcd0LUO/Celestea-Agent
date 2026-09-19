@@ -9,7 +9,7 @@
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getJson, jsonRequest, type StudioHarness } from "./harness.test-util.js";
@@ -257,7 +257,7 @@ describe("W860 store + reader", () => {
   }
 
   function envOf(dir: string): NodeJS.ProcessEnv {
-    return { CELESTEA_WORKSPACES_FILE: join(dirname(dir), "workspaces.json"), HOME: process.env["HOME"] ?? "/home/nobody" };
+    return { CELESTEA_WORKSPACES_FILE: join(dirname(dir), "workspaces.json"), HOME: process.env["HOME"] ?? homedir() };
   }
 
   const NOW = 1_700_000_500;

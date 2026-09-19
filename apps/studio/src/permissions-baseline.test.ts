@@ -5,7 +5,7 @@
  * unsandboxed.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { effectiveGrantsOf } from "./runtime/engine-grants.js";
@@ -28,7 +28,7 @@ function sessionDir(name: string): string {
   writeFileSync(join(session, "cli-main.jsonl"), "");
   return session;
 }
-const HOME = process.env["HOME"] ?? "/home/nobody";
+const HOME = process.env["HOME"] ?? homedir(); // W891: a real home on every platform
 function envOf(dataDir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME, ...extra };
 }

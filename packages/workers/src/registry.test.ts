@@ -185,8 +185,11 @@ describe("WorkerRegistry lifecycle", () => {
     const reg = registry(null);
     expect(reg.pid).toBe(4242);
     expect(reg.resultsDir).toBe("results");
-    reg.setResultsDir("/tmp/out");
-    expect(reg.resultsDir).toBe("/tmp/out");
+    // W891: the setter stores whatever absolute path it is given; use a real
+    // host path instead of the POSIX-only "/tmp/out".
+    const out = join(tmpdir(), "w891-reg-out");
+    reg.setResultsDir(out);
+    expect(reg.resultsDir).toBe(out);
     reg.setSourceLabel("W278");
     expect(reg.sourceLabel).toBe("W278");
     expect(reg.mailbox.pendingTotal()).toBe(0);

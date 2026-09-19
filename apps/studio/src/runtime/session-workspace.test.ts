@@ -14,6 +14,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SANDBOX_SERVICE, TOOL_REGISTRY_SERVICE, type Sandbox, type ToolInput, type ToolRegistry } from "@celestea/core";
+import { pathDelimiter } from "@celestea/tools";
 import type { Profile } from "@celestea/runtime";
 import { sessionWorkspaceOf } from "../store/sessions.js";
 import type { StudioHarness } from "../harness.test-util.js";
@@ -92,7 +93,8 @@ describe("W768 per-session workspace", () => {
     const env: NodeJS.ProcessEnv = {
       CELAESTEA_RUN_SHELL_WORKDIR: processDir,
       CELESTEA_TOOL_WORKDIR: processDir,
-      CELESTEA_TOOL_ROOTS: `${wsA}:${wsB}`,
+      // W891: ":" is the POSIX list separator; on Windows it is ";".
+      CELESTEA_TOOL_ROOTS: [wsA, wsB].join(pathDelimiter()),
     };
     const composer = composerOver(h, env);
 
