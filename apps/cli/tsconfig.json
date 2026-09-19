@@ -1,4 +1,11 @@
 {
-  "extends": "../../tsconfig.base.json",
+  // W891: 继承**根** tsconfig（而不是 base），以获得 workspace 的 paths 映射。
+  // 为什么必须：pnpm --dir apps/studio start = tsx src/main.ts，cwd 在 apps/studio，
+  // tsx 会就近读本文件；本文件若没有 paths，@celestea/core 会落到 gitignored 的
+  // packages/core/dist/ —— 即「源码直跑」其实跑的是**上一次构建的产物**
+  // （全新检出直接起不来）。这不是本机问题，是仓库问题：CI 的全新检出会立刻暴露它。
+  // 构建配置（tsconfig.build.json）仍直接继承 base、**不带** paths：构建要按依赖顺序
+  // 解析各自 dist，这一点不能变。
+  "extends": "../../tsconfig.json",
   "include": ["src/**/*.ts"]
 }

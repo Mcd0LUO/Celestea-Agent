@@ -1,0 +1,46 @@
+# W891 — this repo's first CI. Until now every gate (`pnpm check`: typecheck /
+# lint / arch / test / web) only ran when a human remembered to run it, which is
+# not a gate (docs/AGENT.md §8). Two OSes on purpose: Windows is a platform this
+# repo now claims to support, so it must be measured rather than assumed.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: pnpm check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      # Full history + tags: the version derives from `git describe --tags`
+      # (scripts/version.mjs), and the web bundle embeds it. A shallow checkout
+      # would make the version gate meaningless.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Check
+        run: pnpm check
+        env:
+          CI: 'true'

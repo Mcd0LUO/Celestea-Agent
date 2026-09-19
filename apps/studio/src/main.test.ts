@@ -36,10 +36,16 @@ function startStudio(): Running {
   const dir = mkdtempSync(join(tmpdir(), "w742-main-"));
   roots.push(dir);
   writeFileSync(join(dir, "workspaces.json"), JSON.stringify({ workspaces: [], active_session: null }));
+  // W891: the child's cwd is a throwaway tmpdir, so tsx finds no tsconfig.json
+  // and would resolve @celestea/* to the gitignored packages/*/dist — i.e. this
+  // test would silently assert against the LAST BUILD instead of the source it
+  // lives in (and fail outright on a fresh clone, where dist does not exist).
+  // Pin the workspace tsconfig so the child always runs the same source vitest does.
   const child = spawn(TSX, [join(ROOT, "apps/studio/src/main.ts")], {
     cwd: dir,
     env: {
       ...process.env,
+      TSX_TSCONFIG_PATH: join(ROOT, "tsconfig.json"),
       STUDIO_TS_PORT: "0",
       CELESTEA_WORKSPACES_FILE: join(dir, "workspaces.json"),
       CELESTEA_PROVIDERS_FILE: join(dir, "providers.json"),

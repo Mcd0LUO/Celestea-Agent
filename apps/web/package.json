@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit && node tools/check-ui-copy.mjs && node tools/check-scope-hash.mjs && node tools/check-fold-default.mjs && node tools/check-grants-permanent.mjs && node tools/check-module-size.mjs && node tools/check-version.mjs && CELESTEA_BUNDLE_STRICT=1 node tools/check-bundle-size.mjs",
+    "check": "tsc --noEmit && node tools/check-ui-copy.mjs && node tools/check-scope-hash.mjs && node tools/check-fold-default.mjs && node tools/check-grants-permanent.mjs && node tools/check-module-size.mjs && node tools/check-version.mjs && node ../../scripts/run-with-env.mjs CELESTEA_BUNDLE_STRICT=1 -- node tools/check-bundle-size.mjs",
     "check:copy": "node tools/check-ui-copy.mjs",
     "check:scope-hash": "node tools/check-scope-hash.mjs",
     "check:size": "node tools/check-module-size.mjs",

@@ -21,7 +21,7 @@
     "lint": "eslint .",
     "lint:arch": "depcruise --config .dependency-cruiser.cjs packages apps/studio apps/cli scripts tests",
     "check": "pnpm typecheck && pnpm lint && pnpm lint:arch && pnpm test && pnpm check:web",
-    "check:web": "pnpm --dir apps/web run build && CELESTEA_BUNDLE_STRICT=1 pnpm --dir apps/web run check",
+    "check:web": "pnpm --dir apps/web run build && node scripts/run-with-env.mjs CELESTEA_BUNDLE_STRICT=1 -- pnpm --dir apps/web run check",
     "node:check": "node scripts/check-node.mjs",
     "version:sync": "node scripts/version.mjs --write",
     "deps:audit": "pnpm audit; pnpm outdated -r",

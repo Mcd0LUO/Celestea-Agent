@@ -123,6 +123,7 @@ npm install -g --prefix /tmp/x celestea-agent@2.7.3 && /tmp/x/bin/celestea --ver
 |---|---|---|
 | 工具写入的文件可能不属于你（例如 DSH 的 write/edit 会落地 `root:root`） | 后续写入 `EACCES`，**别人连变异都写不进去** | 写完立刻把归属改回**你自己**（`sudo chown "$(id -un):$(id -gn)" <files>`）+ `chmod 644`；收尾自查 `find . -user root -type f` |
 | `pnpm --dir apps/web run check` **不重建** | 量的是旧 dist，棘轮基准记错 | 量产物必须走会重建的入口：`pnpm check` 或 `pnpm run build` |
+| **源码直跑**依赖 `tsconfig` 的 `paths` | `pnpm --dir apps/studio start`（= `tsx src/main.ts`，cwd 在 `apps/studio`）就近读该目录的 tsconfig；它若只继承 `tsconfig.base.json`（无 `paths`），`@celestea/*` 就落到 gitignored 的 `packages/*/dist/` —— 你以为在跑源码，其实在跑**上一次构建的产物**，全新检出直接 `ERR_MODULE_NOT_FOUND` | 跑源码的入口配置必须继承**根** `tsconfig.json`；`tsconfig.build.json` 反过来**不带** `paths`（构建要按依赖顺序解析各自 dist）。机械兜底：`tests/tsconfig-paths.test.ts` |
 | `RLIMIT_AS` 与 Chromium 不兼容 | 浏览器进程 SIGTRAP（133） | 浏览器调用走 `noAddressSpaceLimit` 豁免 |
 | benchmark 跨运行噪声 | 同一提交两次跑 p50 2.6% / p90 12.6%（**本仓开发机实测；换机器请自测，量级可能不同**） | 别信单次对比的 <10% 变动；认真对比用 `--repeat 3` |
 | 时序敏感用例 | 并发构建时 flaky（本仓真实发生过 2 条） | 静默条件下重跑；不要用「flaky」搪塞，要定位 |
@@ -165,7 +166,8 @@ npm install -g --prefix /tmp/x celestea-agent@2.7.3 && /tmp/x/bin/celestea --ver
 
 ## 8. 写代码的取向
 
-- **机械门禁优先于人的记性**：任何「别忘了」都应该变成一条断言。本仓已有：文案门禁、契约计数、体积棘轮、发布门禁、README 硬数字。
+- **机械门禁优先于人的记性**：任何「别忘了」都应该变成一条断言。本仓已有：文案门禁、契约计数、体积棘轮、发布门禁、README 硬数字、文档规范、源码直跑解析。
+- **「本机能跑」不等于「干净机器能跑」**：本机常年有 `dist/`、缓存、`node_modules`，于是「依赖上一次构建」「依赖本机工具」的坑只在别人的机器上现形。CI（`.github/workflows/ci.yml`，ubuntu + windows）就是那个干净机器；加它第一天就抓出一个全新检出起不来的真 bug。
 - **平台是参数，不是常量**：路径/平台判定走可注入 seam（`isAbsolutePath` / `parentDir` / `joinPath` / `platformGates()`），这样 win32 分支能在 Linux 上测。
 - **诚实降级 > 静默放行**：能力缺失时按策略**降级并说清**，或 fail-closed 报结构化错误，绝不假装成功。
 - **注释写「为什么」**：尤其是反直觉的决定与已知代价（例：`check-version.mjs` 明写它不再察觉 dist 落后于 HEAD）。
