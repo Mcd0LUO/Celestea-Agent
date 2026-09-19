@@ -11,6 +11,23 @@
 import { readFileSync } from "node:fs";
 import type { Baseline } from "./report.js";
 
+/**
+ * Run-to-run noise floor, MEASURED rather than guessed.
+ *
+ * Method: two consecutive `pnpm bench` runs on the SAME commit (a7ea4d3), same
+ * machine, load 0.6-1.0 on 28 cores. Per-case |delta| between the two runs gave
+ * p50 2.6% / p90 12.6% / max 20.7% on the median. The minimum was no better
+ * (2.5% / 12.8% / 15.5%), which is the point: the dominant noise is between
+ * runs (CPU boost state, cache/ASLR layout, neighbours), not within a run, so
+ * no statistic computed from one run can remove it.
+ *
+ * The old threshold was a hardcoded 0.5% labelled "(within noise)" — about 5x
+ * tighter than the real median noise and 25x tighter than p90, i.e. it called
+ * roughly a quarter of all rows real movements. These two numbers replace it.
+ */
+export const NOISE_TYPICAL_PCT = 2.5;
+export const NOISE_P90_PCT = 12.6;
+
 export interface DeltaRow {
   name: string;
   scale: string;
@@ -18,7 +35,8 @@ export interface DeltaRow {
   current_ms: number;
   /** Signed percentage change of the median (positive = slower now). */
   change_pct: number;
-  status: "moved" | "same" | "new" | "gone";
+  /** signal: beyond p90 noise. unclear: inside the noise band. same: typical. */
+  status: "signal" | "unclear" | "same" | "new" | "gone";
 }
 
 /** Rows the two runs share, plus the ones only one side has. */
@@ -40,7 +58,7 @@ export function compareBaselines(baseline: Baseline, current: Baseline): DeltaRo
       baseline_ms: before.median_ms,
       current_ms: row.median_ms,
       change_pct: Math.round(change * 10) / 10,
-      status: Math.abs(change) < 0.5 ? "same" : "moved",
+      status: Math.abs(change) >= NOISE_P90_PCT ? "signal" : Math.abs(change) >= NOISE_TYPICAL_PCT ? "unclear" : "same",
     });
   }
   for (const row of baseline.cases) {
@@ -49,6 +67,36 @@ export function compareBaselines(baseline: Baseline, current: Baseline): DeltaRo
     }
   }
   return rows.sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
+}
+
+/** One environment fact that differs between the two runs. */
+export interface EnvDelta {
+  field: string;
+  before: string;
+  after: string;
+}
+
+/**
+ * Environment facts whose change makes a percentage delta un-attributable to the
+ * code. `commit` is deliberately excluded (that is what we are comparing) and so
+ * is `kernel` (it moves without changing what V8 does).
+ *
+ * Why this exists: the v2.6.2 baseline was measured on node v24 and the v2.7.2
+ * run on node v26, and the comparison happily printed "estimateTokens -89.9%".
+ * A V8 upgrade is not a commit, and reporting it as one is worse than reporting
+ * nothing.
+ */
+export function environmentDeltas(baseline: Baseline, current: Baseline): EnvDelta[] {
+  const pairs: Array<[string, string, string]> = [
+    ["node", baseline.machine.node, current.machine.node],
+    ["cpu", baseline.machine.cpu, current.machine.cpu],
+    ["cores", String(baseline.machine.cores), String(current.machine.cores)],
+    ["platform", baseline.machine.platform, current.machine.platform],
+    ["arch", baseline.machine.arch, current.machine.arch],
+  ];
+  return pairs
+    .filter(([, before, after]) => before !== after)
+    .map(([field, before, after]) => ({ field, before, after }));
 }
 
 export function loadBaseline(path: string): Baseline {
@@ -60,21 +108,45 @@ function line(row: DeltaRow): string {
   if (row.status === "new") return `${label} NEW (${row.current_ms.toFixed(4)} ms)`;
   if (row.status === "gone") return `${label} GONE (was ${row.baseline_ms.toFixed(4)} ms)`;
   const sign = row.change_pct > 0 ? "+" : "";
-  const verdict = row.status === "same" ? "  (within noise)" : row.change_pct > 0 ? "  slower" : "  faster";
+  const dir = row.change_pct > 0 ? "slower" : "faster";
+  const verdict =
+    row.status === "signal"
+      ? `  ${dir} — beyond run-to-run noise`
+      : row.status === "unclear"
+        ? `  ${dir}? inside the noise band (p50 ${NOISE_TYPICAL_PCT}% / p90 ${NOISE_P90_PCT}%) — re-run to confirm`
+        : "  (typical noise)";
   return `${label} ${row.baseline_ms.toFixed(4)} -> ${row.current_ms.toFixed(4)} ms  ${sign}${row.change_pct}%${verdict}`;
+}
+
+/** Human-readable comparison; no exit code, no threshold. */
+/** The loud block printed when the two runs did not share an environment. */
+function environmentSection(baseline: Baseline, current: Baseline): string[] {
+  const deltas = environmentDeltas(baseline, current);
+  if (deltas.length === 0) return ["environment: identical (node / cpu / cores / platform / arch)"];
+  return [
+    "!! ENVIRONMENT CHANGED since the baseline — every percentage below mixes the",
+    "!! code change with the environment change and cannot be attributed to a commit:",
+    ...deltas.map((d) => `!!   ${d.field.padEnd(9)} ${d.before} -> ${d.after}`),
+    "!! Re-baseline on this machine (pnpm bench) before reading anything into these",
+    "!! numbers, or compare two runs made on the SAME node build.",
+  ];
 }
 
 /** Human-readable comparison; no exit code, no threshold. */
 export function renderComparison(baseline: Baseline, current: Baseline): string {
   const rows = compareBaselines(baseline, current);
-  const moved = rows.filter((row) => row.status === "moved").length;
+  const signal = rows.filter((row) => row.status === "signal").length;
+  const unclear = rows.filter((row) => row.status === "unclear").length;
   return [
     `compare: ${baseline.version} baseline (${baseline.machine.commit}, ${baseline.generated_at})`,
     `     vs: this run (${current.machine.commit}, ${current.generated_at})`,
-    `cases: ${rows.length} (${moved} moved by more than 0.5%)`,
+    ...environmentSection(baseline, current),
+    `cases: ${rows.length} — ${signal} beyond noise (>=${NOISE_P90_PCT}%), ${unclear} inside the noise band (${NOISE_TYPICAL_PCT}-${NOISE_P90_PCT}%)`,
     "",
     ...rows.map(line),
     "",
-    "no threshold is applied by design: judge the size of a move, not its existence.",
+    `no pass/fail by design. The floor is MEASURED: two runs of one commit differ by`,
+    `p50 ${NOISE_TYPICAL_PCT}% / p90 ${NOISE_P90_PCT}% per case, so a single-vs-single delta below`,
+    `${NOISE_P90_PCT}% is not evidence of a code change — re-run, or re-baseline on this machine.`,
   ].join("\n");
 }
