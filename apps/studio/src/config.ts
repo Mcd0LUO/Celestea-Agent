@@ -9,9 +9,10 @@
 
 import { dirname, join, resolve } from "node:path";
 import { AUTH_SECRET_FILE } from "./auth/token.js";
-import { studioRepoRoot } from "./deployment.js";
+import { readAuthToken } from "./auth/api-token.js";
+import { packagedWebDist, studioRepoRoot } from "./deployment.js";
 
-/** `src/main.rs:867` — CONSTANT: it does not follow STUDIO_BIND. */
+/** `src/main.rs:867` — the DEFAULT bind; the live one is written back at listen time. */
 export const DEFAULT_BIND = "127.0.0.1:3777";
 /**
  * `src/main.rs` STATIC_ROOT: the Vite build, served read-only.
@@ -21,9 +22,13 @@ export const DEFAULT_BIND = "127.0.0.1:3777";
  * location) — the previous literal broke silently every time the checkout moved
  * or the frontend was relocated (it was `celestea_studio/frontend/dist` before
  * W781). `STUDIO_STATIC_ROOT` still overrides it for an operator.
+ *
+ * H: an INSTALLED `@celestea/studio` has no checkout, so the frontend build is
+ * staged at `<package>/webdist` by `scripts/build-webdist.mjs` and preferred
+ * when present. A source checkout keeps `apps/web/dist` exactly as before.
  */
 export function defaultStaticRoot(): string {
-  return join(studioRepoRoot(), "apps", "web", "dist");
+  return packagedWebDist() ?? join(studioRepoRoot(), "apps", "web", "dist");
 }
 /** `src/main.rs:1311` broadcast capacity; slow clients degrade to `lagged`. */
 export const BUS_CAPACITY = 512;
@@ -65,6 +70,11 @@ export interface StudioConfig {
   name: string;
   bind: string;
   apiKeyEnv: string;
+  /**
+   * H-security: the self-cert bearer token required on every `/api/*` request
+   * except `/api/health`. `null` = no token (loopback / nginx-delegated).
+   */
+  authToken: string | null;
   paths: StudioPaths;
 }
 
@@ -72,6 +82,8 @@ export interface StudioConfigInput {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   paths?: Partial<StudioPaths>;
+  /** H-security: explicit token (the `--token` flag); else `CELESTEA_AUTH_TOKEN`. */
+  authToken?: string | null;
 }
 
 /** Build the host config from the environment; every value is overridable. */
@@ -92,10 +104,12 @@ export function loadStudioConfig(input: StudioConfigInput = {}): StudioConfig {
       explicit.authSecretFile ?? env["CELESTEA_AUTH_SECRET_FILE"] ?? join(dirname(workspacesFile), AUTH_SECRET_FILE),
     authHtpasswdFile: explicit.authHtpasswdFile ?? env["CELESTEA_AUTH_HTPASSWD_FILE"] ?? DEFAULT_AUTH_HTPASSWD_FILE,
   };
+  const token = input.authToken ?? readAuthToken(env);
   return {
     name: "celestea-studio",
     bind: DEFAULT_BIND,
     apiKeyEnv: env["CELESTEA_API_KEY_ENV"] ?? "CELESTEA_API_KEY",
+    authToken: token === null || token.trim() === "" ? null : token.trim(),
     paths,
   };
 }

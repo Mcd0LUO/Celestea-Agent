@@ -15,9 +15,11 @@
  *   settings.ts             host-side system_prompt / base_url overrides
  *   handlers/               one module per endpoint group
  *   store/                  data stores (workspaces / providers / prompts)
+ *   auth/                   the login-cookie gate + H's self-cert API token
  */
 
 export * from "./routes.js";
+export * from "./auth/index.js";
 export * from "./config.js";
 export * from "./runtime-adapter.js";
 export * from "./fake-runtime-adapter.js";
@@ -28,4 +30,5 @@ export * from "./static.js";
 export * from "./settings.js";
 export * from "./plugins.js";
 export * from "./app.js";
+export * from "./server.js";
 export * from "./store/index.js";

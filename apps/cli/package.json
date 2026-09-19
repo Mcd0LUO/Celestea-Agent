@@ -1,0 +1,34 @@
+{
+  "name": "celestea-agent",
+  "version": "2.7.1",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "description": "Celestea Studio agent — web UI + HTTP API, one command",
+  "bin": {
+    "celestea": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@celestea/core": "workspace:*",
+    "@celestea/studio": "workspace:*",
+    "@celestea/tools": "workspace:*"
+  }
+}

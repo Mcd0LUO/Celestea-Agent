@@ -94,7 +94,8 @@ function cgroupUnitName(): string | null {
  * checkout directory. Falls back to walking up from the cwd, then throws —
  * a wrong prompt is worse than a loud startup failure.
  */
-export function studioRepoRoot(): string {
+/** The checkout root (marker found), or null when running from an install. */
+function workspaceMarkerRoot(): string | null {
   const starts = [dirname(fileURLToPath(import.meta.url)), process.cwd()];
   for (const start of starts) {
     for (let dir = start; ; ) {
@@ -104,7 +105,39 @@ export function studioRepoRoot(): string {
       dir = parent;
     }
   }
+  return null;
+}
+
+/**
+ * H (packaging): the installed package root. After `npm i -g celestea-agent`
+ * there is no `pnpm-workspace.yaml`, so the nearest `package.json` above this
+ * module IS the deployment root. Never throws; null when nothing matches.
+ */
+function packageRoot(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(join(dir, "package.json"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+export function studioRepoRoot(): string {
+  const workspace = workspaceMarkerRoot();
+  if (workspace !== null) return workspace;
+  const packaged = packageRoot();
+  if (packaged !== null) return packaged;
   throw new Error(`cannot derive the studio repo root: no ${REPO_MARKER} above ${fileURLToPath(import.meta.url)} or ${process.cwd()}`);
+}
+
+/** The bundled frontend root (`<package>/webdist`) when the build staged one. */
+export function packagedWebDist(): string | null {
+  const root = packageRoot();
+  if (root === null) return null;
+  const candidate = join(root, "webdist");
+  return existsSync(join(candidate, "index.html")) ? candidate : null;
 }
 
 /** What the prompt may say about this deployment — every field derived. */

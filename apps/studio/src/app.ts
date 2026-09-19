@@ -29,6 +29,7 @@ import type { Llm } from "@celestea/core";
 import { createUsageLedgerFile, type Profile } from "@celestea/runtime";
 import { API_ENDPOINT_COUNT, routeTable, type RegisteredRoute } from "./routes.js";
 import { loadStudioConfig, type StudioConfig } from "./config.js";
+import { apiTokenMiddleware, registerTokenBootstrap } from "./auth/api-token.js";
 import { composeStudio, type EngineFactory, type StudioServices } from "./plugins.js";
 import { registerHandlers } from "./handlers/index.js";
 import { assembleSystemPromptFor } from "./handlers/config-shape.js";
@@ -263,6 +264,17 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   host.services = services;
   const table = routeTable();
   const app = new Hono();
+
+  // H-security: a configured token gates every /api/* request except
+  // /api/health. No token = the historical nginx-delegated path, unchanged
+  // (the listener is loopback; a non-loopback bind is refused in server.ts).
+  if (config.authToken !== null) {
+    app.use("/api/*", apiTokenMiddleware(config.authToken));
+    // The browser never sends an Authorization header; this one-shot bootstrap
+    // sets the HttpOnly cookie the middleware also accepts. Registered BEFORE
+    // registerStatic's catch-all.
+    registerTokenBootstrap(app, config.authToken);
+  }
 
   primeEnginePrompt(services, env);
   // W787 (§5.2③): the ONE boot audit channel — the checkpoint repair and the
