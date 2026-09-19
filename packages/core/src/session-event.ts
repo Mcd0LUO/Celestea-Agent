@@ -20,7 +20,7 @@
 
 import { isRecord, serdeJsonString } from "./json.js";
 import { isImageRef, normalizeImageRef, type ImageRef } from "./message.js";
-import { SESSION_EVENT_TYPES, type SessionEvent, type SessionEventType, type ToolResultSurface, type TurnOutcome } from "./types.js";
+import { SESSION_EVENT_ORIGINS, SESSION_EVENT_TYPES, type SessionEvent, type SessionEventOrigin, type SessionEventType, type ToolResultSurface, type TurnOutcome } from "./types.js";
 
 export type ValidateResult = { ok: true; event: SessionEvent } | { ok: false; errors: string[] };
 
@@ -85,6 +85,10 @@ export function validateSessionEvent(raw: unknown): ValidateResult {
       requireString(raw, "text", errors);
       // W804 §4.2C: the ONLY extra field, optional and serde-shaped (null == absent).
       optionalAttachments(raw, "attachments", errors);
+      // W888: a closed origin whitelist. An UNKNOWN value is a hard error (never a
+      // silent fallback to 'user'): the projection branches on it, so a typo would
+      // otherwise smuggle an injected row through as if the human had typed it.
+      optionalOrigin(raw, "origin", errors);
       break;
     case "assistant_message":
     case "thinking_delta":
@@ -191,6 +195,10 @@ function normalizeSessionEvent(raw: Record<string, unknown>, type: SessionEventT
     const ev: SessionEvent = { type, text: raw["text"] as string };
     const refs = attachmentList(raw["attachments"]);
     if (refs.length > 0) ev.attachments = refs;
+    // W888: null normalises to absent (like parent_id); 'user' is the default
+    // and is OMITTED so the common row stays byte-identical to pre-W888.
+    const origin = originValue(raw["origin"]);
+    if (origin !== undefined && origin !== "user") ev.origin = origin;
     return ev;
   }
   return raw as unknown as SessionEvent;
@@ -281,6 +289,20 @@ function optionalString(raw: Record<string, unknown>, name: string, errors: stri
   }
 }
 
+/** W888: validate the optional `origin` against the closed whitelist. */
+function optionalOrigin(raw: Record<string, unknown>, name: string, errors: string[]): void {
+  const v = raw[name];
+  if (v === undefined || v === null) return;
+  if (typeof v !== "string" || !SESSION_EVENT_ORIGINS.includes(v)) {
+    errors.push("field '" + name + "' must be one of: " + SESSION_EVENT_ORIGINS.join(", "));
+  }
+}
+
+/** W888: a valid origin, or undefined (absent/null/invalid -> omitted). */
+function originValue(v: unknown): SessionEventOrigin | undefined {
+  return typeof v === "string" && SESSION_EVENT_ORIGINS.includes(v) ? (v as SessionEventOrigin) : undefined;
+}
+
 /** W855 (B6): the optional model-face descriptor on a `tool_result` row. */
 function optionalSurface(raw: Record<string, unknown>, name: string, errors: string[]): void {
   const v = raw[name];
@@ -336,6 +358,8 @@ export function serializeSessionEvent(ev: SessionEvent): string {
       if (ev.attachments !== undefined && ev.attachments.length > 0) {
         parts.push(`"attachments":[${ev.attachments.map(serializeAttachmentRef).join(",")}]`);
       }
+      // W888: omit 'user' (the default) so a pre-W888 row keeps its exact bytes.
+      if (ev.origin !== undefined && ev.origin !== "user") parts.push(`"origin":${JSON.stringify(ev.origin)}`);
       break;
     case "assistant_message":
     case "thinking_delta":

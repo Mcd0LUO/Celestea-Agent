@@ -46,7 +46,9 @@ export function expectedCompactLog(events: readonly SessionEvent[], summary: str
   const kept = ranges.slice(Math.max(0, ranges.length - Math.max(1, Math.min(keep, ranges.length))));
   const out: SessionEvent[] = [
     { type: "turn_start", id: "turn-1" },
-    { type: "user_message", text: `${SPEC_HEAD_PREFIX}${summary}` },
+    // W888: the head summary row carries origin: "compact" (the runtime planner
+    // does too; this second implementation must track the plan shape).
+    { type: "user_message", text: `${SPEC_HEAD_PREFIX}${summary}`, origin: "compact" },
     { type: "assistant_message", text: SPEC_HEAD_ASSISTANT },
     { type: "turn_end", id: "turn-1", outcome: "completed" },
   ];

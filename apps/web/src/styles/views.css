@@ -236,6 +236,35 @@ body.resizing-col { cursor: col-resize; user-select: none; }
   white-space: pre-wrap;
 }
 
+/* W888：注入块的 origin 变体——独立配色 + 左侧粗色条 + 标题条，折叠由 details 承担。
+   与用户气泡一眼可分：用户气泡无左侧色条、字体非等宽、无 summary 头。 */
+.msg.inbox .inbox-fold { margin: 0; }
+.msg.inbox .inbox-fold-head {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; list-style: none;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .6px;
+  color: var(--c-text-2);
+}
+.msg.inbox .inbox-fold-head::-webkit-details-marker { display: none; }
+.msg.inbox .inbox-fold-head::before {
+  content: '▸'; font-size: 9px; color: var(--c-text-3);
+  transition: transform .12s ease;
+}
+.msg.inbox .inbox-fold[open] > .inbox-fold-head::before { transform: rotate(90deg); }
+.msg.inbox .inbox-fold-title { font-weight: 600; }
+.msg.inbox .inbox-fold-src { color: var(--c-text-3); }
+.msg.inbox .inbox-fold > .inbox-content { margin-top: 6px; max-height: 320px; overflow: auto; }
+
+/* 每类 origin 的左侧色条 + 标题色（同一灰阶主题，靠深浅/粗细区分，不引入彩色）。 */
+.msg.inbox.inbox-memory .bubble.inbox-bubble { box-shadow: inset 4px 0 0 var(--c-text-2); border-top-color: var(--c-border-strong); }
+.msg.inbox.inbox-memory .inbox-fold-title { color: var(--c-text-2); }
+.msg.inbox.inbox-skill .bubble.inbox-bubble { box-shadow: inset 4px 0 0 var(--c-text-3); }
+.msg.inbox.inbox-skill .inbox-fold-title { color: var(--c-text-3); }
+.msg.inbox.inbox-receipt .bubble.inbox-bubble { box-shadow: inset 4px 0 0 var(--c-accent-ring); }
+.msg.inbox.inbox-receipt .inbox-fold-title { color: var(--c-text-2); }
+.msg.inbox.inbox-steering .bubble.inbox-bubble { box-shadow: inset 4px 0 0 var(--c-accent-ring); }
+.msg.inbox.inbox-compact .bubble.inbox-bubble { box-shadow: inset 4px 0 0 var(--c-border-strong); }
+
 /* ---- 提交两态切换（#btnMode：插话 / 排队；W846 起落在 statusline 第 1 行右端） ---- */
 #btnMode.queue {
   background: var(--c-bg);

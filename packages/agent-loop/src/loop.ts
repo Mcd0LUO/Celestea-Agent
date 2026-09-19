@@ -402,7 +402,9 @@ export class DefaultAgentLoop implements AgentLoop {
   private injectPending(seams: Seams): number {
     const pending = this.injections?.drain() ?? [];
     for (const injection of pending) {
-      seams.session.append({ type: "user_message", text: formatInjection(injection) });
+      // W888: a mid-turn interjection (worker relay / inbox) is an injected row,
+      // not the human's next typed message.
+      seams.session.append({ type: "user_message", text: formatInjection(injection), origin: "steering" });
     }
     return pending.length;
   }

@@ -95,7 +95,7 @@ export function planCompaction(events: readonly SessionEvent[], summary: string,
   const head = compactTurnId(1);
   const out: SessionEvent[] = [
     { type: "turn_start", id: head },
-    { type: "user_message", text: `${COMPACT_HEAD_PREFIX}${clip(summary.trim(), SUMMARY_KEEP_MAX_CHARS)}` },
+    { type: "user_message", text: `${COMPACT_HEAD_PREFIX}${clip(summary.trim(), SUMMARY_KEEP_MAX_CHARS)}`, origin: "compact" },
     { type: "assistant_message", text: COMPACT_HEAD_ASSISTANT },
     { type: "turn_end", id: head, outcome: "completed" },
   ];

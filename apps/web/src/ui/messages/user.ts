@@ -80,29 +80,63 @@ export function addUserMessage(
 }
 
 /**
- * inbox 条目（W515）：系统注入 / worker 回执等非用户输入，独立样式与
- * 「回执/系统」前缀，避免与用户消息或系统 info 块混同。
- * source 用于前缀（如 worker id）；缺省 → 「系统」。
+ * W888：注入行的 origin -> 块标题 + 默认是否折叠。
+ *
+ * 折叠默认值的理由：
+ *   · 记忆 / 技能目录是**每轮都注入**的大块背景（可能数百行），默认展开会把
+ *     对话淹没，所以默认折叠（`skill`/`memory`）；
+ *   · 回执 / 插话 / 压缩摘要是**一次性、给人看的事件**，默认展开（`receipt`
+ *     /`steering`/`compact`），否则用户会以为它没发生。
+ */
+const INBOX_KIND: Record<string, { title: string; collapsed: boolean }> = {
+  skill: { title: '技能目录', collapsed: true },
+  memory: { title: '记忆 · 每轮注入', collapsed: true },
+  receipt: { title: '回执', collapsed: false },
+  steering: { title: '插话', collapsed: false },
+  compact: { title: '压缩摘要', collapsed: false },
+};
+
+/**
+ * inbox 条目（W515/W888）：系统注入 / worker 回执 / 技能目录 / 记忆等**非用户**
+ * 输入。独立配色 + 左侧色条 + 标题条，与用户气泡一眼可分；长注入默认折叠。
+ * `kind` 是 origin（skill/memory/receipt/steering/compact）；缺省走旧的
+ * 「回执 · source」形态（W515 兼容）。
  */
 export function renderInboxMessage(
   ctx: SessionPane,
   text: string,
-  opts?: { source?: string; target?: string; into?: HTMLElement },
+  opts?: { source?: string; target?: string; kind?: string; into?: HTMLElement },
 ): HTMLElement {
   const target = opts?.into ?? ctx.el;
   if (target === ctx.el) hideEmptyHint(ctx);
+  const kind = (opts?.kind ?? '').trim();
+  const meta = INBOX_KIND[kind];
   const col = el('div', 'mcol');
-  const msg = el('div', 'msg inbox');
+  const msg = el('div', kind === '' ? 'msg inbox' : 'msg inbox inbox-' + kind);
   const cap = el('div', 'msg-caption');
   const src = (opts?.source ?? '').trim();
-  cap.appendChild(el('span', 'who', src === '' ? '系统' : '回执 · ' + src));
+  cap.appendChild(el('span', 'who', meta ? meta.title : src === '' ? '系统' : '回执 · ' + src));
   if (opts?.target) cap.appendChild(el('span', 'inbox-lane', laneLabel(opts.target)));
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble inbox-bubble');
-  const body = el('div', 'content inbox-content');
-  body.textContent = text;
-  bubble.appendChild(body);
+  // 折叠：已知 origin 用 details/summary（原生、可键盘操作、默认态由 JS 决定）。
+  if (meta) {
+    const box = el('details', 'inbox-fold') as HTMLDetailsElement;
+    box.open = !meta.collapsed;
+    const head = el('summary', 'inbox-fold-head');
+    head.appendChild(el('span', 'inbox-fold-title', meta.title));
+    if (src !== '') head.appendChild(el('span', 'inbox-fold-src', src));
+    box.appendChild(head);
+    const body = el('div', 'content inbox-content');
+    body.textContent = text;
+    box.appendChild(body);
+    bubble.appendChild(box);
+  } else {
+    const body = el('div', 'content inbox-content');
+    body.textContent = text;
+    bubble.appendChild(body);
+  }
   msg.appendChild(bubble);
   col.appendChild(msg);
   target.appendChild(col);

@@ -61,6 +61,7 @@ import { Runtime, type RuntimeParts, type ShutdownHook } from "./runtime.js";
 import { bindSession, type SessionBinding } from "./session-binding.js";
 import { createStatusTracker, type StatusTracker } from "./status.js";
 import type { TurnLedgerHooks } from "./ledger.js";
+import type { TurnContextRow } from "./turn-runner.js";
 import { STATUS_TRACKER_SERVICE, USAGE_TRACKER_SERVICE } from "./tokens.js";
 import { TurnRunner, type LoopFactory, type PendingReceipt } from "./turn-runner.js";
 import { createUsageTracker, type UsageAccounting } from "./usage.js";
@@ -127,7 +128,7 @@ export interface ComposeConfig {
    * (a workspace without skills pays nothing). The provider is the HOST's,
    * because only the host knows the session's workspace (W768).
    */
-  turnContext?: () => readonly string[];
+  turnContext?: () => readonly TurnContextRow[];
   /** Host teardown hooks (process kills) — run once, in order, by `shutdown`. */
   shutdownHooks?: readonly ShutdownHook[];
   /** Injectable clock (status tracker rate window). */

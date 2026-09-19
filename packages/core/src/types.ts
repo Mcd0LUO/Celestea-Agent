@@ -51,7 +51,22 @@ export interface UserMessageEvent {
    * NEVER in the log.
    */
   attachments?: ImageRef[];
+  /**
+   * W888: WHERE this user-role row came from. Absent = 'user' (a real typed
+   * input), so every pre-W888 log row is byte-identical and reads as a user
+   * bubble. A non-'user' origin lets the transcript render an injected block
+   * (skill catalog / memory / receipt / steering / compaction) as an INBOX row,
+   * visually distinct from something the human actually said.
+   *
+   * Omitted when it is 'user' (serde style): the common case keeps the old bytes.
+   */
+  origin?: SessionEventOrigin;
 }
+
+/** W888: the closed set of `user_message` origins. */
+export type SessionEventOrigin = "user" | "skill" | "memory" | "receipt" | "steering" | "compact";
+
+export const SESSION_EVENT_ORIGINS: readonly string[] = ["user", "skill", "memory", "receipt", "steering", "compact"];
 export interface AssistantMessageEvent {
   type: "assistant_message";
   text: string;
@@ -175,6 +190,22 @@ export interface UserMessageOut {
    */
   attachments?: ImageRef[];
 }
+
+/**
+ * W888: an injected user-role row projected for the transcript — NOT something
+ * the human typed. `kind` is the origin ('skill' | 'memory' | 'receipt' |
+ * 'steering' | 'compact'); `source` is the human-readable label the UI shows.
+ * There is no `content` field here because the wire shape reuses `content` at
+ * the projection site (kept in [StudioMessage] as the shared discriminator).
+ */
+export interface InboxMessageOut {
+  role: "inbox";
+  kind: SessionEventOrigin;
+  content: string;
+  /** Human-readable origin label (e.g. '技能目录', '记忆 · 每轮注入', '回执 · W1'). */
+  source: string;
+  attachments?: ImageRef[];
+}
 export interface AssistantMessageOut {
   role: "assistant";
   content: string;
@@ -231,6 +262,7 @@ export interface QuestionAnsweredMessageOut {
 
 export type StudioMessage =
   | UserMessageOut
+  | InboxMessageOut
   | AssistantMessageOut
   | ThinkingMessageOut
   | ToolCallMessageOut

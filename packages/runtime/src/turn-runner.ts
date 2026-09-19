@@ -41,6 +41,15 @@ import type { UsageAccounting } from "./usage.js";
 /** Host-side frame consumer (SSE publisher, CLI renderer, test collector). */
 export type FrameSink = (frame: TurnFrame) => void;
 
+/**
+ * W888: one engine-owned turn-context row. The origin is what the transcript
+ * uses to label the injected block instead of showing it as a user bubble.
+ */
+export interface TurnContextRow {
+  readonly text: string;
+  readonly origin: "skill" | "memory";
+}
+
 export interface TurnOptions {
   /** Caller cancellation (linked into the turn's own signal). */
   signal?: AbortSignal;
@@ -99,14 +108,16 @@ export interface TurnRunnerDeps {
   injections?: InjectionSource;
   /**
    * W884: durable, ENGINE-OWNED turn context — the skill catalog (name +
-   * description only). Evaluated at EVERY turn start, before the receipts and
-   * the input, and appended as ordinary user-role history so it stays resident
-   * and participates in trimming/compaction like any other message. Returning
-   * `[]` costs nothing (a workspace without skills). Unlike `drainPending`, this
-   * is not a message from anyone: it never enters the inbox and is not reported
-   * as a placement.
+   * description only) and the F3 workspace MEMORY.md. Evaluated at EVERY turn
+   * start, before the receipts and the input, and appended as ordinary user-role
+   * history so it stays resident and participates in trimming/compaction like any
+   * other message. Returning `[]` costs nothing (a workspace with neither).
+   *
+   * W888: each row carries its own `origin` so the transcript can label an
+   * injected block ('skill' catalog vs 'memory') instead of showing it as a
+   * typed user bubble.
    */
-  turnContext?: () => readonly string[];
+  turnContext?: () => readonly TurnContextRow[];
 }
 
 export class TurnRunner {
@@ -266,16 +277,18 @@ export class TurnRunner {
    * are dropped, so a provider that has nothing to say is free to return [""].
    */
   private injectTurnContext(log: SessionLog): void {
-    for (const text of this.deps.turnContext?.() ?? []) {
-      if (text === "") continue;
-      log.append({ type: "user_message", text });
+    for (const row of this.deps.turnContext?.() ?? []) {
+      if (row.text === "") continue;
+      // W888: the origin travels with the row so the projection can label it.
+      log.append({ type: "user_message", text: row.text, origin: row.origin });
     }
   }
 
   /** Turn-start drain: receipts and interjections land BEFORE the input. */
   private injectReceipts(log: SessionLog): void {
     for (const receipt of this.drainPending()) {
-      log.append({ type: "user_message", text: formatReceipt(receipt) });
+      // W888: a worker receipt is NOT the human's voice.
+      log.append({ type: "user_message", text: formatReceipt(receipt), origin: "receipt" });
     }
   }
 

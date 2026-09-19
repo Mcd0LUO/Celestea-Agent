@@ -15,7 +15,21 @@
  */
 
 import { deriveMessagesFrom, toolSurfaceValue } from "@celestea/core";
-import type { Message, SessionEvent, StudioMessage } from "@celestea/core";
+import type { Message, SessionEvent, SessionEventOrigin, StudioMessage } from "@celestea/core";
+
+/** W888: the human-readable label each non-user origin shows in the block. */
+const ORIGIN_LABEL: Record<Exclude<SessionEventOrigin, "user">, string> = {
+  skill: "技能目录",
+  memory: "记忆 · 每轮注入",
+  receipt: "回执",
+  steering: "插话",
+  compact: "压缩摘要",
+};
+
+/** The label of a non-user origin ('user' never reaches here). */
+export function originLabel(origin: SessionEventOrigin): string {
+  return origin === "user" ? "用户" : ORIGIN_LABEL[origin];
+}
 
 /** Studio projection of a single event; null for structural markers. */
 export function sessionEventToMessage(ev: SessionEvent): StudioMessage | null {
@@ -24,6 +38,14 @@ export function sessionEventToMessage(ev: SessionEvent): StudioMessage | null {
     case "turn_end":
       return null;
     case "user_message": {
+      // W888: a non-user ORIGIN projects to an inbox row (the UI's existing
+      // renderInboxMessage branch). Absent/'user' keeps the exact pre-W888 bytes.
+      const origin = ev.origin;
+      if (origin !== undefined && origin !== "user") {
+        const inbox: StudioMessage = { role: "inbox", kind: origin, content: ev.text, source: originLabel(origin) };
+        if (ev.attachments !== undefined && ev.attachments.length > 0) inbox.attachments = ev.attachments;
+        return inbox;
+      }
       // W804 §4.2D: the Studio projection carries the attachment references (the
       // bytes stay on disk); no attachments => the pre-W804 object byte for byte.
       const out: StudioMessage = { role: "user", content: ev.text };

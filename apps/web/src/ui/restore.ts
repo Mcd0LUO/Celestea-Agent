@@ -178,7 +178,7 @@ function renderOne(
     return;
   }
   if (m.role === 'inbox' || m.kind === 'inbox') {
-    renderInboxMessage(ctx, content, { source: m.source, into: container });
+    renderInboxMessage(ctx, content, { source: m.source, kind: m.kind, into: container });
     return;
   }
   if (m.role === 'user') {

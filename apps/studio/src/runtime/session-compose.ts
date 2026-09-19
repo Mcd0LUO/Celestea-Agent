@@ -14,7 +14,7 @@
 
 import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
 import { listSkills, memoryContextOf, readLayers, renderSkillCatalog, type Llm, type PendingInjection, type Sandbox, type SessionLog, type Tool, type ToolGuard } from "@celestea/core";
-import { createSessionInbox, type SessionInbox } from "@celestea/runtime";
+import { createSessionInbox, type SessionInbox, type TurnContextRow } from "@celestea/runtime";
 import {
   createLedgerLlm,
   createUsageLedger,
@@ -248,12 +248,12 @@ export class SessionComposer {
     const turnContext =
       workspace === null
         ? undefined
-        : (): readonly string[] => {
-            const rows: string[] = [];
+        : (): readonly TurnContextRow[] => {
+            const rows: TurnContextRow[] = [];
             const catalog = renderSkillCatalog(listSkills(readLayers(workspace.path, { env: this.opts.env })));
-            if (catalog !== null) rows.push(catalog);
+            if (catalog !== null) rows.push({ text: catalog, origin: "skill" });
             const memory = memoryContextOf(workspace.path, { env: this.opts.env });
-            if (memory !== null) rows.push(memory);
+            if (memory !== null) rows.push({ text: memory, origin: "memory" });
             return rows;
           };
     const reader = this.opts.grants;

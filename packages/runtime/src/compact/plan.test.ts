@@ -73,7 +73,9 @@ describe("planCompaction", () => {
     expect(turnIds(out)).toEqual(["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"]);
     expect(countCompleteTurns(out)).toBe(5);
     expect(out[0]).toEqual({ type: "turn_start", id: "turn-1" });
-    expect(out[1]).toEqual({ type: "user_message", text: `${COMPACT_HEAD_PREFIX}摘要正文` });
+    // W888: the compact summary row carries origin: "compact" (rendered as an
+    // inbox block, never as a typed user bubble).
+    expect(out[1]).toEqual({ type: "user_message", text: `${COMPACT_HEAD_PREFIX}摘要正文`, origin: "compact" });
     expect(out[2]).toEqual({ type: "assistant_message", text: COMPACT_HEAD_ASSISTANT });
     expect(out[3]).toEqual({ type: "turn_end", id: "turn-1", outcome: "completed" });
 
