@@ -45,6 +45,7 @@ import type {
 } from './types';
 import type { ExecReq, ExecResp } from './types/exec'; // A3：用户直发命令
 import type { FsListResp } from './types/fs-list'; // H：@提及的文件列举
+import type { FsReadResp } from './types/fs-read'; // F2 P1：工作区文件内容
 import type { GoalResp } from './types/goal'; // A3：持久目标
 // W859：宿主插件清单类型（端点尚未发布；整包按 unknown 校验，见 ./types/plugin）
 import type { PluginsResp } from './types/plugin';
@@ -290,6 +291,7 @@ export const api = {
   compactSession: (id: string) => // W259：POST …/compact；409=轮次中
     postJson<CompactResp>('/api/sessions/' + encodeURIComponent(id) + '/compact', {}),
   fsList: (path: string) => requestJson<FsListResp>('/api/fs/list?path=' + encodeURIComponent(path)), // H
+  fsRead: (path: string, offset?: number, limit?: number) => requestJson<FsReadResp>('/api/fs/read?path=' + encodeURIComponent(path) + (offset === undefined ? '' : '&offset=' + String(offset)) + (limit === undefined ? '' : '&limit=' + String(limit))),
   exec: (req: ExecReq) => postJson<ExecResp>('/api/exec', req), // A3：不经模型；404/501 需可读提示
   setGoal: (id: string, text: string) => // A3：text='' 清除；200 回 goal（null=无）
     postJson<GoalResp>('/api/sessions/' + encodeURIComponent(id) + '/goal', { text }),

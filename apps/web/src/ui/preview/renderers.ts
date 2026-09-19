@@ -32,6 +32,10 @@ export interface PreviewInput {
   text?: string | null;
   /** 图片预览地址（objectURL / attachment URL）。 */
   url?: string | null;
+  /** 调用方已知的降级原因（如服务端 kind=binary / 读取失败）：直接渲染可读原因，不再猜。 */
+  degraded?: string;
+  /** 降级态的类型标记（面板据此加类；缺省用 degraded 本身）。 */
+  badge?: string;
 }
 
 /** 单文件预览上限（字符）：超过只给可读原因，不硬塞进 DOM。 */
@@ -92,6 +96,7 @@ function hasBinary(text: string): boolean {
 
 /** 按类型分派；内容一律 sanitizeNodes/纯 DOM。 */
 export function renderPreview(input: PreviewInput): PreviewContent {
+  if (input.degraded !== undefined) return { node: degradedNode(input.degraded), degraded: input.badge ?? input.degraded };
   if (input.kind === 'image') {
     if (input.url) return { node: imageNode(input.url, input.path), degraded: null };
     return { node: degradedNode(t('chat.preview.degradeImage')), degraded: t('chat.preview.badgeImage') };

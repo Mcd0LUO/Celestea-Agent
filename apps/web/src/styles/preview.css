@@ -13,6 +13,17 @@
   pointer-events: none; /* 面板之外的区域穿透，不挡正文交互 */
 }
 .preview-host.hidden { display: none; }
+/* 「已截断」标记（服务端说 truncated 时才显示；.hidden 由 base.css 的全局规则隐藏）。 */
+.preview-note {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  color: var(--c-warn);
+  white-space: nowrap;
+}
 .preview-panel {
   pointer-events: auto;
   height: 100%;

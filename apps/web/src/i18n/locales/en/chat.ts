@@ -64,6 +64,8 @@ export const chat = {
   'chat.preview.badgeTooLarge': 'File too large',
   'chat.preview.degradeUnsupported': 'This type cannot be previewed yet; copy the path and open it in the file manager',
   'chat.preview.badgeUnsupported': 'Unsupported type',
+  'chat.preview.truncated': 'Truncated (only the first part is shown)',
+  'chat.preview.degradeReadFailed': 'This file cannot be read right now, please try again later',
   'chat.command.run.desc': 'Run a command directly; the output goes into the conversation (without the model)',
   'chat.command.run.args': '<command>',
   'chat.command.run.usage': 'Usage: /run <command>, e.g. /run echo hi',

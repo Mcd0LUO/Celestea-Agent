@@ -17,10 +17,15 @@ import { renderPreview } from './renderers';
 import type { PreviewCandidate } from './detect';
 import { t } from '../../i18n';
 
+/** 富加载结果：拿到文本（+ 是否截断），或一个**可读的**降级原因。 */
+export type PreviewLoad = { text: string; truncated?: boolean } | { degraded: string; badge?: string };
+
 export interface PreviewRequest {
   candidate: PreviewCandidate;
   /** 内容加载（P0：从会话 DOM 取文本；返回 null = 走降级）。 */
   load?: () => Promise<string | null>;
+  /** F2 P1：工作区文件用——服务端读取，binary/超大/读取失败给可读降级。 */
+  loadFull?: () => Promise<PreviewLoad>;
   /** 图片预览地址（objectURL / attachment URL）。 */
   url?: string | null;
 }
@@ -29,6 +34,8 @@ let host: HTMLElement | null = null;
 let bodyEl: HTMLElement | null = null;
 let titleEl: HTMLElement | null = null;
 let pathEl: HTMLElement | null = null;
+/** 「已截断」标记（服务端说 truncated 时才显示）。 */
+let noteEl: HTMLElement | null = null;
 let overlay: OverlayHandle | null = null;
 let seq = 0;
 let currentPath = '';
@@ -61,6 +68,8 @@ function buildPanel(): void {
   pathEl = el('span', 'preview-path');
   head.appendChild(titleEl);
   head.appendChild(pathEl);
+  noteEl = el('span', 'preview-note hidden');
+  head.appendChild(noteEl);
   const close = el('button', 'preview-close', '×') as HTMLButtonElement;
   close.type = 'button';
   close.title = t('chat.preview.close');
@@ -91,7 +100,23 @@ function ensurePanel(): void {
 
 async function resolveBody(req: PreviewRequest, my: number, body: HTMLElement): Promise<void> {
   let text: string | null = null;
-  if (!req.url && req.load) {
+  let degraded: string | undefined;
+  let badge: string | undefined;
+  let truncated = false;
+  if (!req.url && req.loadFull) {
+    try {
+      const r = await req.loadFull();
+      if ('degraded' in r) {
+        degraded = r.degraded;
+        badge = r.badge;
+      } else {
+        text = r.text;
+        truncated = r.truncated === true;
+      }
+    } catch {
+      degraded = t('chat.preview.degradeReadFailed');
+    }
+  } else if (!req.url && req.load) {
     try {
       text = await req.load();
     } catch {
@@ -99,10 +124,14 @@ async function resolveBody(req: PreviewRequest, my: number, body: HTMLElement): 
     }
   }
   if (my !== seq) return; // 竞态：晚到的加载结果丢弃，绝不覆盖当前文件
-  const content = renderPreview({ path: req.candidate.path, kind: req.candidate.kind, text, url: req.url ?? null });
+  const content = renderPreview({ path: req.candidate.path, kind: req.candidate.kind, text, url: req.url ?? null, degraded, badge });
   if (my !== seq) return;
   body.replaceChildren(content.node);
   body.classList.toggle('is-degraded', content.degraded !== null);
+  if (noteEl) {
+    noteEl.textContent = truncated ? t('chat.preview.truncated') : '';
+    noteEl.classList.toggle('hidden', !truncated);
+  }
 }
 
 /** 打开（或切换到）右侧覆盖式预览面板：头当帧更新，内容就绪时单次替换。 */
@@ -115,6 +144,10 @@ export function openPreview(req: PreviewRequest): void {
   pathEl.textContent = req.candidate.path;
   pathEl.title = req.candidate.path;
   host.classList.remove('hidden');
+  if (noteEl) {
+    noteEl.textContent = '';
+    noteEl.classList.add('hidden');
+  }
   if (overlay === null) overlay = pushOverlay(closePreview);
   void resolveBody(req, my, bodyEl);
 }

@@ -64,6 +64,8 @@ export const chat = {
   'chat.preview.badgeTooLarge': '文件过大',
   'chat.preview.degradeUnsupported': '这个类型暂时不能预览，可复制路径后在文件管理器里打开',
   'chat.preview.badgeUnsupported': '类型不支持',
+  'chat.preview.truncated': '已截断（只显示前一部分）',
+  'chat.preview.degradeReadFailed': '这个文件暂时读不出来，请稍后再试',
   'chat.command.run.desc': '直接执行一条命令，输出进对话（不经过模型）',
   'chat.command.run.args': '<命令>',
   'chat.command.run.usage': '用法：/run <命令>，例如 /run echo hi',

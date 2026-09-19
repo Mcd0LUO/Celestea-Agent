@@ -8,10 +8,13 @@
 // 铁律：离屏构建 + 单次 replaceChildren（只动本面板 body）。
 // ============================================================================
 import { el } from '../../utils/dom';
-import { api } from '../../api';
+import { api, userErrorText } from '../../api';
 import { workspacePath } from '../commands/files';
 import type { FsListEntry } from '../../types/fs-list';
 import { nextSeq, type PanelState } from './state';
+import { openPreview } from '../preview/panel'; // F2：复用既有预览面板（不新写）
+import { classifyByPath, type PreviewKind } from '../preview/detect';
+import { t } from '../../i18n';
 
 /** 单面板内的浏览状态（挂在面板 data 上，切换时不丢）。 */
 interface FilesData {
@@ -40,6 +43,39 @@ function parentOf(path: string): string {
   const p = path.replace(/\\/g, '/').replace(/\/+$/, '');
   const i = p.lastIndexOf('/');
   return i <= 0 ? '/' : p.slice(0, i);
+}
+
+/**
+ * 工作区文件的预览类型：扩展名不认识（如 LICENSE / Makefile）或图片（无 URL 可给）时，
+ * 一律按**纯文本**渲染（服务端已判定 kind=text/binary；binary 走降级），避免「类型不支持」误判。
+ */
+function filePreviewKind(path: string): PreviewKind {
+  const k = classifyByPath(path);
+  return k === 'markdown' || k === 'diff' || k === 'code' ? k : 'code';
+}
+
+/**
+ * 打开工作区里的一个文件：复用 F2 的预览面板。
+ * 内容由服务端读（GET /api/fs/read）；binary / 读取失败都给**可读降级**，不静默、不白屏。
+ * 只传路径，预览面板自己负责显示文件名/路径与「已截断」标记。
+ */
+function openFilePreview(dir: string, name: string): void {
+  const abs = dir.replace(/\/+$/, '') + '/' + name;
+  openPreview({
+    candidate: { path: abs, kind: filePreviewKind(abs), source: 'label' },
+    loadFull: async () => {
+      try {
+        const r = await api.fsRead(abs);
+        if (r.error !== undefined && r.error !== '') return { degraded: r.error };
+        if (r.kind === 'binary') {
+          return { degraded: t('chat.preview.degradeBinary'), badge: t('chat.preview.badgeBinary') };
+        }
+        return { text: r.text, truncated: r.truncated === true };
+      } catch (err) {
+        return { degraded: userErrorText(err, t('chat.preview.degradeReadFailed')) };
+      }
+    },
+  });
 }
 
 function dataOf(panel: PanelState): FilesData {
@@ -119,9 +155,11 @@ function row(
       data.selected = null;
       void renderFilesPanel(body, panel, nextSeq(panel.id), isCurrent);
     } else {
-      data.selected = data.selected === e.name ? null : e.name;
+      // 点文件：选中态 + 打开预览面板（内容由服务端读，降级可读）。
+      data.selected = e.name;
       body.querySelectorAll('.wb-row').forEach((n) => n.classList.remove('sel'));
       r.classList.add('sel');
+      openFilePreview(dir, e.name);
     }
   });
   return r;
