@@ -34,6 +34,15 @@ fixtures/sessions/*
 # 最老的根上会话目录（<标题>-<秒>.<纳秒>）
 /*-[0-9]*.[0-9]*/
 
+# 构建产物（H 打包）：由 `pnpm run build` 重新生成，与上面的 dist/ 同一约定，绝不入库。
+#   · apps/studio/webdist/  —— 前端构建产物，随 @celestea/studio 发布；
+#   · packages/core/contracts/ —— 冻结契约的包内副本，随 @celestea/core 发布
+#     （装在全局时没有 workspace marker，只能读包内这份）。
+# 两者都由 scripts/release-check.mjs 机械断言「新鲜 + 确实进了 tarball」，
+# 所以「忘了重新生成」会红，不需要靠提交产物来兜底。
+apps/studio/webdist/
+packages/core/contracts/
+
 # worker 工作树（W886）：派工时在仓内 <repo>/.worktrees/<wid> 建独立 worktree，
 # 而不是 /tmp（这台机的 /tmp 是 tmpfs，node_modules 会常驻内存）。
 # 它们必须是 git 与 eslint 的盲区，否则主工作树会把它们当未跟踪文件、并 lint 半成品代码。

@@ -15,8 +15,9 @@
  *      access public, non-empty files, and every bin target exists + is +x;
  *   3. versions — root and all 9 packages share one version;
  *   4. tarball inspection — `pnpm pack` each package and assert no `workspace:`
- *      dependency survives, no source/test/secret paths ship, and no credential
- *      pattern appears in any member.
+ *      dependency survives, no source/test/secret paths ship, no credential
+ *      pattern appears in any member, AND every REQUIRED path plus every
+ *      declared `bin`/`main` actually ships (see REQUIRED below).
  *
  * Usage: node scripts/release-check.mjs   (or `pnpm run release:check`)
  */
@@ -52,6 +53,27 @@ const FORBIDDEN = [
   { label: ".env", test: (p) => p.split("/").pop().startsWith(".env") },
   { label: "*.pem", test: (p) => p.endsWith(".pem") },
   { label: "credentials", test: (p) => p.toLowerCase().includes("credentials") },
+];
+
+/**
+ * Paths a tarball MUST contain — the mirror image of FORBIDDEN.
+ *
+ * Why this exists: "someone remembers to include it" is not a control either.
+ * Without `contracts/` inside @celestea/core, `repoRoot()`/contractsDir()
+ * throw on a globally installed package (no workspace marker to walk up to) and
+ * `celestea web` cannot boot at all; without `webdist/` inside
+ * @celestea/studio the studio has no UI to serve. Both failures used to ship
+ * GREEN, because the tarball check only looked for things that must NOT be
+ * there. Paths are relative to `package/` inside the tarball.
+ */
+const REQUIRED = [
+  {
+    name: "@celestea/core",
+    paths: ["contracts/endpoints.json", "contracts/sse-events.json"],
+    why: "an installed package has no workspace marker, so the frozen contracts must travel with it",
+  },
+  { name: "@celestea/studio", paths: ["webdist/index.html"], why: "the studio serves the frontend from webdist" },
+  { name: "celestea-agent", paths: ["dist/main.js"], why: "the celestea bin entry point" },
 ];
 
 /** Credential shapes that must not appear in any packaged byte. */
@@ -154,6 +176,34 @@ function checkOneTarball(dir, name, tmp) {
     for (const rule of FORBIDDEN) {
       if (rule.test(rel)) fix("tarball", `${name}: forbidden path ${rel} (${rule.label})`, `remove it from the "files" whitelist`);
     }
+  }
+  const rels = new Set([...files.keys()].map((m) => m.replace(/^package\//, "")));
+  for (const rule of REQUIRED) {
+    if (rule.name !== name) continue;
+    for (const p of rule.paths) {
+      if (!rels.has(p)) {
+        fix("tarball", `${name}: required path ${p} is MISSING (${rule.why})`, `add it to "files" in ${dir}/package.json and rebuild`);
+      }
+    }
+  }
+  // Every entry point the SHIPPED manifest declares must actually be in the
+  // tarball. Note: npm/pnpm force-include the `main` and `bin` targets even when
+  // `files` omits them, so those branches are belt-and-braces. `exports` targets
+  // (notably `types`) are NOT force-included — a partial `files` list such as
+  // ["dist/index.js"] would silently ship a package with no type declarations.
+  const collect = (v, out) => {
+    if (typeof v === "string") out.push(v);
+    else if (v !== null && typeof v === "object") for (const x of Object.values(v)) collect(x, out);
+    return out;
+  };
+  const bins = typeof doc.bin === "string" ? [doc.bin] : Object.values(doc.bin ?? {});
+  // pnpm normalises `exports.types` into a top-level `types` in the packed
+  // manifest, so the same path can arrive twice — dedupe to keep one report line.
+  const entries = [...new Set([...bins, ...[doc.main, doc.types].filter((x) => x !== undefined), ...collect(doc.exports, [])])];
+  for (const target of entries) {
+    const rel = String(target).replace(/^\.\//, "");
+    if (!/\.(js|cjs|mjs|d\.ts)$/.test(rel)) continue; // ignore non-code assets such as ./package.json
+    if (!rels.has(rel)) fix("tarball", `${name}: declared entry ${rel} is not in the tarball`, `add it to "files" in ${dir}/package.json`);
   }
   for (const [member, buf] of files.entries()) {
     const text = buf.toString("utf8");
