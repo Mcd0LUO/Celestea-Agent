@@ -5,10 +5,11 @@
   "gzipLevel": 9,
   "note5": "架构真机复核修复 <html lang>（+33 字节）：用 headless shell + CDP 验首屏时发现 index.html 写死 lang=\"zh-CN\"，切到英文后不更新 —— 读屏器按中文音读、浏览器翻译器不提供翻译。修法：i18n/dom.ts 新增 applyDocumentLang(doc)（按 getLocale() 写 zh-CN/en），在 i18n/settings.ts 的唯一装配点 paintStaticDom() 里与 applyI18n(document) 一起调用（启动 + 语言切换两条路径都覆盖）。真机复验：EN htmlLang=en、ZH htmlLang=zh-CN（同一浏览器同一 navLang=en-US，靠 localStorage 驱动）。回归测试 tests/i18n-settings.test.ts 新增一条，变异负控制（去掉该调用）⇒ 红，恢复 ⇒ 绿。产物 js gzip 242901→242934（+33），就是该函数与调用点本身。按棘轮规矩按真实测量上调绝对上限，未放宽其它阈值、未删断言。",
   "note3": "架构复核更正（不是新增能力，是上一版基准**测错了**）：note2 记的 js 242481 是在 **stale dist** 上量的 —— pnpm --dir apps/web run check 只跑 tsc + 各门禁、**不重建**（重建在 check:web 的 build 那一步），所以它读到的是更早一次构建的 dist/assets。在干净树上跑完整 pnpm check（先 build 再 check）得到的权威值是 242901，比 note2 高 420 字节。归因：note2 之后又落了 M2 覆盖漏洞修复（caps.ts 的 ttlChoices() 首位改 label: permanentLabel()）、index.html 的 applyI18n 扩展到 data-i18n-title / -aria-label、以及 Batch7/8 的收尾改动。**确定性已验证**：连续两次 vite build 的三个 js 产物 sha256 完全一致，故该数字可复现、不是随机门禁。按棘轮规矩按真实测量上调绝对上限（js 242481→242901），未放宽其它阈值、未删断言。教训：量产物体积必须走会重建的入口（pnpm check / pnpm run build）；单独跑 apps/web run check 得到的是旧产物。",
+  "note4": "W886 Windows 适配第二轮（前端非路径类审计）：终端占位符去掉 POSIX 专属示例（ls -la → echo hi，跨平台）、文件管理器「上一级」在盘符根/UNC 根禁用（避免原地无效导航）+ 新增 chat.wb.upAtRoot 文案。**按棘轮规矩按真实测量上调**：js gzip 243053→243101（+48，+0.02%）；css 未动。",
   "note3": "W886 Windows 路径适配：新增 src/ui/fs-path.ts（67 行纯函数：isWindowsPath/sepOf/rootOfPath/splitPath/joinPath/parentOfPath）+ fsbrowser 面包屑按平台根/分隔符渲染 + workbench/files 与 commands/files 的路径拼接改平台感知。**按棘轮规矩按真实测量上调**：js gzip 242934→243053（+119，+0.05%）；css 未动。未放宽其它阈值、未删断言。",
   "note2": "W886 i18n 收口（P0 + P1-a/b/c/d/Batch4/5/6/7/8）：把全前端用户可见文案抽成 zh/en 双语字典（locales/{common,api,statusline,settings,chat,shell,grants}.ts，共 840 key × 2 语言）。**按棘轮规矩按真实测量上调绝对上限**：js gzip 220324→242481（+22157，+10.1%），css 18564→18586（+22，+0.12%）。增量构成实测：locales 全部源文件 raw 108277 字节（zh+en，含 index.ts）、i18n 内核（index/dom/settings）raw 8808 字节，另有 95 个模块新增 i18n import 与 t() 调用点；字典文本 gzip 压缩比约 5:1，与 +22157 吻合。未放宽其它阈值、未删断言。",
   "gzip": {
-    "js": 243053,
+    "js": 243101,
     "css": 18586
   }
 }

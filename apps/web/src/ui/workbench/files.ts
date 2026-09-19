@@ -112,7 +112,13 @@ export async function renderFilesPanel(
   const bar = el('div', 'wb-crumbs');
   const up = el('button', 'wb-crumb', t('chat.wb.up')) as HTMLButtonElement;
   up.type = 'button';
+  // 已在根（POSIX '/' / Windows 'C:\' / UNC '\\server\share\'）：上一级就是它自己 ⇒ 禁用，
+  // 避免一次「导航到原地」的无效请求（后端在盘符根会把 parent 回成 C:\ 自身）。
+  const atRoot = parentOfPath(path) === path;
+  up.disabled = atRoot;
+  if (atRoot) up.title = t('chat.wb.upAtRoot');
   up.addEventListener('click', () => {
+    if (atRoot) return;
     data.path = parentOfPath(path);
     data.selected = null;
     // 导航取**新** seq：晚到的旧目录结果会被 isCurrent 判为过期而丢弃。
