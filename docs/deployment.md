@@ -74,7 +74,7 @@ Windows 上**能跑**（`.github/workflows/ci.yml` 有 `windows-latest` 的 `pnp
 |---|---|---|---|
 | OS 级隔离 | `bwrap` + `prlimit` | 无（走 userspace 降级） | 文件系统/网络命名空间隔离不存在；`CELESTEA_SANDBOX_FALLBACK=fail` 会直接拒绝执行 |
 | 资源上限 | `prlimit` / `ulimit` / seccomp | 无（尽力而为，缺失记日志继续） | CPU / 内存 / 文件数 / 输出上限**不生效**，`cpu_exceeded` 不会触发 |
-| 进程树回收 | 进程组信号 `kill(-pid)` | 无 POSIX 进程组 | 关闭浏览器/子进程要逐进程终止，残留风险更高 |
+| 进程树回收 | 进程组信号 `kill(-pid)` | `taskkill /T /F` + 验证 + 退避重试（见下） | **仍不是原子边界**：taskkill 是「先遍历父子链再杀」，子进程可以在遍历与击杀之间改父或退出（TOCTOU），残留风险高于 POSIX |
 | 命令执行 shell | `/bin/sh -c` | gitbash > pwsh > cmd（都缺则结构化报错 + 安装提示） | 工具调用的命令行语义随 shell 变 |
 | 数据根默认 | `~/.celestea` | `%USERPROFILE%\.celestea` | 也可用 `CELESTEA_HOME` 覆盖 |
 | Playwright 浏览器缓存 | `~/.cache/ms-playwright` | `%LOCALAPPDATA%\ms-playwright` | 由 `playwrightCacheRoot()` 按平台解析；`PLAYWRIGHT_BROWSERS_PATH` 可覆盖 |
@@ -84,3 +84,26 @@ Windows 上**能跑**（`.github/workflows/ci.yml` 有 `windows-latest` 的 `pnp
 
 **在 Windows 上从源码跑**：`pnpm install` → `pnpm --dir apps/web run build` → `pnpm --filter @celestea/studio start`
 （默认 `127.0.0.1:3778`）。这台机器的路径 / 端口 / 装了哪些工具写在 `docs/AGENT.local.md`（不入库），不写进本文。
+
+#### 4.1.1 已知限制：没有 Windows Job Object（进程树不是原子回收）
+
+**现状**：Windows 上没有 POSIX 进程组，Node 的 `child.kill()` 只杀直接子进程。仓库用
+`taskkill /PID <pid> /T /F`（`packages/tools/src/sandbox/child.ts` 的 `taskkillTree`），
+并在 W892 加固为：**验证根进程真的消失**（`kill(pid, 0)`）、瞬态失败退避重试、
+区分「taskkill 缺失」（回退直杀）与「进程已消失」（算成功）。
+
+**仍然存在的风险**：`taskkill /T` 先遍历父子链再逐个杀，子进程可在遍历与击杀之间改父或退出
+（TOCTOU），因此**它是尽力而为，不是保证**。POSIX 的进程组信号没有这个窗口。
+
+**为什么不用 Job Object**：`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 才是原子方案，但它必须在
+**创建进程时**经 Win32 API（`CreateJobObject` / `AssignProcessToJobObject`）设置，而
+Node 不暴露任何 Job Object API。拿到它只有两条路：
+
+1. 在 `packages/tools` 引入 FFI 依赖（如 koffi）调 Win32 —— 与该包**零运行时依赖**的
+   `DEPENDENCY-POLICY.md` §7 冲突（W0 还专门移除过唯一一个），属于 architect 级依赖决策；
+2. 用 PowerShell P/Invoke 接管 `CreateProcess` —— 会拆掉 Node 的 stdio 管道协议
+   （`run_code` 的行协议与浏览器 stderr 都依赖它），代价远大于收益。
+
+**运维含义**：在 Windows 上把 `run_shell` / `run_code` / 浏览器关闭当作**尽力回收**；
+需要硬保证的场景（多租户、不可信代码）应在 Linux 上跑，或把进程放到容器 / Windows 服务
+（可配 Job Object）里。
