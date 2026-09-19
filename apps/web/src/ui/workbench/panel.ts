@@ -176,6 +176,10 @@ export function renderWorkbench(): void {
   }
   dock.replaceChildren(...Array.from(off.childNodes));
   dock.classList.toggle('hidden', all.length === 0);
+  // BUG FIX（用户实测报「面板打不开」）：installWorkbench 建 host 时带了 'hidden' 防闪烁，
+  // 但这里**只切了 dock 的 hidden**，host 永远 display:none ⇒ 面板建出来了却完全不可见。
+  // 宿主可见性必须跟着面板数量走（空 ⇒ 隐藏；有 ⇒ 显示）。
+  host.classList.toggle('hidden', all.length === 0);
 }
 
 /** 装配（幂等）：建 .wb-host 插进 #main（.chat-shell 之后；绝对不动 #layout）。 */
