@@ -22,11 +22,15 @@
 | [`feature-selection-quote.md`](./feature-selection-quote.md) | 当前（**已实现，F1**） | 特性设计：**选段提及**——在消息里选中文本，点「引用」把**内容快照**随下一条消息发出；序列化进消息文本，零后端契约变更，历史可解析回渲染 | 本文；`apps/web/src/ui/quote/model.ts` |
 | [`feature-workspace-memory.md`](./feature-workspace-memory.md) | 当前（**已实现，F3 P0**） | 特性设计：**工作区持久记忆**——`MEMORY.md` 每轮起点重读、作为 user-role 历史注入（绝不进 system）；项目层优先、2048 字节上限 + 显式截断、块首防投毒声明 | 本文；`packages/core/src/memory.ts` |
 | [`iteration-e-capabilities.md`](./iteration-e-capabilities.md) | 设计 | 迭代方向 E（能力深水区）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | 本文；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
+| [`iteration-f-capabilities.md`](./iteration-f-capabilities.md) | 当前（**已实现，F1–F4**） | 迭代方向 F：选段提及 / 文件侧边预览 / 工作区持久记忆 / 真机操控（浏览器）的目标契约与验收 | 本文；`apps/web/src/ui/quote/`、`apps/web/src/ui/preview/`、`packages/core/src/memory.ts`、`packages/tools/src/browser/` |
+| [`iteration-g-workbench.md`](./iteration-g-workbench.md) | 当前（**已实现，G1–G4**） | 迭代方向 G：命令面板 / `POST /api/exec` 立即执行 / 持久目标 / `GET /api/fs/list` / 多面板工作区；含**冻结的线格式** | 本文；`apps/web/src/ui/workbench/`、`apps/studio/src/handlers/exec.ts` |
+| [`iteration-h-i18n.md`](./iteration-h-i18n.md) | 当前（**已实现，H**） | 迭代方向 H：前端 i18n（zh/en 双语字典、迁移白名单棘轮、`<html lang>` 跟随切换）+ 发布门禁加固 | 本文；`apps/web/src/i18n/`、`apps/web/tools/check-ui-copy.mjs` |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见归档的 DSH 评估（W253/W254，已于 W881 清理出公开仓） |
 | [`ui-copy-tech-notes.md`](./ui-copy-tech-notes.md) | 当前（审计清单） | 共用前端「面向用户可见的技术文案」只读审计：27 个文件 + `index.html` 的问题清单与建议改法 | 本文；前端规则见 `apps/web/FRONTEND-RULES.md` |
 | [`DEPENDENCY-POLICY.md`](./DEPENDENCY-POLICY.md) | 当前（W847 W0） | **依赖与工具链策略**：Node 版本带 + 启动守卫、冻结安装（pnpm-workspace.yaml）、升级验证协议与回滚、为什么 audit 不进门禁、外部运行时依赖清点 | 本文 |
 
-上表覆盖 `docs/` 根的全部**当前与设计**文档（17 篇 + 本索引）；**新增文档必须在上表登记**。
+上表覆盖 `docs/` 根的全部**当前与设计**文档（本索引除外）；**新增文档必须在上表登记**。
+（这里刻意不写篇数：那个数字漂过 —— 迭代 F/G/H 三篇都漏登记了。`tests/readme-claims.test.ts` 只钉根 `README.md` 的硬数字，不覆盖本文件。）
 另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）。
 契约类真源不在 `docs/`，而在
 [`../contracts/`](../contracts/)（`endpoints.json` 47 端点、`sse-events.json`、`tools.json`、`data-files/`）——

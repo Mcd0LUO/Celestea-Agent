@@ -3,9 +3,9 @@
  * W761 — engine performance benchmark suite (`pnpm bench`).
  *
  * Run it for a baseline; run it again after a change and compare with
- * `pnpm bench -- --compare benchmarks/baseline-v2.6.0.json`. It writes
- * `benchmarks/baseline-v2.6.0.json` (machine-readable) and
- * `docs/performance-baseline.md` (the human twin) from the same run.
+ * `pnpm bench -- --compare benchmarks/baseline-<previous>.json`. A plain run writes
+ * `benchmarks/baseline-v<current>.json` (machine-readable, derived from the repo
+ * version) and `docs/performance-baseline.md` (the human twin) from the same run.
  *
  * Covered (each row: name / scale / iterations / median ms / ops per s):
  *   a. `contextSnapshot()` and `statusline()` over real 1k/10k/50k-event
@@ -29,7 +29,7 @@ import { tokenCases, trimCases } from "./cases-tokens.js";
 import { appendCases, logCases } from "./cases-log.js";
 import { sseCases } from "./cases-sse.js";
 import { buildBaseline, renderTable, type Baseline } from "./report.js";
-import { BASELINE_PATH, DOC_PATH, writeBaseline, writeDoc } from "./doc.js";
+import { DOC_PATH, baselinePath, writeBaseline, writeDoc } from "./doc.js";
 import { loadBaseline, renderComparison } from "./compare.js";
 import { drainedValue, nowNs, type BenchCase } from "./timing.js";
 
@@ -49,7 +49,7 @@ function optionValue(argv: readonly string[], flag: string): string | null {
 function parseOptions(argv: readonly string[]): Options {
   const scales = optionValue(argv, "--scales");
   return {
-    out: optionValue(argv, "--out") ?? BASELINE_PATH,
+    out: optionValue(argv, "--out") ?? baselinePath(),
     doc: optionValue(argv, "--doc") ?? DOC_PATH,
     write: !argv.includes("--no-write"),
     compare: optionValue(argv, "--compare"),

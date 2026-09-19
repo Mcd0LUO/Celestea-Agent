@@ -8,12 +8,19 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { BASELINE_SCHEMA, renderMarkdownTable, type Baseline } from "./report.js";
+import { BASELINE_SCHEMA, baselineVersion, renderMarkdownTable, type Baseline } from "./report.js";
 import type { BenchCase } from "./timing.js";
 
 /** Default artifact paths (relative to the repo root, the cwd of `pnpm bench`). */
-export const BASELINE_PATH = "benchmarks/baseline-v2.6.2.json";
 export const DOC_PATH = "docs/performance-baseline.md";
+/**
+ * Where a plain `pnpm bench` writes. Derived from the current version, so the
+ * default cannot silently overwrite an older release's baseline (it was the
+ * literal `benchmarks/baseline-v2.6.2.json`).
+ */
+export function baselinePath(): string {
+  return `benchmarks/baseline-${baselineVersion()}.json`;
+}
 
 function find(baseline: Baseline, name: string, scalePart?: string): BenchCase | undefined {
   return baseline.cases.find((row) => row.name === name && (scalePart === undefined || row.scale.includes(scalePart)));
@@ -124,6 +131,7 @@ const METHOD = [
 const CHANGE_LOG = [
   "| version | engine change | baseline |",
   "| --- | --- | --- |",
+  "| v2.7.2 | **No engine hot-path change** (i18n completion + Windows path fixes). Recorded so the archive has an anchor at the released version. | `benchmarks/baseline-v2.7.2.json` |",
   "| v2.6.2 | **W766**: the statusline's context estimate rides in the W762 snapshot cache (`{request, tokens}` per log state), so an unchanged-log tick is a lookup instead of an O(bytes) walk of the messages. | `benchmarks/baseline-v2.6.2.json` |",
   "| v2.6.1 | **W762**: `trimContext()` de-quadraticised (single-pass suffix sums) + `contextSnapshot()` memoized on the log state; the token rate averages over ACTIVE intervals. | `benchmarks/baseline-v2.6.1.json` |",
   "| v2.6.0 | **W761**: the benchmark suite itself + the W755 context-usage口径 (the statusline now reads the loop's own assembly, which is what made the tick measurable). | `benchmarks/baseline-v2.6.0.json` |",
@@ -199,7 +207,7 @@ export function writeBaseline(path: string, baseline: Baseline): void {
 }
 
 /** Write the generated markdown twin (creating `docs/` if needed). */
-export function writeDoc(path: string, baseline: Baseline, baselinePath = BASELINE_PATH): void {
+export function writeDoc(path: string, baseline: Baseline, writtenPath = baselinePath()): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, renderDoc(baseline, baselinePath), "utf8");
+  writeFileSync(path, renderDoc(baseline, writtenPath), "utf8");
 }

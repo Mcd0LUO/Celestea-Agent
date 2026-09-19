@@ -1,8 +1,8 @@
 /**
  * W761 reporting: machine facts, the printed table, and the baseline document.
  *
- * The baseline is one JSON document (`benchmarks/baseline-v2.6.0.json`) plus the
- * human-readable twin (`docs/performance-baseline.md`); both are written from
+ * The baseline is one JSON document (`benchmarks/baseline-v<version>.json`) plus
+ * the human-readable twin (`docs/performance-baseline.md`); both are written from
  * the SAME run, so the doc can never drift from the numbers it describes.
  */
 
@@ -11,11 +11,21 @@ import { cpus, platform, release, totalmem, arch } from "node:os";
 import type { BenchCase } from "./timing.js";
 import type { Fixture } from "./fixtures.js";
 import { scaleLabel } from "./fixtures.js";
+import { computeVersion } from "../version.mjs";
 
 /** Baseline schema id (bump when the shape changes; compare.ts reads it). */
 export const BASELINE_SCHEMA = "celestea-studio-ts.bench-baseline/1";
-/** The release these numbers are the baseline FOR. */
-export const BASELINE_VERSION = "v2.6.2";
+/**
+ * The release these numbers are the baseline FOR.
+ *
+ * Derived, never hand-written. This was the literal `"v2.6.2"`, so every later
+ * run wrote a baseline — and a generated document — whose `version` said v2.6.2
+ * while the filename said otherwise (the 2.7.2 baseline shipped claiming v2.6.2).
+ * `scripts/version.mjs` is the repo's single source of truth for the version.
+ */
+export function baselineVersion(): string {
+  return "v" + computeVersion().version;
+}
 /** Command a reproduction has to run. */
 export const BENCH_COMMAND = "pnpm bench";
 
@@ -105,7 +115,7 @@ export function fixtureSummaries(fixtures: readonly Fixture[]): FixtureSummary[]
 export function buildBaseline(fixtures: readonly Fixture[], cases: readonly BenchCase[], durationMs: number): Baseline {
   return {
     schema: BASELINE_SCHEMA,
-    version: BASELINE_VERSION,
+    version: baselineVersion(),
     generated_at: new Date().toISOString(),
     command: BENCH_COMMAND,
     unit: "ms",
