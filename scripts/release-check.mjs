@@ -109,6 +109,19 @@ function checkWebdist() {
       return;
     }
   }
+  // The version the frontend REPORTS must equal the version being published.
+  // scripts/version.mjs derives it from `git describe --tags`, so a build made
+  // before the release tag exists ships a UI claiming the PREVIOUS version —
+  // exactly the W887 bug (UI showed 2.6.5 while the newest tag was v2.7.0). Both
+  // checks above are internal-consistency only and cannot see this.
+  const rootVersion = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version;
+  if (staged.version !== rootVersion) {
+    fix(
+      "webdist",
+      `webdist reports version ${staged.version} but the release is ${rootVersion} — tag BEFORE building`,
+      `git tag v${rootVersion} && pnpm run build`,
+    );
+  }
 }
 
 /** 2. the publishable manifest shape (private/access/files/bin). */
