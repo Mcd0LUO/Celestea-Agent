@@ -66,6 +66,12 @@ export const EXECUTION_TOOL_NAMES: readonly string[] = [
   "stop_worker",
   "worker_status",
   "load_skill",
+  // F4 step 2b: the browser tools are NOT SDK-covered (SDK_TOOLS stays the
+  // four file tools), so folding them would make them unreachable in execution
+  // mode while the turn-start catalog still advertises them -- the same
+  // "prompt must not lie" rule that kept load_skill (W884).
+  "browser_open",
+  "browser_act",
 ];
 
 /**

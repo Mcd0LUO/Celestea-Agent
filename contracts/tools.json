@@ -55,7 +55,7 @@
       "endpoints": "W884 adds ZERO endpoints: the catalog rides the existing turn-start context lane and the tool rides the existing dispatch, so API_ENDPOINT_COUNT stays 61."
     }
   },
-  "count": 14,
+  "count": 16,
   "tools": [
     {
       "name": "ask_user_question",
@@ -156,6 +156,93 @@
         "additionalProperties": false
       },
       "sourceRef": "W783: packages/tools/src/tools/ask-user.ts (schema copied from @deepseek-ai/dsh-tool-ask-user)"
+    },
+    {
+      "name": "browser_act",
+      "description": "Act on the page opened by browser_open: click, type into, press a key on, or scroll an element identified by its stable ref from the last snapshot. Returns the updated accessibility snapshot and screenshot. Like browser_open, this call runs with RLIMIT_AS EXEMPTED (virtual address space unbounded) and reports the isolation state in its result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "click",
+              "type",
+              "key",
+              "scroll"
+            ],
+            "description": "What to do: click an element, type text into it, press a key, or scroll it."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Stable ref from the last snapshot (required for click/type/scroll)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to insert (action=type)."
+          },
+          "key": {
+            "type": "string",
+            "description": "Key name for action=key, e.g. Enter, Tab, Escape."
+          },
+          "delta_x": {
+            "type": "integer",
+            "description": "Horizontal scroll delta in pixels (action=scroll; default 0)."
+          },
+          "delta_y": {
+            "type": "integer",
+            "description": "Vertical scroll delta in pixels (action=scroll; default 0)."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "packages/tools/src/tools/browser.ts (F4 step 2b; drives packages/tools/src/browser/session.ts)"
+    },
+    {
+      "name": "browser_open",
+      "description": "Open an absolute http(s) URL in a session-scoped headless browser and return the page's accessibility snapshot (interactive elements with stable refs) plus a PNG screenshot. Use those refs with browser_act. Requires the session's network capability (the sandbox must share the host network so the DevTools endpoint is reachable) and a session attachment store for the screenshot. This call runs with RLIMIT_AS EXEMPTED: the browser's virtual address space is NOT bounded by the sandbox, because Chromium cannot start under an address-space cap. Every other sandbox limit and the exact isolation state are reported in the result's isolation block.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute http(s) URL to open."
+          },
+          "viewport": {
+            "type": "object",
+            "description": "Optional viewport size in CSS pixels (default 800x600).",
+            "properties": {
+              "width": {
+                "type": "integer"
+              },
+              "height": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "packages/tools/src/tools/browser.ts (F4 step 2b; drives packages/tools/src/browser/session.ts)"
     },
     {
       "name": "http_request",

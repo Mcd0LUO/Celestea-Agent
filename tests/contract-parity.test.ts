@@ -39,9 +39,12 @@ const CONTRACT = loadTools();
  * The 8 specs `assembleTools` mounts on its own (the worker trio comes from the
  * frozen contract, W783's `ask_user_question` is mounted only when the host
  * supplies a user-question service, W804's `read_image` only with an attachment
- * store, and W884's `load_skill` is always mounted).
+ * store, and W884's `load_skill` is always mounted). F4's browser tools ride
+ * that same attachment store, so they are conditional too.
  */
 const REGISTRY_TOOLS = ["http_request", "list_dir", "load_skill", "process_control", "read_file", "run_code", "run_shell", "write_file"];
+/** F4 step 2b: mounted with the attachment store (screenshots ride its chain). */
+const BROWSER_TOOLS = ["browser_act", "browser_open"];
 const WORKER_TOOLS = ["send_message", "spawn_worker", "stop_worker", "worker_status"];
 /** W783: the same registry once the host mounts the user-question capability. */
 const QUESTION_TOOLS = ["ask_user_question"];
@@ -186,10 +189,11 @@ describe("W744 · all 8 builtin tool specs match the implementation registry", (
   });
 
   it("leaves no contract tool uncovered (worker trio + W783 question tool come from elsewhere)", () => {
-    // W783: 10 -> 11; W804: 11 -> 12; W7: 12 -> 13; W884: 13 -> 14. ask_user_question,
-    // read_image and the W7 worker pair are each covered by their own check below.
-    expect(CONTRACT.tools).toHaveLength(14);
-    expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS, READ_IMAGE_TOOL])).toEqual([]);
+    // W783: 10 -> 11; W804: 11 -> 12; W7: 12 -> 13; W884: 13 -> 14; F4: 14 -> 16.
+    // ask_user_question, read_image, the browser pair and the W7 worker tools are
+    // each covered by their own check below.
+    expect(CONTRACT.tools).toHaveLength(16);
+    expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS, READ_IMAGE_TOOL, ...BROWSER_TOOLS])).toEqual([]);
   });
 
   /**
@@ -224,6 +228,24 @@ describe("W744 · all 8 builtin tool specs match the implementation registry", (
     const withStore = assembleTools({ guard: null, env: {}, sandbox: stubSandbox(), attachments: store }).registry.schemas();
     expect(withStore.map((s) => s.name)).toContain(READ_IMAGE_TOOL);
     expect(describeFindings(compareToolSpecs(CONTRACT, withStore.filter((s) => s.name === READ_IMAGE_TOOL)))).toBe("");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * F4 step 2b: browser_open/browser_act are mounted with the SAME condition as
+   * read_image (the session attachment store: the screenshot rides the existing
+   * image chain), and their specs must equal the frozen contract entries.
+   */
+  it("mounts browser_open/browser_act when (and only when) an attachment store is supplied", () => {
+    const without = assembleTools({ guard: null, env: {}, sandbox: stubSandbox() }).registry.schemas().map((s) => s.name);
+    expect(without).not.toContain("browser_open");
+    expect(without).not.toContain("browser_act");
+
+    const dir = mkdtempSync(join(tmpdir(), "f4b-browser-"));
+    const store = createAttachmentStore(join(dir, "attachments"));
+    const withStore = assembleTools({ guard: null, env: {}, sandbox: stubSandbox(), attachments: store }).registry.schemas();
+    for (const name of BROWSER_TOOLS) expect(withStore.map((s) => s.name)).toContain(name);
+    expect(describeFindings(compareToolSpecs(CONTRACT, withStore.filter((s) => BROWSER_TOOLS.includes(s.name))))).toBe("");
     rmSync(dir, { recursive: true, force: true });
   });
 

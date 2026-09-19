@@ -34,9 +34,11 @@ afterAll(async () => {
   await h.cleanup();
 });
 
-/** The production name set (contracts/tools.json; W884: 14 names, read_image and the worker tools excluded as this is a spec double). */
+/** The production name set (contracts/tools.json; W884: 14, F4: +browser_open/act as this spec double tracks the keep list). */
 const PRODUCTION_NAMES: readonly string[] = [
   "ask_user_question",
+  "browser_act",
+  "browser_open",
   "http_request",
   "list_dir",
   "load_skill",
@@ -64,7 +66,7 @@ describe("exposedRegistry (W791 P1)", () => {
   it("M7: execution exposes exactly the eight kept names; standard exposes the whole registry", () => {
     const inner = productionFace();
     const execution = exposedRegistry(inner, executionExposure(inner.names()));
-    expect(execution.schemas().map((s) => s.name).sort()).toEqual(["http_request", "load_skill", "process_control", "run_code", "send_message", "spawn_worker", "stop_worker", "worker_status"]);
+    expect(execution.schemas().map((s) => s.name).sort()).toEqual(["browser_act", "browser_open", "http_request", "load_skill", "process_control", "run_code", "send_message", "spawn_worker", "stop_worker", "worker_status"]);
     expect(execution.schemas().map((s) => s.name).sort()).toEqual([...EXECUTION_TOOL_NAMES].sort());
     // The inner registry is untouched: the fold is a FACE, not a removal — this
     // is what keeps `run_code` able to reach the folded tools.

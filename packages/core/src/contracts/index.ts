@@ -164,7 +164,8 @@ export const FROZEN_COUNTS = {
   sseEvents: 9,
   // W884: 13 -> 14 (`load_skill`, the on-demand half of skill progressive
   // disclosure; the catalog half adds no tool).
-  tools: 14,
+  // F4: 14 -> 16 (`browser_open` + `browser_act`, the session browser tools).
+  tools: 16,
 } as const;
 
 /** One frozen-count divergence, with everything an operator needs to act. */

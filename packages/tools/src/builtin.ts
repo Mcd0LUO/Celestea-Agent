@@ -23,6 +23,8 @@ import { processControlTool } from "./tools/process-control.js";
 import { loadSkillTool } from "./tools/load-skill.js";
 import { readImageTool } from "./tools/read-image.js";
 import { readFileTool } from "./tools/read-file.js";
+import { browserActTool, browserOpenTool } from "./tools/browser.js";
+import { BrowserManager } from "./browser/session.js";
 import type { AttachmentStore } from "./attachments/store.js";
 import { runShellTool } from "./tools/run-shell.js";
 import { writeFileTool } from "./tools/write-file.js";
@@ -92,6 +94,11 @@ export function builtinTools(options: BuiltinToolsOptions = {}): Tool[] {
         ...(options.model === undefined ? {} : { model: options.model }),
       }),
     );
+    // F4 step 2b: the browser tools need the SAME session attachment store
+    // (the screenshot rides the existing image chain) and share ONE manager, so
+    // browser_open and browser_act drive the same page and process.
+    const manager = new BrowserManager({ sandbox, processes, attachments: options.attachments });
+    tools.push(browserOpenTool({ manager }), browserActTool({ manager }));
   }
   return tools;
 }

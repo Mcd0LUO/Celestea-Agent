@@ -314,3 +314,60 @@ export {
 } from "./run-code/limits.js";
 export { brokerRun, type BrokerContext, type RunCodeEventSink } from "./run-code/broker.js";
 export { appendBounded, jsonByteLength, LineReader, safeUtf8, tail, truncateValue, utf8Prefix, type BoundedLine } from "./run-code/lines.js";
+
+// --- browser (F4: session-scoped headless browser over zero-dep CDP) ----------
+export {
+  assertHttpUrl,
+  BROWSER_ACT_DESCRIPTION,
+  BROWSER_OPEN_DESCRIPTION,
+  browserActSpec,
+  browserActTool,
+  browserOpenSpec,
+  browserOpenTool,
+  type BrowserToolOptions,
+} from "./tools/browser.js";
+export {
+  ADDRESS_SPACE_NOTE,
+  BrowserManager,
+  DEFAULT_BROWSER_MAX_BYTES,
+  DEFAULT_BROWSER_MAX_NODES,
+  DEFAULT_BROWSER_STARTUP_MS,
+  type BrowserActRequest,
+  type BrowserIsolation,
+  type BrowserManagerOptions,
+  type BrowserRef,
+  type BrowserResult,
+  type BrowserScreenshot,
+  type BrowserSnapshotValue,
+  type BrowserViewport,
+} from "./browser/session.js";
+export {
+  armMemoryGuard,
+  DEFAULT_BROWSER_MEMORY_MB,
+  readOwnCgroupPath,
+  readTreeRssKb,
+  type MemoryGuard,
+  type MemoryGuardKind,
+  type MemoryGuardStatus,
+} from "./browser/memory-guard.js";
+export {
+  buildAxSnapshot,
+  collectBoxes,
+  isInteractiveRole,
+  quadToBox,
+  type AxSnapshot,
+  type SnapshotOptions,
+  type SnapshotRef,
+} from "./browser/snapshot.js";
+export {
+  attachBrowser,
+  BrowserNotFoundError,
+  BrowserStartupError,
+  findHeadlessShell,
+  launchBrowser,
+  parseDevToolsEndpoint,
+  type AttachedBrowser,
+  type BrowserProcess,
+  type LaunchedBrowser,
+} from "./browser/launch.js";
+export { CdpClient, CdpClosedError, CdpProtocolError, CdpTimeoutError, CdpTransportError, openWebSocketTransport, WebSocketTransport, type CdpTransport } from "./browser/cdp.js";
