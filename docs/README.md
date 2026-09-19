@@ -36,6 +36,7 @@
 上表覆盖 `docs/` 根的全部**当前与设计**文档（本索引除外）；**新增文档必须在上表登记**。
 （这里刻意不写篇数：那个数字漂过 —— 迭代 F/G/H 三篇都漏登记了。`tests/readme-claims.test.ts` 只钉根 `README.md` 的硬数字，不覆盖本文件。）
 另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）与 [`research/`](./research/)（调研报告：memory-store / selection-and-preview / computer-use 等）。
+本机文件 `docs/AGENT.local.md`（由 `AGENT.local.md.example` 复制而来）**不入库、不需登记**：那里放机器相关的事实。
 契约类真源不在 `docs/`，而在
 [`../contracts/`](../contracts/)（`endpoints.json` 64 端点、`sse-events.json`、`tools.json`、`data-files/`）——
 退役后端的归档 HTTP 契约已于 W881 清理出公开仓，相关端点的 `docRef` 现指向

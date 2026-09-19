@@ -109,14 +109,22 @@ npm install -g --prefix /tmp/x celestea-agent@2.7.3 && /tmp/x/bin/celestea --ver
 
 ---
 
-## 6. 环境坑（本机专属，别再踩）
+## 6. 工具链与验证的坑（跟仓库走，不随机器变）
+
+> **本机特有的事实**（路径 / 账号 / 凭据位置 / 端口 / 这台机器装了什么）**不写在这里**：
+> 本文要提交进仓库，写死一台机器的信息只会误导别人。请复制模板填你自己的机器，
+> 它已被 `.gitignore` 忽略、永不入库：
+>
+> ```bash
+> cp docs/AGENT.local.md.example docs/AGENT.local.md
+> ```
 
 | 坑 | 现象 | 正确做法 |
 |---|---|---|
-| DSH 的 write/edit 落地 `root:root` | 后续写入 `EACCES`，别人无法编辑 | 写完立刻 `sudo chown celestea:celesdev` + `chmod 644` |
+| 工具写入的文件可能不属于你（例如 DSH 的 write/edit 会落地 `root:root`） | 后续写入 `EACCES`，**别人连变异都写不进去** | 写完立刻把归属改回**你自己**（`sudo chown "$(id -un):$(id -gn)" <files>`）+ `chmod 644`；收尾自查 `find . -user root -type f` |
 | `pnpm --dir apps/web run check` **不重建** | 量的是旧 dist，棘轮基准记错 | 量产物必须走会重建的入口：`pnpm check` 或 `pnpm run build` |
 | `RLIMIT_AS` 与 Chromium 不兼容 | 浏览器进程 SIGTRAP（133） | 浏览器调用走 `noAddressSpaceLimit` 豁免 |
-| benchmark 跨运行噪声 | 同一提交两次跑 p50 2.6% / p90 12.6% | 别信单次对比的 <10% 变动；认真对比用 `--repeat 3` |
+| benchmark 跨运行噪声 | 同一提交两次跑 p50 2.6% / p90 12.6%（**本仓开发机实测；换机器请自测，量级可能不同**） | 别信单次对比的 <10% 变动；认真对比用 `--repeat 3` |
 | 时序敏感用例 | 并发构建时 flaky（本仓真实发生过 2 条） | 静默条件下重跑；不要用「flaky」搪塞，要定位 |
 
 ---

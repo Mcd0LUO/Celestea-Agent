@@ -1,0 +1,72 @@
+# AGENT.local.md — 本机事实（**不入库**）
+
+> 这是 `docs/AGENT.local.md` 的模板。**复制成 `AGENT.local.md` 后填你自己的机器**：
+>
+> ```bash
+> cp docs/AGENT.local.md.example docs/AGENT.local.md
+> ```
+>
+> 为什么要分开：`AGENT.md` 是**提交进仓库的协作规范**，必须与机器无关；
+> 而路径、账号、凭据位置、端口这些**每台机器都不一样**，写进规范只会误导别人。
+> 本文件已被 `.gitignore` 忽略，永远不会提交。
+
+---
+
+## 1. 机器与运行时
+
+| 项 | 我的值 |
+|---|---|
+| 主机 / 发行版 / 内核 / 架构 | |
+| CPU / 核数 / 内存 | |
+| Node 路径与版本（要求 ≥24 <27，`.nvmrc` = 26） | |
+| pnpm 版本（`packageManager` 固定） | |
+| 仓库 clone 路径 | |
+| `/tmp` 是否 tmpfs（决定能不能把 worktree/node_modules 放那儿） | |
+
+## 2. 执行身份
+
+| 项 | 我的值 |
+|---|---|
+| 运行命令的用户 / 主组 | |
+| `HOME` | |
+| 免密 sudo 范围（`sudo -n -l`） | |
+| 文件归属要求（`chown` 的目标，见 `AGENT.md` §6） | |
+
+## 3. 本机装了哪些能力（决定你能验证什么）
+
+| 能力 | 有无 | 影响 |
+|---|---|---|
+| `bwrap` | | 无则走 userspace 降级；**降级分支在本机跑不到** |
+| `prlimit` | | 无则 rlimit 尽力而为 |
+| `htpasswd` | | 无则登录门无法端到端验证 |
+| `python3` | | 影响 `scripts/model-sync/` 与 Python 矩阵 |
+| headless Chromium 路径 | | UI 真机验证（CDP）用 |
+| CI（`.github/`） | | **没有 CI 时门禁只在人跑时存在** |
+
+## 4. 服务与端口
+
+| 项 | 我的值 |
+|---|---|
+| 服务管理方式（systemd / 直接 `celestea web` / …） | |
+| 生产监听地址:端口 | |
+| 重启命令 | |
+| 反代与鉴权（nginx `auth_request` / 自带 token / 无） | |
+| 同机邻居占用的资源（影响 benchmark 与 flaky） | |
+
+## 5. 凭据（**只写位置，绝不写值**）
+
+| 项 | 我的值 |
+|---|---|
+| GitHub token 来源 | |
+| npm token 来源与用后清理方式 | |
+| 其它密钥（模型 API key 等）来源 | |
+
+---
+
+## 6. 换机器时的自检清单
+
+1. `pnpm check` 能全绿（否则先解决环境，别改代码）。
+2. `node -v` / `pnpm -v` 在 `.nvmrc` 与 `packageManager` 允许的范围内。
+3. 写文件后 `find . -user root -type f`（或你的用户）为空。
+4. 跑一次 `pnpm bench`（安静窗口）确认 benchmark 可用，并记下你自己的噪声量级——
+   别人的噪声地板**不一定**和你一样。

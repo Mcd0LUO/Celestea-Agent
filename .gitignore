@@ -47,3 +47,7 @@ packages/core/contracts/
 # 而不是 /tmp（这台机的 /tmp 是 tmpfs，node_modules 会常驻内存）。
 # 它们必须是 git 与 eslint 的盲区，否则主工作树会把它们当未跟踪文件、并 lint 半成品代码。
 .worktrees/
+
+# 本机事实（机器相关：路径/账号/凭据位置/端口）。模板入库，真身绝不入库。
+#   AGENT.md 是提交进仓库的协作规范，必须与机器无关；本机差异写在 AGENT.local.md。
+docs/AGENT.local.md
