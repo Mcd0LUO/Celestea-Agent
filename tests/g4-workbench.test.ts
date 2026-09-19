@@ -80,9 +80,17 @@ describe('G4 · 多面板工作区（第一步）', () => {
     const marker = doc.createElement('div') as unknown as ElLike;
     marker.className = 'bg-marker';
     msgs.appendChild(marker);
+    // 回归守卫（用户实测报「面板打不开」）：光有面板节点不够，**宿主必须真的可见**。
+    // 曾经的 bug：installWorkbench 给 .wb-host 加了 'hidden' 防闪烁，renderWorkbench 只切了
+    // dock 的 hidden，宿主永远 display:none ⇒ 面板建出来了却完全看不见。
+    // 既有用例只数节点个数，测不出这种「存在但不可见」，所以这条断言必须留着。
+    const hostVisible = (): boolean =>
+      (doc.querySelector('.wb-host') as ElLike | null)?.classList.contains('hidden') === false;
+    expect(hostVisible(), '没有面板时宿主应隐藏（不占位、不挡点击）').toBe(false);
     const a = wb.openPanel('files', 'right');
     await flush();
     expect(panels().length).toBe(1);
+    expect(hostVisible(), '开面板后宿主必须可见').toBe(true);
     expect(rows().map((r) => r.querySelector('.wb-name')?.textContent)).toEqual(['src', 'README.md']);
     const b = wb.openPanel('files', 'right');
     await flush();
@@ -92,6 +100,11 @@ describe('G4 · 多面板工作区（第一步）', () => {
     await flush();
     expect(panels().length).toBe(1);
     expect(msgs.querySelector('.bg-marker'), '关闭面板不得重建背景').toBe(marker);
+    expect(hostVisible(), '还有面板时宿主仍可见').toBe(true);
+    wb.closePanel(b.id);
+    await flush();
+    expect(panels().length).toBe(0);
+    expect(hostVisible(), '全部关闭后宿主必须重新隐藏').toBe(false);
     void b;
   });
 
