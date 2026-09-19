@@ -17,6 +17,8 @@ import type { SessionPane } from './viewctx';
 import type { ToolCardRef } from './view';
 import type { ToolPayload, ToolResultPayload } from '../types';
 import { noteWorkerSpawn } from './worker-strip';
+import { detectFromTool, PREVIEW_CONTENT_TOOLS } from './preview/detect'; // F2：候选文件识别
+import { openPreview } from './preview/panel'; // F2：右侧覆盖式预览
 
 export type { ToolCardRef };
 
@@ -167,6 +169,20 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   const resultPv = el('div', 'toolcard-result-preview');
   resultPv.textContent = '';
   body.appendChild(resultPv);
+  // F2：read_file 类结果 → 侧边预览。按钮放在**展开区**（折叠态几何与折叠逻辑一字不动）。
+  const candidate = detectFromTool(d.name, d.argsText);
+  if (candidate !== null && PREVIEW_CONTENT_TOOLS.has(d.name)) {
+    const cand = candidate;
+    const pv = el('button', 'toolcard-preview', '预览') as HTMLButtonElement;
+    pv.type = 'button';
+    pv.title = '侧边预览这个文件';
+    pv.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const out = card.querySelector<HTMLElement>('.tool-out');
+      openPreview({ candidate: cand, load: async () => out?.textContent ?? null });
+    });
+    body.appendChild(pv);
+  }
   card.appendChild(body);
   // aria-expanded（以及 W778 的 chevron 方向）与真实展开态同步
   // （键盘/鼠标/程序化切换都会触发 toggle）

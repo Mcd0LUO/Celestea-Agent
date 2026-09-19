@@ -22,6 +22,7 @@ import './styles/hint.css'; // W790 悬浮提示宿主（内置提示插件）
 import './styles/question.css'; // W784 模型提问卡片（选项 / 自由输入 / 倒计时）
 import './styles/attachments.css'; // W805 图片附件（待发条 / 气泡网格 / 放大）
 import './styles/quote.css'; // F1 选段提及（引用卡 / 选区浮标 / 待发引用 chip）
+import './styles/preview.css'; // F2 文件侧边预览（覆盖式浮层 / 代码 / 降级）
 import './styles/workerstrip.css'; // W866 会话页左上角 worker 快捷条
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
 

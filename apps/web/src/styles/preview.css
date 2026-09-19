@@ -1,0 +1,95 @@
+/* ============================================================================
+ * styles/preview.css — F2 文件侧边预览：右侧**覆盖式浮层**（不动 #layout）。
+ *   代码/markdown/diff/图片 + 降级态；颜色全走 tokens.css 的 --c-* 令牌。
+ * ============================================================================ */
+
+.preview-host {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 46vw);
+  z-index: 35;
+  pointer-events: none; /* 面板之外的区域穿透，不挡正文交互 */
+}
+.preview-host.hidden { display: none; }
+.preview-panel {
+  pointer-events: auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface-raised);
+  border-left: 1px solid var(--c-border-subtle);
+  box-shadow: var(--shadow-panel);
+}
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-border-subtle);
+}
+.preview-title { font-weight: 600; font-size: 13px; white-space: nowrap; }
+.preview-path {
+  min-width: 0;
+  color: var(--c-text-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.preview-close:hover { color: var(--c-text-1); }
+.preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px; }
+.preview-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--c-border-subtle);
+}
+.preview-action {
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-raised);
+  color: var(--c-text-2);
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.preview-action:hover { border-color: var(--c-border-strong); color: var(--c-text-1); }
+.preview-code, .preview-diff {
+  margin: 0;
+  white-space: pre;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: auto;
+}
+.preview-diff-line.add { color: var(--hl-string); }
+.preview-diff-line.del { color: var(--hl-keyword); }
+.preview-diff-line.hunk { color: var(--c-text-3); }
+.preview-img img { max-width: 100%; border-radius: var(--r-md); }
+.preview-degrade-reason { color: var(--c-text-2); font-size: 12.5px; line-height: 1.5; }
+.preview-md { font-size: 13px; color: var(--c-text-1); }
+.toolcard-preview {
+  align-self: flex-start;
+  margin: 2px 0 6px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-raised);
+  color: var(--c-text-2);
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.toolcard-preview:hover { border-color: var(--c-border-strong); color: var(--c-text-1); }
