@@ -129,6 +129,13 @@ function writeArtifacts(options: Options, baseline: Baseline): void {
  * recorded on every row and in the baseline: a best-of-N row is systematically
  * faster than a best-of-1 row, so `compare` refuses to read the difference as
  * a code change.
+ *
+ * MEASURED on this host (28 cores, quiet), two runs of one commit per setting:
+ *   best-of-1 vs best-of-1   p50 2.60%  p90 12.61%  max  20.67%   rows >10%: 5
+ *   best-of-3 vs best-of-3   p50 2.32%  p90  7.80%  max   8.41%   rows >10%: 0
+ *   best-of-3 vs best-of-1   p50 4.58%  p90 17.65%  max 157.25%   rows >10%: 7
+ * So N=3 mainly buys the TAIL (nothing above 10% any more), and mixing the two
+ * settings is worse than not measuring — hence the warning.
  */
 async function collectCasesRepeated(fixtures: readonly Fixture[], repeat: number): Promise<BenchCase[]> {
   if (repeat <= 1) return collectCases(fixtures);
