@@ -8,7 +8,7 @@
     "src/chat.ts": 429,
     "src/ui/inputbar.ts": 412,
     "src/types.ts": 559,
-    "src/ui/rail.ts": 529,
+    "src/ui/rail.ts": 514,
     "src/ui/viewctx.ts": 406,
     "src/utils/markdown.ts": 509,
     "src/ui/attachments.ts": 441

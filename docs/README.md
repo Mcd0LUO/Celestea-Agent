@@ -20,6 +20,8 @@
 | [`pitfalls.md`](./pitfalls.md) | 当前 | **踩坑档案**：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证（每条来自真实修复）；前端渲染与数据文件类条目仍适用 | 本文 |
 | [`feature-ask-user.md`](./feature-ask-user.md) | 当前（**已实现，W783/W784**） | 特性设计：**模型向用户提问**（`ask_user_question`）——选项 + 自定义输入、挂起等待、答案回传模型、最大等待时间；架构对齐 DSH 官方三层实现（服务 seam / 工具 / UI answerer），本仓增量为异步 waterfall、超时、断线恢复、本地化 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §3.1；`packages/core/src/question.ts`、`apps/web/src/ui/question/` |
 | [`feature-selection-quote.md`](./feature-selection-quote.md) | 当前（**已实现，F1**） | 特性设计：**选段提及**——在消息里选中文本，点「引用」把**内容快照**随下一条消息发出；序列化进消息文本，零后端契约变更，历史可解析回渲染 | 本文；`apps/web/src/ui/quote/model.ts` |
+| [`feature-multimodal-attachments.md`](./feature-multimodal-attachments.md) | 设计（已实现 P0） | **多模态附件**设计：图片/文本附件的三入口、能力位探测、降级提示、objectURL 生命周期 | 本文；`apps/web/src/ui/attachments.ts` |
+| [`feature-dynamic-tool-disclosure.md`](./feature-dynamic-tool-disclosure.md) | 设计（只调研与设计，W802） | **动态工具披露**的调研与设计：工具面随任务收窄的方案与取舍；本文不落地代码 | 本文 |
 | [`feature-workspace-memory.md`](./feature-workspace-memory.md) | 当前（**已实现，F3 P0**） | 特性设计：**工作区持久记忆**——`MEMORY.md` 每轮起点重读、作为 user-role 历史注入（绝不进 system）；项目层优先、2048 字节上限 + 显式截断、块首防投毒声明 | 本文；`packages/core/src/memory.ts` |
 | [`iteration-e-capabilities.md`](./iteration-e-capabilities.md) | 设计 | 迭代方向 E（能力深水区）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | 本文；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
 | [`iteration-f-capabilities.md`](./iteration-f-capabilities.md) | 当前（**已实现，F1–F4**） | 迭代方向 F：选段提及 / 文件侧边预览 / 工作区持久记忆 / 真机操控（浏览器）的目标契约与验收 | 本文；`apps/web/src/ui/quote/`、`apps/web/src/ui/preview/`、`packages/core/src/memory.ts`、`packages/tools/src/browser/` |
@@ -33,9 +35,9 @@
 
 上表覆盖 `docs/` 根的全部**当前与设计**文档（本索引除外）；**新增文档必须在上表登记**。
 （这里刻意不写篇数：那个数字漂过 —— 迭代 F/G/H 三篇都漏登记了。`tests/readme-claims.test.ts` 只钉根 `README.md` 的硬数字，不覆盖本文件。）
-另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）。
+另有子目录不逐篇登记：[`migration/`](./migration/)（迁移留痕，W781 对照表）与 [`research/`](./research/)（调研报告：memory-store / selection-and-preview / computer-use 等）。
 契约类真源不在 `docs/`，而在
-[`../contracts/`](../contracts/)（`endpoints.json` 47 端点、`sse-events.json`、`tools.json`、`data-files/`）——
+[`../contracts/`](../contracts/)（`endpoints.json` 64 端点、`sse-events.json`、`tools.json`、`data-files/`）——
 退役后端的归档 HTTP 契约已于 W881 清理出公开仓，相关端点的 `docRef` 现指向
 `contracts/endpoints.json` 自身的冻结条目。
 
