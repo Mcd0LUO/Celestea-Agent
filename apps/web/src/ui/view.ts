@@ -41,14 +41,28 @@ export interface ThinkSeg {
   text: string;
 }
 
-/** W514：文本段增量渲染状态（WeakMap 挂载在 AssistantView 上，见 messages.ts）。 */
+/**
+ * W514：文本段增量渲染状态（WeakMap 挂载在 AssistantView 上，见 messages.ts）。
+ *
+ * W895-R：分区**不再按节点引用记账**，改用我们自己的一个注释节点当**边界**。
+ * 为什么（这是「实时与重放不一致」反复出现的根因）：
+ *   旧实现把「稳定区节点」与「尾部节点」存成两个 Node[]，并假定它们始终是
+ *   `content` 的直接子节点。但增强遍（代码块包裹 / JSON 树 / CSV 表）会**移动**节点，
+ *   于是下一节拍：锚点已不在 content 里 → `insertBefore` 抛错或错位；
+ *   更糟的是 `tailNodes` 的移除会把**已经被搬进 <details> 的内容**从新父节点里摘走，
+ *   留下一个空壳（实测症状：一张被掏空的 JSON 小卡 + 一个孤立的引号）。
+ *   重放走的是「一次性整体构建」分支，不碰这套记账，所以只有实时坏 —— 这就是
+ *   「实时坏、重放好」的原因。
+ *
+ * 边界模型下这条假设消失：稳定区插在边界**之前**、尾部区插在边界**之后**，
+ * 每节拍只清掉边界之后的一切。增强遍再怎么重排/包裹/拆分节点，边界都在原地。
+ * 注释节点对 CSS 结构伪类不可见（实测 :first-child/:last-child 不受影响）。
+ */
 export interface StreamDom {
   stream: MarkdownStream;
-  stableNodes: Node[];
-  tailNodes: Node[];
+  /** 稳定区与尾部区的分界（`content` 的子节点；注释节点）。 */
+  boundary: Comment;
   lastText: string;
-  /** 是否已在 content 中建立过节点（false → 本次走整体构建） */
-  inited: boolean;
 }
 
 /** W514：已构建的工具卡引用（供结果回填 / 复制）。 */

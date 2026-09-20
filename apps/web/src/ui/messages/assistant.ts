@@ -22,10 +22,8 @@ function domOf(view: AssistantView): StreamDom {
   if (!d) {
     d = {
       stream: new MarkdownStream(),
-      stableNodes: [],
-      tailNodes: [],
+      boundary: document.createComment('w895-boundary'),
       lastText: '\u0000',
-      inited: false,
     };
     doms.set(view, d);
   }
@@ -72,10 +70,15 @@ export function resetMessages(ctx: SessionPane): void {
 export const RENDER_DEBOUNCE = 12;
 
 /**
- * 增量渲染文本段（W301 + W514 每容器独立节拍）：
+ * 渲染文本段（W301 + W514 每容器独立节拍）—— **实时与重放走同一个函数、同一条分支**。
+ *
+ * W895-R：分区用**边界哨兵**而不是节点引用记账（见 view.ts 的 StreamDom 注释）。
  *   1) MarkdownStream 只解析「未固化尾部」，返回 stableHtml / tailHtml 分解；
- *   2) 新固化的块离屏构建后 append 到 content（已有块 DOM 原地保留）；
- *   3) 尾部节点离屏构建后**单次替换**（同一帧内完成，无空白帧）。
+ *   2) 新固化的块插到边界**之前**（已有块 DOM 原地保留，不重建）；
+ *   3) 尾部区 = 边界**之后**的全部节点，整体替换（同一帧内完成，无空白帧）。
+ *
+ * 重放只是「文本已完整」的一次调用：此时 stable 已是全量、tailHtml 为空，
+ * 走的仍是这条路径 —— 没有「只有重放才走」的分支，两者因此不可能分叉。
  */
 function renderTextView(ctx: SessionPane, view: AssistantView): void {
   const d = domOf(view);
@@ -87,28 +90,30 @@ function renderTextView(ctx: SessionPane, view: AssistantView): void {
   const parts = d.stream.updateParts(view.text);
   d.lastText = view.text;
 
-  if (parts.reset || !d.inited) {
-    d.stableNodes = htmlToNodes(parts.stableHtml);
-    d.tailNodes = htmlToNodes(parts.tailHtml);
-    view.content.replaceChildren(...d.stableNodes, ...d.tailNodes);
-    d.inited = true;
-  } else {
-    const anchor = d.tailNodes[0] ?? null;
-    const place = (n: Node) => {
-      if (anchor) view.content.insertBefore(n, anchor);
-      else view.content.appendChild(n);
-    };
-    if (parts.stableDeltaHtml) {
-      for (const n of htmlToNodes(parts.stableDeltaHtml)) {
-        place(n);
-        d.stableNodes.push(n);
-      }
-    }
-    const freshTail = htmlToNodes(parts.tailHtml);
-    for (const n of freshTail) place(n);
-    for (const n of d.tailNodes) n.parentNode?.removeChild(n);
-    d.tailNodes = freshTail;
+  // 边界必须是 content 的子节点：首次渲染挂上，或在 reset 后（容器被别处清过）重新挂。
+  if (d.boundary.parentNode !== view.content) view.content.appendChild(d.boundary);
+
+  // (2) 新增的稳定块插到边界之前。reset 时 stableDeltaHtml 是**全量** stable，
+  //     所以这里天然覆盖「整体重建」，不需要另一条分支。
+  // ★ 用 DocumentFragment 一次性插入（每 tick 至多 1 次 DOM 变更）：
+  //   W867 的门禁按「.content 上的变更调用次数」计重排，逐节点插入会把
+  //   一次合并渲染变成 N 次 —— 那是真实的性能回退，不是测试口径问题。
+  if (parts.reset || parts.stableDeltaHtml) {
+    const stableHtml = parts.reset ? parts.stableHtml : parts.stableDeltaHtml;
+    const frag = document.createDocumentFragment();
+    for (const n of htmlToNodes(stableHtml)) frag.appendChild(n);
+    view.content.insertBefore(frag, d.boundary);
   }
+
+  // (3) 尾部区整体替换：删掉边界之后的一切，再按文档序插回（同样用 fragment）。
+  for (let n = d.boundary.nextSibling; n !== null; ) {
+    const next = n.nextSibling;
+    n.remove();
+    n = next;
+  }
+  const tailFrag = document.createDocumentFragment();
+  for (const n of htmlToNodes(parts.tailHtml)) tailFrag.appendChild(n);
+  view.content.appendChild(tailFrag);
 
   // W895：渲染后的增强遍走注册缝（内置 hljs + math 仍在此链上，顺序不变）。
   runEnhancers(view.content);
