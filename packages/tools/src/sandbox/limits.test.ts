@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isSandboxError } from "@celestea/core";
 
+import { POSIX_SHELL } from "../testing/platform-gates.js";
+
 import {
   countUidThreads,
   DEFAULT_LIMITS,
@@ -149,7 +151,7 @@ describe("B3 / W812 P2-3: ulimit -f is 512-byte blocks", () => {
     expect(ulimitScript({ ...LIMITS, fsizeBytes: 64 * 1024 + 1 })).toContain("ulimit -f 129");
   });
 
-  it("a real shell-ulimit spawn cuts at the configured bytes, not half", async () => {
+  it.skipIf(!POSIX_SHELL)("a real shell-ulimit spawn cuts at the configured bytes, not half", async () => {
     const dir = mkdtempSync(join(tmpdir(), "w833-ulimit-"));
     const out = join(dir, "out.bin");
     const limits: SandboxLimits = { ...LIMITS, fsizeBytes: 64 * 1024 };

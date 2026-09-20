@@ -7,6 +7,7 @@
  * name a human wrote.
  */
 
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { archiveRoots, CELESTEA_DIR, liveDirCandidates, promptsFileCandidates, sanitizeComponent, sessionDirName, SESSIONS_SUBDIR, sessionsRoot, stripCreationSuffix, timestampSuffix, trashRoots } from "./session-id.js";
@@ -50,23 +51,23 @@ describe("W880 · canonical CELESTEA_HOME session paths", () => {
   it("exposes the canonical vocabulary (and keeps the slice-A name)", () => {
     expect(CELESTEA_DIR).toBe(".celestea");
     expect(SESSIONS_SUBDIR).toBe("sessions");
-    expect(sessionsRoot("/ws")).toBe(`${workspaceHome("/ws")}/sessions`);
+    expect(sessionsRoot("/ws")).toBe(join(workspaceHome("/ws"), "sessions"));
   });
 
   it("liveDirCandidates probes canonical -> slice-A -> legacy root", () => {
     const home = workspaceHome("/ws");
-    expect(liveDirCandidates("/ws", "alpha")).toEqual([`${home}/sessions/alpha`, "/ws/.celestea/sessions/alpha", "/ws/alpha"]);
+    expect(liveDirCandidates("/ws", "alpha")).toEqual([join(home, "sessions", "alpha"), join("/ws", ".celestea", "sessions", "alpha"), join("/ws", "alpha")]);
     expect(liveDirCandidates("/ws", "报告-2024")).toEqual([
-      `${home}/sessions/报告-2024`,
-      "/ws/.celestea/sessions/报告-2024",
-      "/ws/报告-2024",
+      join(home, "sessions", "报告-2024"),
+      join("/ws", ".celestea", "sessions", "报告-2024"),
+      join("/ws", "报告-2024"),
     ]);
   });
 
   it("archive / trash / prompts candidates are canonical-first", () => {
     const home = workspaceHome("/ws");
-    expect(archiveRoots("/ws")).toEqual([`${home}/archive`, "/ws/.celestea/archive", "/ws/.celestea-archived"]);
-    expect(trashRoots("/ws")).toEqual([`${home}/trash`, "/ws/.celestea/trash", "/ws/.celestea-trash"]);
-    expect(promptsFileCandidates("/ws")).toEqual([`${home}/prompts.json`, "/ws/.celestea/prompts.json", "/ws/.celestea-prompts.json"]);
+    expect(archiveRoots("/ws")).toEqual([join(home, "archive"), join("/ws", ".celestea", "archive"), join("/ws", ".celestea-archived")]);
+    expect(trashRoots("/ws")).toEqual([join(home, "trash"), join("/ws", ".celestea", "trash"), join("/ws", ".celestea-trash")]);
+    expect(promptsFileCandidates("/ws")).toEqual([join(home, "prompts.json"), join("/ws", ".celestea", "prompts.json"), join("/ws", ".celestea-prompts.json")]);
   });
 });

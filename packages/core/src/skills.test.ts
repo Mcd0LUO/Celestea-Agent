@@ -151,9 +151,11 @@ describe("W882 · structural parse errors", () => {
 
   it("listSkills works over the injected SkillIo (no filesystem)", () => {
     const files = new Map<string, string>();
-    files.set("/proj/skills/pdf/SKILL.md", skillText(PDF_FRONTMATTER));
+    // W892: the product joins with the HOST separator, so the fixture must too.
+    const skillsDir = join("/proj", "skills");
+    files.set(join(skillsDir, "pdf", "SKILL.md"), skillText(PDF_FRONTMATTER));
     const io: SkillIo = {
-      listDirectories: (dir) => (dir === "/proj/skills" ? ["pdf"] : []),
+      listDirectories: (dir) => (dir === skillsDir ? ["pdf"] : []),
       readText: (file) => files.get(file) ?? null,
     };
     const listing = listSkills([{ source: "project", root: "/proj" }], io);

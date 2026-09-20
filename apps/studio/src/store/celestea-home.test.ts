@@ -1,6 +1,7 @@
 /**
  * W880 — the CELESTEA_HOME resolution order, one assertion per rung.
  */
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { celesteaHome, workspaceHome, workspaceSubdir } from "./celestea-home.js";
@@ -36,9 +37,10 @@ describe("W880 · celesteaHome resolution order", () => {
 describe("W880 · workspaceHome / workspaceSubdir", () => {
   it("keys by the workspace folder name, like workspaces.json", () => {
     const input = { env: { CELESTEA_HOME: "/data" } };
-    expect(workspaceHome("/src/foo", input)).toBe("/data/workspaces/foo");
-    expect(workspaceHome("/src/foo/", input)).toBe("/data/workspaces/foo");
-    expect(workspaceSubdir("/src/foo", "sessions", input)).toBe("/data/workspaces/foo/sessions");
+    // W892: the product joins with the HOST separator, so the expectation must too.
+    expect(workspaceHome("/src/foo", input)).toBe(join("/data", "workspaces", "foo"));
+    expect(workspaceHome("/src/foo/", input)).toBe(join("/data", "workspaces", "foo"));
+    expect(workspaceSubdir("/src/foo", "sessions", input)).toBe(join("/data", "workspaces", "foo", "sessions"));
   });
 });
 

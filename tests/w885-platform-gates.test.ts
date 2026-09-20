@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { whichUsable } from "@celestea/tools";
 
 import { bwrapUsable, fileModesMeaningful, posixOnly, posixProcessGroups, posixScript, posixShell, prlimitUsable } from "./lib/platform-gates.js";
 
@@ -14,13 +15,17 @@ describe("W885 shared platform gates", () => {
   // W891: the gates must answer each host TRUTHFULLY. The POSIX half keeps the
   // original Linux assertions; the Windows half pins the negatives, so neither
   // "always true" nor "always false" can pass on either CI runner.
-  it.skipIf(!posixShell)("answers the POSIX host truthfully (Linux: bwrap + prlimit + sh)", () => {
+  it.skipIf(!posixShell)("answers the POSIX host truthfully", () => {
+    // These ARE POSIX guarantees.
     expect(posixShell).toBe(true);
     expect(posixProcessGroups).toBe(true);
     expect(fileModesMeaningful).toBe(true);
     expect(posixOnly).toBe(true);
-    expect(bwrapUsable).toBe(true);
-    expect(prlimitUsable).toBe(true);
+    // W892: bwrap / prlimit are INSTALLED TOOLS, not POSIX guarantees — GitHub's
+    // ubuntu-latest has NEITHER. Assert the gate agrees with an independent probe
+    // rather than assuming installation; an always-true gate still fails here.
+    expect(prlimitUsable).toBe(whichUsable("prlimit"));
+    expect(bwrapUsable && !whichUsable("bwrap"), "bwrapUsable=true requires the binary on PATH").toBe(false);
   });
 
   it.skipIf(posixShell)("answers a Windows host truthfully (no sh, no mode bits)", () => {

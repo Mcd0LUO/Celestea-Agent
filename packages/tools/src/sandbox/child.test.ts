@@ -22,9 +22,11 @@ describe("W885/W892 taskkillTree", () => {
     expect(taskkillTree(1, "darwin")).toBe(false);
   });
 
-  it("returns false (never throws) when taskkill is unavailable", () => {
-    expect(taskkillTree(999_999, "win32")).toBe(false);
-  });
+  // W892: there is deliberately NO "taskkill is unavailable ⇒ false" case here.
+  // On Linux taskkill is missing (ENOENT) so it returns false, but on Windows it
+  // EXISTS and a dead pid is reported true ("the tree is already gone") — so the
+  // assertion was platform-dependent. The real distinction is pinned with an
+  // injected ENOENT runner in the case below.
 
   it("does NOT run taskkill at all on POSIX", () => {
     let runs = 0;

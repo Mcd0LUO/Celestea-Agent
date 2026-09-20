@@ -93,6 +93,8 @@ export interface LaunchOptions extends AttachOptions {
   shutdownGraceMs?: number;
   spawn?: BrowserSpawn;
   findExecutable?: () => string | null;
+  /** W892: injected teardown (tests pin the platform so the branch is host-independent). */
+  signal?: SignalBrowserDeps;
 }
 
 /** A browser connected over CDP; close() also reclaims the process. */
@@ -212,7 +214,7 @@ export async function launchBrowser(options: LaunchOptions = {}): Promise<Launch
   try {
     endpoint = await readEndpoint(proc, options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS);
   } catch (error) {
-    await terminateBrowserProcess(proc, grace);
+    await terminateBrowserProcess(proc, grace, options.signal);
     if (ownsDir) removeDir(userDataDir);
     throw error;
   }
@@ -224,7 +226,7 @@ export async function launchBrowser(options: LaunchOptions = {}): Promise<Launch
     client: attached.client,
     close: async () => {
       attached.close();
-      await terminateBrowserProcess(proc, grace);
+      await terminateBrowserProcess(proc, grace, options.signal);
       if (ownsDir) removeDir(userDataDir);
     },
   };
@@ -281,10 +283,14 @@ function defaultBrowserSpawn(program: string, args: readonly string[]): BrowserP
 }
 
 /** SIGTERM the process group, wait, then SIGKILL if it is still alive. */
-export async function terminateBrowserProcess(proc: BrowserProcess, graceMs: number = DEFAULT_SHUTDOWN_GRACE_MS): Promise<void> {
+export async function terminateBrowserProcess(
+  proc: BrowserProcess,
+  graceMs: number = DEFAULT_SHUTDOWN_GRACE_MS,
+  deps: SignalBrowserDeps = {},
+): Promise<void> {
   const exited = waitForExit(proc, graceMs);
-  signalBrowser(proc, "SIGTERM");
-  if (!(await exited)) signalBrowser(proc, "SIGKILL");
+  signalBrowser(proc, "SIGTERM", deps);
+  if (!(await exited)) signalBrowser(proc, "SIGKILL", deps);
 }
 
 /**

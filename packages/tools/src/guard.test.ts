@@ -5,6 +5,7 @@ import type { Tool, ToolInput } from "@celestea/core";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { cleanupTempDirs, makeDir, makeTempDir, writeFixture } from "./testing/tmp.test-util.js";
+import { quoteMessage } from "./errors.js";
 import { mountProductionGuards, parseToolRoots, PATH_ACCESS, PathGuard, PathGuardPolicy } from "./guard/path-guard.js";
 import { createToolRegistry, ToolRegistryImpl } from "./registry.js";
 import { readFileTool } from "./tools/read-file.js";
@@ -284,7 +285,10 @@ describe("write roots (session grants)", () => {
   it("keeps the legacy deny message when there is no extra write root", () => {
     const decision = policy.checkWrite(join(outside, "new.txt"));
     if (decision.kind !== "deny") expect.unreachable("must deny");
-    expect(decision.reason).toContain(`write path '${join(outside, "new.txt")}' is outside the workspace '${workspace}'`);
+    // W892: the reason is the contract message with quoteMessage escaping, so a
+    // Windows path shows doubled backslashes. Build the expectation the same way.
+    const inner = `write path '${join(outside, "new.txt")}' is outside the workspace '${workspace}'`;
+    expect(decision.reason).toContain(quoteMessage(inner));
   });
 
   it("merges grant roots through fromEnv without weakening the env fail-closed rule", () => {

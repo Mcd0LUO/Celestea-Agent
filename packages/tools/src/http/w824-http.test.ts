@@ -20,7 +20,10 @@ import { describe, expect, it } from "vitest";
 
 import { HttpTargetPolicy, ipInRange, parseIpRange } from "./ssrf.js";
 
-const TSX = fileURLToPath(new URL("../../../../node_modules/.bin/tsx", import.meta.url));
+// W892: `node_modules/.bin/tsx` is a shell shim (a `.cmd` on Windows) that
+// spawnSync cannot execute without a shell. Run the real CLI through the Node
+// that is already running this test — portable and extension-free.
+const TSX_CLI = fileURLToPath(new URL("../../../../node_modules/tsx/dist/cli.mjs", import.meta.url));
 const TRANSPORT = fileURLToPath(new URL("./transport.ts", import.meta.url));
 
 describe("W824 W812-P0-4/A1: IPv4-mapped IPv6", () => {
@@ -71,7 +74,7 @@ describe("W824 W812-P0-3: requestOnce leaves no stale timer", () => {
     ].join("\n");
     writeFileSync(script, source);
     try {
-      const result = spawnSync(TSX, [script], { encoding: "utf8", timeout: 15000 });
+      const result = spawnSync(process.execPath, [TSX_CLI, script], { encoding: "utf8", timeout: 15000 });
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("REJECTED:");
       expect(result.stdout).toContain("SURVIVED");

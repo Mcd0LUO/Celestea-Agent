@@ -123,7 +123,9 @@ describe("buildBwrapArgv — mount order is the W274 fix", () => {
   });
 
   it("hands the seccomp blob to fd 3 and terminates the flag list with --", () => {
-    const argv = buildBwrapCommand(WORK, opts({ seccomp: true }), "echo hi");
+    // W892: bwrap is Linux-only, so pin the POSIX shell — without it the host's
+    // shell (cmd/pwsh on Windows) is substituted into the argv.
+    const argv = buildBwrapCommand(WORK, opts({ seccomp: true }), "echo hi", { platform: "linux" });
     expect(argv.slice(-6)).toEqual(["--seccomp", String(SECCOMP_FD), "--", "/bin/sh", "-c", "echo hi"]);
     expect(argv.slice(argv.indexOf("--") + 1)).toEqual(["/bin/sh", "-c", "echo hi"]);
     expect(SECCOMP_FD).toBe(3);

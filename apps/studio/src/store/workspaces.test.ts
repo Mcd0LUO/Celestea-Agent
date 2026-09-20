@@ -65,7 +65,10 @@ describe("workspaces.json v2 registry", () => {
     const store = new WorkspacesStore(file);
     expect(store.register("")).toEqual({ ok: false, status: 400, error: "path must not be empty" });
     expect(store.register("relative/path")).toEqual({ ok: false, status: 400, error: "path 'relative/path' must be absolute" });
-    expect(store.register("/no/such/dir")).toEqual({ ok: false, status: 400, error: "path '/no/such/dir' is not an existing directory" });
+    // W892: "/no/such/dir" is drive-relative on Windows; use a real host path
+    // that does not exist so the frozen message is asserted on every OS.
+    const missing = join(root, "no-such-dir");
+    expect(store.register(missing)).toEqual({ ok: false, status: 400, error: `path '${missing}' is not an existing directory` });
     expect(store.register(join(root, "alpha")).ok).toBe(true);
     expect(store.register(join(root, "alpha"))).toEqual({
       ok: false,

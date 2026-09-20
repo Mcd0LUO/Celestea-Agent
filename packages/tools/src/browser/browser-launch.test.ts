@@ -210,6 +210,9 @@ describe("F4 launch -- launchBrowser", () => {
         return proc;
       },
       openTransport: async () => transport,
+      // W892: pin the POSIX branch — FakeProcess models a signalable child, and
+      // on Windows the real teardown taskkills instead (covered by its own case).
+      signal: { platform: "linux" },
     });
     expect(browser.endpoint).toBe("ws://127.0.0.1:1234/devtools/browser/abc");
     expect(browser.pid).toBe(FAKE_PID);
@@ -238,6 +241,9 @@ describe("F4 launch -- launchBrowser", () => {
       },
       openTransport: async () => new FakeTransport(),
       shutdownGraceMs: 50,
+      // W892: pin the POSIX branch so the teardown is host-independent (on Windows
+      // the real path taskkills; that branch has its own case).
+      signal: { platform: "linux" },
     });
     expect(existsSync(browser.userDataDir)).toBe(true);
     await browser.close();
@@ -258,6 +264,9 @@ describe("F4 launch -- launchBrowser", () => {
       },
       openTransport: async () => new FakeTransport(),
       shutdownGraceMs: 50,
+      // W892: pin the POSIX branch so the teardown is host-independent (on Windows
+      // the real path taskkills; that branch has its own case).
+      signal: { platform: "linux" },
     });
     await expect(pending).rejects.toBeInstanceOf(BrowserStartupError);
     await pending.catch((error: BrowserStartupError) => {

@@ -15,14 +15,16 @@ const gates = platformGates();
 describe("W885 platform gates", () => {
   // W891: assert each host TRUTHFULLY (POSIX keeps the original assertions;
   // Windows pins the negatives) so the gate cannot be silently always-true/false.
-  it.skipIf(!gates.posixShell)("answers the POSIX host truthfully (Linux: bwrap + prlimit + sh)", () => {
+  it.skipIf(!gates.posixShell)("answers the POSIX host truthfully", () => {
     expect(gates.posixShell).toBe(true);
     expect(gates.posixScripts).toBe(true);
     expect(gates.posixProcessGroups).toBe(true);
     expect(gates.fileModesMeaningful).toBe(true);
     expect(gates.posixOnly).toBe(true);
-    expect(gates.bwrapUsable).toBe(true);
-    expect(gates.prlimitUsable).toBe(true);
+    // W892: bwrap / prlimit are INSTALLED TOOLS, not POSIX guarantees (GitHub's
+    // ubuntu-latest has neither), so assert agreement with an independent probe.
+    expect(gates.prlimitUsable).toBe(whichUsable("prlimit"));
+    expect(gates.bwrapUsable && !whichUsable("bwrap"), "bwrapUsable=true requires the binary on PATH").toBe(false);
   });
 
   it.skipIf(gates.posixShell)("answers a Windows host truthfully (no sh, no mode bits)", () => {

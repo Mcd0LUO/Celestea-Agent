@@ -72,8 +72,9 @@ describe("W885 win32 · basename/parent (W883 E2: lastIndexOf('/'))", () => {
   });
 
   it("reports the drive / UNC roots", () => {
-    // Uninjected = the HOST (POSIX here): a drive path has no POSIX root.
-    expect(rootOf(`C:${BS}Users`)).toBe("");
+    // W892: uninjected = the HOST. A drive path has a root only where the host
+    // is win32; on POSIX it has none.
+    expect(rootOf(`C:${BS}Users`)).toBe(process.platform === "win32" ? `C:${BS}` : "");
     expect(rootOf(`C:${BS}Users`, "win32")).toBe(`C:${BS}`);
     expect(rootOf(`${BS}${BS}srv${BS}share${BS}x`, "win32")).toBe(`${BS}${BS}srv${BS}share${BS}`);
   });
