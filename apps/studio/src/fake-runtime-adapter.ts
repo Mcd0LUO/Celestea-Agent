@@ -38,6 +38,7 @@ import {
   type WorkerStatusReport,
 } from "./runtime-adapter.js";
 import type { StudioBus } from "./sse.js";
+import { aggregateWorkerStatus } from "./runtime/worker-bridge.js";
 
 export interface FakeRuntimeOptions {
   profile?: Partial<EngineProfile>;
@@ -92,12 +93,6 @@ function defaultProfile(over: Partial<EngineProfile>): EngineProfile {
     system_prompt: "",
     ...over,
   };
-}
-
-function countBy(rows: readonly FakeWorker[], key: "status" | "state"): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const w of rows) out[w[key]] = (out[w[key]] ?? 0) + 1;
-  return out;
 }
 
 class FakeRuntime implements FakeRuntimeAdapter {
@@ -283,8 +278,13 @@ class FakeRuntime implements FakeRuntimeAdapter {
       modified: 0,
       active: false,
       wid: w.wid,
+      // W894: expose the worker's own conversation so the status fold can measure it.
+      sess: w.sessionId,
+      // The fake keeps no clock: an empty stamp is honest, not a fabricated date.
+      started_at: "",
       status: w.status,
       state: w.state,
+      busy: false,
     }));
   }
 
@@ -310,13 +310,11 @@ class FakeRuntime implements FakeRuntimeAdapter {
   }
 
   workerStatus(wid?: string): WorkerStatusReport {
-    const all = [...this.workers.values()];
-    const by_status = { DONE: 0, FAILED: 0, RUNNING: 0, ...countBy(all, "status") };
-    const by_state = { idle: 0, "in-turn": 0, running: 0, ...countBy(all, "state") };
-    if (wid === undefined) return { ok: all.length > 0, total: all.length, by_status, by_state, workers: all };
-    const hit = all.filter((w) => w.wid === wid);
-    if (hit.length === 0) return { ok: false, total: 0, by_status, by_state, workers: [], wid, error: `no worker ${wid} in registry` };
-    return { ok: true, total: hit.length, by_status, by_state, workers: hit, wid };
+    // W894: route through the SAME fold the real adapter uses. The two used to
+    // disagree — the fake pre-filled zero buckets and returned its own 6-field rows
+    // while the real one returned 16-field panel rows, so a test could pass against
+    // a shape production never produced. One fold, one row shape.
+    return aggregateWorkerStatus(this.workerRows(), wid, () => this.statusline().context_usage);
   }
 
   workerMessages(sessionId: string): unknown[] | null {

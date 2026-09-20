@@ -668,7 +668,8 @@ class RealEngine implements RealRuntimeAdapter {
    * live sweepers rides along.
    */
   workerStatus(wid?: string): WorkerStatusReport {
-    return workerStatusOf(this.workerSessions(), watchdogCount(this.registry.list()), wid, this.workerRecovery());
+    // W894: `statusline` PEEKS, so measuring a worker never composes a cold session.
+    return workerStatusOf(this.workerSessions(), watchdogCount(this.registry.list()), wid, this.workerRecovery(), (sess) => this.statusline(sess).context_usage);
   }
 
   /** E §1.3 P1 ②: `/api/status.recovery` of one session (never composes one). */

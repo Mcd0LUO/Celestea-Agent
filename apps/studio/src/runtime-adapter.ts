@@ -252,12 +252,54 @@ import type { RecoveryView } from "./runtime/recovery-view.js";
 /** E §1.3 P1 ②: the `/api/status.recovery` block (see `runtime/recovery-view.ts`). */
 export type { RecoveryView };
 
+/**
+ * W894: one worker's context occupancy. Deliberately the SAME shape `/api/status`
+ * reports (`Statusline["context_usage"]`) rather than a bespoke one: "how full is this
+ * session's context" must mean one thing across the product (AGENT.md §7 one-home-per-fact).
+ * `method: "none"` means nothing measurable — the caller must NOT read `used: 0` as "empty".
+ */
+export type WorkerContextUsage = Statusline["context_usage"];
+
+/**
+ * W894: the LEAN row a status report carries. The panel row (`WorkerSessionRow`) is a
+ * different job — it feeds `GET /api/sessions` and therefore must keep the session-list
+ * shape (`workspace`/`modified`/`active`/`kind`). A status report needs the orchestration
+ * facts instead, so it projects:
+ *   - DROPPED, because they were hard-coded constants in every row:
+ *     `workspace:"engine"`, `modified:0`, `active:false`, `kind:"worker"`;
+ *     plus `id`, which was just `worker:<sess>` (now `sess` is exposed directly).
+ *   - ADDED: `sess` (the worker's own conversation), `started_at` (when it was dispatched),
+ *     and `context` (its live context occupancy).
+ */
+export interface WorkerStatusRow {
+  wid: string;
+  /** The worker's OWN conversation id (`sess=`), or null on a legacy row. */
+  sess: string | null;
+  host_session: string | null;
+  title: string;
+  status: string;
+  /** Driver state (`idle` / `in-turn`); "" when the row never stamped one. */
+  state: string;
+  model: string | null;
+  mode: string;
+  /** Transcript size (events), a rough activity measure. */
+  size: number;
+  attempt: number;
+  last_receipt: string | null;
+  /** Registry `started_at` stamp (when this worker was dispatched). */
+  started_at: string;
+  busy: boolean;
+  /** W894: live context occupancy; null when there is no session to measure. */
+  context: WorkerContextUsage | null;
+}
+
 export interface WorkerStatusReport {
   ok: boolean;
   total: number;
   by_status: Record<string, number>;
   by_state?: Record<string, number>;
-  workers: unknown[];
+  /** W894: projected rows (see [WorkerStatusRow]) — NOT the raw panel rows. */
+  workers: WorkerStatusRow[];
   wid?: string;
   error?: string;
   /**
@@ -288,6 +330,10 @@ export interface WorkerSessionRow {
   mode: string;
   /** Worker id (`W513`) — the same `wid` the registry row carries. */
   wid?: string;
+  /** W894: the worker's own conversation (`sess=`), for measuring ITS context. */
+  sess?: string | null;
+  /** W894: registry `started_at` (when dispatched). */
+  started_at?: string;
   /** Registry status: `RUNNING` / `DONE` / `FAILED`. */
   status?: string;
   /** Driver state: `idle` / `in-turn`. */

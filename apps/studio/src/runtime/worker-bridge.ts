@@ -17,7 +17,14 @@
 import { isRecord, type ToolRegistry } from "@celestea/core";
 import { projectMessages } from "@celestea/session";
 import { getExtra, workerAttempt, type WorkerRegistry } from "@celestea/workers";
-import type { WorkerSessionRow, WorkerSpawnOutcome, WorkerStatusReport } from "../runtime-adapter.js";
+import type {
+  WorkerContextUsage,
+  WorkerSessionRow,
+  WorkerSpawnOutcome,
+  WorkerStatusReport,
+  WorkerStatusRow,
+} from "../runtime-adapter.js";
+import { toStatusRow } from "./worker-status-row.js";
 
 /**
  * Engine-memory worker sessions (`worker:<sid>`, pseudo-workspace "engine").
@@ -46,6 +53,10 @@ export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId:
       modified: 0,
       active: false,
       wid: entry.wid,
+      // W894: the worker's own conversation, so a caller can measure ITS context.
+      sess: sid === "" ? null : sid,
+      // W894: when this worker was dispatched (registry `started_at`).
+      started_at: entry.started_at,
       status: entry.status,
       state: getExtra(entry, "state") ?? "",
       host_session: hostSessionId,
@@ -58,21 +69,43 @@ export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId:
   });
 }
 
-/** Process-wide `worker_status` fold over the merged rows (W513). */
-export function aggregateWorkerStatus(rows: readonly WorkerSessionRow[], wid?: string): WorkerStatusReport {
+/**
+ * Process-wide `worker_status` fold over the merged rows (W513).
+ *
+ * W894: `contextOf` measures ONE worker's context occupancy from its own conversation
+ * (`sess`). It is injected rather than imported so this module stays a pure view layer
+ * — the adapter owns the engine, and only it can answer "how full is that session".
+ * Rows without a `sess` (legacy rows) report `context: null`, never a fake zero.
+ */
+export function aggregateWorkerStatus(
+  rows: readonly WorkerSessionRow[],
+  wid?: string,
+  contextOf?: (sess: string) => WorkerContextUsage | null,
+): WorkerStatusReport {
   const scoped = wid === undefined ? [...rows] : rows.filter((row) => row.wid === wid);
   const by_status: Record<string, number> = {};
   const by_state: Record<string, number> = {};
   for (const row of scoped) {
     const status = row.status ?? "RUNNING";
-    const state = row.state ?? "idle";
     by_status[status] = (by_status[status] ?? 0) + 1;
-    by_state[state] = (by_state[state] ?? 0) + 1;
+    // W894: `by_state` is the DRIVER state of RUNNING workers only. The previous
+    // version counted a finished row's stale state as `idle`, so `idle` grew with
+    // every DONE worker — a number that answered nothing. This now matches
+    // packages/workers `summarize` exactly (one fold, one meaning).
+    if (status !== "RUNNING") continue;
+    const state = row.state ?? "";
+    if (state === "in-turn") by_state["in-turn"] = (by_state["in-turn"] ?? 0) + 1;
+    else if (state === "idle") by_state["idle"] = (by_state["idle"] ?? 0) + 1;
+    else by_state["running"] = (by_state["running"] ?? 0) + 1;
   }
+  const project = (row: WorkerSessionRow): WorkerStatusRow => {
+    const sess = row.sess ?? "";
+    return toStatusRow(row, sess === "" || contextOf === undefined ? null : contextOf(sess));
+  };
   if (wid !== undefined && scoped.length === 0) {
     return { ok: false, total: 0, by_status, by_state, workers: [], wid, error: `no worker ${wid} in registry` };
   }
-  return { ok: scoped.length > 0, total: scoped.length, by_status, by_state, workers: scoped, ...(wid === undefined ? {} : { wid }) };
+  return { ok: scoped.length > 0, total: scoped.length, by_status, by_state, workers: scoped.map(project), ...(wid === undefined ? {} : { wid }) };
 }
 
 /** Studio projection of a worker session transcript (null = unknown session). */
@@ -174,17 +207,3 @@ export function sendBodyOf(value: Record<string, unknown> | null): Record<string
   return value ?? { ok: false, delivered: false, error: "worker registry is not wired" };
 }
 
-/** `worker_status` tool/registry payload -> the frozen HTTP shape. */
-export function toStatusReport(raw: Record<string, unknown> | null, wid: string | undefined): WorkerStatusReport {
-  if (raw === null || raw["ok"] !== true) {
-    const error = raw === null ? "worker registry is not wired" : String(raw["error"] ?? "");
-    return { ok: false, total: 0, by_status: {}, by_state: {}, workers: [], ...(wid === undefined ? {} : { wid }), error };
-  }
-  const byStatus = (raw["by_status"] ?? {}) as Record<string, number>;
-  const byState = (raw["by_state"] ?? {}) as Record<string, number>;
-  if (wid === undefined) {
-    return { ok: true, total: Number(raw["total"] ?? 0), by_status: byStatus, by_state: byState, workers: (raw["workers"] ?? []) as unknown[] };
-  }
-  const workers = raw["worker"] === undefined ? [] : [raw["worker"]];
-  return { ok: true, total: workers.length, by_status: byStatus, by_state: byState, workers, wid };
-}

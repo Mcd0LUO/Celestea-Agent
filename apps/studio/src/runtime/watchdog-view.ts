@@ -19,7 +19,7 @@
 import type { SessionRuntime, SessionRuntimeRegistry } from "@celestea/runtime";
 import type { Watchdog, WorkerRecoveryReport } from "@celestea/workers";
 import { aggregateWorkerStatus } from "./worker-bridge.js";
-import type { WorkerSessionRow, WorkerStatusReport } from "../runtime-adapter.js";
+import type { WorkerContextUsage, WorkerSessionRow, WorkerStatusReport } from "../runtime-adapter.js";
 
 /** The session's watchdog, or null when it has no instance / the watchdog is off. */
 export function watchdogOf(registry: SessionRuntimeRegistry, session?: string | null): Watchdog | null {
@@ -49,8 +49,9 @@ export function workerStatusOf(
   watchdogs: number,
   wid?: string,
   recovery?: WorkerRecoveryReport | null,
+  contextOf?: (sess: string) => WorkerContextUsage | null,
 ): WorkerStatusReport {
-  const report = aggregateWorkerStatus(rows, wid);
+  const report = aggregateWorkerStatus(rows, wid, contextOf);
   const sweepers = watchdogs === 0 ? report : { ...report, watchdogs };
   return recovery == null ? sweepers : { ...sweepers, stale: recovery.stale, orphans: recovery.orphans };
 }

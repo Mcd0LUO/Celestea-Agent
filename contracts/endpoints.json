@@ -2845,6 +2845,10 @@
         {
           "status": 404,
           "error": "unknown session '<id>'"
+        },
+        {
+          "status": 422,
+          "error": "fields 'wid' and 'brief' are required"
         }
       ],
       "notes": [
@@ -2883,9 +2887,32 @@
         "shape": "object",
         "fields": [
           {
-            "name": "(worker tool {ok,delivered,...})",
-            "type": "object",
+            "name": "ok",
+            "type": "boolean",
             "required": false
+          },
+          {
+            "name": "delivered",
+            "type": "boolean",
+            "required": false
+          },
+          {
+            "name": "target",
+            "type": "string",
+            "required": false,
+            "optional": true
+          },
+          {
+            "name": "wid",
+            "type": "string",
+            "required": false,
+            "optional": true
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "required": false,
+            "optional": true
           }
         ]
       },
@@ -2930,21 +2957,27 @@
             "required": false
           },
           {
+            "name": "watchdogs",
+            "type": "integer",
+            "required": false,
+            "note": "W740: how many live instances are sweeping their worker rows (RUNNING watchdog timers). ABSENT when the engine mounts no watchdog."
+          },
+          {
             "name": "by_status",
-            "type": "object{DONE,RUNNING,FAILED}",
+            "type": "object{RUNNING,DONE,FAILED,STOPPED}",
             "required": false
           },
           {
             "name": "by_state",
             "type": "object{idle,in-turn,running}",
             "required": false,
-            "note": "LIVE-ONLY additive field, not in api-contract.md"
+            "note": "W894: the DRIVER state of RUNNING workers only, mirroring packages/workers `summarize` exactly. A finished row's stale state no longer counts — it used to inflate `idle`. Keys appear only when they occur."
           },
           {
             "name": "workers",
-            "type": "array<object>",
+            "type": "array<object{wid,sess,host_session,title,status,state,model,mode,size,attempt,last_receipt,started_at,busy,context}>",
             "required": false,
-            "note": "W787: each row carries `attempt` (which try, first = 0 — the §5.2 cross-capability convention the usage ledger also uses), `host_session` (the dispatching conversation, `host=`) and `last_receipt` (the delivered receipt's idempotency key `wid:attempt`) as PURE ADDITIONS."
+            "note": "W894: the LEAN status row — NOT the panel row `/api/sessions` returns. Dropped because they were hard-coded constants in every row: `workspace:\"engine\"`, `modified:0`, `active:false`, `kind:\"worker\"`; and `id`, which was only `worker:<sess>`. Added: `sess` (the worker's own conversation), `started_at` (dispatch time) and `context` (its live occupancy — the SAME shape `/api/status` reports; `method:\"none\"` means nothing measurable, and a row with no session reports `null`, never a fabricated zero). W787's `attempt` / `host_session` / `last_receipt` are unchanged."
           },
           {
             "name": "stale",
