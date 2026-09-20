@@ -66,7 +66,7 @@
 
 **写盘时机（只有三处，避免 IO 放大）**：`turn_start` 之后、`turn_end` 之后、lane 变更之后。
 **写盘方式**：`<path>.tmp-<pid>` → `rename`（复用 `apps/studio/src/store/fs-json.ts` 的原子写纪律），模式 `0600`。
-**容错**：缺失 = 无 checkpoint（**不做任何修复**）；损坏/`version` 未知/`session` 不符 = **整份忽略 + 审计 + UI 告警**（与 `grants.json` 同纪律：`feature-session-grants.md` §4.3，区别于 `session.json` 的"忽略错误"）。
+**容错**：缺失 = 无 checkpoint（**不做任何修复**）；损坏/`version` 未知/`session` 不符 = **整份忽略 + 审计 + UI 告警**（与 `grants.json` 同纪律：`archive/decisions/feature-session-grants.md` §4.3，区别于 `session.json` 的"忽略错误"）。
 
 #### 1.2.3 恢复语义（boot 决策表，机械可检验）
 
@@ -112,8 +112,8 @@
 
 | ID | 风险 | 缓解 |
 |---|---|---|
-| R1-1 | 「日志不可改写」原则被"合成 turn_end"破例 | 只**追加**、不改写；触发条件是 `open_turn` 与日志双签名；checkpoint `repaired[]` + 审计双写留痕（审计纪律沿用 `feature-session-grants.md` §4.4） |
-| R1-2 | 双后端/CLI 同时写同一 `cli-main.jsonl` | 既有已知限制（`feature-session-independence.md` §3.2），P2 的 stale 写者检测是缓解而非根治 |
+| R1-1 | 「日志不可改写」原则被"合成 turn_end"破例 | 只**追加**、不改写；触发条件是 `open_turn` 与日志双签名；checkpoint `repaired[]` + 审计双写留痕（审计纪律沿用 `archive/decisions/feature-session-grants.md` §4.4） |
+| R1-2 | 双后端/CLI 同时写同一 `cli-main.jsonl` | 既有已知限制（`archive/decisions/feature-session-independence.md` §3.2），P2 的 stale 写者检测是缓解而非根治 |
 | R1-3 | checkpoint 与日志不同步（写 checkpoint 失败） | 恢复器**以日志为判据**，checkpoint 只提供"是否崩溃过"；checkpoint 缺失 = 不修复（fail-safe） |
 | R1-4 | P2 重放非幂等工具 | 默认**不重放**，必须显式分类为幂等才重放；分类表进 `contracts/tools.json`，缺失 = 视为非幂等 |
 | R1-5 | `sync()` 成本 | P0 **不**改 `syncEachAppend` 默认值；仅记录 `degraded` 并暴露，把"要不要 fsync"留给运维（`CELESTEA_SESSION_SYNC_EACH_APPEND`） |

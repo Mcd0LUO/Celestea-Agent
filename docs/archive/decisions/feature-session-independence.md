@@ -1,6 +1,11 @@
 # 特性设计 · 会话独立性（每会话独立 runtime + 会话标识 SSE）
 
-> 状态：**已实现**（2026-09-11 核实）。本文是实现依据与契约记录；落地见 `packages/runtime/src/session-registry.ts`、`apps/studio/src/runtime/real-runtime-adapter.ts`。
+> 📦 **历史文档**。本文件是**已实现决策的归档记录**（为什么这样设计、当时的验收标准），
+> W893 起从 `docs/` 移入 `docs/archive/decisions/`。它**不是**现行口径：
+> 当前行为请看 `contracts/`（线格式）、[`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)（架构规则）、
+> 以及各功能对应的现行文档。归档**不删除正文** —— 决策的理由仍然可查。
+
+> 状态：**历史参考**（本决策**已实现**）。本文是当时的决策依据与验收记录，**不再随代码更新**；现行行为见 [`docs/README.md`](../../README.md) 与 [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)。原状态：已实现（2026-09-11 核实）。本文是实现依据与契约记录；落地见 `packages/runtime/src/session-registry.ts`、`apps/studio/src/runtime/real-runtime-adapter.ts`。
 > 范围：`packages/runtime`、`apps/studio`（宿主 HTTP 层）、共用前端 `apps/web/src/**`。
 > 一句话目标：**会话就是会话**——任意时刻可打开任意会话视图，后台会话继续跑，互不串台；不存在"全局主会话"。
 
@@ -273,7 +278,7 @@ sse.onFrame((env, name, payload) => {
 | `<ws>/<session>/session.json` | **不变**（`{"model": …}` 会话级模型覆盖仍在 turn 前生效，见 §4.2） |
 | `workspaces.json` | `active_session` 语义降级为"刷新后恢复的视图偏好"；**字段与格式不变**，不加字段 |
 | `providers.json` / `prompts.json` | 不变 |
-| **新增** `<session>/grants.json` | 见 `feature-session-grants.md`（提权通道设计） |
+| **新增** `<session>/grants.json` | 见 `./feature-session-grants.md`（提权通道设计） |
 
 **不做的事**（有意）：不把"打开过哪些会话"持久化到服务端。那是纯客户端 UI 状态（`localStorage` 足够），落到服务端只会让 `workspaces.json` 承担两个互相纠缠的语义。
 

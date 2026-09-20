@@ -7,12 +7,12 @@
 > **已实现**；能力 2 与各自 P1/P2 仍为设计。
 > 范围：`packages/session`、`packages/runtime`、`packages/workers`、`packages/llm`、`apps/studio/src/runtime`、
 > `apps/studio/src/store`、`contracts/`；与仓库外 `celes-worker-spawn` 插件（`/src/dsh_plugins/celes-worker-spawn`）的协同边界。
-> 前置：`docs/ARCHITECTURE.md`（分层与 seam 纪律）、`docs/feature-session-independence.md`（W513，已实现）、
-> `docs/feature-session-grants.md`（W516，已实现）。
+> 前置：`docs/ARCHITECTURE.md`（分层与 seam 纪律）、`docs/archive/decisions/feature-session-independence.md`（W513，已实现）、
+> `docs/archive/decisions/feature-session-grants.md`（W516，已实现）。
 > 一句话目标：**进程重启不再是语义断点**——会话能从中断处继续、worker 能被重新认领、花掉的每一分钱有账可查、上游劣化时回退是显式且可计费的。
 >
 > **术语**：`<data dir>` = `dirname(workspacesFile)`（`apps/studio/src/config.ts:57`，默认 `<cwd>/workspaces.json` 所在目录），
-> 口径与 `docs/feature-session-grants.md` §4.3 第 3 条一致；`<session dir>` = `<workspace>/<session>/`。
+> 口径与 `docs/archive/decisions/feature-session-grants.md` §4.3 第 3 条一致；`<session dir>` = `<workspace>/<session>/`。
 >
 > **本文的实现状态栏**：文中所有「现状」均标注 `文件:行号`，为本次实读结论；所有「目标/建议数值」均为设计取值，
 > **不是实测数据**；未验证项集中在 §6。
@@ -139,8 +139,8 @@
 | U5 | 失败响应中 provider 是否回 usage 帧 | **未验证** | 决定 `billed_unknown` 的占比；账本已能如实表达"未知"而非 0 |
 | U6 | `session-event.schema.json` 是否必须随 checkpoint 变更 | **已规避**：设计只追加合法 `turn_end`（`interrupted` 是既有成员），因此**不改**该 schema | 若评审要求"恢复写入必须可区分"，则需 schema 版本变更（成本上升） |
 | U7 | 回退链所需凭据是否都在环境中（`BACKUP_API_KEY` 等 env 名） | **未核实** | P1 前需盘点；缺凭据时 `enabled:true` 必须显式报"target 不可用"而不是静默跳过 |
-| U8 | 平台审计通道 `POST /api/audit` 的可达性与鉴权 | 未验证（`feature-session-grants.md` §8 已登记同一开放问题） | 审计的本地通道是权威，平台通道 best-effort（失败如实记） |
-| U9 | `turnNo` 语义变更（从 0 起步 → 从日志恢复）对前端的影响 | **有依据**：前端按 `view.turn` 过滤本会话帧（`feature-session-independence.md` §2.6），恢复后 turn 只是"变大"，比较仍正确；但**未做前端实测** | 需一次前端联调确认（P0 验收的人工项） |
+| U8 | 平台审计通道 `POST /api/audit` 的可达性与鉴权 | 未验证（`archive/decisions/feature-session-grants.md` §8 已登记同一开放问题） | 审计的本地通道是权威，平台通道 best-effort（失败如实记） |
+| U9 | `turnNo` 语义变更（从 0 起步 → 从日志恢复）对前端的影响 | **有依据**：前端按 `view.turn` 过滤本会话帧（`archive/decisions/feature-session-independence.md` §2.6），恢复后 turn 只是"变大"，比较仍正确；但**未做前端实测** | 需一次前端联调确认（P0 验收的人工项） |
 
 ---
 

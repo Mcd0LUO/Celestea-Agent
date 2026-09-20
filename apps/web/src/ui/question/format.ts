@@ -6,7 +6,7 @@
 // 本仓 `tests/question-card.test.ts` 用 URL 形式的动态 import 直测（先例
 // tests/model-icon.test.ts）。本文件因此**不许** import 任何 DOM 或 api 模块。
 //
-// 三条语义（见 docs/feature-ask-user.md §3）：selected 存 **label 不存索引**；
+// 三条语义（见 docs/archive/decisions/feature-ask-user.md §3）：selected 存 **label 不存索引**；
 // detail 与选项标签分开；intent 只改呈现、不改协议。
 // ============================================================================
 import type {

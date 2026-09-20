@@ -1,7 +1,12 @@
 # 迭代 H · 国际化（只支持中文 / 英文）
 
-> 状态：**已实现（H，v2.7.1）**。本文是设计与验收标准的记录；落地见 apps/web/src/i18n/，规则由 apps/web/tools/check-ui-copy.mjs 机械执行。
-> 前置：`docs/iteration-g-workbench.md`、`apps/web/FRONTEND-RULES.md`。
+> 📦 **历史文档**。本文件是**已实现决策的归档记录**（为什么这样设计、当时的验收标准），
+> W893 起从 `docs/` 移入 `docs/archive/decisions/`。它**不是**现行口径：
+> 当前行为请看 `contracts/`（线格式）、[`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)（架构规则）、
+> 以及各功能对应的现行文档。归档**不删除正文** —— 决策的理由仍然可查。
+
+> 状态：**历史参考**（本决策**已实现**）。本文是当时的决策依据与验收记录，**不再随代码更新**；现行行为见 [`docs/README.md`](../../README.md) 与 [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)。原状态：已实现（H，v2.7.1）。本文是设计与验收标准的记录；落地见 apps/web/src/i18n/，规则由 apps/web/tools/check-ui-copy.mjs 机械执行。
+> 前置：`./iteration-g-workbench.md`、`apps/web/FRONTEND-RULES.md`。
 
 ---
 

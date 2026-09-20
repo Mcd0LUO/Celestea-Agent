@@ -10,7 +10,7 @@
  * applies that SAME discipline to one file (never follows a link, same trust
  * boundary) and shares the `read_file` tool's binary/pagination rules.
  *
- * Wire format is FROZEN by `docs/iteration-g-workbench.md` §0.1:
+ * Wire format is FROZEN by `docs/archive/decisions/iteration-g-workbench.md` §0.1:
  *   type: "dir" | "file"      (a symlink is reported as the link itself, i.e.
  *                              "file" when it is not a directory — never followed)
  *   mtime: ISO-8601 string    (null when `lstat` cannot read it)

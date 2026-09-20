@@ -5,8 +5,8 @@
 > 与落地实现冲突的两处口径以 §10 的裁决为准。
 > 范围：`packages/core`（无改动，见 §4）、`packages/tools`、`packages/runtime`、`apps/studio/src/{store,handlers,runtime}`、
 > `contracts/`、共用前端 `apps/web/src/**`；仓库外 `celes-worker-spawn` 插件（`/src/dsh_plugins/celes-worker-spawn`）只作为**映射边界**出现。
-> 前置阅读：`docs/ARCHITECTURE.md`（分层/seam 纪律）、`docs/feature-session-independence.md`（W513，已实现：每会话实例 + SSE `v:2` 信封）、
-> `docs/feature-session-grants.md`（W516，已实现：会话级配置与审计先例）、`docs/iteration-e/README.md`（§5.3 契约清单写法）、
+> 前置阅读：`docs/ARCHITECTURE.md`（分层/seam 纪律）、`docs/archive/decisions/feature-session-independence.md`（W513，已实现：每会话实例 + SSE `v:2` 信封）、
+> `docs/archive/decisions/feature-session-grants.md`（W516，已实现：会话级配置与审计先例）、`docs/iteration-e/README.md`（§5.3 契约清单写法）、
 > 已归档的 DSH 评估（W253 PTC 三层拆解、W254 run_code 折叠评估、W255 SDK 契约）已于 W881 清理出公开仓。
 > 一句话目标：**同一份引擎，两种会话工作方式**——标准模式按今天的方式逐步调用工具；执行模式把多步依赖调用折叠进 `run_code` 程序里，并以**会话元数据**固定下来，而不是每轮改口径。
 >
@@ -60,7 +60,7 @@
 | `{{tools}}` 变量 | 取**默认实例**的注册表名字（`registry.peek(null)`），与聚焦会话无关 | `config-shape.ts:83`、`real-runtime-adapter.ts:180-182` |
 | 会话数据文件 | `session.json` = `{model?, prompt?}`，`additionalProperties: true`；写入器只写这两个键 | `contracts/data-files/session.schema.json`、`store/session-meta.ts` |
 | 会话创建 | `POST /api/sessions` 请求 `{workspace?, title, model?, prompt?}`；无 mode | `contracts/endpoints.json` `post_sessions`；前端 `frontend/src/ui/sessions.ts:743-880`、`types.ts:321-328` |
-| 运行期重建 | 配置变更 → `bumpEpoch()` + `registry.invalidateAll()`，实例在**下一轮边界**惰性重建 | `real-runtime-adapter.ts:384-387`、`feature-session-independence.md` §2.2 |
+| 运行期重建 | 配置变更 → `bumpEpoch()` + `registry.invalidateAll()`，实例在**下一轮边界**惰性重建 | `real-runtime-adapter.ts:384-387`、`archive/decisions/feature-session-independence.md` §2.2 |
 | 能力位 | `/api/health.capabilities = {grants:true}` 已是既有先例 | `apps/studio/src/handlers/health.ts:35` |
 | DSH 侧 | `celes-worker-spawn` 支持 `agentPreset` 透传（`session.create` 原生字段）；宿主预设**仅 blank 会话可切**，否则 `agent-preset-locked`；`GET {prefix}/presets` 可枚举 | `/src/dsh_plugins/celes-worker-spawn/README.md:58-76`、`HANDOFF.md:123-126`、`lib/index.js:227-282` |
 | DSH PTC 语义 | `ptc` preset = standard 减 `workflow` + `tool-presentation(mode:ptc)`；呈现层把整张注册表折叠成 `run_code` 单工具，规则段 `PTC_ONLY` 禁止直调 | 归档 DSH PTC 评估 §1.1-1.2（W881 已清理出公开仓） |
@@ -370,8 +370,8 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | 文档 | 关系 |
 |---|---|
 | `docs/iteration-e/` | mode 与能力 3（账本）在 P2 交汇：账本行带 `mode` 才能回答"执行模式到底省了多少"；本文不复制其 P0 内容，只依赖其 `attempt` 维度约定 |
-| `feature-session-independence.md`（已实现） | 本文的**基座**：每会话实例 + epoch 重建 + SSE `session` 信封使"每会话 mode"成为可能；本文不改其任何裁决 |
-| `feature-session-grants.md`（已实现） | 会话级配置文件的读写/容错/审计纪律**直接复用**（`session.json` 与 `grants.json` 的差别只在容错等级：前者忽略错误，后者整份忽略 + 告警） |
+| `archive/decisions/feature-session-independence.md`（已实现） | 本文的**基座**：每会话实例 + epoch 重建 + SSE `session` 信封使"每会话 mode"成为可能；本文不改其任何裁决 |
+| `archive/decisions/feature-session-grants.md`（已实现） | 会话级配置文件的读写/容错/审计纪律**直接复用**（`session.json` 与 `grants.json` 的差别只在容错等级：前者忽略错误，后者整份忽略 + 告警） |
 | `check-ui-copy.mjs` | 新增 UI 文案（「工作方式」「标准模式」「执行模式（PTC）」）需过 apps/web/tools/check-ui-copy.mjs 的文案规范；`mode` 值不直接暴露给用户（显示中文标签） |
 | W253/W254/W255（harness 侧） | 本文只**承接**其结论：不做 PTC_ONLY 禁令、不做代码生成器、`run_code` 保持并存形态、P2 度量门槛沿用 W254 §9 |
 

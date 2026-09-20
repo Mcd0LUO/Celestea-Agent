@@ -140,7 +140,7 @@ npm install -g --prefix /tmp/x celestea-agent@2.7.3 && /tmp/x/bin/celestea --ver
 | `docs/AGENT.md`（本文） | 工作协议：铁律、完成定义、提交规范、发布顺序、派工、文档规范 | 架构细节（→ ARCHITECTURE）、配置（→ configuration） |
 | `docs/ARCHITECTURE.md` | 架构契约：分层、包职责、插件缝、规模政策、命名/错误/日志/测试约定（§6） | 决策的理由与历史（→ 设计文档）、实现状态 |
 | `docs/configuration.md` / `deployment.md` | 可执行的配置与运维口径 | 架构解释（链接过去） |
-| `feature-*.md` / `iteration-*.md`（或拆出的 `feature-*/README.md` + 分册） | 某个特性的**设计依据与验收标准**（为什么这么设计） | 当前行为的复述（→ ARCHITECTURE） |
+| `feature-*.md` / `iteration-*.md`（或 `feature-*/README.md` + 分册） | **尚未落地（或仍有未落地分期）**的设计依据与验收标准（为什么这么设计） | 当前行为的复述（→ ARCHITECTURE）；**已落地的决策**（→ `docs/archive/decisions/`） |
 | `docs/archive/` | **历史文档**（调研 / 迁移 / 退役）：顶部 `📦 历史文档` 横幅 + `历史参考` 状态；不逐篇登记 | 现行口径（链接回 `docs/`） |
 | `docs/AGENT.local.md` | **本机事实**（路径/账号/凭据位置/端口），**不入库** | 任何仓库级规则 |
 

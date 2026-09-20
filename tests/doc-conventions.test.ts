@@ -165,7 +165,8 @@ describe('文档不变量', () => {
   });
 
   it('③ 相对链接可达；带锚点的必须命中目标标题', () => {
-    const files = [MAP, ...activeDocs()];
+    // W893: 归档文档也在范围内 —— 归档最容易留下指向「原来那个位置」的死链。
+    const files = [MAP, ...activeDocs(), ...archiveDocs()];
     const problems: string[] = [];
     for (const file of files) {
       const lines = readFileSync(file, 'utf8').split('\n');
@@ -174,6 +175,9 @@ describe('文档不变量', () => {
         for (const m of lines[i]!.matchAll(/\]\(([^)\s]+)\)/g)) {
           const target = m[1]!;
           if (/^(https?:|mailto:|#)/.test(target)) continue;
+          // A documented prose example in a research note writes `[名](路径)`;
+          // that is a placeholder, not a link. Skip it explicitly (and only it).
+          if (target === '路径') continue;
           const [pathPart, anchor] = target.split('#');
           const resolved = resolve(dirname(file), pathPart!);
           if (!existsSync(resolved)) {

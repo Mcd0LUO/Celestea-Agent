@@ -1,5 +1,5 @@
 // ============================================================================
-// types/question.ts — W784「模型向用户提问」的线格式（契约：docs/feature-ask-user.md §3）。
+// types/question.ts — W784「模型向用户提问」的线格式（契约：docs/archive/decisions/feature-ask-user.md §3）。
 //
 // 为什么单独一个文件：提问的线格式有 SSE 载荷与两个 REST 响应两组，`src/types.ts`
 // 已用满自己的模块体积上限（棘轮只许降不许升），按 `tools/check-module-size.mjs`

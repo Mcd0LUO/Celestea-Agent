@@ -1,6 +1,11 @@
 # 工作区持久记忆（F3 P0）
 
-> 状态：**当前（已实现，P0）** ｜ 实现：`packages/core/src/memory.ts`、`apps/studio/src/runtime/session-compose.ts`
+> 📦 **历史文档**。本文件是**已实现决策的归档记录**（为什么这样设计、当时的验收标准），
+> W893 起从 `docs/` 移入 `docs/archive/decisions/`。它**不是**现行口径：
+> 当前行为请看 `contracts/`（线格式）、[`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)（架构规则）、
+> 以及各功能对应的现行文档。归档**不删除正文** —— 决策的理由仍然可查。
+
+> 状态：**历史参考**（本决策**已实现**）。本文是当时的决策依据与验收记录，**不再随代码更新**；现行行为见 [`docs/README.md`](../../README.md) 与 [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)。原状态：当前（已实现，P0） ｜ 实现：`packages/core/src/memory.ts`、`apps/studio/src/runtime/session-compose.ts`
 
 ## 一句话
 给一个工作区放一份 `MEMORY.md`，它会在**每一轮**对话开始时被自动读入、作为背景资料交给模型；没有这份文件就完全不产生任何开销。
@@ -25,8 +30,12 @@
 - 每份文件标注**来源层 + 文件路径**（`memory.ts:114-120`）。
 - **上限 2048 字节**（`memory.ts:38`）：超出时按 UTF-8 码点边界截断，并附**显式截断标记** `[memory truncated: N bytes omitted; read the file yourself for the rest]`（`memory.ts:48,81-91,118`）——绝不静默截断。
 
-## P1 还没做
-写入工具 **`remember` / `forget` 尚未实现**（`memory.ts:5` 明写「(and, later, an explicit write tool)」）；当前唯一的维护方式是**直接用编辑器改那份 `MEMORY.md`**，下一轮自动生效。
+## 写入工具（`remember` / `forget`）
+P1 已落地：模型可以自己写记忆（不再只能靠人编辑 `MEMORY.md`）。
+`remember` 把一条事实追加进工作区**全局层**的 append-only 记忆日志，`forget` 追加墓碑
+（历史永不重写，条目对后续轮次隐藏）。项目层的 `MEMORY.md` 是**只读**的。
+契约见 `../contracts/tools.json` 的 `remember` / `forget`；实现见 `packages/tools/src/tools/memory.ts`、
+`packages/tools/src/memory/{store,log}.ts`。
 
 ## 实现位置
 | 关注点 | 文件:行 |

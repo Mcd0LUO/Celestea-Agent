@@ -4,7 +4,7 @@
  * directory but not OPEN a file (F2's preview P0 only rendered content the
  * session already had).
  *
- * Frozen wire format (`docs/iteration-g-workbench.md` §0.1 follow-up):
+ * Frozen wire format (`docs/archive/decisions/iteration-g-workbench.md` §0.1 follow-up):
  *   200: { path, size, kind: "text"|"binary", text, offset, limit, totalLines, truncated }
  *   4xx: { error, code? }
  *

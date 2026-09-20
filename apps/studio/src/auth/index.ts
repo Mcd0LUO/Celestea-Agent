@@ -1,5 +1,5 @@
 /**
- * W767 — Studio's own login-cookie gate (see `docs/feature-studio-auth.md`).
+ * W767 — Studio's own login-cookie gate (see `docs/archive/decisions/feature-studio-auth.md`).
  *
  * token.ts       cookie token format + secret file (0600, Studio's data dir)
  * htpasswd.ts    password verification against Studio's read-only password file

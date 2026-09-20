@@ -426,7 +426,7 @@ export interface TurnResp {
 // ConfigSaveResp）整段搬到 ./types/config，这里原样再导出 —— 调用方零改动。
 export type { ConfigAvailable, ConfigInfo, ConfigPatch, ConfigSaveResp, ModelInfo } from './types/config';
 
-// ---- 会话权限（W701 提权通道；契约见 feature-session-grants.md §6） -------------
+// ---- 会话权限（W701 提权通道；契约见 docs/archive/decisions/feature-session-grants.md §6） -------------
 
 /** 6 项能力位（设计 §2.2）。 */
 export type GrantCap =
@@ -526,7 +526,7 @@ export interface GrantRevokeResp {
   error?: string;
 }
 
-// ---- W784：模型向用户提问（契约见 docs/feature-ask-user.md §3） ------------------
+// ---- W784：模型向用户提问（契约见 docs/archive/decisions/feature-ask-user.md §3） ------------------
 // 线格式实现见 ./types/question；W726 上下文快照见 ./types/context；只读自省端点
 // 见 ./types/health、工作方式（W788）见 ./types/mode —— 都是为守住本文件的模块体积
 // 棘轮（≤ 登记行数）而拆出，此处原样再导出，调用方零改动。

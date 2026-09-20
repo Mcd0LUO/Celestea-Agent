@@ -1,7 +1,12 @@
 # 迭代方向 G · 交互工作台（命令面板 / 多面板工作区 / 目标）
 
-> 状态：**已实现（G1–G4，v2.7.x）**。本文是目标契约、验收标准与**冻结线格式**的记录；落地见 apps/web/src/ui/workbench/、apps/studio/src/handlers/exec.ts。
-> 前置：`docs/iteration-f-capabilities.md`（F1-F4 体例）、`docs/ARCHITECTURE.md`。
+> 📦 **历史文档**。本文件是**已实现决策的归档记录**（为什么这样设计、当时的验收标准），
+> W893 起从 `docs/` 移入 `docs/archive/decisions/`。它**不是**现行口径：
+> 当前行为请看 `contracts/`（线格式）、[`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)（架构规则）、
+> 以及各功能对应的现行文档。归档**不删除正文** —— 决策的理由仍然可查。
+
+> 状态：**历史参考**（本决策**已实现**）。本文是当时的决策依据与验收记录，**不再随代码更新**；现行行为见 [`docs/README.md`](../../README.md) 与 [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)。原状态：已实现（G1–G4，v2.7.x）。本文是目标契约、验收标准与冻结线格式的记录；落地见 apps/web/src/ui/workbench/、apps/studio/src/handlers/exec.ts。
+> 前置：`./iteration-f-capabilities.md`（F1-F4 体例）、`docs/ARCHITECTURE.md`。
 > 一句话目标：**把对话框从唯一入口变成工作台的一格**——命令可直达、面板可停靠、目标可持久。
 
 ---

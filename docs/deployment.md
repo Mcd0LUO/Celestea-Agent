@@ -1,7 +1,7 @@
 # 部署与安全模型
 
 > 状态：**当前**。本文覆盖生产部署（systemd + nginx）、隧道访问、以及**务必读一遍**的安全模型。
-> 配置项见 `configuration.md`；登录门的实现见 `feature-studio-auth.md`。
+> 配置项见 `configuration.md`；登录门的实现见 `archive/decisions/feature-studio-auth.md`。
 
 ---
 

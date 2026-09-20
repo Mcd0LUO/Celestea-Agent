@@ -1,6 +1,11 @@
 # 只读上下文快照：`GET /api/sessions/{id}/context`（W725）
 
-> 状态：**已实现**。本文件是设计依据与验收标准的记录；落地见 @@apps/studio/src/handlers/context.ts@@ 与 @@contracts/endpoints.json@@ 的 @@get_session_context@@。
+> 📦 **历史文档**。本文件是**已实现决策的归档记录**（为什么这样设计、当时的验收标准），
+> W893 起从 `docs/` 移入 `docs/archive/decisions/`。它**不是**现行口径：
+> 当前行为请看 `contracts/`（线格式）、[`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)（架构规则）、
+> 以及各功能对应的现行文档。归档**不删除正文** —— 决策的理由仍然可查。
+
+> 状态：**历史参考**（本决策**已实现**）。本文是当时的决策依据与验收记录，**不再随代码更新**；现行行为见 [`docs/README.md`](../../README.md) 与 [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)。原状态：已实现。本文件是设计依据与验收标准的记录；落地见 @@apps/studio/src/handlers/context.ts@@ 与 @@contracts/endpoints.json@@ 的 @@get_session_context@@。
 
 前端「点上下文圆环看完整上下文」的后端端点。契约已冻结，前端按此逐字实现；
 本文件是该端点的口径说明（`contracts/endpoints.json#get_session_context` 的 docRef）。

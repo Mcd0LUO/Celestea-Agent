@@ -1,8 +1,13 @@
 # 特性设计 · 提权通道（前端点击按钮授予会话权限）
 
-> 状态：**已实现**（2026-09-11 核实）。落地见 `apps/studio/src/store/grants-service.ts`、`apps/studio/src/handlers/grants.ts`、前端 `frontend/src/ui/grants.ts`。
+> 📦 **历史文档**。本文件是**已实现决策的归档记录**（为什么这样设计、当时的验收标准），
+> W893 起从 `docs/` 移入 `docs/archive/decisions/`。它**不是**现行口径：
+> 当前行为请看 `contracts/`（线格式）、[`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)（架构规则）、
+> 以及各功能对应的现行文档。归档**不删除正文** —— 决策的理由仍然可查。
+
+> 状态：**历史参考**（本决策**已实现**）。本文是当时的决策依据与验收记录，**不再随代码更新**；现行行为见 [`docs/README.md`](../../README.md) 与 [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)。原状态：已实现（2026-09-11 核实）。落地见 `apps/studio/src/store/grants-service.ts`、`apps/studio/src/handlers/grants.ts`、前端 `frontend/src/ui/grants.ts`。
 > ⚠️ **残余风险（2026-09-11 架构师实测）**：§5.5 第 2 层「同源证据」依赖 `Sec-Fetch-*` 请求头，可被同主机 HTTP 客户端伪造，且 Studio API 在回环端口无鉴权 —— 故「必须人工点击」对同主机调用者**不成立**。本通道当前定位为**运维/UX 控制**（可见性、可撤销、审计、最小权限默认），**不是**对恶意/被注入模型的硬安全边界；硬边界需给 grants 端点加模型拿不到的凭据。
-> 依赖：`feature-session-independence.md`——**会话级授权的前提是"每会话独立实例"**，因为安全边界（guard 链、沙箱、SSRF 策略）都在 compose 时构造，只有一个会话一个实例，授权才能"只作用于该会话"且"下一轮生效"。
+> 依赖：`./feature-session-independence.md`——**会话级授权的前提是"每会话独立实例"**，因为安全边界（guard 链、沙箱、SSRF 策略）都在 compose 时构造，只有一个会话一个实例，授权才能"只作用于该会话"且"下一轮生效"。
 > 一句话目标：默认最小权限；用户在**前端点按钮**为**当前会话**临时放宽某项能力；随时可撤销；全程可审计；**永不可被模型自己触发**。
 
 ---

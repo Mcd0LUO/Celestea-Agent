@@ -7,7 +7,7 @@
 //   ③ 终态  ：历史里「有调用无结果」的提问（进程重启后不可再答，§7.2 规则 4）
 //
 //   答案走 `POST /api/questions/{id}/answer` 直接唤醒挂起的工具调用，不经
-//   /api/turn（docs/feature-ask-user.md §4.2）。
+//   /api/turn（docs/archive/decisions/feature-ask-user.md §4.2）。
 //
 //   拆分（照 ui/messages.ts + ui/messages/ 的先例，`src/**` 单文件默认 ≤400 行）：
 //     ./question/format.ts    纯函数：倒计时 / 选项草稿 / 恢复终态判定（可直测）

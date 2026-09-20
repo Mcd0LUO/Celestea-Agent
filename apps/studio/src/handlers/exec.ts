@@ -2,7 +2,7 @@
  * `POST /api/exec` (iteration G2) — run a shell command NOW, with no model in
  * the loop. `/run <cmd>` and `!<cmd>` are the UI's callers.
  *
- * Three rules from `docs/iteration-g-workbench.md` §1:
+ * Three rules from `docs/archive/decisions/iteration-g-workbench.md` §1:
  *   1. it reuses the run_shell execution path — the SAME `selectSandboxDetailed`
  *      policy, `sessionSandboxConfig` (workdir/root), `sanitizedEnv` allowlist
  *      and output cap the engine's `run_shell` uses, so isolation cannot fork;

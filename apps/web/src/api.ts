@@ -222,7 +222,7 @@ export const api = {
   },
   /** 取消当前聚焦会话的轮次（W514：带 session，旧后端忽略）。 */
   cancel: (session?: string) => postJson<CancelResp>('/api/cancel', session ? { session } : {}),
-  // ---- W784：模型向用户提问（未决列表 / 作答；契约见 feature-ask-user.md §3） ----
+  // ---- W784：模型向用户提问（未决列表 / 作答；契约见 docs/archive/decisions/feature-ask-user.md §3） ----
   /**
    * GET /api/questions?session= —— **仍未决**、仍可作答的提问（§7 恢复的唯一权威源）。
    * `remaining_ms`/`expired` 由服务端读时判定，前端不拿自己的钟做判断。

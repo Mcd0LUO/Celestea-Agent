@@ -1,6 +1,6 @@
 // ============================================================================
 // types/fs-list.ts — H（@提及工作区文件）：GET /api/fs/list?path= 的线格式。
-//   冻结形状（contracts/endpoints.json 的 get_fs_list，docs/iteration-g-workbench.md §0.1）：
+//   冻结形状（contracts/endpoints.json 的 get_fs_list，docs/archive/decisions/iteration-g-workbench.md §0.1）：
 //   entries: {name,type,size,mtime}；type: 'dir' | 'file'（符号链接不跟随）；
 //   mtime: ISO-8601 或 null；truncated: 目录项被 MAX_DIR_ENTRIES 截断。
 // ============================================================================

@@ -1,7 +1,7 @@
 /**
  * G5 — `GET /api/fs/list` (the Win-style file manager's directory+file listing).
  *
- * Frozen wire format (docs/iteration-g-workbench.md §0.1): entries carry
+ * Frozen wire format (docs/archive/decisions/iteration-g-workbench.md §0.1): entries carry
  * `{name, type: "dir"|"file", size, mtime}`. This suite pins the discipline it
  * shares with `browse` (absolute path, dot-names hidden, symlinks NOT followed,
  * sorted) plus its own additions (`truncated`, directories first).

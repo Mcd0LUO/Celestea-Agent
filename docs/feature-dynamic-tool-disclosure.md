@@ -4,7 +4,7 @@
 > 所有 DSH 事实标注 `文件:行号` 与来源树；所有实测数字来自本轮/上一轮探针或既有账本，**未实测项一律标注「待验证」**。
 > 第 2 版改动：① 补入 DSH 官方 cookbook 的**渐进式披露配方**（§1.7b–d），纠正第 1 版把 pi-ai 兼容门误读为「DSH 不做渐进披露」；② 缓存章节增加**本轮独立复核探针 A1–A7**（§3.3）；③ 修正账本快照的时点标注；④ 重派 W802 复核补录 **W1–W7 二次独立复核**（§3.3，独立前缀 12808 prompt）与账本重算。
 > 范围：只改本文；不改 contracts / tests / fixtures / 产品代码；不新增依赖；不重启服务。
-> 前置阅读：`docs/modes-standard-vs-execution.md`（双模式折叠 W729/W791）、`packages/tools/src/exposure.ts`、`docs/feature-session-grants.md`。
+> 前置阅读：`docs/modes-standard-vs-execution.md`（双模式折叠 W729/W791）、`packages/tools/src/exposure.ts`、`docs/archive/decisions/feature-session-grants.md`。
 >
 > **W884 回填（技能渐进披露落地，2026-09-19）**：本文 §1.7d 记录的 DSH 先例（「目录常驻、正文按需」）已在本仓落地为**两个正交面**，与本文的动态工具披露**无关、不共用**：
 > 1. **目录常驻**：`packages/core/src/skill-catalog.ts` 只渲染 `name + description`（description >200 字符截断、≤32 条、按名排序并注明截断），由宿主在每个 **turn 起点**作为 **durable user-role 消息**追加进会话日志（`packages/runtime/src/turn-runner.ts` 的 `turnContext`，注入在 receipts/输入之前）；**不进 system prompt**（W874/W879 的裁决：system 在 tools/history 之前，改它会从 token 0 打断 KV 前缀缓存）。没有技能 → 一行都不注入（零成本）。
