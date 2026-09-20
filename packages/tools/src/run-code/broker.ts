@@ -232,6 +232,14 @@ async function spawnProgram(sandbox: Sandbox, scriptPath: string, language: RunC
     throw runCodeFailure("spawn", errorText(e));
   }
   if (spawned.child.stdin === null) throw runCodeFailure("spawn", "no stdin pipe (reply channel)");
+  // W892: attach the stdin error handler HERE, at spawn — not only in endStdin().
+  // `writeReply` writes to this pipe while the child runs; if the program dies or
+  // stops draining, the write fails and Node emits an `error` on the stream. With
+  // no listener at that moment the error is UNHANDLED and takes the whole process
+  // down ("Uncaught Exception: write EOF"), which on Windows CI killed the runner
+  // even though every test had passed. The per-write callback still reports the
+  // failure to the caller; this listener only prevents the crash.
+  spawned.child.stdin.on("error", () => undefined);
   return spawned.child;
 }
 
