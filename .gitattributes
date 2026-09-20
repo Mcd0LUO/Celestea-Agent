@@ -10,12 +10,18 @@
 # 默认：仓库里就是 LF，检出也是 LF，不看 core.autocrlf。
 * text=auto eol=lf
 
-# 逐字节断言依赖的夹具：绝不翻译行尾（比 eol=lf 更强，连 diff 都不做文本处理）。
-*.jsonl -text
-*.jsonl diff
+# 逐字节断言依赖的夹具：仓库里恒为 LF、检出恒为 LF。
+#
+# W892 修正（Windows 真机报告）：原先是 `-text`。`-text` 只承诺「不翻译」，
+# 实测它有两个洞：① 不会修复**已存在**的 CRLF 检出（git 不回溯重规范化，
+# 老克隆上夹具仍是 CRLF，逐字节对拍照样红）；② 不阻止将来某台 Windows 把
+# CRLF **提交进仓库**。`text eol=lf` 才给出「仓库恒 LF、检出恒 LF」的强保证，
+# 同时保留文本 diff（仓库内不存在任何含 CR 的夹具，已验证）。
+# 老克隆需要一次性 `git add --renormalize .` 并重新检出。
+*.jsonl text eol=lf
 
 # 已有逐字节对拍的 JSON 夹具同理。
-fixtures/**/*.json -text
+fixtures/**/*.json text eol=lf
 
 # 脚本与配置：LF（Linux 上要能直接 exec，CRLF 会让 shebang 失效）。
 *.sh text eol=lf

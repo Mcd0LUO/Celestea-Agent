@@ -154,7 +154,7 @@ function readArg(args: unknown, key: string): unknown {
 
 /**
  * Write `SDK + user code + runner` into
- * `<programDir>/run_code_<pid>_<n>.{ts,py}` — the extension is the ONLY thing the
+ * `<programDir>/run_code_<pid>_<n>.{mts,py}` — the extension is the ONLY thing the
  * language changes about placement. `programDir` is the sandbox config's
  * absolute `<CELESTEA_HOME>/workspaces/<ws>/run-code`; the host has full-disk
  * access so it writes directly, and the bwrap provider binds that dir into the
@@ -166,7 +166,13 @@ async function placeProgram(programDir: string, source: ProgramSource): Promise<
   } catch (e) {
     throw runCodeFailure("config", `cannot create '${programDir}': ${errorText(e)}`);
   }
-  const suffix = source.language === "python" ? "py" : "ts";
+  // W892: `.mts`, NOT `.ts`. The program dir is under <CELESTEA_HOME>/.../run-code,
+  // which on Windows sits BELOW %USERPROFILE% (or any ancestor) that may hold a
+  // package.json without "type". Node then emits MODULE_TYPELESS_PACKAGE_JSON on
+  // stderr ("Reparsing as ES module..."), which lands in the captured stderr and
+  // breaks byte-exact assertions (and is real noise for users). `.mts` is
+  // unconditionally an ES module, so the warning cannot occur anywhere.
+  const suffix = source.language === "python" ? "py" : "mts";
   const name = `run_code_${process.pid}_${scriptSeq++}.${suffix}`;
   const path = join(programDir, name);
   try {

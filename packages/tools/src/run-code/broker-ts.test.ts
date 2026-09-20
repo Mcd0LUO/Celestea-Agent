@@ -27,6 +27,53 @@ const run = (tool: Tool, callId: string, args: unknown): Promise<ToolExecOutcome
 const echoRegistry = (): ToolRegistryImpl => h.echoRegistry();
 const leftoverScripts = (): Promise<string[]> => h.leftoverScripts();
 describe.skipIf(!h.nodeReady)("run_code TypeScript (W774, default language)", () => {
+  /**
+   * W892: the program file must be `.mts`, not `.ts`.
+   *
+   * The program dir (`<CELESTEA_HOME>/.../run-code`) can sit BELOW a directory
+   * holding a `package.json` with no `"type"` — on Windows that is the NORMAL
+   * case (%USERPROFILE%\AppData\Local\Temp). Node then prints
+   * `MODULE_TYPELESS_PACKAGE_JSON ... Reparsing as ES module` on stderr, which
+   * lands in the captured stderr and breaks byte-exact assertions (and is real
+   * noise for users). `.mts` is unconditionally an ES module, so the warning
+   * cannot happen on ANY host.
+   *
+   * The fixture REPRODUCES the Windows shape on Linux (a typeless package.json
+   * above the program dir) so this guard can go red here — without it, Linux
+   * would silently pass and only Windows CI would catch a regression.
+   */
+  it("writes an .mts program that emits no stderr warning under a typeless package.json (W892)", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { userspaceSandboxWith } = await import("../sandbox/userspace.js");
+    const typed = mkdtempSync(join(tmpdir(), "w892-typeless-ancestor-"));
+    // The ancestor that triggers MODULE_TYPELESS_PACKAGE_JSON.
+    writeFileSync(join(typed, "package.json"), JSON.stringify({ name: "ancestor" }));
+    const programDir = join(typed, "home", "workspaces", "ws", "run-code");
+    const local = await startBrokerHarness({
+      sandboxFor: (dir) =>
+        userspaceSandboxWith({ workdir: dir, root: dir, programDir, timeoutMs: 30_000, maxTimeoutMs: 120_000, maxOutputBytes: 64 * 1024 }),
+    });
+    try {
+      const registry = local.echoRegistry();
+      const tool = local.mount(registry);
+      const out = (await local.run(tool, "rc-ts-ext", { code: "  return 1;\n", description: "extension guard" })) as ToolExecOutcome;
+      expect(out.value).toBe(1);
+      // The decisive assertion: a clean program produces NO render at all. The
+      // warning, if it came back, would appear here as a [stderr] block.
+      expect(out.render).toBeNull();
+      // NOTE: the program file is deleted in brokerRun's finally, so the
+      // extension cannot be inspected after the call — the OBSERVABLE
+      // consequence above (no [stderr] render) is the assertion that matters.
+      // The mechanism proof below pins WHY the extension is what fixes it.
+      expect(await local.leftoverScripts(), "the program must be cleaned up").toEqual([]);
+    } finally {
+      await local.cleanup();
+      rmSync(typed, { recursive: true, force: true });
+    }
+  });
+
   it("defaults to TypeScript and round-trips the four bridges", async () => {
     const events: SessionEvent[] = [];
     const tool = mount(echoRegistry(), { events: (event) => events.push(event) });

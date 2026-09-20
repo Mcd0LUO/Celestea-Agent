@@ -13,8 +13,9 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Profile } from "@celestea/runtime";
-import { bwrapOptionsFromEnv, BwrapSandbox, selectSandboxDetailed, ToolRegistryImpl, UserspaceSandbox } from "@celestea/tools";
+import { bwrapOptionsFromEnv, BwrapSandbox, isInside, selectSandboxDetailed, ToolRegistryImpl, UserspaceSandbox } from "@celestea/tools";
 import { getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
+import { independentHome } from "./grant-rules.test-util.js";
 import { effectiveGrantsOf, grantsActiveCaps } from "./runtime/engine-grants.js";
 import { engineTools } from "./runtime/engine-plugins.js";
 import { createOfflineLlm } from "./runtime/offline-llm.js";
@@ -82,8 +83,15 @@ function pinPathOnlySession(dataDir: string, session: string): void {
 // REAL home on this host (there is no /home/nobody on Windows).
 const HOME = process.env["HOME"] ?? homedir();
 
+/**
+ * W892: the `$HOME` the rules see is chosen to be INDEPENDENT of the data dir.
+ * On Windows the temp data dir lives under %USERPROFILE%, so a home equal to the
+ * real $HOME is caught by the earlier "covers the studio data directory" rule and
+ * the `$HOME`-wording assertion never fires. Both paths REJECT; this just makes
+ * the rule under test the one that actually fires.
+ */
 function envOf(dataDir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME, ...extra };
+  return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME: independentHome(dataDir, HOME, tempDir, isInside), ...extra };
 }
 
 const NOW = 1_700_000_500;
