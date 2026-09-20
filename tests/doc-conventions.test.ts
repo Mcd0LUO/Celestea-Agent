@@ -217,6 +217,16 @@ describe('文档不变量', () => {
       for (const m of text.matchAll(/\]\((\/[^)\s]+)\)/g)) {
         if (m[1]!.startsWith('/src/')) problems.push(relDocs(p) + ' 含本机绝对路径链接：' + m[1]);
       }
+      // W895: AGENT.md §7 rule 6 says a committed doc carries NO machine facts
+      // (identity / absolute paths / ports / credential locations) — but the check
+      // only covered the identity, so raw `id` output and home paths slipped through
+      // (one of each was found committed). These two patterns are unambiguous.
+      for (const m of text.matchAll(/\b(?:uid|gid)=\d+\(/g)) {
+        problems.push(relDocs(p) + ' 含本机运行身份输出：' + m[0]);
+      }
+      for (const m of text.matchAll(/\/home\/[a-z][a-z0-9_-]*\//g)) {
+        problems.push(relDocs(p) + ' 含本机绝对 home 路径：' + m[0] + '（用 ~ 表达）');
+      }
     }
     expect(problems, '机器相关的事实不进提交进仓的文档').toEqual([]);
   });

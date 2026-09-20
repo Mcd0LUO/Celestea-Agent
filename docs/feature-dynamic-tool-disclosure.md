@@ -38,7 +38,7 @@
 
 ~~~text
 $ id
-uid=1003(celestea) gid=1003(celesdev) groups=1003(celesdev)
+<本机运行身份：uid/gid 属机器事实，按 AGENT.md §7 规则 6 不写进仓库；见 docs/AGENT.local.md>
 $ ls -la /opt/dsh/profiles/web/
 ls: cannot open file '/opt/dsh/profiles/web/': Permission denied
 $ ls /opt/dsh

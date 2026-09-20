@@ -39,8 +39,8 @@ find ~/.cache/ms-playwright -maxdepth 3 -type f -name 'chrome-headless-shell'
 原始输出：
 
 ~~~
-/home/celestea/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
-/home/celestea/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell
+~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+~/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell
 
 === 1243 --version ===
 Google Chrome for Testing 153.0.8010.12
