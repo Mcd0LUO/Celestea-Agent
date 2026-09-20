@@ -13,6 +13,7 @@
 //   · 未知 id 拒绝（不猜、不静默成功）。
 //   · 服务端不可用 ⇒ 如实降级为全开（loadDisabledFromServer），不写加载态。
 // ============================================================================
+import { registerBuiltinEnhancers } from '../ui/enhance/builtin';
 import { clientPlugins, clientPluginIds, clientPluginById } from './descriptor';
 import { t } from '../i18n';
 import { activatePlugin, deactivatePlugin, isRegistered, registerEnhancerPlugin, registerHintPlugin } from './register';
@@ -29,6 +30,15 @@ let ready: Promise<void> | null = null;
 
 /** 装配内建客户端插件（ui/hint 的 initHints 调用；幂等，只挂当前启用的）。 */
 export function startClientPlugins(): void {
+  // ★ 先把**内置两遍**（hljs / math）入链，再挂客户端插件。
+  //
+  // 为什么必须显式做：增强遍按注册顺序执行，而 hljs 与 code-extras 有真实依赖 ——
+  // hljs 必须**先**高亮，code-extras 才能把已高亮的 span 按行切开；若顺序反了，
+  // code-extras 先切好行、hljs 随后 `highlightElement` 整体替换 innerHTML，
+  // **行号会被静默抹掉**。
+  // 此前这个顺序只是 import 顺序的副作用（main.ts 先 import chat → 触发 enhance 模块）。
+  // 一旦有人调整 import，行号就会无声消失 —— 所以在这里显式保证（幂等）。
+  registerBuiltinEnhancers();
   for (const d of clientPlugins()) {
     // W895：两种缝共用同一套记账，只有「挂到哪」不同。
     if (d.kind === 'hint') registerHintPlugin(d.create());

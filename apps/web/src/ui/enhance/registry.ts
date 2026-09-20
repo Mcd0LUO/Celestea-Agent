@@ -41,7 +41,14 @@ export function registerEnhancer(e: Enhancer): () => void {
   };
 }
 
-/** 按注册顺序对容器执行全部增强遍（遍历时快照，避免注册/注销改动正在跑的链）。 */
+/**
+ * 按注册顺序对容器执行全部增强遍（遍历时快照，避免注册/注销改动正在跑的链）。
+ *
+ * `container` 是**作用域**：增强遍用 `container.querySelectorAll(sel)` 取目标，
+ * 而 querySelectorAll **匹配不到容器自身**。所以调用方必须传「包住目标的容器」；
+ * 若传的节点本身就是目标（例如预览一个代码文件时那个 `<pre>`），凡以 `pre` 为
+ * 选择器的增强遍都会**静默跳过** —— 实测踩过：高亮正常但复制按钮/行号/徽标全没有。
+ */
 export function runEnhancers(container: Element): void {
   for (const e of enhancers.slice()) e.enhance(container);
 }

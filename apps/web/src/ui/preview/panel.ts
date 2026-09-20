@@ -128,9 +128,15 @@ async function resolveBody(req: PreviewRequest, my: number, body: HTMLElement): 
   const content = renderPreview({ path: req.candidate.path, kind: req.candidate.kind, text, url: req.url ?? null, degraded, badge });
   if (my !== seq) return;
   body.replaceChildren(content.node);
-  // W895 修复：预览也走**同一条增强缝**（此前只有 code 分支自己调 hljs，于是 markdown
-  // 文件里的围栏代码块、以及数学占位都永远不处理 —— 文件管理器里打开 .md 看不到高亮）。
-  runEnhancers(content.node);
+  // 预览也走**同一条增强缝**（此前只有 code 分支自己调 hljs，于是 markdown 文件里的
+  // 围栏代码块、以及数学占位都永远不处理 —— 文件管理器里打开 .md 看不到高亮）。
+  //
+  // ★ 传 `body` 而不是 `content.node`：增强遍把参数当**作用域**用
+  //   （`container.querySelectorAll(...)` 只匹配后代、匹配不到容器自身）。
+  //   代码文件预览时 `content.node` **就是** `<pre>`，于是 code-copy / code-extras 的
+  //   `querySelectorAll('pre')` 永远返回空 —— 实测「高亮有了、复制按钮/行号/徽标没有」。
+  //   `highlightCode` 用的是 `pre code`，后代 `code` 能匹配，所以只有它看起来正常。
+  runEnhancers(body);
   body.classList.toggle('is-degraded', content.degraded !== null);
   if (noteEl) {
     noteEl.textContent = truncated ? t('chat.preview.truncated') : '';
