@@ -75,7 +75,7 @@ describe("W895-L 插件库视图", () => {
     expect(qa("#settingsPlugins .plug-cat-title").map((n) => n.textContent)).toEqual([
       "阅读", "结构", "媒体", "交互",
     ]);
-    // 阅读 = rail-preview + codeCopy + codeExtras
+    // 阅读 = rail-preview + codeCopy + codeExtras（JSON 树已移除）
     const first = cats[0]!;
     expect(Array.from(first.querySelectorAll(".plug-row")).map((r) => r.dataset["id"]).sort()).toEqual([
       "display.codeCopy", "display.codeExtras", "rail-preview",
@@ -84,7 +84,7 @@ describe("W895-L 插件库视图", () => {
 
   it("计数与「全部开启/关闭」按钮就位", async () => {
     await openPlugins();
-    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("7/7 已开启");
+    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("6/6 已开启");
     expect(qa("#settingsPlugins .plug-bulk").length).toBe(2);
   });
 
@@ -95,10 +95,10 @@ describe("W895-L 插件库视图", () => {
     await flush();
     expect(server.puts.length).toBe(1);
     expect(server.puts[0]!.sort()).toEqual([
-      "display.codeCopy", "display.codeExtras", "display.csvTable", "display.imageZoom", "display.jsonTree",
+      "display.codeCopy", "display.codeExtras", "display.csvTable", "display.imageZoom",
       "hint-text-card", "rail-preview",
     ]);
-    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("0/7 已开启");
+    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("0/6 已开启");
     for (const i of qa("#settingsPlugins .plug-switch-input") as InputLike[]) expect(i.checked).toBe(false);
   });
 
@@ -107,7 +107,7 @@ describe("W895-L 插件库视图", () => {
     server.failPut = true;
     qa("#settingsPlugins .plug-bulk")[1]!.dispatchEvent(new Ev("click"));
     await flush();
-    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("7/7 已开启");
+    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("6/6 已开启");
     for (const i of qa("#settingsPlugins .plug-switch-input") as InputLike[]) expect(i.checked).toBe(true);
     expect(q("#settingsPlugins .plug-status")?.textContent ?? "").not.toBe("");
   });
@@ -116,11 +116,11 @@ describe("W895-L 插件库视图", () => {
     await openPlugins();
     const putsBefore = server.puts.length;
     const input = q("#settingsPlugins .plug-search-input") as InputLike;
-    input.value = "json";
+    input.value = "表格";
     input.dispatchEvent(new Ev("input"));
     await flush();
     const visible = (qa("#settingsPlugins .plug-row") as ElLike[]).filter((r) => !(r.classList as unknown as { contains(c: string): boolean }).contains("hidden"));
-    expect(visible.map((r) => r.dataset["id"])).toEqual(["display.jsonTree"]);
+    expect(visible.map((r) => r.dataset["id"])).toEqual(["display.csvTable"]);
     expect(server.puts.length).toBe(putsBefore);
     // 不匹配的空态可见
     input.value = "zzz-不存在";

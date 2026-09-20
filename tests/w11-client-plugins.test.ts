@@ -130,13 +130,14 @@ afterEach(() => {
 });
 
 describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
-  it('① 列出全部客户端插件（2 提示 + 5 增强），开关默认开，且与真实提示注册表一致', async () => {
+  it('① 列出全部客户端插件（2 提示 + 4 增强），开关默认开，且与真实提示注册表一致', async () => {
     const hints = await openPlugins();
     const rows = qa('#settingsPlugins .plug-row');
     // W895-L：插件库**按分类分组**渲染，所以 DOM 顺序 = 分类顺序（不再是登记表顺序）。
     // 这里断言「集合完整」，顺序由下一条（分组）用例钉住。
+    // JSON 树组件已按用户要求移除，故为 2 提示 + 4 增强。
     expect(rows.map((r) => r.dataset['id']).sort()).toEqual([
-      'display.codeCopy', 'display.codeExtras', 'display.csvTable', 'display.imageZoom', 'display.jsonTree',
+      'display.codeCopy', 'display.codeExtras', 'display.csvTable', 'display.imageZoom',
       'hint-text-card', 'rail-preview',
     ]);
     expect(qa('#settingsPlugins .plug-row-label').map((n) => n.textContent).sort()).toEqual([
@@ -144,7 +145,6 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
       '代码块增强',
       '图片灯箱',
       '预览卡片',
-      'JSON 树',
       '文字卡片',
       '表格视图',
     ].sort());
@@ -241,7 +241,7 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     await flush();
     expect(q('#settingsPlugins .plug-empty')?.textContent).toBe('服务端未提供插件清单');
     expect(qa('#settingsPlugins .plug-host').length).toBe(0);
-    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(7);
+    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(6);
   });
   it('⑦ W895：新增的「增强」类组件关掉后真的从增强缝注销（与提示类同一套开关）', async () => {
     await openPlugins();

@@ -7,7 +7,7 @@
  * 真实路径（实时 = 真 SSE 逐帧；重放 = 真 /messages 历史），断言 DOM 相同。
  *
  * 对抗条件：注册一个**会移动节点**的增强遍（把 pre 包进 .code-wrap 再搬进 <details>）。
- * 这正是 W895-C2 的 json-tree/csv-table 的真实形态。旧实现按节点引用记账，第二拍就把
+ * 这正是 W895-C2 的 csv-table 的真实形态（json-tree 已移除）。旧实现按节点引用记账，第二拍就把
  * 内容从新父节点里摘走（留下空壳）；边界哨兵下无害 —— 本用例就是那个不变量。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

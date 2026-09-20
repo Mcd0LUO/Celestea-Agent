@@ -1,6 +1,6 @@
 # 特性设计 · 可选显示组件（display components）
 
-> 状态：**设计**（**P0 已实现**，W895；**C1：启用表真源搬到服务端已实现**，W895-C1；**C2：四项可选组件已实现**，W895-C2，TOC/alerts 已按用户决定砍掉；渲染缝（P1）不再做；**插件库管理面已实现**，W895-L）。本文是目标契约与验收标准的记录；落地见 `apps/web/src/ui/enhance/`、`apps/web/src/plugins/`、`apps/studio/src/store/display-plugins.ts`。
+> 状态：**设计**（**P0 已实现**，W895；**C1：启用表真源搬到服务端已实现**，W895-C1；**C2：可选组件已实现**，W895-C2（**JSON 树已按用户要求移除**），TOC/alerts 已按用户决定砍掉；渲染缝（P1）不再做；**插件库管理面已实现**，W895-L）。本文是目标契约与验收标准的记录；落地见 `apps/web/src/ui/enhance/`、`apps/web/src/plugins/`、`apps/studio/src/store/display-plugins.ts`。
 > 依赖：[ARCHITECTURE.md](./ARCHITECTURE.md) 的分层与 seam 纪律、[DEPENDENCY-POLICY.md](./DEPENDENCY-POLICY.md) §7。
 
 ## 1. 一句话目标
@@ -103,16 +103,15 @@ P1 把 `renderMarkdown` 的扩展点变成注册表，供 alerts / 脚注 / 定�
 
 TOC 与 alerts 经用户明确决定**不做**，因此**不新建渲染缝**，也不做 `marked` 扩展那条线。
 
-### P2 —— 数据类与媒体（C2 已实现四项，全部挂**已有**增强缝）
+### P2 —— 数据类与媒体（C2 实现，全部挂**已有**增强缝）
 
 | # | 组件 | 触发 | 降级边界 |
 |---|---|---|---|
 | 1 | 代码块增强（`ui/enhance/code-extras.ts`） | 任意 `pre > code` | 语言徽标（无 `language-xxx` 不显示，不写 plaintext）；>30 行默认折叠；行号 + 悬停整行高亮；按行切分**保留 hljs span** |
-| 2 | JSON 树（`ui/enhance/json-tree.ts`） | `language-json` 且能解析 | 单文档优先、失败再逐行（JSONL）；都失败 ⇒ **原样保留**；原文收进 `<details>原文</details>`；节点 >2000 退回原文 |
-| 3 | CSV/TSV 表格（`ui/enhance/csv-table.ts`） | `language-csv/tsv`；无语言只认 TSV | 引号/引号内换行/转义/CRLF/字段不齐/空文件；首行作表头；点表头升/降/无三态排序；sticky 表头；原文 `<details>` |
-| 4 | 图片灯箱（`ui/enhance/image-zoom.ts`） | 正文 `<img>` | 点遮罩/按钮/Esc 关闭；**Esc 走既有 overlays 栈**；滚动锁与还原；可聚焦 + `aria-label`；幂等不重复绑监听 |
+| 2 | CSV/TSV 表格（`ui/enhance/csv-table.ts`） | `language-csv/tsv`；无语言只认 TSV | 引号/引号内换行/转义/CRLF/字段不齐/空文件；首行作表头；点表头升/降/无三态排序；sticky 表头；原文 `<details>` |
+| 3 | 图片灯箱（`ui/enhance/image-zoom.ts`） | 正文 `<img>` | 点遮罩/按钮/Esc 关闭；**Esc 走既有 overlays 栈**；滚动锁与还原；可聚焦 + `aria-label`；幂等不重复绑监听 |
 
-四项都在 `plugins/descriptor.ts` 登记 `kind:'enhancer'`，开关复用既有机制（真注册/注销 + 服务端启用表 + 失败回滚）。
+三项都在 `plugins/descriptor.ts` 登记 `kind:'enhancer'`，开关复用既有机制（真注册/注销 + 服务端启用表 + 失败回滚）。
 **图表 / Mermaid / 任意 HTML 预览仍不在本设计范围内**：它们需要放宽 `DROP_WITH_CONTENT`（`svg`/`canvas`/`iframe`），
 那是**安全模型变更**，必须单独评审。
 

@@ -289,20 +289,10 @@
 .content pre .cl:hover { background: var(--c-surface-raised); }
 .content pre code .cl:first-child { min-height: 1em; }
 
-/* JSON / JSONL 树。 */
-.content .json-block, .content .csv-block { margin: .7em 0; }
-.content .json-tree { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; }
-.content .json-node { margin-left: 2px; }
-.content .json-summary { cursor: pointer; color: var(--c-text-2); }
-.content .json-key { color: var(--hl-attr); margin-right: 4px; }
-.content .json-count { color: var(--c-text-3); font-size: 11px; }
-.content .json-children { margin-left: 14px; border-left: 1px solid var(--c-border-subtle); padding-left: 8px; }
-.content .json-string { color: var(--hl-string); }
-.content .json-number { color: var(--hl-number); }
-.content .json-boolean { color: var(--hl-keyword); }
-.content .json-null { color: var(--c-text-3); font-style: italic; }
-.content .json-raw, .content .csv-raw { margin-top: 4px; }
-.content .json-raw > summary, .content .csv-raw > summary { cursor: pointer; color: var(--c-text-3); font-size: 11px; }
+/* CSV / TSV 表格（JSON 树组件已按用户要求移除）。 */
+.content .csv-block { margin: .7em 0; }
+.content .csv-raw { margin-top: 4px; }
+.content .csv-raw > summary { cursor: pointer; color: var(--c-text-3); font-size: 11px; }
 
 /* CSV / TSV 表格。 */
 .content .csv-box { max-height: 26em; overflow: auto; border: 1px solid var(--c-border-subtle); border-radius: var(--r-md); }
@@ -326,19 +316,28 @@
 
 .content pre code.hljs { background: transparent; color: inherit; }
 
-/* 代码高亮 token（主题化，见 tokens.css --hl-*） */
-.content .hljs-comment, .content .hljs-quote { color: var(--hl-comment); font-style: italic; }
-.content .hljs-keyword, .content .hljs-selector-tag, .content .hljs-doctag { color: var(--hl-keyword); }
-.content .hljs-string, .content .hljs-regexp { color: var(--hl-string); }
-.content .hljs-number, .content .hljs-literal { color: var(--hl-number); }
-.content .hljs-title, .content .hljs-title.function_, .content .hljs-section { color: var(--hl-title); }
-.content .hljs-attr, .content .hljs-attribute, .content .hljs-variable, .content .hljs-template-variable { color: var(--hl-attr); }
-.content .hljs-built_in { color: var(--hl-builtin); }
-.content .hljs-meta { color: var(--hl-meta); }
-.content .hljs-type, .content .hljs-title.class_ { color: var(--hl-type); }
-.content .hljs-name { color: var(--hl-title); }
-.content .hljs-deletion { color: var(--c-err); }
-.content .hljs-addition { color: var(--c-ok); }
+/*
+ * 代码高亮 token（主题化，见 tokens.css --hl-*）。
+ *
+ * W895-P：作用域必须覆盖**两个**渲染面 ——
+ *   · `.content`      = 聊天正文（含助手/工具卡里的围栏代码块）；
+ *   · `.preview-body` = 文件管理器/预览面板（.preview-code 与 .preview-md 都在它里面）。
+ * 这里曾只写 `.content`，于是预览面板里 hljs 的 span **建出来了却没有颜色规则命中** ——
+ * 文件管理器打开 .ts/.py 看起来「没有高亮」。加类不等于上色：类由 JS 加，颜色靠这里。
+ * 新增渲染面时，这个选择器列表必须一起扩。
+ */
+.content .hljs-comment, .preview-body .hljs-comment, .content .hljs-quote, .preview-body .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.content .hljs-keyword, .preview-body .hljs-keyword, .content .hljs-selector-tag, .preview-body .hljs-selector-tag, .content .hljs-doctag, .preview-body .hljs-doctag { color: var(--hl-keyword); }
+.content .hljs-string, .preview-body .hljs-string, .content .hljs-regexp, .preview-body .hljs-regexp { color: var(--hl-string); }
+.content .hljs-number, .preview-body .hljs-number, .content .hljs-literal, .preview-body .hljs-literal { color: var(--hl-number); }
+.content .hljs-title, .preview-body .hljs-title, .content .hljs-title.function_, .preview-body .hljs-title.function_, .content .hljs-section, .preview-body .hljs-section { color: var(--hl-title); }
+.content .hljs-attr, .preview-body .hljs-attr, .content .hljs-attribute, .preview-body .hljs-attribute, .content .hljs-variable, .preview-body .hljs-variable, .content .hljs-template-variable, .preview-body .hljs-template-variable { color: var(--hl-attr); }
+.content .hljs-built_in, .preview-body .hljs-built_in { color: var(--hl-builtin); }
+.content .hljs-meta, .preview-body .hljs-meta { color: var(--hl-meta); }
+.content .hljs-type, .preview-body .hljs-type, .content .hljs-title.class_, .preview-body .hljs-title.class_ { color: var(--hl-type); }
+.content .hljs-name, .preview-body .hljs-name { color: var(--hl-title); }
+.content .hljs-deletion, .preview-body .hljs-deletion { color: var(--c-err); }
+.content .hljs-addition, .preview-body .hljs-addition { color: var(--c-ok); }
 
 .bubble.streaming .content::after { content: "▍"; color: var(--c-accent); animation: caret 1s steps(2) infinite; }
 

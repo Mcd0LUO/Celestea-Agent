@@ -300,8 +300,6 @@ export const chat = {
   // W895-C2: four optional display components (enhancer seam)
   'plugins.desc.codeExtras.label': 'Code block extras',
   'plugins.desc.codeExtras.hint': 'Add a language badge, line numbers and long-block folding; when off, code blocks stay as they are.',
-  'plugins.desc.jsonTree.label': 'JSON tree',
-  'plugins.desc.jsonTree.hint': 'Render JSON code blocks as a collapsible tree; a parse failure keeps the block as it is.',
   'plugins.desc.csvTable.label': 'Table view',
   'plugins.desc.csvTable.hint': 'Render CSV/TSV code blocks as a sortable table; when the shape is not a table, keep the block as it is.',
   'plugins.desc.imageZoom.label': 'Image lightbox',
@@ -309,7 +307,6 @@ export const chat = {
   'chat.codeExtras.expand': 'Expand',
   'chat.codeExtras.collapse': 'Collapse',
   'chat.structured.raw': 'Raw',
-  'chat.jsonTree.items': '{n} items',
   'chat.imageZoom.view': 'View full size',
   'chat.imageZoom.close': 'Close',
 } as const;

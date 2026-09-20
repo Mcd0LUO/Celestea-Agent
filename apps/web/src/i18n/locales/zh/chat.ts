@@ -300,8 +300,6 @@ export const chat = {
   // W895-C2：四项可选显示组件（增强缝）
   'plugins.desc.codeExtras.label': '代码块增强',
   'plugins.desc.codeExtras.hint': '代码块加语言徽标、行号与超长折叠；关闭后代码块保持原样。',
-  'plugins.desc.jsonTree.label': 'JSON 树',
-  'plugins.desc.jsonTree.hint': '把 JSON 代码块渲染成可折叠的树；解析失败时原样保留。',
   'plugins.desc.csvTable.label': '表格视图',
   'plugins.desc.csvTable.hint': '把 CSV/TSV 代码块渲染成可排序表格；判定不成立时原样保留。',
   'plugins.desc.imageZoom.label': '图片灯箱',
@@ -309,7 +307,6 @@ export const chat = {
   'chat.codeExtras.expand': '展开',
   'chat.codeExtras.collapse': '收起',
   'chat.structured.raw': '原文',
-  'chat.jsonTree.items': '{n} 项',
   'chat.imageZoom.view': '查看大图',
   'chat.imageZoom.close': '关闭',
 } as const;

@@ -79,7 +79,7 @@ function applyCodeExtras(container: Element): void {
   for (const pre of Array.from(container.querySelectorAll<HTMLElement>("pre"))) {
     const code = pre.querySelector("code");
     if (!code) continue;
-    if (pre.dataset["structured"] === "1") continue; // json/csv 已接管
+    if (pre.dataset["structured"] === "1") continue; // csv 已接管
     const host = ensureWrap(pre);
     addBadge(host, code);
     renderLineSpans(code);
