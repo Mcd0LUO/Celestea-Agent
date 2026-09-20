@@ -290,4 +290,9 @@ export const chat = {
   'plugins.desc.textCard.hint': 'Show hint text in a card on hover; when off, fall back to the browser\'s built-in tooltip.',
   'plugins.desc.railPreview.label': 'Preview card',
   'plugins.desc.railPreview.hint': 'Show a message preview on hovering the left rail; when off, fall back to the text card.',
+  'plugins.desc.codeCopy.label': 'Code block copy',
+  'plugins.desc.codeCopy.hint': 'Add a Copy button to each code block; when off, code blocks stay as they are.',
+  'chat.codeCopy.copy': 'Copy',
+  'chat.codeCopy.copied': 'Copied',
+  'chat.codeCopy.failed': 'Copy failed',
 } as const;

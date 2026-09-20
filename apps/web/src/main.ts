@@ -39,6 +39,7 @@ import { initWorkerStrip } from './ui/worker-strip'; // W866 会话页左上角 
 import { initGrants } from './ui/grants'; // W701 提权通道（能力位未就绪时入口隐藏）
 import { restoreActiveHistory } from './ui/restore';
 import { initRail } from './ui/rail';
+import { initEnhancers } from './ui/enhance'; // W895 渲染后增强缝（P0）
 import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
 import { installCommands, renderGoalBar } from './ui/commands'; // A3：斜杠命令 + 持久目标
 import { initWorkbench } from './ui/workbench'; // G4：多面板工作区
@@ -81,7 +82,10 @@ function init(): void {
   initViewCtx();
   initSessionBar();
 
-  // 3.1) W790：悬浮提示注册缝（内置 150ms 卡片；调用点只写 setHint）
+  // 3.1) W895：渲染后增强缝（内置 hljs + math；必须先于客户端插件装配）
+  initEnhancers();
+
+  // 3.1b) W790：悬浮提示注册缝（内置 150ms 卡片；调用点只写 setHint）
   initHints();
 
   // 4) statusline（/api/status?session= 轮询 + SSE 增量，发送栏正上方）

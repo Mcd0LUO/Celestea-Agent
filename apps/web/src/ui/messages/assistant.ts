@@ -5,13 +5,12 @@
 //   纯搬家：行为 / 文案 / DOM 结构逐字不变。
 // ============================================================================
 import { el, fmtNow } from '../../utils/dom';
-import { highlightCode } from '../../utils/hljs';
 import { MarkdownStream } from '../../utils/markdown';
 import type { AssistantView, StreamDom } from '../view';
 import type { SessionPane } from '../viewctx';
 import { railAdd, railSync } from '../rail';
+import { runEnhancers } from '../enhance';
 import { htmlToNodes } from './markdown';
-import { upgradeMath } from './math';
 import { autoscroll, hideEmptyHint, renderEmptyHint } from './scroll';
 
 // ---- 文本段增量渲染器（W301） ---------------------------------------------------
@@ -111,9 +110,8 @@ function renderTextView(ctx: SessionPane, view: AssistantView): void {
     d.tailNodes = freshTail;
   }
 
-  highlightCode(view.content);
-  // W846：码块高亮后，把数学占位懒加载升级为 MathML（渲染器未就绪时登记，就绪后替换）。
-  upgradeMath(view.content);
+  // W895：渲染后的增强遍走注册缝（内置 hljs + math 仍在此链上，顺序不变）。
+  runEnhancers(view.content);
   autoscrollView(ctx, view); // W867：离屏（历史恢复）不写滚动位
   railSync(ctx);
 }

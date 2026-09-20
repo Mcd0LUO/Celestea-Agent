@@ -105,13 +105,14 @@ afterEach(() => {
 });
 
 describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
-  it('① 列出两个客户端插件，开关默认开，且与真实提示注册表一致', async () => {
+  it('① 列出全部客户端插件（2 提示 + 1 增强），开关默认开，且与真实提示注册表一致', async () => {
     const hints = await openPlugins();
     const rows = qa('#settingsPlugins .plug-row');
-    expect(rows.map((r) => r.dataset['id'])).toEqual(['hint-text-card', 'rail-preview']);
+    expect(rows.map((r) => r.dataset['id'])).toEqual(['hint-text-card', 'rail-preview', 'display.codeCopy']);
     expect(qa('#settingsPlugins .plug-list .plug-row-label').map((n) => n.textContent)).toEqual([
       '文字卡片',
       '预览卡片',
+      '代码块复制',
     ]);
     for (const r of rows) {
       expect((r.querySelector('.plug-switch-input') as InputLike).checked).toBe(true);
@@ -198,7 +199,21 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     await flush();
     expect(q('#settingsPlugins .plug-empty')?.textContent).toBe('服务端未提供插件清单');
     expect(qa('#settingsPlugins .plug-host').length).toBe(0);
-    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(2);
+    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(3);
+  });
+  it('⑦ W895：新增的「增强」类组件关掉后真的从增强缝注销（与提示类同一套开关）', async () => {
+    await openPlugins();
+    const enhance = (await import(/* @vite-ignore */ at('ui/enhance/registry.ts'))) as {
+      enhancerIds(): readonly string[];
+    };
+    expect(enhance.enhancerIds()).toContain('display.codeCopy');
+
+    flip('display.codeCopy', false);
+    expect(enhance.enhancerIds()).not.toContain('display.codeCopy');
+    expect(statusText()).toContain('已关闭');
+
+    flip('display.codeCopy', true);
+    expect(enhance.enhancerIds()).toContain('display.codeCopy');
   });
 });
 

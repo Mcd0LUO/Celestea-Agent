@@ -11,21 +11,36 @@
 import { TEXT_HINT_ID, textCardPlugin } from '../ui/hint/builtin';
 import { RAIL_HINT_ID, railHintPlugin } from '../ui/rail';
 import type { HintPlugin } from '../ui/hint/registry';
+import { CODE_COPY_ID, codeCopyEnhancer } from '../ui/enhance/code-copy';
+import type { Enhancer } from '../ui/enhance/registry';
 import { t } from '../i18n';
 
-/** 一个可热开关的客户端插件。 */
-export interface ClientPluginDescriptor {
-  /** 提供者身份（与 HintPlugin.id 必须是同一个值）。 */
-  id: string;
-  /** 设置页展示名。 */
-  label: string;
-  /** 一句话说明开关的后果（用户语言，无实现细节）。 */
-  hint: string;
-  /** 客户端插件一律支持热开关（宿主插件才是只读的）。 */
-  hot: true;
-  /** 提供者工厂（幂等：可反复调用，每次得到同语义的新实例）。 */
-  create(): HintPlugin;
-}
+/** W895：客户端插件挂到哪条缝上。 */
+export type ClientPluginKind = 'hint' | 'enhancer';
+
+/** 一个可热开关的客户端插件（两种缝共用同一套开关/持久化/回滚）。 */
+export type ClientPluginDescriptor =
+  | {
+      /** 提供者身份（与 HintPlugin.id 必须是同一个值）。 */
+      id: string;
+      /** 设置页展示名。 */
+      label: string;
+      /** 一句话说明开关的后果（用户语言，无实现细节）。 */
+      hint: string;
+      /** 客户端插件一律支持热开关（宿主插件才是只读的）。 */
+      hot: true;
+      kind: 'hint';
+      /** 提供者工厂（幂等：可反复调用，每次得到同语义的新实例）。 */
+      create(): HintPlugin;
+    }
+  | {
+      id: string;
+      label: string;
+      hint: string;
+      hot: true;
+      kind: 'enhancer';
+      create(): Enhancer;
+    };
 
 /** 登记表（顺序 = 设置页展示顺序）。 */
 /** 登记表（顺序 = 设置页展示顺序；函数：文案走 t()）。 */
@@ -36,6 +51,7 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       label: t('plugins.desc.textCard.label'),
       hint: t('plugins.desc.textCard.hint'),
       hot: true,
+      kind: 'hint',
       create: () => textCardPlugin(),
     },
     {
@@ -43,7 +59,16 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       label: t('plugins.desc.railPreview.label'),
       hint: t('plugins.desc.railPreview.hint'),
       hot: true,
+      kind: 'hint',
       create: () => railHintPlugin(),
+    },
+    {
+      id: CODE_COPY_ID,
+      label: t('plugins.desc.codeCopy.label'),
+      hint: t('plugins.desc.codeCopy.hint'),
+      hot: true,
+      kind: 'enhancer',
+      create: () => codeCopyEnhancer(),
     },
   ];
 }

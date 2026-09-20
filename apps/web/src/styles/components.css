@@ -255,6 +255,17 @@
   border-radius: var(--r-md); padding: 10px 12px; overflow-x: auto; margin: .7em 0;
 }
 .content pre code { background: transparent; font-size: 12.5px; padding: 0; border: none; }
+
+/* W895：代码块复制按钮（可选显示组件，由 ui/enhance/code-copy.ts 注入）。
+   .code-wrap 只是定位上下文：pre 自己 overflow-x:auto，按钮放外面才不会横向滚走。 */
+.content .code-wrap { position: relative; }
+.content .code-copy {
+  position: absolute; top: 6px; right: 6px;
+  font-size: 11px; padding: 3px 8px; line-height: 1.4;
+  opacity: 0; transition: opacity .12s ease;
+}
+.content .code-wrap:hover .code-copy,
+.content .code-copy:focus-visible { opacity: 1; }
 .content pre code.hljs { background: transparent; color: inherit; }
 
 /* 代码高亮 token（主题化，见 tokens.css --hl-*） */

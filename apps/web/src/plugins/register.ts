@@ -10,10 +10,15 @@
 // 它不认识任何具体插件（零 descriptor 依赖），因此不会与 ui/rail.ts 成环。
 // ============================================================================
 import { registerHintPlugin as registerInRegistry, type HintPlugin } from '../ui/hint/registry';
+import { registerEnhancer, type Enhancer } from '../ui/enhance/registry';
 import { isDisabled } from './store';
 
-/** id → 提供者工厂（装配点交回的最近一个；关闭状态下也记住）。 */
-const factories = new Map<string, () => HintPlugin>();
+/**
+ * id → **挂载 thunk**（把「交回的提供者」变成「挂上去 + 返回注销器」的那一步）。
+ * W895：改成 thunk 而不是 `() => HintPlugin`，是为了让 hint 与 enhancer 两种提供者
+ * 共用同一套记账（工厂/注销器/开关/回滚），而不必各写一份。
+ */
+const mounts = new Map<string, () => () => void>();
 /** id → 注销器（只在真的挂载着时有值）。 */
 const disposers = new Map<string, () => void>();
 
@@ -34,7 +39,17 @@ export function registeredIds(): string[] {
  * 关闭状态下只记账不挂载，返回 no-op 注销器。
  */
 export function registerHintPlugin(plugin: HintPlugin): () => void {
-  factories.set(plugin.id, () => plugin);
+  mounts.set(plugin.id, () => registerInRegistry(plugin));
+  if (isDisabled(plugin.id)) return noop;
+  return swapIn(plugin.id);
+}
+
+/**
+ * W895：交回一个**增强遍**提供者并（在启用时）注册。语义与 registerHintPlugin 完全一致
+ * （幂等 / 关闭时只记账 / 失败原样抛出），只是挂到增强缝上。
+ */
+export function registerEnhancerPlugin(plugin: Enhancer): () => void {
+  mounts.set(plugin.id, () => registerEnhancer(plugin));
   if (isDisabled(plugin.id)) return noop;
   return swapIn(plugin.id);
 }
@@ -54,14 +69,14 @@ export function deactivatePlugin(id: string): void {
 }
 
 function swapIn(id: string): () => void {
-  const factory = factories.get(id);
-  if (!factory) throw new Error('no provider handed back for ' + id);
+  const mount = mounts.get(id);
+  if (!mount) throw new Error('no provider handed back for ' + id);
   const prev = disposers.get(id);
   if (prev) {
     prev();
     disposers.delete(id);
   }
-  const off = registerInRegistry(factory());
+  const off = mount();
   disposers.set(id, off);
   return off;
 }

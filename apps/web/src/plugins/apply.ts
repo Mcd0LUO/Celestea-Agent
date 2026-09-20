@@ -11,7 +11,7 @@
 // ============================================================================
 import { clientPlugins, clientPluginIds, clientPluginById } from './descriptor';
 import { t } from '../i18n';
-import { activatePlugin, deactivatePlugin, isRegistered, registerHintPlugin } from './register';
+import { activatePlugin, deactivatePlugin, isRegistered, registerEnhancerPlugin, registerHintPlugin } from './register';
 import { setDisabled } from './store';
 
 /** 切换回执：pane 就地显示；失败时 pane 负责把开关拨回去（状态没变）。 */
@@ -22,7 +22,11 @@ export interface ToggleResult {
 
 /** 装配内建客户端插件（ui/hint 的 initHints 调用；幂等，只挂当前启用的）。 */
 export function startClientPlugins(): void {
-  for (const d of clientPlugins()) registerHintPlugin(d.create());
+  for (const d of clientPlugins()) {
+    // W895：两种缝共用同一套记账，只有「挂到哪」不同。
+    if (d.kind === 'hint') registerHintPlugin(d.create());
+    else registerEnhancerPlugin(d.create());
+  }
 }
 
 /** 该插件此刻是否真的挂着（不是看偏好；诊断/测试/设置页初值都用它）。 */

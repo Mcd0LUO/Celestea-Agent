@@ -290,4 +290,9 @@ export const chat = {
   'plugins.desc.textCard.hint': '悬停时统一用卡片显示提示文字；关闭后回退为浏览器自带的提示。',
   'plugins.desc.railPreview.label': '预览卡片',
   'plugins.desc.railPreview.hint': '左侧长条悬停时显示消息预览；关闭后回退为文字卡片。',
+  'plugins.desc.codeCopy.label': '代码块复制',
+  'plugins.desc.codeCopy.hint': '每个代码块右上角加「复制」按钮；关闭后代码块保持原样。',
+  'chat.codeCopy.copy': '复制',
+  'chat.codeCopy.copied': '已复制',
+  'chat.codeCopy.failed': '复制失败',
 } as const;
