@@ -6,12 +6,16 @@
 //   · label / hint 是设置页「插件」一格渲染给用户的两个字段（不含实现细节）；
 //   · create() 只造提供者对象、**不做注册** —— 注册与记账由 plugins/register.ts
 //     统一做，注销器才有人保存（这正是热开关能真注销的前提）。
-// 目前两项：内置文字卡片（ui/hint/builtin.ts）与左侧长条预览卡（ui/rail.ts）。
+// 目前 7 项：2 个提示类 + 5 个增强类（代码复制 P0，代码块增强/JSON 树/表格视图/图片灯箱 C2）。
 // ============================================================================
 import { TEXT_HINT_ID, textCardPlugin } from '../ui/hint/builtin';
 import { RAIL_HINT_ID, railHintPlugin } from '../ui/rail';
 import type { HintPlugin } from '../ui/hint/registry';
 import { CODE_COPY_ID, codeCopyEnhancer } from '../ui/enhance/code-copy';
+import { CODE_EXTRAS_ID, codeExtrasEnhancer } from '../ui/enhance/code-extras';
+import { CSV_TABLE_ID, csvTableEnhancer } from '../ui/enhance/csv-table';
+import { IMAGE_ZOOM_ID, imageZoomEnhancer } from '../ui/enhance/image-zoom';
+import { JSON_TREE_ID, jsonTreeEnhancer } from '../ui/enhance/json-tree';
 import type { Enhancer } from '../ui/enhance/registry';
 import { t } from '../i18n';
 
@@ -69,6 +73,40 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hot: true,
       kind: 'enhancer',
       create: () => codeCopyEnhancer(),
+    },
+    // W895-C2：四项可选显示组件。顺序即增强链顺序 —— code-copy 先包 .code-wrap，
+    // json/csv 随后用 dataset.structured 标记接管（code-extras 跳过已结构化的块）。
+    {
+      id: JSON_TREE_ID,
+      label: t('plugins.desc.jsonTree.label'),
+      hint: t('plugins.desc.jsonTree.hint'),
+      hot: true,
+      kind: 'enhancer',
+      create: () => jsonTreeEnhancer(),
+    },
+    {
+      id: CSV_TABLE_ID,
+      label: t('plugins.desc.csvTable.label'),
+      hint: t('plugins.desc.csvTable.hint'),
+      hot: true,
+      kind: 'enhancer',
+      create: () => csvTableEnhancer(),
+    },
+    {
+      id: CODE_EXTRAS_ID,
+      label: t('plugins.desc.codeExtras.label'),
+      hint: t('plugins.desc.codeExtras.hint'),
+      hot: true,
+      kind: 'enhancer',
+      create: () => codeExtrasEnhancer(),
+    },
+    {
+      id: IMAGE_ZOOM_ID,
+      label: t('plugins.desc.imageZoom.label'),
+      hint: t('plugins.desc.imageZoom.hint'),
+      hot: true,
+      kind: 'enhancer',
+      create: () => imageZoomEnhancer(),
     },
   ];
 }

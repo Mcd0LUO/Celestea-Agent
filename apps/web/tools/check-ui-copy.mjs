@@ -225,11 +225,20 @@ function keysOf(file) {
   return keys;
 }
 
+/**
+ * 测试文件**不进产物**，所以它们的用例名（it("中文")）永远不可能渲染给用户 ——
+ * 护栏 A 的语义是「新代码把用户可见文案写死」，对测试不适用（W895：给 apps/web 开测试面时暴露）。
+ * 只排除 `*.test.ts`；断言里的中文文案仍由「组件文件」路径覆盖。
+ */
+function isTestFile(name) {
+  return name.endsWith('.test.ts');
+}
+
 function* walk(dir) {
   for (const name of readdirSync(dir).sort()) {
     const p = path.join(dir, name);
     if (statSync(p).isDirectory()) yield* walk(p);
-    else if (name.endsWith('.ts')) yield p;
+    else if (name.endsWith('.ts') && !isTestFile(name)) yield p;
   }
 }
 

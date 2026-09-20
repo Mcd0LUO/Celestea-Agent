@@ -266,6 +266,59 @@
 }
 .content .code-wrap:hover .code-copy,
 .content .code-copy:focus-visible { opacity: 1; }
+/* W895-C2：四项可选显示组件（全部由 ui/enhance/*.ts 注入，不新建渲染缝）。 */
+
+/* 代码块增强：语言徽标 / 行号 / 悬停行高亮 / 超长折叠。 */
+.content .code-badge {
+  position: absolute; top: 6px; left: 8px;
+  font-family: var(--mono); font-size: 10px; line-height: 1.4;
+  padding: 1px 6px; color: var(--c-text-3);
+  background: var(--c-surface-raised); border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm); pointer-events: none;
+}
+.content .code-fold { position: absolute; bottom: 6px; right: 6px; font-size: 11px; padding: 2px 8px; line-height: 1.4; }
+.content pre.code-folded { max-height: 22em; overflow-y: hidden; }
+.content pre .cl { display: block; }
+/* 换行载体：只为了让 code.textContent 可正确复制，视觉上完全不可见。 */
+.content pre .cl-nl { display: none; }
+.content pre .cl:hover { background: var(--c-surface-raised); }
+.content pre code .cl:first-child { min-height: 1em; }
+
+/* JSON / JSONL 树。 */
+.content .json-block, .content .csv-block { margin: .7em 0; }
+.content .json-tree { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; }
+.content .json-node { margin-left: 2px; }
+.content .json-summary { cursor: pointer; color: var(--c-text-2); }
+.content .json-key { color: var(--hl-attr); margin-right: 4px; }
+.content .json-count { color: var(--c-text-3); font-size: 11px; }
+.content .json-children { margin-left: 14px; border-left: 1px solid var(--c-border-subtle); padding-left: 8px; }
+.content .json-string { color: var(--hl-string); }
+.content .json-number { color: var(--hl-number); }
+.content .json-boolean { color: var(--hl-keyword); }
+.content .json-null { color: var(--c-text-3); font-style: italic; }
+.content .json-raw, .content .csv-raw { margin-top: 4px; }
+.content .json-raw > summary, .content .csv-raw > summary { cursor: pointer; color: var(--c-text-3); font-size: 11px; }
+
+/* CSV / TSV 表格。 */
+.content .csv-box { max-height: 26em; overflow: auto; border: 1px solid var(--c-border-subtle); border-radius: var(--r-md); }
+.content table.csv-table { margin: 0; width: 100%; }
+.content .csv-table thead th { position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; white-space: nowrap; }
+.content .csv-th[data-sort="asc"]::after { content: " ▲"; color: var(--c-accent); }
+.content .csv-th[data-sort="desc"]::after { content: " ▼"; color: var(--c-accent); }
+.content .csv-table tbody tr:hover { background: var(--c-surface-raised); }
+
+/* 图片灯箱。 */
+.img-zoom {
+  position: fixed; inset: 0; z-index: 60;
+  background: var(--c-overlay);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.img-zoom-img { max-width: 96vw; max-height: 92vh; border-radius: var(--r-md); box-shadow: var(--shadow-panel); }
+.img-zoom-close { position: absolute; top: 16px; right: 16px; }
+.content img[role="button"] { cursor: zoom-in; }
+.content img[role="button"]:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
 .content pre code.hljs { background: transparent; color: inherit; }
 
 /* 代码高亮 token（主题化，见 tokens.css --hl-*） */

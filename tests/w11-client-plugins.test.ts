@@ -130,14 +130,21 @@ afterEach(() => {
 });
 
 describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
-  it('① 列出全部客户端插件（2 提示 + 1 增强），开关默认开，且与真实提示注册表一致', async () => {
+  it('① 列出全部客户端插件（2 提示 + 5 增强），开关默认开，且与真实提示注册表一致', async () => {
     const hints = await openPlugins();
     const rows = qa('#settingsPlugins .plug-row');
-    expect(rows.map((r) => r.dataset['id'])).toEqual(['hint-text-card', 'rail-preview', 'display.codeCopy']);
+    expect(rows.map((r) => r.dataset['id'])).toEqual([
+      'hint-text-card', 'rail-preview',
+      'display.codeCopy', 'display.jsonTree', 'display.csvTable', 'display.codeExtras', 'display.imageZoom',
+    ]);
     expect(qa('#settingsPlugins .plug-list .plug-row-label').map((n) => n.textContent)).toEqual([
       '文字卡片',
       '预览卡片',
       '代码块复制',
+      'JSON 树',
+      '表格视图',
+      '代码块增强',
+      '图片灯箱',
     ]);
     for (const r of rows) {
       expect((r.querySelector('.plug-switch-input') as InputLike).checked).toBe(true);
@@ -232,7 +239,7 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     await flush();
     expect(q('#settingsPlugins .plug-empty')?.textContent).toBe('服务端未提供插件清单');
     expect(qa('#settingsPlugins .plug-host').length).toBe(0);
-    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(3);
+    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(7);
   });
   it('⑦ W895：新增的「增强」类组件关掉后真的从增强缝注销（与提示类同一套开关）', async () => {
     await openPlugins();
