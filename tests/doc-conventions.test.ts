@@ -211,6 +211,12 @@ describe('文档不变量', () => {
       if (text.includes('users.noreply.github.com')) {
         problems.push(relDocs(p) + ' 含本机提交身份（应写进 docs/AGENT.local.md）');
       }
+      // W893: an ABSOLUTE machine path is the same class of mistake as a hardcoded
+      // identity — it resolves on the author's box and breaks on every other
+      // checkout. GitHub CI caught exactly this in docs/archive (3 links).
+      for (const m of text.matchAll(/\]\((\/[^)\s]+)\)/g)) {
+        if (m[1]!.startsWith('/src/')) problems.push(relDocs(p) + ' 含本机绝对路径链接：' + m[1]);
+      }
     }
     expect(problems, '机器相关的事实不进提交进仓的文档').toEqual([]);
   });

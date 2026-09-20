@@ -9,7 +9,7 @@
 
 > 🧭 **仓库角色（2026-09-11）**：本仓现役 = **线上前端（`frontend/`）+ 共享数据文件**（`workspaces.json` / `providers.json` / `prompts.json` / `sessions/`）。
 > 本文描述的是**并入前的旧 Studio 后端**（架构 / 构建 / 测试），属**历史参考**。
-> **后端开发请看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md)**（TypeScript 后端，生产）；本仓 `docs/` 索引见 [`docs/README.md`](../README.md)。
+> **后端开发请看 [`docs/README.md`](../README.md)**（TypeScript 后端，生产）；本仓 `docs/` 索引见 [`docs/README.md`](../README.md)。
 
 > 本文是 Celestea Studio 的**开发者入口文档**，内容全部来自对 `/src/celestea_studio-ts` 实际代码的核对（文件:行号可回溯）。
 > 契约字段名 / 代码标识符保留英文原文，其余以中文叙述。

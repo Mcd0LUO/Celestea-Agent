@@ -13,7 +13,7 @@
 ## 先说仓库角色（2026-09-11 口径，W781 后已并入本仓）
 
 - 原前端仓**现役** = **线上前端（`frontend/` → 现 `apps/web/`）+ 共享数据文件**（W781 起数据在 `/var/lib/celestea-agent/`）。
-- **后端（TypeScript，生产）在 [`/src/celestea_studio-ts`](/src/celestea_studio-ts/docs/README.md)**（W781 起与前端同仓）；
+- **后端（TypeScript，生产）在 [`docs/`](../README.md)**（W781 起与前端同仓）；
   引擎**原址**（`/src/celestea_harness`）已于 2026-09-11 删除，其历史文档已于 W881 清理出公开仓。
 - 本页原列表里描述旧后端的归档文档（2026-09-11 归档进 `archive/frontend/`）已于 W881 清理出公开仓，
   只有前端规则与数据文件格式仍属当前。
@@ -22,7 +22,7 @@
 
 | 文件 | 状态 | 一句话 | 权威入口 |
 | --- | --- | --- | --- |
-| [`DEVELOPMENT.md`](./DEVELOPMENT.md) | 当前（旧后端部分为历史参考） | 旧后端的开发者权威入口：架构总览、模块职责表、关键机制（Gen/swap_gen、SSE 信封、autowake、提示词装配）、开发工作流、测试现状与文档索引 | 本文自身的 §0 文档地图；后端开发改看 [`/src/celestea_studio-ts/docs/README.md`](/src/celestea_studio-ts/docs/README.md) |
+| [`DEVELOPMENT.md`](./DEVELOPMENT.md) | 当前（旧后端部分为历史参考） | 旧后端的开发者权威入口：架构总览、模块职责表、关键机制（Gen/swap_gen、SSE 信封、autowake、提示词装配）、开发工作流、测试现状与文档索引 | 本文自身的 §0 文档地图；后端开发改看 [`docs/README.md`](../README.md) |
 | [`data-files.md`](../data-files.md) | 当前 | **共享数据文件** schema 与格式：`workspaces.json` / `providers.json` / `prompts.json` / 会话目录与 `cli-main.jsonl` / `session.json`（写作时基于旧后端实现；TS 后端读写同一批文件） | 本文；字段变更以 TS 侧实现与 `/src/celestea_studio-ts/contracts/data-files/` 为准 |
 | [`pitfalls.md`](../pitfalls.md) | 当前 | 踩坑档案：症状 → 根因 → 正确做法 → 代码位置 → 怎么验证（每条来自真实修复）；前端渲染与数据文件类条目**仍适用** | 本文 |
 
