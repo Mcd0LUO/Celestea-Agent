@@ -3,7 +3,7 @@
  * run_code, with CELESTEA_HOME pinned to a temp data root. The real engine, the
  * real tool registry and the real sandbox run; only the model is offline.
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,7 +40,10 @@ describe("W880 · HTTP turn runs run_code from CELESTEA_HOME", () => {
       const value = (result as { value: { argv1: string; cwd: string } }).value;
       console.log("[W880 e2e] run_code result=" + JSON.stringify(value) + " runDir=" + runDir);
       expect(value.argv1.startsWith(join(runDir, "run_code_"))).toBe(true);
-      expect(value.cwd).toBe(h.workspace);
+      // W892: on Windows the child reports the LONG path (realpath) while the
+      // fixture was created under the 8.3 SHORT name (RUNNER~1), so the raw
+      // strings differ for the same directory. Compare canonical paths.
+      expect(realpathSync(value.cwd)).toBe(realpathSync(h.workspace));
       expect(readdirSync(runDir)).toEqual([]);
       expect(existsSync(join(h.workspace, ".celestea"))).toBe(false);
     } finally {

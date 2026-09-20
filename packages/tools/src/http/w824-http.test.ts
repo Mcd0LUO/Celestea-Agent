@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { HttpTargetPolicy, ipInRange, parseIpRange } from "./ssrf.js";
@@ -61,7 +61,9 @@ describe("W824 W812-P0-3: requestOnce leaves no stale timer", () => {
     const dir = mkdtempSync(join(tmpdir(), "w824-http-"));
     const script = join(dir, "probe.mts");
     const source = [
-      'import { requestOnce } from ' + JSON.stringify(TRANSPORT) + ';',
+            // W892: an ESM import specifier must be a file:// URL. A raw Windows path
+      // (D:\\...) is parsed as the URL scheme "d:" and rejected.
+      'import { requestOnce } from ' + JSON.stringify(pathToFileURL(TRANSPORT).href) + ';',
       'const bad = String.fromCharCode(0) + "bad";',
       'try {',
       '  await requestOnce({ url: new URL("http://127.0.0.1:9/"), method: "GET", headers: [["x", bad]], body: null, timeoutMs: 100, maxBodyBytes: 1024 });',
