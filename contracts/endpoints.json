@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (61 endpoints)",
+  "title": "Celestea Studio HTTP API contract (66 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 64,
+  "count": 66,
   "endpoints": [
     {
       "id": "get_health",
@@ -4308,6 +4308,98 @@
       "notes": [
         "W860: the names come from composeStudio recording pluginNames(storePlugins(...)) + pluginNames(hostPlugins(...)) at mount time — never a hand-maintained constant list.",
         "BOUNDARY: host STARTUP plugins only (the five store plugins + the three host singletons studio/bus, studio/runtime, studio/settings). Plugins the ENGINE mounts while composing a session are NOT part of this inventory."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "get_display_plugins",
+      "method": "GET",
+      "path": "/api/display-plugins",
+      "group": "plugins",
+      "rustHandler": "(none - TypeScript-only, W895-C1)",
+      "docRef": "contracts/endpoints.json#get_display_plugins",
+      "request": {
+        "kind": "none",
+        "fields": []
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "disabled",
+            "type": "array<string>",
+            "required": true,
+            "note": "W895-C1: the ids the user switched OFF. The server is the source of truth; a newly added component is absent here => ON."
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "W895-C1: replaces the browser localStorage key 'celestea-studio.client-plugins-disabled'. The payload is the SAME disabled-id array, so the one-time client migration is an identity mapping.",
+        "BOUNDARY: ids only. Labels/hints are the frontend's i18n and are never sent by the server."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "put_display_plugins",
+      "method": "PUT",
+      "path": "/api/display-plugins",
+      "group": "plugins",
+      "rustHandler": "(none - TypeScript-only, W895-C1)",
+      "docRef": "contracts/endpoints.json#put_display_plugins",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "disabled",
+            "type": "array<string>",
+            "required": true,
+            "note": "the full disabled-id list (replace semantics)"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "disabled",
+            "type": "array<string>",
+            "required": true,
+            "note": "the normalized list that was persisted"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 422,
+          "error": "field 'disabled' must be an array of strings"
+        },
+        {
+          "status": 422,
+          "error": "field 'disabled' must not contain an empty id"
+        }
+      ],
+      "notes": [
+        "W895-C1: replace semantics (like PUT /api/sessions/{id}/tools). A corrupt file on read degrades to the empty disabled set (every component ON), never a repair.",
+        "Concurrent PUTs are serialized, so the last submitted write wins without losing an update."
       ],
       "probe": {
         "checked": false,

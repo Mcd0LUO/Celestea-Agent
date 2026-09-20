@@ -163,7 +163,9 @@ export const FROZEN_COUNTS = {
   // G5: 61 -> 62 (GET /api/fs/list, the Win-style file-manager listing);
   // G2: 62 -> 63 (POST /api/exec, immediate shell execution without the model).
   // G5 follow-up: 63 -> 64 (GET /api/fs/read, the file manager viewer).
-  endpoints: 64,
+  // W895-C1: 64 -> 66 (GET|PUT /api/display-plugins, the server-side source of
+  // truth for the client display-component switches).
+  endpoints: 66,
   sseEvents: 9,
   // W884: 13 -> 14 (`load_skill`, the on-demand half of skill progressive
   // disclosure; the catalog half adds no tool).

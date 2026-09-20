@@ -1,6 +1,6 @@
 # 特性设计 · 可选显示组件（display components）
 
-> 状态：**设计**（**P0 已实现**，W895；P1/P2 仍是设计）。本文是目标契约与验收标准的记录；落地见 `apps/web/src/ui/enhance/`、`apps/web/src/plugins/`。
+> 状态：**设计**（**P0 已实现**，W895；**C1：启用表真源搬到服务端已实现**，W895-C1；P1/P2 仍是设计）。本文是目标契约与验收标准的记录；落地见 `apps/web/src/ui/enhance/`、`apps/web/src/plugins/`、`apps/studio/src/store/display-plugins.ts`。
 > 依赖：[ARCHITECTURE.md](./ARCHITECTURE.md) 的分层与 seam 纪律、[DEPENDENCY-POLICY.md](./DEPENDENCY-POLICY.md) §7。
 
 ## 1. 一句话目标
@@ -55,6 +55,24 @@ runEnhancers(container): void        // 渲染后调用；按注册顺序执行
 **幂等是硬要求**：流式渲染每个节拍都会重跑整条链，实现方必须自己打标记
 （现有 `dataset.hlDone` 就是范例）。缝**不**替实现方去重——去重需要理解 DOM 语义，
 那属于实现方。
+
+### 3.3 启用表真源（C1，已实现）
+
+P0 把开关偏好存在**浏览器** localStorage（键 `celestea-studio.client-plugins-disabled`），换设备/换浏览器就丢。
+C1 把真源搬到**服务端装配**（代码仍打包，**不做运行时下载**）：
+
+```
+GET  /api/display-plugins  -> { ok:true, disabled:[...] }   # 被关闭的 id
+PUT  /api/display-plugins    body { disabled:[...] }        # 整表替换
+```
+
+- 落盘 `<data dir>/display-plugins.json`（与 workspaces.json 同目录，原子写）。存的是 **disabled 集合**，
+  与旧 localStorage 值**同形**，迁移是恒等映射；新增组件不在表里 ⇒ 默认开。
+- 服务端只存/回 **id**；label/hint 是前端 i18n，服务端不下发文案。
+- 前端 `plugins/store.ts` 只保留服务端表的**内存镜像**：读失败 ⇒ 如实降级为「全开」（不伪造、不崩）；
+  PUT 失败 ⇒ 回滚真挂载状态且**不改镜像**；首次读到空表且 localStorage 有旧值 ⇒ 一次 PUT 迁移。
+- 时序：`startClientPlugins()` 仍是同步入口 —— 先乐观挂载「全开」，服务端表到达后对齐（真注销/真重挂）；
+  设置页在渲染开关初值前 `await whenClientPluginsReady()`。**首屏不阻塞、不写加载态**。
 
 ### 3.2 渲染缝（P1，P0 不做）
 

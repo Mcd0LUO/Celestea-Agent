@@ -23,9 +23,9 @@ describe("contracts/endpoints.json", () => {
   // W9: 51 -> 57 (the six permission endpoints); W860: 57 -> 60 (session tool
   // switches + the host plugin inventory); W870: 60 -> 61 (the session-level
   // model switch `PUT /api/sessions/{id}/model`); G5: 61 -> 62 (`GET /api/fs/list`).
-  it("holds exactly 64 endpoints (W725 context, W767 cookie gate, W783 questions, W785 ledger, W791 mode, W9 permissions, W860 tools/plugins, W870 session model, G5 fs list)", () => {
-    expect(c.count).toBe(64);
-    expect(c.endpoints).toHaveLength(64);
+  it("holds exactly 66 endpoints (W725 context, W767 cookie gate, W783 questions, W785 ledger, W791 mode, W9 permissions, W860 tools/plugins, W870 session model, G5 fs list, W895 display plugins)", () => {
+    expect(c.count).toBe(66);
+    expect(c.endpoints).toHaveLength(66);
   });
 
   // W767: Studio's own login-cookie gate is served on `/login` + `/auth/*` — the
@@ -63,11 +63,11 @@ describe("contracts/endpoints.json", () => {
     // W791: 11 -> 12 (POST /api/sessions/{id}/mode); W9: 12 -> 18 (the six
     // permission endpoints); W860: 18 -> 21 (tool switches + plugin inventory);
     // W870: 21 -> 22 (PUT /api/sessions/{id}/model); G5: 22 -> 23 (GET /api/fs/list).
-    expect(snap.tsOnlyRoutes).toHaveLength(25);
-    expect(snap.tsApiEndpoints).toBe(64);
-    expect(snap.tsMethodPathCombos).toBe(68);
+    expect(snap.tsOnlyRoutes).toHaveLength(27);
+    expect(snap.tsApiEndpoints).toBe(66);
+    expect(snap.tsMethodPathCombos).toBe(70);
     const fromSnapshot = new Set([...api, ...(snap.tsOnlyRoutes ?? [])].map((r) => `${r.method} ${r.path}`));
-    expect(fromSnapshot.size).toBe(64);
+    expect(fromSnapshot.size).toBe(66);
     const fromContract = new Set(c.endpoints.map((e) => `${e.method} ${e.path}`));
     expect([...fromContract].sort()).toEqual([...fromSnapshot].sort());
   });
@@ -94,7 +94,7 @@ describe("contracts/endpoints.json", () => {
     expect(field?.type).toBe("string");
     expect(String(field?.note)).toContain("git tag");
     expect(health?.notes?.some((n) => n.includes("W887"))).toBe(true);
-    expect(c.count).toBe(64);
+    expect(c.count).toBe(66);
   });
 
   it("freezes the W804 per-model modality bits with the optimistic default", () => {
@@ -245,7 +245,7 @@ describe("contracts/data-files", () => {
     expect(kind?.enum).toEqual(["ok", "error"]);
     expect(loadDataFileSchema("pricing.schema.json")["title"]).toContain("pricing.json");
 
-    expect(loadEndpoints().count).toBe(64);
+    expect(loadEndpoints().count).toBe(66);
   });
 });
 
@@ -261,8 +261,8 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     // P0 adds NO endpoint: /api/status.recovery is P1 and stays out. The count
     // moved for the unrelated reason that the question, ledger, mode, permission,
     // session-tool, plugin and session-model endpoints exist (W870: 61).
-    expect(loadEndpoints().count).toBe(64);
-    expect(loadEndpoints().endpoints).toHaveLength(64);
+    expect(loadEndpoints().count).toBe(66);
+    expect(loadEndpoints().endpoints).toHaveLength(66);
   });
 
   it("freezes the sidecar shape (version, open_turn, repaired[])", () => {
@@ -293,8 +293,8 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     const worker = byId.get("get_worker_status")?.response.fields.map((f) => f.name) ?? [];
     expect(worker).toContain("stale");
     expect(worker).toContain("orphans");
-    expect(loadEndpoints().count).toBe(64);
-    expect(API_ENDPOINT_COUNT).toBe(64);
+    expect(loadEndpoints().count).toBe(66);
+    expect(API_ENDPOINT_COUNT).toBe(66);
   });
 
   it("B7: the studio's own worker table is a declared data file with the new tokens", () => {
@@ -343,8 +343,8 @@ describe("W729 session modes (P0 contract delta)", () => {
     // W729 added no endpoint; W791's mode switch is the P1 addition (50 -> 51),
     // W9's six permission endpoints took it to 57, W860's three to 60 and W870's
     // session-level model switch to 61.
-    expect(c.count).toBe(64);
-    expect(c.endpoints).toHaveLength(64);
+    expect(c.count).toBe(66);
+    expect(c.endpoints).toHaveLength(66);
   });
 
   it("declares spawn_worker.mode without changing the tool count", () => {
@@ -405,8 +405,8 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     // Declared as TypeScript-only (the retired backend has no counterpart).
     const tsOnly = loadRouteSnapshot().tsOnlyRoutes ?? [];
     expect(tsOnly.map((r) => `${r.method} ${r.path}`)).toContain("POST /api/sessions/{id}/mode");
-    expect(c.count).toBe(64);
-    expect(API_ENDPOINT_COUNT).toBe(64);
+    expect(c.count).toBe(66);
+    expect(API_ENDPOINT_COUNT).toBe(66);
   });
 
   it("documents the ?session= query of GET /api/tools (absent = the focused session)", () => {
@@ -430,8 +430,8 @@ describe("W791 P1 session mode + archived list (contract delta)", () => {
     // B adds NO endpoint: W791's 51 is the mode switch alone (W860's 60 comes
     // from the session-tool switches and the plugin inventory; W870's 61 is the
     // session-level model switch).
-    expect(c.count).toBe(64);
-    expect(c.endpoints).toHaveLength(64);
+    expect(c.count).toBe(66);
+    expect(c.endpoints).toHaveLength(66);
   });
 });
 
@@ -455,9 +455,9 @@ describe("W870 session-scoped model switch (contract delta)", () => {
     // target is THIS endpoint, while POST /api/config stays the global default.
     expect(model?.notes?.some((n) => n.includes("POST /api/config"))).toBe(true);
     expect(model?.notes?.some((n) => n.includes("profileFor"))).toBe(true);
-    expect(c.count).toBe(64);
-    expect(c.endpoints).toHaveLength(64);
-    expect(API_ENDPOINT_COUNT).toBe(64);
+    expect(c.count).toBe(66);
+    expect(c.endpoints).toHaveLength(66);
+    expect(API_ENDPOINT_COUNT).toBe(66);
   });
 
   it("keeps POST /api/config meaning the GLOBAL default (no semantic drift)", () => {

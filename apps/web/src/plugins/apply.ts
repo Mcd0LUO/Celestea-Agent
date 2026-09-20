@@ -1,24 +1,31 @@
 // ============================================================================
-// plugins/apply.ts — 客户端插件的装配与**真热开关**（W859）。
+// plugins/apply.ts — 客户端插件的装配与**真热开关**（W859 · W895-C1）。
 // ----------------------------------------------------------------------------
-//   startClientPlugins()  装配时调用一次：把登记表里启用的提供者挂上去；
-//   setClientPlugin(id,on) 开关：真的注册/真的注销（幂等），失败回滚且不写偏好。
+//   startClientPlugins()     装配时调用一次：先乐观挂载「全开」，再异步取服务端
+//                            启用表并对齐（真注销/真重挂）。
+//   whenClientPluginsReady() 取表 + 对齐完成；设置页在渲染开关初值前 await 它。
+//   setClientPlugin(id,on)   开关：真的注册/真的注销（幂等），注册失败或服务端
+//                            PUT 失败都回滚，且**不改内存镜像**。
 // 语义要点：
 //   · 乐观优先 —— 调用方（设置页）当帧翻开关，本函数同步完成注册/注销；
-//   · 失败回滚 —— 注册抛错 ⇒ 保证不留半挂载；注销抛错 ⇒ 把旧的挂回去，
-//     且**不写偏好**，下次打开页面仍是原状态；
+//   · 失败回滚 —— 注册抛错 ⇒ 不留半挂载；PUT 抛错 ⇒ 把旧挂载状态挂回去，
+//     且内存镜像不变，下次打开页面仍是服务端的值；
 //   · 未知 id 拒绝（不猜、不静默成功）。
+//   · 服务端不可用 ⇒ 如实降级为全开（loadDisabledFromServer），不写加载态。
 // ============================================================================
 import { clientPlugins, clientPluginIds, clientPluginById } from './descriptor';
 import { t } from '../i18n';
 import { activatePlugin, deactivatePlugin, isRegistered, registerEnhancerPlugin, registerHintPlugin } from './register';
-import { setDisabled } from './store';
+import { isDisabled, loadDisabledFromServer, persistDisabled } from './store';
 
 /** 切换回执：pane 就地显示；失败时 pane 负责把开关拨回去（状态没变）。 */
 export interface ToggleResult {
   ok: boolean;
   text: string;
 }
+
+/** 服务端取表 + 对齐的完成信号（null = startClientPlugins 还没跑过）。 */
+let ready: Promise<void> | null = null;
 
 /** 装配内建客户端插件（ui/hint 的 initHints 调用；幂等，只挂当前启用的）。 */
 export function startClientPlugins(): void {
@@ -27,6 +34,26 @@ export function startClientPlugins(): void {
     if (d.kind === 'hint') registerHintPlugin(d.create());
     else registerEnhancerPlugin(d.create());
   }
+  // W895-C1：启用表在服务端，首次读取是异步的。上面的挂载是乐观的（全开）；
+  // 表回来后按它对齐 —— 既不拖慢首屏，也不需要「加载中」占位。
+  ready = reconcileFromServer();
+}
+
+/** 服务端表到达后，把实际挂载状态对齐到它（真注销 / 真重挂）。 */
+async function reconcileFromServer(): Promise<void> {
+  await loadDisabledFromServer(clientPluginIds());
+  for (const d of clientPlugins()) {
+    if (isDisabled(d.id)) deactivatePlugin(d.id);
+    else activatePlugin(d.id);
+  }
+}
+
+/**
+ * 取表 + 对齐完成。设置页在渲染开关初值前 await 它，这样首帧就是服务端真值；
+ * 若装配还没跑过则立即完成（全开），不阻塞。
+ */
+export function whenClientPluginsReady(): Promise<void> {
+  return ready ?? Promise.resolve();
 }
 
 /** 该插件此刻是否真的挂着（不是看偏好；诊断/测试/设置页初值都用它）。 */
@@ -34,19 +61,28 @@ export function isClientPluginOn(id: string): boolean {
   return isRegistered(id);
 }
 
-/** 幂等开关：真的注册/注销，成功后写偏好；失败保持原状态并返回说明。 */
-export function setClientPlugin(id: string, on: boolean): ToggleResult {
+/** 幂等开关：真的注册/注销，成功后写服务端；失败保持原状态并返回说明。 */
+export async function setClientPlugin(id: string, on: boolean): Promise<ToggleResult> {
   const d = clientPluginById(id);
   if (d === null) return { ok: false, text: t('plugins.notFound') };
+  const wasOn = isRegistered(id);
   try {
     if (on) activatePlugin(id);
     else deactivatePlugin(id);
   } catch (err) {
-    restore(id, !on);
-    console.warn('[plugins] 切换失败：' + (err instanceof Error ? err.message : String(err)));
+    restore(id, wasOn);
+    console.warn('[plugins] 切换失败：' + messageOf(err));
     return { ok: false, text: t('plugins.toggleFailed', { label: d.label }) };
   }
-  setDisabled(id, !on, clientPluginIds());
+  try {
+    await persistDisabled(id, !on, clientPluginIds());
+  } catch (err) {
+    // W895-C1: 服务端写失败 ⇒ 回滚真挂载状态，内存镜像也没动（persistDisabled
+    // 只在成功后才更新它）。界面据此把开关拨回，且下次打开仍是服务端的值。
+    restore(id, wasOn);
+    console.warn('[plugins] 偏好写入失败：' + messageOf(err));
+    return { ok: false, text: t('plugins.toggleFailed', { label: d.label }) };
+  }
   return { ok: true, text: t('plugins.toggled', { state: on ? t('plugins.on') : t('plugins.off'), label: d.label }) };
 }
 
@@ -56,6 +92,10 @@ function restore(id: string, on: boolean): void {
     if (on) activatePlugin(id);
     else deactivatePlugin(id);
   } catch (err) {
-    console.warn('[plugins] 回滚失败：' + (err instanceof Error ? err.message : String(err)));
+    console.warn('[plugins] 回滚失败：' + messageOf(err));
   }
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

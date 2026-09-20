@@ -28,6 +28,8 @@
  *   session-tools.ts W860: GET+PUT /api/sessions/{id}/tools (the session's disabled list)
  *   session-model.ts W870: PUT /api/sessions/{id}/model (the session-level model switch)
  *   plugins.ts       W860: GET /api/plugins (the host startup plugin inventory)
+ *   display-plugins.ts W895-C1: GET+PUT /api/display-plugins (the server-side
+ *                    source of truth for the client display-component switches)
  *   auth.ts          W767: GET /login | POST /auth/login | GET /auth/check
  *
  * W725: the context endpoint (44th) lives in sessions.ts; its shaping is in
@@ -39,6 +41,7 @@ import type { RouteTable } from "../routes.js";
 import { registerAuth } from "./auth.js";
 import { registerConfig } from "./config.js";
 import { registerDialog } from "./dialog.js";
+import { registerDisplayPlugins } from "./display-plugins.js";
 import { registerExec } from "./exec.js";
 import { registerFs } from "./fs.js";
 import { registerGrants } from "./grants.js";
@@ -83,6 +86,9 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     // W860: session-level tool switches (57 -> 59) + the host plugin inventory (59 -> 60).
     ...registerSessionTools(app, deps, table),
     ...registerPlugins(app, deps, table),
+    // W895-C1: the display-component enabled table moves from browser
+    // localStorage to the server (64 -> 66).
+    ...registerDisplayPlugins(app, deps, table),
     // W870: the session-scoped model switch (60 -> 61) — the statusline picker's
     // target; POST /api/config keeps meaning "the global default".
     registerSessionModel(app, deps, table),

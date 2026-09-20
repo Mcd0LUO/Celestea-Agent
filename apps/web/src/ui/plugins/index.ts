@@ -13,7 +13,7 @@
 //   保持空（回来即画，失败画如实空态）。
 // ============================================================================
 import { userErrorText } from '../../api';
-import { clientPlugins, isClientPluginOn, setClientPlugin } from '../../plugins';
+import { clientPlugins, isClientPluginOn, setClientPlugin, whenClientPluginsReady } from '../../plugins';
 import type { ClientPluginDescriptor } from '../../plugins';
 import { el, need } from '../../utils/dom';
 import { fetchHostPlugins, type HostPluginRow } from './host';
@@ -47,9 +47,12 @@ function clientRow(d: ClientPluginDescriptor, status: (t: string, ok: boolean) =
   input.checked = isClientPluginOn(d.id);
   input.addEventListener('change', () => {
     const want = input.checked;
-    const r = setClientPlugin(d.id, want);
-    if (!r.ok) input.checked = !want; // 回滚：真挂载状态确实没变
-    status(r.text, r.ok);
+    // W895-C1：写服务端是异步的；失败时回滚开关与真挂载状态（本函数已回滚）。
+    void (async () => {
+      const r = await setClientPlugin(d.id, want);
+      if (!r.ok) input.checked = !want; // 回滚：真挂载状态确实没变
+      status(r.text, r.ok);
+    })();
   });
   wrap.appendChild(input);
   wrap.appendChild(el('span', 'plug-switch-track'));
@@ -82,6 +85,9 @@ function renderHost(box: HTMLElement, rows: HostPluginRow[]): void {
 /** 载入并渲染这一格（config.ts 的 loadPane 调用；「重新载入」会再次调用）。 */
 export async function loadPluginsSection(): Promise<void> {
   const host = need<HTMLElement>(HOST);
+  // W895-C1：开关初值来自服务端启用表。先等「取表 + 对齐」落定再画一次终态 ——
+  // 既不写「加载中」占位，也不会把服务端已关闭的组件显示成开。
+  await whenClientPluginsReady();
   const status = el('div', 'plug-status');
   const setStatus = (t: string, ok: boolean): void => {
     status.className = 'plug-status' + (t === '' ? '' : ok ? ' ok' : ' err');

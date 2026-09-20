@@ -46,7 +46,6 @@ interface LsLike {
   clear(): void;
 }
 
-const STORAGE_KEY = 'celestea-studio.client-plugins-disabled';
 const STYLES = join(WEB, 'src', 'styles');
 const ls = (globalThis as unknown as { localStorage: LsLike }).localStorage;
 
@@ -78,13 +77,37 @@ async function openPlugins(): Promise<HintMod> {
 const switchOf = (id: string): InputLike =>
   q('#settingsPlugins .plug-row[data-id="' + id + '"] .plug-switch-input') as InputLike;
 
-function flip(id: string, on: boolean): void {
+async function flip(id: string, on: boolean): Promise<void> {
   const input = switchOf(id);
   input.checked = on;
   input.dispatchEvent(new Ev('change'));
+  await flush(); // W895-C1：写服务端是异步的，等它落定再断言
 }
 
 const statusText = (): string => q('#settingsPlugins .plug-status')?.textContent ?? '';
+
+/**
+ * W895-C1：显示组件启用表的打桩服务端。默认在夹具 fetch 之上再包一层
+ * （/api/display-plugins 走这里，其余仍走夹具），这样设置页读到的就是服务端真值。
+ */
+const displayServer = { disabled: [] as string[], failGet: false, failPut: false };
+function stubDisplay(opts: { get?: boolean; put?: boolean } = {}): void {
+  displayServer.failGet = opts.get === true;
+  displayServer.failPut = opts.put === true;
+  const base = (globalThis as unknown as { fetch: (u: unknown, i?: { method?: string; body?: unknown }) => Promise<unknown> }).fetch;
+  vi.stubGlobal('fetch', (url: unknown, init?: { method?: string; body?: unknown }) => {
+    if (!String(url).startsWith('/api/display-plugins')) return base(url, init);
+    const method = String(init?.method ?? 'GET').toUpperCase();
+    if (method === 'PUT') {
+      if (displayServer.failPut) return Promise.resolve(reply(500, { ok: false, error: 'write failed' }));
+      const parsed = JSON.parse(String(init?.body ?? '{}')) as { disabled?: unknown };
+      displayServer.disabled = Array.isArray(parsed.disabled) ? (parsed.disabled as string[]) : [];
+      return Promise.resolve(reply(200, { ok: true, disabled: displayServer.disabled }));
+    }
+    if (displayServer.failGet) return Promise.resolve(reply(404, { ok: false }));
+    return Promise.resolve(reply(200, { ok: true, disabled: displayServer.disabled }));
+  });
+}
 
 /** 打桩 GET /api/plugins（其余请求仍走夹具的真实 fetch 路径）。 */
 function stubPlugins(status: number, payload: unknown): void {
@@ -97,6 +120,8 @@ function stubPlugins(status: number, payload: unknown): void {
 beforeEach(() => {
   resetHarness();
   ls.clear();
+  displayServer.disabled = [];
+  stubDisplay(); // W895-C1：默认服务端启用表为空 = 全开
   bootSettings();
 });
 afterEach(() => {
@@ -129,7 +154,7 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     const node = doc.createElement('div') as ElLike;
     expect(hints.resolveHint(node, '提示')?.build()?.className).toBe('hint-card-text');
 
-    flip('hint-text-card', false);
+    await flip('hint-text-card', false);
     expect(hints.hintPlugins().map((p) => p.id)).toEqual(['rail-preview']);
     expect(hints.resolveHint(node, '提示')).toBeNull();
     hints.setHint(node, '提示');
@@ -137,17 +162,19 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     expect(node.getAttribute('title')).toBe('提示'); // 无人认领 → 原生兜底
     expect(statusText()).toContain('已关闭');
 
-    flip('hint-text-card', true);
+    await flip('hint-text-card', true);
     expect(hints.hintPlugins().map((p) => p.id).sort()).toEqual(['hint-text-card', 'rail-preview']);
     expect(hints.resolveHint(node, '提示')?.build()?.className).toBe('hint-card-text');
   });
 
-  it('③ 关闭状态持久化：模拟重开页面仍为关', async () => {
+  it('③ 关闭状态持久化到服务端：模拟重开页面仍为关', async () => {
     await openPlugins();
-    flip('hint-text-card', false);
-    expect(ls.getItem(STORAGE_KEY)).toContain('hint-text-card');
+    await flip('hint-text-card', false);
+    // W895-C1：真源已是服务端（不再是 localStorage）。
+    expect(displayServer.disabled).toContain('hint-text-card');
 
-    resetHarness(); // 模块表 + DOM 全部重建；localStorage 保留（= 重开页面）
+    resetHarness(); // 模块表 + DOM 全部重建；服务端状态保留（= 重开页面）
+    stubDisplay();
     bootSettings();
     const again = await openPlugins();
     expect(switchOf('hint-text-card').checked).toBe(false);
@@ -155,20 +182,26 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     expect(again.hintPlugins().map((p) => p.id)).toEqual(['rail-preview']);
   });
 
-  it('④ 坏 JSON / 未知 id fail-safe：不崩、未知忽略、不误关已知', async () => {
-    ls.setItem(STORAGE_KEY, '{ 这不是 JSON');
-    resetHarness();
-    bootSettings();
+  it('④ 服务端读失败=全开；未知 id 忽略、不误关已知（parseDisabled 仍覆盖旧值解析）', async () => {
     const store = (await import(/* @vite-ignore */ at('plugins/store.ts'))) as StoreMod;
+    // 纯函数 parseDisabled 仍是迁移读取旧 localStorage 的解析器（坏数据 fail-safe）。
     expect(store.parseDisabled('{ 这不是 JSON')).toEqual([]);
     expect(store.parseDisabled('"x"')).toEqual([]);
     expect(store.parseDisabled('["a",3,null,"b"]')).toEqual(['a', 'b']);
+
+    // (a) 服务端读失败 ⇒ 如实降级为「全开」，不崩、不伪造
+    resetHarness();
+    displayServer.disabled = ['ghost-plugin', 'hint-text-card'];
+    stubDisplay({ get: true });
+    bootSettings();
     await openPlugins();
     expect(switchOf('hint-text-card').checked).toBe(true);
     expect(switchOf('rail-preview').checked).toBe(true);
 
-    ls.setItem(STORAGE_KEY, JSON.stringify(['ghost-plugin', 'hint-text-card']));
+    // (b) 服务端读成功但含未知 id ⇒ 未知忽略、已知照关
     resetHarness();
+    displayServer.disabled = ['ghost-plugin', 'hint-text-card'];
+    stubDisplay();
     bootSettings();
     const hints = await openPlugins();
     expect(switchOf('hint-text-card').checked).toBe(false);
@@ -208,11 +241,11 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     };
     expect(enhance.enhancerIds()).toContain('display.codeCopy');
 
-    flip('display.codeCopy', false);
+    await flip('display.codeCopy', false);
     expect(enhance.enhancerIds()).not.toContain('display.codeCopy');
     expect(statusText()).toContain('已关闭');
 
-    flip('display.codeCopy', true);
+    await flip('display.codeCopy', true);
     expect(enhance.enhancerIds()).toContain('display.codeCopy');
   });
 });
