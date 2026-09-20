@@ -21,7 +21,14 @@ type Escape = (s: string) => string;
 type MarkedExtension = Parameters<typeof marked.use>[0];
 
 const MATH_INLINE_RE = /^\$(?!\$)(?=[^\s$])((?:\\.|[^\\$])+?)(?<=\S)\$(?!\$)(?!\d)/;
-const MATH_BLOCK_RE = /^\$\$([\s\S]+?)\$\$(?:\n|$)/;
+// W895-F：块级 `$$...$$` 的三个约束 ——
+//   ① **必须**是「整行开头」（前面只能是行首，或同一行的空白）。这是关键：
+//      否则讲到语法的字面例子（反引号里的 `$$...$$`）会被当成块公式起点，
+//      惰性收尾一路找到**后面真正的** `$$`，把中间整段正文（含标题、行内公式）
+//      全吞进一个 math-block —— 用户截图里的「公式糊成一团」就是这个。
+//   ② 内容里不允许出现未转义的 `$`（避免把后续行内的 `$` 当作收尾）。
+//   ③ `[^$]` 仍允许换行，所以**多行**公式照常工作（那才是块级的用途）。
+const MATH_BLOCK_RE = /^[ \t]*\$\$((?:[^$]|\\.)+?)\$\$(?:[ \t]*(?:\n|$))/;
 
 interface MathToken {
   type: string;
@@ -44,8 +51,19 @@ export function mathExtension(escape: Escape): MarkedExtension {
         name: 'mathBlock',
         level: 'block',
         start(src: string): number | undefined {
-          const i = src.indexOf('$$');
-          return i < 0 ? undefined : i;
+          // W895-F：跳过「行内上下文」里的 `$$`（反引号内 / 前一字符是反引号或反斜杠）。
+          // marked 先按块切分、再运行行内 tokenizer，所以块规则必须自己避开这些位置，
+          // 否则讲语法的字面例子会抢走真正的块公式起点。
+          let i = src.indexOf('$$');
+          while (i >= 0) {
+            const prev = i > 0 ? src[i - 1] : "";
+            const lineStart = src.lastIndexOf("\n", i - 1) + 1;
+            const beforeOnLine = src.slice(lineStart, i);
+            const atLineStart = beforeOnLine.trim() === "";
+            if (atLineStart && prev !== "`" && prev !== "\\") return i;
+            i = src.indexOf('$$', i + 2);
+          }
+          return undefined;
         },
         tokenizer(src: string): MathToken | undefined {
           const m = MATH_BLOCK_RE.exec(src);

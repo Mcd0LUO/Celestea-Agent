@@ -256,6 +256,11 @@
 }
 .content pre code { background: transparent; font-size: 12.5px; padding: 0; border: none; }
 
+/* W895-F：MathML 的 <annotation> 装着原始 TeX（无障碍/复制用），**规范上不该显示**。
+   但它是白名单元素，浏览器不给它默认隐藏 —— 结果每个公式的 textContent 里
+   渲染结果与原始 TeX 叠成两份（实测 "E=mc2E=mc^2"）。按方案 A 保留语义、只隐藏显示。 */
+.content math annotation { display: none; }
+
 /* W895：代码块复制按钮（可选显示组件，由 ui/enhance/code-copy.ts 注入）。
    .code-wrap 只是定位上下文：pre 自己 overflow-x:auto，按钮放外面才不会横向滚走。 */
 .content .code-wrap { position: relative; }
