@@ -344,7 +344,7 @@ export {
   SDK_TOOLS,
   type RunCodeConfig,
 } from "./run-code/limits.js";
-export { brokerRun, type BrokerContext, type RunCodeEventSink } from "./run-code/broker.js";
+export { brokerRun, resolveInterpreter, type BrokerContext, type RunCodeEventSink } from "./run-code/broker.js";
 export { appendBounded, jsonByteLength, LineReader, safeUtf8, tail, truncateValue, utf8Prefix, type BoundedLine } from "./run-code/lines.js";
 
 // --- browser (F4: session-scoped headless browser over zero-dep CDP) ----------

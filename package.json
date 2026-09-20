@@ -29,7 +29,8 @@
     "build:web": "pnpm --dir apps/web run build",
     "release:check": "node scripts/release-check.mjs",
     "release": "pnpm run build && pnpm run release:check",
-    "publish": "node scripts/publish.mjs"
+    "publish": "node scripts/publish.mjs",
+    "verify:win": "tsx scripts/verify-windows.ts"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

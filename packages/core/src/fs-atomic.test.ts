@@ -50,8 +50,9 @@ describe("W891 renameWithRetry", () => {
     expect(isTransientRenameError(err("EPERM"))).toBe(true);
     expect(isTransientRenameError(err("EBUSY"))).toBe(true);
     expect(isTransientRenameError(err("EACCES"))).toBe(true);
-    expect(isTransientRenameError(err("ENOTEMPTY"))).toBe(true);
     expect(isTransientRenameError(err("ENOENT"))).toBe(false);
+    // Permanent for a tmp->file rename: retrying only delays an honest error.
+    expect(isTransientRenameError(err("ENOTEMPTY"))).toBe(false);
     expect(isTransientRenameError(new Error("x"))).toBe(false);
   });
 

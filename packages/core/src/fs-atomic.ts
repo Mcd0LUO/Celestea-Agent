@@ -22,8 +22,14 @@ export interface RenameRetryOptions {
   sleep?: (ms: number) => void;
 }
 
-/** Windows-only codes that a retry can clear. A missing source (ENOENT) is not one. */
-const TRANSIENT_RENAME_CODES: readonly string[] = ["EPERM", "EBUSY", "EACCES", "ENOTEMPTY"];
+/**
+ * The codes a retry can actually clear: a transient Windows lock (sharing
+ * violation / AV / indexer hold). Deliberately NOT included:
+ *   - ENOENT: the source is gone — permanent.
+ *   - ENOTEMPTY: the target is a non-empty DIRECTORY — permanent. Retrying it
+ *     only delays an honest error by the whole backoff.
+ */
+const TRANSIENT_RENAME_CODES: readonly string[] = ["EPERM", "EBUSY", "EACCES"];
 
 export function isTransientRenameError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
