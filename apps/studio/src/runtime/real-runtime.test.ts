@@ -142,7 +142,10 @@ describe("POST /api/turn over the real engine", () => {
     expect(queued.status).toBe(200);
     expect(queued.body).toEqual({ ok: true, injected: false, turn: 1, pending: 1, placement: "queued", duplicate: false });
 
-    await collectUntilTerminal(sub, frames);
+    // W892: 4000 chars / 8 per chunk at 3ms is ~500 frames (~1.5s here), but a
+    // loaded Windows runner pushed it past the 5s default and the run reported
+    // "did not terminate" — a deadline problem, not a missing terminal frame.
+    await collectUntilTerminal(sub, frames, 25_000);
     sub.close();
     await waitIdle(h);
 

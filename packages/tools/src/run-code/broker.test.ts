@@ -279,7 +279,7 @@ describe("run_code argument + wiring contracts", () => {
     const out = await registry.registry.dispatch({
       call_id: "rc-e2e",
       name: "run_code",
-      args: { code: `async def main():\n    text = tools.read_file(path="${path}")\n    return text.splitlines()[0]\n`, language: "python" },
+      args: { code: `async def main():\n    text = tools.read_file(path=${JSON.stringify(path)})\n    return text.splitlines()[0]\n`, language: "python" },
     });
     expect(out.error).toBeNull();
     expect(out.value).toBe("first line");
@@ -288,7 +288,7 @@ describe("run_code argument + wiring contracts", () => {
     guarded.register(readFileTool());
     guarded.addGuard(PathGuard.fromEnv({ CELESTEA_TOOL_WORKDIR: dir }));
     const tool = mount(guarded);
-    const sub = await run(tool, "rc-guard-ok", { code: `async def main():\n    return tools.read_file(path="${path}")\n`, language: "python" });
+    const sub = await run(tool, "rc-guard-ok", { code: `async def main():\n    return tools.read_file(path=${JSON.stringify(path)})\n`, language: "python" });
     expect(sub.value).toBe("first line\nsecond line\n");
   });
 });

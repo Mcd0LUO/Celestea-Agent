@@ -329,7 +329,10 @@ function rejectRoot(entry: string, ctx: Ctx, grant: GrantRecord): string | null 
   const resolved = canonicalPath(entry);
   if (resolved === null) return `root '${show(entry, ctx)}' does not exist`;
   if (!isDirectory(resolved)) return `root '${show(entry, ctx)}' is not a directory`;
-  if (resolved === "/") return "root '/' is the filesystem root";
+  // W892: the filesystem root AS THIS HOST SPELLS IT. The literal "/" was
+  // POSIX-only: on Windows canonicalPath("/") is the current drive root (D:\),
+  // so a grant for the WHOLE filesystem slipped through the §4.3.2/§4.3.3 rule.
+  if (resolved === filesystemRoot(resolved)) return `root '${show(entry, ctx)}' is the filesystem root`;
   const dataDir = canonicalPath(dirname(loadStudioConfig({ env: ctx.env }).paths.workspacesFile));
   if (dataDir !== null && (isInside(dataDir, resolved) || dataDir === resolved)) return "root covers the studio data directory";
   const home = canonicalPath(ctx.env["HOME"] ?? homedir());

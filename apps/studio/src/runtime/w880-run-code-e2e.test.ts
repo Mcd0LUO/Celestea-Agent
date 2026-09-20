@@ -39,7 +39,7 @@ describe("W880 · HTTP turn runs run_code from CELESTEA_HOME", () => {
       expect(result).toBeDefined();
       const value = (result as { value: { argv1: string; cwd: string } }).value;
       console.log("[W880 e2e] run_code result=" + JSON.stringify(value) + " runDir=" + runDir);
-      expect(value.argv1.startsWith(`${runDir}/run_code_`)).toBe(true);
+      expect(value.argv1.startsWith(join(runDir, "run_code_"))).toBe(true);
       expect(value.cwd).toBe(h.workspace);
       expect(readdirSync(runDir)).toEqual([]);
       expect(existsSync(join(h.workspace, ".celestea"))).toBe(false);
