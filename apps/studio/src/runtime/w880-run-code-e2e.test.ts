@@ -40,10 +40,20 @@ describe("W880 · HTTP turn runs run_code from CELESTEA_HOME", () => {
       const value = (result as { value: { argv1: string; cwd: string } }).value;
       console.log("[W880 e2e] run_code result=" + JSON.stringify(value) + " runDir=" + runDir);
       expect(value.argv1.startsWith(join(runDir, "run_code_"))).toBe(true);
-      // W892: on Windows the child reports the LONG path (realpath) while the
-      // fixture was created under the 8.3 SHORT name (RUNNER~1), so the raw
-      // strings differ for the same directory. Compare canonical paths.
-      expect(realpathSync(value.cwd)).toBe(realpathSync(h.workspace));
+      // W892: on Windows the child reports the LONG path while the fixture was
+      // created under the 8.3 SHORT name (C:\\Users\\RUNNER~1\\...), so the raw
+      // strings differ for the SAME directory. NOTE: the JS realpathSync does
+      // not expand 8.3 names on Windows — only `realpathSync.native` (which asks
+      // the OS) returns one canonical form for both. (First attempt used the JS
+      // one and CI still saw RUNNER~1 vs runneradmin.)
+      const canon = (p: string): string => {
+        try {
+          return realpathSync.native(p);
+        } catch {
+          return realpathSync(p);
+        }
+      };
+      expect(canon(value.cwd)).toBe(canon(h.workspace));
       expect(readdirSync(runDir)).toEqual([]);
       expect(existsSync(join(h.workspace, ".celestea"))).toBe(false);
     } finally {
