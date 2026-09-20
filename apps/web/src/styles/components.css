@@ -221,86 +221,86 @@
 .tool-out::-webkit-scrollbar-track { margin: 6px; }
 
 /* ---- markdown 正文 ---- */
-.content { overflow-wrap: anywhere; }
+.rendered { overflow-wrap: anywhere; }
 .content > :first-child { margin-top: 0; }
 .content > :last-child { margin-bottom: 0; }
-.content p { margin: 0 0 .7em; }
-.content h1, .content h2, .content h3, .content h4 {
+.rendered p { margin: 0 0 .7em; }
+.rendered h1, .rendered h2, .rendered h3, .rendered h4 {
   margin: .9em 0 .5em; font-weight: 600; line-height: 1.35;
 }
-.content h1 { font-size: 1.3em; } .content h2 { font-size: 1.18em; } .content h3 { font-size: 1.08em; }
-.content ul, .content ol { margin: 0 0 .7em; padding-left: 1.5em; }
-.content li { margin: .15em 0; }
-.content a { color: var(--c-accent); text-decoration: none; }
-.content a:hover { text-decoration: underline; }
-.content blockquote {
+.rendered h1 { font-size: 1.3em; } .rendered h2 { font-size: 1.18em; } .rendered h3 { font-size: 1.08em; }
+.rendered ul, .rendered ol { margin: 0 0 .7em; padding-left: 1.5em; }
+.rendered li { margin: .15em 0; }
+.rendered a { color: var(--c-accent); text-decoration: none; }
+.rendered a:hover { text-decoration: underline; }
+.rendered blockquote {
   margin: .6em 0; padding: 2px 12px;
   border-left: 2px solid var(--c-border-strong); color: var(--c-text-2);
 }
-.content hr { border: none; border-top: 1px solid var(--c-border-subtle); margin: .9em 0; }
-.content table { border-collapse: collapse; margin: .6em 0; font-size: 13px; }
-.content th, .content td { border: 1px solid var(--c-border-subtle); padding: 4px 10px; }
-.content th { background: var(--c-surface-raised); color: var(--c-text-2); }
-.content img { max-width: 100%; border-radius: var(--r-md); }
+.rendered hr { border: none; border-top: 1px solid var(--c-border-subtle); margin: .9em 0; }
+.rendered table { border-collapse: collapse; margin: .6em 0; font-size: 13px; }
+.rendered th, .rendered td { border: 1px solid var(--c-border-subtle); padding: 4px 10px; }
+.rendered th { background: var(--c-surface-raised); color: var(--c-text-2); }
+.rendered img { max-width: 100%; border-radius: var(--r-md); }
 
-.content code {
+.rendered code {
   font-family: var(--mono); font-size: 12.5px;
 }
-.content :not(pre) > code {
+.rendered :not(pre) > code {
   background: var(--c-code-bg); border: 1px solid var(--c-border-subtle);
   padding: 0 5px; border-radius: var(--r-sm); font-size: 12px;
 }
-.content pre {
+.rendered pre {
   background: var(--c-code-bg); border: 1px solid var(--c-border-subtle);
   border-radius: var(--r-md); padding: 10px 12px; overflow-x: auto; margin: .7em 0;
 }
-.content pre code { background: transparent; font-size: 12.5px; padding: 0; border: none; }
+.rendered pre code { background: transparent; font-size: 12.5px; padding: 0; border: none; }
 
 /* W895-F：MathML 的 <annotation> 装着原始 TeX（无障碍/复制用），**规范上不该显示**。
    但它是白名单元素，浏览器不给它默认隐藏 —— 结果每个公式的 textContent 里
    渲染结果与原始 TeX 叠成两份（实测 "E=mc2E=mc^2"）。按方案 A 保留语义、只隐藏显示。 */
-.content math annotation { display: none; }
+.rendered math annotation { display: none; }
 
 /* W895：代码块复制按钮（可选显示组件，由 ui/enhance/code-copy.ts 注入）。
    .code-wrap 只是定位上下文：pre 自己 overflow-x:auto，按钮放外面才不会横向滚走。 */
-.content .code-wrap { position: relative; }
-.content .code-copy {
+.rendered .code-wrap { position: relative; }
+.rendered .code-copy {
   position: absolute; top: 6px; right: 6px;
   font-size: 11px; padding: 3px 8px; line-height: 1.4;
   opacity: 0; transition: opacity .12s ease;
 }
-.content .code-wrap:hover .code-copy,
-.content .code-copy:focus-visible { opacity: 1; }
+.rendered .code-wrap:hover .code-copy,
+.rendered .code-copy:focus-visible { opacity: 1; }
 /* W895-C2：四项可选显示组件（全部由 ui/enhance/*.ts 注入，不新建渲染缝）。 */
 
 /* 代码块增强：语言徽标 / 行号 / 悬停行高亮 / 超长折叠。 */
-.content .code-badge {
+.rendered .code-badge {
   position: absolute; top: 6px; left: 8px;
   font-family: var(--mono); font-size: 10px; line-height: 1.4;
   padding: 1px 6px; color: var(--c-text-3);
   background: var(--c-surface-raised); border: 1px solid var(--c-border-subtle);
   border-radius: var(--r-sm); pointer-events: none;
 }
-.content .code-fold { position: absolute; bottom: 6px; right: 6px; font-size: 11px; padding: 2px 8px; line-height: 1.4; }
-.content pre.code-folded { max-height: 22em; overflow-y: hidden; }
-.content pre .cl { display: block; }
+.rendered .code-fold { position: absolute; bottom: 6px; right: 6px; font-size: 11px; padding: 2px 8px; line-height: 1.4; }
+.rendered pre.code-folded { max-height: 22em; overflow-y: hidden; }
+.rendered pre .cl { display: block; }
 /* 换行载体：只为了让 code.textContent 可正确复制，视觉上完全不可见。 */
-.content pre .cl-nl { display: none; }
-.content pre .cl:hover { background: var(--c-surface-raised); }
-.content pre code .cl:first-child { min-height: 1em; }
+.rendered pre .cl-nl { display: none; }
+.rendered pre .cl:hover { background: var(--c-surface-raised); }
+.rendered pre code .cl:first-child { min-height: 1em; }
 
 /* CSV / TSV 表格（JSON 树组件已按用户要求移除）。 */
-.content .csv-block { margin: .7em 0; }
-.content .csv-raw { margin-top: 4px; }
-.content .csv-raw > summary { cursor: pointer; color: var(--c-text-3); font-size: 11px; }
+.rendered .csv-block { margin: .7em 0; }
+.rendered .csv-raw { margin-top: 4px; }
+.rendered .csv-raw > summary { cursor: pointer; color: var(--c-text-3); font-size: 11px; }
 
 /* CSV / TSV 表格。 */
-.content .csv-box { max-height: 26em; overflow: auto; border: 1px solid var(--c-border-subtle); border-radius: var(--r-md); }
-.content table.csv-table { margin: 0; width: 100%; }
-.content .csv-table thead th { position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; white-space: nowrap; }
-.content .csv-th[data-sort="asc"]::after { content: " ▲"; color: var(--c-accent); }
-.content .csv-th[data-sort="desc"]::after { content: " ▼"; color: var(--c-accent); }
-.content .csv-table tbody tr:hover { background: var(--c-surface-raised); }
+.rendered .csv-box { max-height: 26em; overflow: auto; border: 1px solid var(--c-border-subtle); border-radius: var(--r-md); }
+.rendered table.csv-table { margin: 0; width: 100%; }
+.rendered .csv-table thead th { position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; white-space: nowrap; }
+.rendered .csv-th[data-sort="asc"]::after { content: " ▲"; color: var(--c-accent); }
+.rendered .csv-th[data-sort="desc"]::after { content: " ▼"; color: var(--c-accent); }
+.rendered .csv-table tbody tr:hover { background: var(--c-surface-raised); }
 
 /* 图片灯箱。 */
 .img-zoom {
@@ -311,33 +311,37 @@
 }
 .img-zoom-img { max-width: 96vw; max-height: 92vh; border-radius: var(--r-md); box-shadow: var(--shadow-panel); }
 .img-zoom-close { position: absolute; top: 16px; right: 16px; }
-.content img[role="button"] { cursor: zoom-in; }
-.content img[role="button"]:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.rendered img[role="button"] { cursor: zoom-in; }
+.rendered img[role="button"]:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 
-.content pre code.hljs { background: transparent; color: inherit; }
+.rendered pre code.hljs { background: transparent; color: inherit; }
 
 /*
  * 代码高亮 token（主题化，见 tokens.css --hl-*）。
  *
- * W895-P：作用域必须覆盖**两个**渲染面 ——
- *   · `.content`      = 聊天正文（含助手/工具卡里的围栏代码块）；
- *   · `.preview-body` = 文件管理器/预览面板（.preview-code 与 .preview-md 都在它里面）。
- * 这里曾只写 `.content`，于是预览面板里 hljs 的 span **建出来了却没有颜色规则命中** ——
- * 文件管理器打开 .ts/.py 看起来「没有高亮」。加类不等于上色：类由 JS 加，颜色靠这里。
- * 新增渲染面时，这个选择器列表必须一起扩。
+ * W895-P：**所有渲染内容规则一律挂在共享 class `.rendered` 上**（本文件的 markdown 正文 /
+ * 代码块 / 表格 / 图片规则都是）。`.rendered` 由两个渲染面共同携带：
+ *   · 聊天正文    `el("div", "content rendered")`；
+ *   · 预览面板    `el("div", "preview-body rendered")`。
+ *
+ * 为什么不再逐个写 `.content, .preview-body`：这里踩过两次同一类 bug ——
+ * hljs 的 token 颜色、以及 code-wrap/code-copy/code-badge/.cl 的位置与形态，
+ * 都曾**只写 `.content`**，于是预览面板里「类加上了、样式没命中」：
+ * 高亮无颜色、复制按钮 absolute 定位到错误的祖先（飘在右边缘）、徽标无样式。
+ * 共享 class 让「新增一个渲染面」只需给它加上 `.rendered`，规则自动覆盖。
  */
-.content .hljs-comment, .preview-body .hljs-comment, .content .hljs-quote, .preview-body .hljs-quote { color: var(--hl-comment); font-style: italic; }
-.content .hljs-keyword, .preview-body .hljs-keyword, .content .hljs-selector-tag, .preview-body .hljs-selector-tag, .content .hljs-doctag, .preview-body .hljs-doctag { color: var(--hl-keyword); }
-.content .hljs-string, .preview-body .hljs-string, .content .hljs-regexp, .preview-body .hljs-regexp { color: var(--hl-string); }
-.content .hljs-number, .preview-body .hljs-number, .content .hljs-literal, .preview-body .hljs-literal { color: var(--hl-number); }
-.content .hljs-title, .preview-body .hljs-title, .content .hljs-title.function_, .preview-body .hljs-title.function_, .content .hljs-section, .preview-body .hljs-section { color: var(--hl-title); }
-.content .hljs-attr, .preview-body .hljs-attr, .content .hljs-attribute, .preview-body .hljs-attribute, .content .hljs-variable, .preview-body .hljs-variable, .content .hljs-template-variable, .preview-body .hljs-template-variable { color: var(--hl-attr); }
-.content .hljs-built_in, .preview-body .hljs-built_in { color: var(--hl-builtin); }
-.content .hljs-meta, .preview-body .hljs-meta { color: var(--hl-meta); }
-.content .hljs-type, .preview-body .hljs-type, .content .hljs-title.class_, .preview-body .hljs-title.class_ { color: var(--hl-type); }
-.content .hljs-name, .preview-body .hljs-name { color: var(--hl-title); }
-.content .hljs-deletion, .preview-body .hljs-deletion { color: var(--c-err); }
-.content .hljs-addition, .preview-body .hljs-addition { color: var(--c-ok); }
+.rendered .hljs-comment, .rendered .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.rendered .hljs-keyword, .rendered .hljs-selector-tag, .rendered .hljs-doctag { color: var(--hl-keyword); }
+.rendered .hljs-string, .rendered .hljs-regexp { color: var(--hl-string); }
+.rendered .hljs-number, .rendered .hljs-literal { color: var(--hl-number); }
+.rendered .hljs-title, .rendered .hljs-title.function_, .rendered .hljs-section { color: var(--hl-title); }
+.rendered .hljs-attr, .rendered .hljs-attribute, .rendered .hljs-variable, .rendered .hljs-template-variable { color: var(--hl-attr); }
+.rendered .hljs-built_in { color: var(--hl-builtin); }
+.rendered .hljs-meta { color: var(--hl-meta); }
+.rendered .hljs-type, .rendered .hljs-title.class_ { color: var(--hl-type); }
+.rendered .hljs-name { color: var(--hl-title); }
+.rendered .hljs-deletion { color: var(--c-err); }
+.rendered .hljs-addition { color: var(--c-ok); }
 
 .bubble.streaming .content::after { content: "▍"; color: var(--c-accent); animation: caret 1s steps(2) infinite; }
 

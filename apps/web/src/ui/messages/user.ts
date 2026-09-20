@@ -63,7 +63,7 @@ export function addUserMessage(
   msg.appendChild(cap);
   const bubble = el('div', 'bubble');
   for (const q of opts?.quotes ?? []) bubble.appendChild(quoteBlockEl(q)); // 引用卡在正文之上
-  const body = el('div', 'content');
+  const body = el('div', 'content rendered');
   body.textContent = text;
   body.style.whiteSpace = 'pre-wrap';
   bubble.appendChild(body);

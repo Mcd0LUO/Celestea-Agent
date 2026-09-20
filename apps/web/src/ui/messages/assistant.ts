@@ -201,7 +201,7 @@ export function ensureAssistant(ctx: SessionPane, into?: HTMLElement): Assistant
   cap.appendChild(el('span', null, fmtNow()));
   msg.appendChild(cap);
   const bubble = el('div', 'bubble streaming');
-  const content = el('div', 'content');
+  const content = el('div', 'content rendered');
   bubble.appendChild(content);
   msg.appendChild(bubble);
   col.appendChild(msg);

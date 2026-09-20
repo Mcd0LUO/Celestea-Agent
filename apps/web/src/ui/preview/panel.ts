@@ -78,7 +78,7 @@ function buildPanel(): void {
   close.addEventListener('click', closePreview);
   head.appendChild(close);
   panel.appendChild(head);
-  bodyEl = el('div', 'preview-body');
+  bodyEl = el('div', 'preview-body rendered');
   panel.appendChild(bodyEl);
   const actions = el('div', 'preview-actions');
   const copy = el('button', 'preview-action', t('chat.preview.copyPath')) as HTMLButtonElement;
