@@ -24,3 +24,8 @@ export function registerBuiltinEnhancers(): void {
   registerEnhancer({ id: HLJS_ENHANCER_ID, enhance: (container) => highlightCode(container) });
   registerEnhancer({ id: MATH_ENHANCER_ID, enhance: (container) => upgradeMath(container) });
 }
+
+// 模块加载即装配。内置两遍是**基础设施**（原先在 assistant.ts 里写死直调，不需要任何装配），
+// 所以它们不能依赖某个调用点记得先 init —— 任何 import 到增强缝的地方（消息、预览面板、测试）
+// 都应该立刻得到这两个遍。initEnhancers() 仍然保留为显式装配点（幂等，仅表达顺序意图）。
+registerBuiltinEnhancers();

@@ -50,6 +50,26 @@ describe('F2 · 文件侧边预览（DOM）', () => {
     expect(doc.querySelectorAll('#messages .preview-host').length).toBe(0);
   });
 
+  it('W895 修复：预览 markdown 的围栏代码块也走高亮（此前从不处理）', async () => {
+    const panel = await loadPanel();
+    panel.openPreview({
+      candidate: cand('/a/README.md', 'markdown'),
+      load: async () => '# T\n\n```ts\nconst x: number = 1;\n```\n',
+    });
+    await flush();
+    const code = doc.querySelector('.preview-md pre code') as unknown as { className: string; innerHTML: string } | null;
+    // 语言 class 由 renderers 声明，高亮由**增强缝**在插入后完成。
+    expect(code?.className).toContain('language-ts');
+    expect(code?.innerHTML).toContain('hljs-');
+  });
+
+  it('W895：预览 code 文件仍走高亮（改走增强缝后无回归）', async () => {
+    const panel = await loadPanel();
+    panel.openPreview({ candidate: cand('/a/b.ts'), load: async () => 'const x: number = 1;' });
+    await flush();
+    const code = doc.querySelector('.preview-code code') as unknown as { innerHTML: string } | null;
+    expect(code?.innerHTML).toContain('hljs-');
+  });
   it('竞态：晚到的旧加载结果被丢弃（seq 守卫）', async () => {
     const panel = await loadPanel();
     let releaseA: (v: string | null) => void = () => {};

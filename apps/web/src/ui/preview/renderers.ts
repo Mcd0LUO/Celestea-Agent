@@ -6,7 +6,6 @@
 // ============================================================================
 import { el, esc } from '../../utils/dom';
 import { renderMarkdownSafe, sanitizeNodes } from '../../utils/sanitize';
-import { highlightCode } from '../../utils/hljs';
 import { extOf, type PreviewKind } from './detect';
 import { t } from '../../i18n';
 
@@ -46,9 +45,10 @@ function codeNode(text: string, path: string): HTMLElement {
   const code = el('code');
   code.textContent = text;
   const lang = LANG_BY_EXT[extOf(path)];
-  if (lang) code.className = 'language-' + lang; // 有映射才调 hljs（避免 plaintext 告警）
+  // 只**声明**语言（hljs 读这个 class）；真正的高亮由调用方在插入后跑增强缝完成。
+  // 未登记的语言不声明 class ⇒ 渲染为纯文本（避免 plaintext 告警）。
+  if (lang) code.className = 'language-' + lang;
   pre.appendChild(code);
-  if (lang) highlightCode(pre);
   return pre;
 }
 

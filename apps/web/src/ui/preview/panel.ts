@@ -13,6 +13,7 @@
 import { el } from '../../utils/dom';
 import { openFsBrowser, type FsBrowserUi } from '../fsbrowser';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../../utils/overlays';
+import { runEnhancers } from '../enhance';
 import { renderPreview } from './renderers';
 import type { PreviewCandidate } from './detect';
 import { t } from '../../i18n';
@@ -127,6 +128,9 @@ async function resolveBody(req: PreviewRequest, my: number, body: HTMLElement): 
   const content = renderPreview({ path: req.candidate.path, kind: req.candidate.kind, text, url: req.url ?? null, degraded, badge });
   if (my !== seq) return;
   body.replaceChildren(content.node);
+  // W895 修复：预览也走**同一条增强缝**（此前只有 code 分支自己调 hljs，于是 markdown
+  // 文件里的围栏代码块、以及数学占位都永远不处理 —— 文件管理器里打开 .md 看不到高亮）。
+  runEnhancers(content.node);
   body.classList.toggle('is-degraded', content.degraded !== null);
   if (noteEl) {
     noteEl.textContent = truncated ? t('chat.preview.truncated') : '';
