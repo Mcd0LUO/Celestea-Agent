@@ -4,7 +4,7 @@
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
-    "doc": "/src/celestea_studio-ts/docs/feature-session-grants.md",
+    "doc": "/src/celestea_studio-ts/docs/archive/decisions/feature-session-grants.md",
     "routes": "frozen from the retired backend implementation (original source file deleted 2026-09-15); kept as contracts/route-table.snapshot.json (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "routeSnapshot": "contracts/route-table.snapshot.json",
@@ -1152,7 +1152,7 @@
       "path": "/api/sessions/{id}/mode",
       "group": "sessions",
       "rustHandler": "(none - TypeScript-only, W791)",
-      "docRef": "docs/modes-standard-vs-execution.md#31-api（端点与字段）",
+      "docRef": "docs/modes-standard-vs-execution.md#31-api端点与字段",
       "request": {
         "kind": "json",
         "fields": [
@@ -1223,7 +1223,7 @@
       "path": "/api/sessions/{id}/model",
       "group": "sessions",
       "rustHandler": "(none - TypeScript-only, W870)",
-      "docRef": "docs/modes-standard-vs-execution.md#31-api（端点与字段）",
+      "docRef": "docs/modes-standard-vs-execution.md#31-api端点与字段",
       "request": {
         "kind": "json",
         "fields": [
@@ -1909,7 +1909,7 @@
         }
       ],
       "notes": [
-        "G5 (docs/iteration-g-workbench.md §0.1): directories AND files with name/type/size/mtime. Same discipline as get_fs_browse: absolute path, dot-names hidden, symlinks not followed, sorted (dirs first), capped at MAX_DIR_ENTRIES. Additive 'roots'/'truncated' fields. No auth; loopback-bound only."
+        "G5 (docs/archive/decisions/iteration-g-workbench.md §0.1): directories AND files with name/type/size/mtime. Same discipline as get_fs_browse: absolute path, dot-names hidden, symlinks not followed, sorted (dirs first), capped at MAX_DIR_ENTRIES. Additive 'roots'/'truncated' fields. No auth; loopback-bound only."
       ],
       "probe": {
         "checked": false,
@@ -2996,7 +2996,7 @@
       "path": "/api/sessions/{id}/grants",
       "group": "grants",
       "rustHandler": "(none - TypeScript-only, W516)",
-      "docRef": "docs/feature-session-grants.md#61-get-apisessionsidgrants",
+      "docRef": "docs/archive/decisions/feature-session-grants.md#61-get-apisessionsidgrants",
       "request": {
         "kind": "none",
         "fields": []
@@ -3073,7 +3073,7 @@
       "path": "/api/sessions/{id}/grants",
       "group": "grants",
       "rustHandler": "(none - TypeScript-only, W516)",
-      "docRef": "docs/feature-session-grants.md#62-post-apisessionsidgrants",
+      "docRef": "docs/archive/decisions/feature-session-grants.md#62-post-apisessionsidgrants",
       "request": {
         "kind": "json",
         "fields": [
@@ -3191,7 +3191,7 @@
       "path": "/api/sessions/{id}/grants",
       "group": "grants",
       "rustHandler": "(none - TypeScript-only, W516)",
-      "docRef": "docs/feature-session-grants.md#63-delete-apisessionsidgrants",
+      "docRef": "docs/archive/decisions/feature-session-grants.md#63-delete-apisessionsidgrants",
       "request": {
         "kind": "json",
         "fields": [
@@ -3256,7 +3256,7 @@
       "path": "/api/sessions/{id}/grants/confirm-token",
       "group": "grants",
       "rustHandler": "(none - TypeScript-only, W516)",
-      "docRef": "docs/feature-session-grants.md#64-get-apisessionsidgrantsconfirm-token",
+      "docRef": "docs/archive/decisions/feature-session-grants.md#64-get-apisessionsidgrantsconfirm-token",
       "request": {
         "kind": "query",
         "fields": [
@@ -3330,7 +3330,7 @@
       "path": "/api/sessions/{id}/context",
       "group": "sessions",
       "rustHandler": "(none - TypeScript-only, W725)",
-      "docRef": "docs/feature-session-context.md#1-端点",
+      "docRef": "docs/archive/decisions/feature-session-context.md#1-端点",
       "request": {
         "kind": "none",
         "fields": []
@@ -3371,7 +3371,7 @@
             "name": "messages",
             "type": "array<{role:string,content:string,tool_name?:string,tool_call_id?:string,truncated?:true}>",
             "required": true,
-            "note": "the post-trim history the next step would send; see docs/feature-session-context.md §2"
+            "note": "the post-trim history the next step would send; see docs/archive/decisions/feature-session-context.md §2"
           },
           {
             "name": "counts",
@@ -3422,7 +3422,7 @@
       "path": "/login",
       "group": "auth",
       "rustHandler": "(none - TypeScript-only, W767)",
-      "docRef": "docs/feature-studio-auth.md#1-三个端点",
+      "docRef": "docs/archive/decisions/feature-studio-auth.md#1-三个端点",
       "request": {
         "kind": "none",
         "fields": []
@@ -3452,7 +3452,7 @@
       "path": "/auth/login",
       "group": "auth",
       "rustHandler": "(none - TypeScript-only, W767)",
-      "docRef": "docs/feature-studio-auth.md#1-三个端点",
+      "docRef": "docs/archive/decisions/feature-studio-auth.md#1-三个端点",
       "request": {
         "kind": "json",
         "fields": [
@@ -3519,7 +3519,7 @@
       "path": "/auth/check",
       "group": "auth",
       "rustHandler": "(none - TypeScript-only, W767)",
-      "docRef": "docs/feature-studio-auth.md#1-三个端点",
+      "docRef": "docs/archive/decisions/feature-studio-auth.md#1-三个端点",
       "request": {
         "kind": "none",
         "fields": [],
@@ -3561,7 +3561,7 @@
       "path": "/api/questions",
       "group": "questions",
       "rustHandler": "(none - TypeScript-only, W783)",
-      "docRef": "docs/feature-ask-user.md#7-断线恢复",
+      "docRef": "docs/archive/decisions/feature-ask-user.md#7-断线恢复",
       "request": {
         "kind": "query",
         "fields": [
@@ -3612,7 +3612,7 @@
       "path": "/api/questions/{id}/answer",
       "group": "questions",
       "rustHandler": "(none - TypeScript-only, W783)",
-      "docRef": "docs/feature-ask-user.md#42-数据流关键答案直接-resolve",
+      "docRef": "docs/archive/decisions/feature-ask-user.md#42-数据流关键答案直接-resolve",
       "request": {
         "kind": "json",
         "fields": [
@@ -3804,7 +3804,7 @@
       "path": "/api/permissions/presets",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W9)",
-      "docRef": "docs/feature-session-permissions.md#w9",
+      "docRef": "contracts/endpoints.json#get_permissions_presets",
       "request": {
         "kind": "none",
         "fields": []
@@ -3852,7 +3852,7 @@
       "path": "/api/permissions/presets",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W9)",
-      "docRef": "docs/feature-session-permissions.md#w9",
+      "docRef": "contracts/endpoints.json#post_permissions_presets",
       "request": {
         "kind": "json",
         "fields": [
@@ -3903,7 +3903,7 @@
       "path": "/api/permissions/presets/{id}",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W9)",
-      "docRef": "docs/feature-session-permissions.md#w9",
+      "docRef": "contracts/endpoints.json#put_permissions_preset",
       "request": {
         "kind": "json",
         "fields": [
@@ -3958,7 +3958,7 @@
       "path": "/api/permissions/presets/{id}",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W9)",
-      "docRef": "docs/feature-session-permissions.md#w9",
+      "docRef": "contracts/endpoints.json#delete_permissions_preset",
       "request": {
         "kind": "none",
         "fields": []
@@ -4001,7 +4001,7 @@
       "path": "/api/sessions/{id}/permission",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W9)",
-      "docRef": "docs/feature-session-permissions.md#w9",
+      "docRef": "contracts/endpoints.json#get_session_permission",
       "request": {
         "kind": "none",
         "fields": []
@@ -4059,7 +4059,7 @@
       "path": "/api/sessions/{id}/permission",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W9)",
-      "docRef": "docs/feature-session-permissions.md#w9",
+      "docRef": "contracts/endpoints.json#put_session_permission",
       "request": {
         "kind": "json",
         "fields": [
@@ -4115,7 +4115,7 @@
       "path": "/api/sessions/{id}/tools",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W860)",
-      "docRef": "docs/feature-session-permissions.md#w860",
+      "docRef": "contracts/endpoints.json#get_session_tools",
       "request": {
         "kind": "none",
         "fields": []
@@ -4175,7 +4175,7 @@
       "path": "/api/sessions/{id}/tools",
       "group": "permissions",
       "rustHandler": "(none - TypeScript-only, W860)",
-      "docRef": "docs/feature-session-permissions.md#w860",
+      "docRef": "contracts/endpoints.json#put_session_tools",
       "request": {
         "kind": "json",
         "fields": [
@@ -4249,7 +4249,7 @@
       "path": "/api/plugins",
       "group": "plugins",
       "rustHandler": "(none - TypeScript-only, W860)",
-      "docRef": "docs/feature-session-permissions.md#w860",
+      "docRef": "contracts/endpoints.json#get_plugins",
       "request": {
         "kind": "none",
         "fields": []
@@ -4379,7 +4379,7 @@
         }
       ],
       "notes": [
-        "G2 (docs/iteration-g-workbench.md section 1): /run and ! execute immediately and never touch /api/turn or the model. Reuses the run_shell execution path (selectSandboxDetailed + sessionSandboxConfig + sanitized env + output cap); a preset that denies run_shell, or a sandbox policy that refuses, is a structured refusal. NOT a tool: absent from contracts/tools.json and the model-visible face."
+        "G2 (docs/archive/decisions/iteration-g-workbench.md section 1): /run and ! execute immediately and never touch /api/turn or the model. Reuses the run_shell execution path (selectSandboxDetailed + sessionSandboxConfig + sanitized env + output cap); a preset that denies run_shell, or a sandbox policy that refuses, is a structured refusal. NOT a tool: absent from contracts/tools.json and the model-visible face."
       ],
       "probe": {
         "checked": false,
