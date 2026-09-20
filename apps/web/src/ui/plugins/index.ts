@@ -3,17 +3,28 @@
 // ----------------------------------------------------------------------------
 //   容器结构（离屏构建、单次替换）：
 //     #settingsPlugins
-//       .plug-sec（客户端插件）
-//         .plug-list  > .plug-row[data-id]（开关 = 真注册/真注销，见 src/plugins/）
-//         .plug-status 就地说明（切换结果 / 失败原因）
+//       .plug-bar（W895-L 插件库工具条：搜索 + 计数 + 全部开/关）
+//       .plug-sec（客户端插件；W895-L 按**分类**分组）
+//         .plug-cat-head（分类名 + 该类计数）
+//         .plug-list > .plug-row[data-id]（开关 = 真注册/真注销，见 src/plugins/）
+//       .plug-status 就地说明（切换结果 / 失败原因）
 //       .plug-sec（服务端插件，只读）
 //         .plug-host-list > .plug-host（名字 + 「服务端内置 · 进程内不可热拔插」）
 //         或 .plug-empty（服务端未提供插件清单 —— 不伪造）
 //   铁律：首屏不写「加载中」占位 —— 客户端一段同步画出终态；宿主一段在清单回来前
 //   保持空（回来即画，失败画如实空态）。
+//   W895-L：搜索/分类是**纯视图**——只过滤已画的 DOM，不重新取表、不重建记录。
 // ============================================================================
 import { userErrorText } from '../../api';
-import { clientPlugins, isClientPluginOn, setClientPlugin, whenClientPluginsReady } from '../../plugins';
+import {
+  CLIENT_PLUGIN_CATEGORIES,
+  categoryLabelKey,
+  clientPlugins,
+  isClientPluginOn,
+  setClientPlugin,
+  setClientPlugins,
+  whenClientPluginsReady,
+} from '../../plugins';
 import type { ClientPluginDescriptor } from '../../plugins';
 import { el, need } from '../../utils/dom';
 import { fetchHostPlugins, type HostPluginRow } from './host';
@@ -82,6 +93,115 @@ function renderHost(box: HTMLElement, rows: HostPluginRow[]): void {
   box.replaceChildren(...off.childNodes);
 }
 
+// ---- W895-L：插件库视图（分类 + 搜索 + 批量） ---------------------------------
+
+/** 命中搜索词？（大小写无关，匹配 label 与 hint —— 两者都是用户语言。） */
+function matches(d: ClientPluginDescriptor, q: string): boolean {
+  if (q === '') return true;
+  const hay = (d.label + ' ' + d.hint).toLowerCase();
+  return hay.includes(q.toLowerCase());
+}
+
+/**
+ * 构建插件库：工具条（搜索 + 计数 + 全部开/关）+ 按分类分组的列表。
+ *
+ * 纯视图：搜索/分组只操作**已建好的**行节点，不重新取服务端表、不重建记录。
+ * 每行仍是 .plug-row[data-id] + .plug-switch-input（既有测试与开关语义不变）。
+ */
+function buildLibrary(setStatus: (t: string, ok: boolean) => void): HTMLElement {
+  const all = clientPlugins();
+  const box = el('div', 'plug-lib');
+
+  // 搜索（不写「加载中」；空结果画如实空态）
+  const bar = el('div', 'plug-bar');
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'plug-search-input';
+  search.placeholder = t('settings.plugins.search');
+  search.setAttribute('aria-label', t('settings.plugins.search'));
+  bar.appendChild(search);
+
+  const count = el('span', 'plug-count');
+  const allOn = el('button', 'btn plug-bulk', t('settings.plugins.allOn')) as HTMLButtonElement;
+  const allOff = el('button', 'btn plug-bulk', t('settings.plugins.allOff')) as HTMLButtonElement;
+  allOn.type = 'button';
+  allOff.type = 'button';
+  bar.appendChild(count);
+  bar.appendChild(allOn);
+  bar.appendChild(allOff);
+  box.appendChild(bar);
+
+  // 分类分组（顺序由 descriptor 的封闭集决定）
+  const groups: Array<{ cat: string; sec: HTMLElement; list: HTMLElement; head: HTMLElement }> = [];
+  for (const cat of CLIENT_PLUGIN_CATEGORIES) {
+    const sec = el('div', 'plug-cat');
+    const head = el('div', 'plug-cat-head');
+    head.appendChild(el('h6', 'plug-cat-title', t(categoryLabelKey(cat))));
+    const n = el('span', 'plug-cat-count', '');
+    head.appendChild(n);
+    const list = el('div', 'plug-list');
+    sec.appendChild(head);
+    sec.appendChild(list);
+    box.appendChild(sec);
+    groups.push({ cat, sec, list, head: n });
+  }
+
+  const rows = new Map<string, { row: HTMLElement; d: ClientPluginDescriptor }>();
+  for (const d of all) {
+    const row = clientRow(d, setStatus);
+    rows.set(d.id, { row, d });
+    const g = groups.find((x) => x.cat === d.category);
+    (g ?? groups[0]!).list.appendChild(row);
+  }
+
+  // 用**独占**的 class：`.plug-empty` 已被宿主一段的「清单不可用」占用 ——
+  // 同一个选择器指两个概念会让两边都不可断言（既有测试立刻抓到了）。
+  const empty = el('div', 'plug-nomatch', t('settings.plugins.empty'));
+  empty.classList.add('hidden');
+  box.appendChild(empty);
+
+  /** 把当前过滤/计数/空态一次性应用到已存在的节点（不重建行）。 */
+  const apply = (): void => {
+    const q = search.value.trim();
+    let shown = 0;
+    let on = 0;
+    for (const [, { row, d }] of rows) {
+      const hit = matches(d, q);
+      row.classList.toggle('hidden', !hit);
+      if (hit) shown += 1;
+      if (isClientPluginOn(d.id)) on += 1;
+    }
+    for (const g of groups) {
+      const visible = Array.from(g.list.children).filter((c) => !c.classList.contains('hidden')).length;
+      g.sec.classList.toggle('hidden', visible === 0);
+      g.head.textContent = String(visible);
+    }
+    count.textContent = t('settings.plugins.count', { on: String(on), total: String(all.length) });
+    empty.classList.toggle('hidden', shown !== 0);
+  };
+
+  search.addEventListener('input', apply);
+  const bulk = (on: boolean) => {
+    // 对**当前可见**的行批量（搜索过滤后只影响看到的那批，符合用户预期）。
+    const ids = Array.from(rows.values()).filter((r) => !r.row.classList.contains('hidden')).map((r) => r.d.id);
+    void (async () => {
+      const r = await setClientPlugins(ids, on);
+      // 无论成败都以**真实挂载状态**重画开关初值（失败时状态没变）。
+      for (const [id, entry] of rows) {
+        const input = entry.row.querySelector('.plug-switch-input') as HTMLInputElement | null;
+        if (input) input.checked = isClientPluginOn(id);
+      }
+      apply();
+      setStatus(r.text, r.ok);
+    })();
+  };
+  allOn.addEventListener('click', () => bulk(true));
+  allOff.addEventListener('click', () => bulk(false));
+
+  apply();
+  return box;
+}
+
 /** 载入并渲染这一格（config.ts 的 loadPane 调用；「重新载入」会再次调用）。 */
 export async function loadPluginsSection(): Promise<void> {
   const host = need<HTMLElement>(HOST);
@@ -95,9 +215,7 @@ export async function loadPluginsSection(): Promise<void> {
   };
 
   const clientSec = section(t('settings.plugins.clientTitle'), t('settings.plugins.clientNote'));
-  const list = el('div', 'plug-list');
-  for (const d of clientPlugins()) list.appendChild(clientRow(d, setStatus));
-  clientSec.appendChild(list);
+  clientSec.appendChild(buildLibrary(setStatus));
   clientSec.appendChild(status);
 
   const hostList = el('div', 'plug-host-list');

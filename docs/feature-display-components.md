@@ -1,6 +1,6 @@
 # 特性设计 · 可选显示组件（display components）
 
-> 状态：**设计**（**P0 已实现**，W895；**C1：启用表真源搬到服务端已实现**，W895-C1；**C2：四项可选组件已实现**，W895-C2，TOC/alerts 已按用户决定砍掉；渲染缝（P1）不再做）。本文是目标契约与验收标准的记录；落地见 `apps/web/src/ui/enhance/`、`apps/web/src/plugins/`、`apps/studio/src/store/display-plugins.ts`。
+> 状态：**设计**（**P0 已实现**，W895；**C1：启用表真源搬到服务端已实现**，W895-C1；**C2：四项可选组件已实现**，W895-C2，TOC/alerts 已按用户决定砍掉；渲染缝（P1）不再做；**插件库管理面已实现**，W895-L）。本文是目标契约与验收标准的记录；落地见 `apps/web/src/ui/enhance/`、`apps/web/src/plugins/`、`apps/studio/src/store/display-plugins.ts`。
 > 依赖：[ARCHITECTURE.md](./ARCHITECTURE.md) 的分层与 seam 纪律、[DEPENDENCY-POLICY.md](./DEPENDENCY-POLICY.md) §7。
 
 ## 1. 一句话目标
@@ -127,9 +127,22 @@ TOC 与 alerts 经用户明确决定**不做**，因此**不新建渲染缝**，
 | A5 | 首屏不退化 | 产物体积与 chunk 数与改动前对比（只允许在同一 bundle 内增长） |
 | A6 | 零新依赖 | `apps/web/package.json` 依赖集不变 |
 
+### P3 —— 插件库管理面（W895-L，已实现）
+
+用户裁决：**选 B（管理面）而不是 A（运行时下载）** —— 不动加载方式，零安全代价。
+
+| 内容 | 说明 |
+|---|---|
+| `category` 分类轴 | `reading` / `structure` / `media` / `interaction`，与 `kind`（挂哪条缝）**正交**：`kind` 是实现事实，`category` 是用户语言 |
+| 库视图 | 工具条（搜索 + 计数 + 全部开/关）+ 按分类分组 + 空态；搜索是**纯视图**，只过滤已建好的行 |
+| 批量开关 | `setClientPlugins` + `store.persistDisabledMany` —— **一次 PUT**（不是 N 次），失败**整批**回滚 |
+
+**为什么批量必须是一次 PUT**：N 次单开关调用每次都可能部分失败，状态会停在「一半成一半败」
+而没有任何人能解释它。服务端本来就是整表替换语义，所以整批一次落库 = 要么全成、要么全不动。
+
 ## 6. 刻意没做什么
 
-- **不建插件市场 / 不做运行时下载**：那需要在用户浏览器里执行下载来的代码，是安全模型变更。
+- **不建插件市场 / 不做运行时下载**（用户已裁决不做 A 路线）：那需要在用户浏览器里执行下载来的代码，是安全模型变更。
   本仓的「可选」= **同一产物内的模块 + 开关控制是否挂载**（构建期装配）。
 - **不抄 DSH 的规模**：不引入 cordis / React / slot 声明合并 / 每插件一 bundle。
   只抄它的**形状**（具名提供者 + `register -> dispose` + 单一挂载点），与 W790 同一判断。

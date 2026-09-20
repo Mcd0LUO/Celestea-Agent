@@ -33,6 +33,51 @@
   color: var(--c-text-3);
 }
 
+/* ---- 1b) W895-L 插件库：工具条 / 分类分组 / 批量 ------------------------- */
+.plug-lib { display: flex; flex-direction: column; gap: var(--sp-flow-answer); }
+.plug-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plug-search-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--c-text-1);
+  background: var(--bg-layer-1);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-sm);
+  padding: 5px 9px;
+}
+.plug-search-input:focus-visible {
+  outline: 1px solid var(--interactive-accent-ring);
+  outline-offset: 1px;
+}
+.plug-count {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.plug-bulk { flex: 0 0 auto; font-size: 11.5px; padding: 4px 10px; }
+.plug-cat { display: flex; flex-direction: column; gap: 6px; }
+.plug-cat-head { display: flex; align-items: baseline; gap: 6px; }
+.plug-cat-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--c-text-3);
+  text-transform: none;
+}
+.plug-cat-count {
+  font-size: 11px;
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.plug-lib .hidden { display: none; }
 /* ---- 2) 行骨架（开关行 / 只读行共用） -------------------------------------- */
 .plug-list,
 .plug-host-list {

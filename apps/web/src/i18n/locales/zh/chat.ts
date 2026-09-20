@@ -284,6 +284,8 @@ export const chat = {
   'plugins.notFound': '没有找到这个插件，保持原样。',
   'plugins.toggleFailed': '「{label}」切换失败，已恢复原来的状态。',
   'plugins.toggled': '已{state}「{label}」',
+  'plugins.toggledMany': '已{state} {n} 个插件',
+  'plugins.toggleFailedMany': '{n} 个插件切换失败，已恢复原来的状态。',
   'plugins.on': '开启',
   'plugins.off': '关闭',
   'plugins.desc.textCard.label': '文字卡片',

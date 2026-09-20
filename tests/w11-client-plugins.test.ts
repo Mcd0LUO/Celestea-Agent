@@ -133,19 +133,21 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
   it('① 列出全部客户端插件（2 提示 + 5 增强），开关默认开，且与真实提示注册表一致', async () => {
     const hints = await openPlugins();
     const rows = qa('#settingsPlugins .plug-row');
-    expect(rows.map((r) => r.dataset['id'])).toEqual([
+    // W895-L：插件库**按分类分组**渲染，所以 DOM 顺序 = 分类顺序（不再是登记表顺序）。
+    // 这里断言「集合完整」，顺序由下一条（分组）用例钉住。
+    expect(rows.map((r) => r.dataset['id']).sort()).toEqual([
+      'display.codeCopy', 'display.codeExtras', 'display.csvTable', 'display.imageZoom', 'display.jsonTree',
       'hint-text-card', 'rail-preview',
-      'display.codeCopy', 'display.jsonTree', 'display.csvTable', 'display.codeExtras', 'display.imageZoom',
     ]);
-    expect(qa('#settingsPlugins .plug-list .plug-row-label').map((n) => n.textContent)).toEqual([
-      '文字卡片',
-      '预览卡片',
+    expect(qa('#settingsPlugins .plug-row-label').map((n) => n.textContent).sort()).toEqual([
       '代码块复制',
-      'JSON 树',
-      '表格视图',
       '代码块增强',
       '图片灯箱',
-    ]);
+      '预览卡片',
+      'JSON 树',
+      '文字卡片',
+      '表格视图',
+    ].sort());
     for (const r of rows) {
       expect((r.querySelector('.plug-switch-input') as InputLike).checked).toBe(true);
     }

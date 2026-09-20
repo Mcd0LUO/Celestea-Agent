@@ -284,6 +284,8 @@ export const chat = {
   'plugins.notFound': 'Plugin not found; nothing changed.',
   'plugins.toggleFailed': 'Failed to toggle "{label}"; the previous state was restored.',
   'plugins.toggled': '{state} "{label}"',
+  'plugins.toggledMany': '{state} {n} plugins',
+  'plugins.toggleFailedMany': '{n} plugins failed to toggle; the previous state was restored.',
   'plugins.on': 'Enabled',
   'plugins.off': 'Disabled',
   'plugins.desc.textCard.label': 'Text card',

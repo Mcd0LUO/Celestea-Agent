@@ -16,7 +16,7 @@
 import { clientPlugins, clientPluginIds, clientPluginById } from './descriptor';
 import { t } from '../i18n';
 import { activatePlugin, deactivatePlugin, isRegistered, registerEnhancerPlugin, registerHintPlugin } from './register';
-import { isDisabled, loadDisabledFromServer, persistDisabled } from './store';
+import { isDisabled, loadDisabledFromServer, persistDisabled, persistDisabledMany } from './store';
 
 /** 切换回执：pane 就地显示；失败时 pane 负责把开关拨回去（状态没变）。 */
 export interface ToggleResult {
@@ -84,6 +84,34 @@ export async function setClientPlugin(id: string, on: boolean): Promise<ToggleRe
     return { ok: false, text: t('plugins.toggleFailed', { label: d.label }) };
   }
   return { ok: true, text: t('plugins.toggled', { state: on ? t('plugins.on') : t('plugins.off'), label: d.label }) };
+}
+
+/**
+ * W895-L：批量开关（插件库的「全部」/按分类）。
+ *
+ * 与 setClientPlugin 同一套纪律：先当帧改真挂载状态，再**一次**写服务端；
+ * 写失败 ⇒ 把**整批**挂载状态回滚到动手前，且内存镜像不动（persistDisabledMany
+ * 只在成功后才更新它）。不做「逐个 try」—— 那会留下没人能解释的半成品状态。
+ */
+export async function setClientPlugins(ids: readonly string[], on: boolean): Promise<ToggleResult> {
+  const known = ids.filter((id) => clientPluginById(id) !== null);
+  if (known.length === 0) return { ok: false, text: t('plugins.notFound') };
+  const before = known.map((id) => ({ id, on: isRegistered(id) }));
+  try {
+    for (const id of known) { if (on) activatePlugin(id); else deactivatePlugin(id); }
+  } catch (err) {
+    for (const b of before) restore(b.id, b.on);
+    console.warn('[plugins] 批量切换失败：' + messageOf(err));
+    return { ok: false, text: t('plugins.toggleFailedMany', { n: String(known.length) }) };
+  }
+  try {
+    await persistDisabledMany(known.map((id) => ({ id, off: !on })), clientPluginIds());
+  } catch (err) {
+    for (const b of before) restore(b.id, b.on);
+    console.warn('[plugins] 批量写入失败：' + messageOf(err));
+    return { ok: false, text: t('plugins.toggleFailedMany', { n: String(known.length) }) };
+  }
+  return { ok: true, text: t('plugins.toggledMany', { state: on ? t('plugins.on') : t('plugins.off'), n: String(known.length) }) };
 }
 
 /** 兜底把实际挂载状态拉回期望值（失败路径专用；再失败只记日志，不掩盖原始错误）。 */

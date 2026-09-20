@@ -12,9 +12,12 @@ export {
   clientPlugins,
   clientPluginIds,
   clientPluginById,
+  CLIENT_PLUGIN_CATEGORIES,
+  categoryLabelKey,
+  type ClientPluginCategory,
   type ClientPluginDescriptor,
 } from './descriptor';
-export { isClientPluginOn, setClientPlugin, startClientPlugins, whenClientPluginsReady, type ToggleResult } from './apply';
+export { isClientPluginOn, setClientPlugin, setClientPlugins, startClientPlugins, whenClientPluginsReady, type ToggleResult } from './apply';
 export {
   CLIENT_PLUGINS_CHANGED,
   PLUGINS_STORAGE_KEY,

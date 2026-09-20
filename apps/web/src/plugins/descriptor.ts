@@ -22,6 +22,15 @@ import { t } from '../i18n';
 /** W895：客户端插件挂到哪条缝上。 */
 export type ClientPluginKind = 'hint' | 'enhancer';
 
+/**
+ * W895-L：插件库的**分类轴**（与 kind 正交）。
+ *
+ * kind 是「挂到哪条缝」（实现事实，用于装配）；category 是「解决什么问题」
+ * （用户语言，用于浏览/搜索）。两者刻意分开：用户找的是「让代码更好读」，
+ * 不是「一个 enhancer」。分类是封闭集，新增插件必须选一个。
+ */
+export type ClientPluginCategory = 'reading' | 'structure' | 'media' | 'interaction';
+
 /** 一个可热开关的客户端插件（两种缝共用同一套开关/持久化/回滚）。 */
 export type ClientPluginDescriptor =
   | {
@@ -34,6 +43,8 @@ export type ClientPluginDescriptor =
       /** 客户端插件一律支持热开关（宿主插件才是只读的）。 */
       hot: true;
       kind: 'hint';
+      /** W895-L：插件库分类（浏览/搜索用）。 */
+      category: ClientPluginCategory;
       /** 提供者工厂（幂等：可反复调用，每次得到同语义的新实例）。 */
       create(): HintPlugin;
     }
@@ -43,6 +54,8 @@ export type ClientPluginDescriptor =
       hint: string;
       hot: true;
       kind: 'enhancer';
+      /** W895-L：插件库分类（浏览/搜索用）。 */
+      category: ClientPluginCategory;
       create(): Enhancer;
     };
 
@@ -56,6 +69,7 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hint: t('plugins.desc.textCard.hint'),
       hot: true,
       kind: 'hint',
+      category: 'interaction',
       create: () => textCardPlugin(),
     },
     {
@@ -64,6 +78,7 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hint: t('plugins.desc.railPreview.hint'),
       hot: true,
       kind: 'hint',
+      category: 'reading',
       create: () => railHintPlugin(),
     },
     {
@@ -72,6 +87,7 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hint: t('plugins.desc.codeCopy.hint'),
       hot: true,
       kind: 'enhancer',
+      category: 'reading',
       create: () => codeCopyEnhancer(),
     },
     // W895-C2：四项可选显示组件。顺序即增强链顺序 —— code-copy 先包 .code-wrap，
@@ -82,6 +98,7 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hint: t('plugins.desc.jsonTree.hint'),
       hot: true,
       kind: 'enhancer',
+      category: 'structure',
       create: () => jsonTreeEnhancer(),
     },
     {
@@ -90,6 +107,7 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hint: t('plugins.desc.csvTable.hint'),
       hot: true,
       kind: 'enhancer',
+      category: 'structure',
       create: () => csvTableEnhancer(),
     },
     {
@@ -98,6 +116,7 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hint: t('plugins.desc.codeExtras.hint'),
       hot: true,
       kind: 'enhancer',
+      category: 'reading',
       create: () => codeExtrasEnhancer(),
     },
     {
@@ -106,9 +125,18 @@ export function clientPlugins(): readonly ClientPluginDescriptor[] {
       hint: t('plugins.desc.imageZoom.hint'),
       hot: true,
       kind: 'enhancer',
+      category: 'media',
       create: () => imageZoomEnhancer(),
     },
   ];
+}
+
+/** W895-L：分类的展示顺序（封闭集；设置页按此分组）。 */
+export const CLIENT_PLUGIN_CATEGORIES: readonly ClientPluginCategory[] = ['reading', 'structure', 'media', 'interaction'];
+
+/** 分类 → i18n key（文案单一真源在 locales）。返回类型交给 t() 的 Key 联合校验。 */
+export function categoryLabelKey(c: ClientPluginCategory): Parameters<typeof t>[0] {
+  return ('settings.plugins.cat.' + c) as Parameters<typeof t>[0];
 }
 
 /** 全部已知 id（偏好持久化时用它过滤未知项）。 */

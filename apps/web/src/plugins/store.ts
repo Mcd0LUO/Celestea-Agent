@@ -129,9 +129,25 @@ export async function loadDisabledFromServer(knownIds: readonly string[]): Promi
  * 调用方据此回滚注册状态。返回真正落库的禁用集合。
  */
 export async function persistDisabled(id: string, off: boolean, knownIds: readonly string[]): Promise<string[]> {
+  return persistDisabledMany([{ id, off }], knownIds);
+}
+
+/**
+ * W895-L：一次提交**多**个开关（插件库的「全部开启/关闭」、按分类批量）。
+ *
+ * 为什么必须有它：库视图的批量动作若退化成 N 次单开关调用，就是 N 次 PUT，
+ * 每次都可能部分失败 —— 状态会停在「一半成一半败」而没有任何人能解释它。
+ * 这里把整批**一次**落库（服务端是整表替换语义），于是要么全成、要么全不动。
+ */
+export async function persistDisabledMany(
+  changes: readonly { id: string; off: boolean }[],
+  knownIds: readonly string[],
+): Promise<string[]> {
   const next = new Set(cache);
-  if (off) next.add(id);
-  else next.delete(id);
+  for (const c of changes) {
+    if (c.off) next.add(c.id);
+    else next.delete(c.id);
+  }
   const kept = knownIds.filter((k) => next.has(k));
   await saveDisplayPlugins(kept);
   cache = kept;
