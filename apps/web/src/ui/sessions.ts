@@ -199,9 +199,11 @@ function renderTree(container: HTMLElement, countEl: HTMLElement | null): void {
   }
   // W514：元数据（标题/kind）回填后同步会话条与运行态点（只改文本/class）
   updateBusyDots(container);
-  updateSessionBar();
   // W866：会话页左上角的 worker 快捷条与这份列表同源对账（零额外请求）。
+  // W1471：必须**先**对账再刷会话条 —— 会话条的「返回父会话」入口读的正是这份列表
+  // （ui/worker-lineage），反过来就会用上一轮的列表画这一轮的回程入口。
   updateWorkerStrip(getSessions());
+  updateSessionBar();
   // W701：权限标记只做局部更新；未知项按需查询（能力位未就绪时该调用是空操作）
   updateGrantMarks(container);
   ensureGrantMarks(treeSessions.filter((s) => !s.archived).map((s) => s.id ?? ''));

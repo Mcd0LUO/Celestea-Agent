@@ -107,6 +107,10 @@ export const shell = {
   'shell.sessbar.others': '另有 {n} 个会话运行中：',
   'shell.sessbar.switchTo': '切换到 {name}',
   'shell.sessbar.thatSession': '该会话',
+  // W1471：worker 会话页的「返回父会话」入口（用户报障：进得去、出不来）
+  'shell.sessbar.backToParent': '← 返回 {name}',
+  'shell.sessbar.parentGone': '父会话已不在',
+  'shell.sessbar.parentGoneHint': '派发它的会话（{id}）已不在当前列表里，没有可返回的目标',
   'shell.sessions.unavailable': '会话列表暂不可用',
   'shell.sessions.noMatch': '无匹配结果',
   'shell.sessions.empty': '无会话记录 · 点击「新会话」创建',

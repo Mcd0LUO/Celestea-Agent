@@ -23,6 +23,7 @@ import type { SessionInfo } from '../types';
 import { el } from '../utils/dom';
 import { t } from '../i18n';
 import { openSession } from './restore';
+import { noteSessionList } from './worker-lineage'; // W1471：谱系事实的唯一喂入点
 import { activePane, paneBusy, type SessionPane } from './viewctx';
 
 /** 一行「本会话的 worker」（由列表行折算；只保留渲染需要的字段）。 */
@@ -152,6 +153,8 @@ function render(): void {
  */
 export function updateWorkerStrip(sessions: SessionInfo[] | null | undefined, pane?: SessionPane | null): void {
   if (sessions !== null && sessions !== undefined) lastList = sessions;
+  // W1471：同一份列表真值也是「会话条回程入口」的唯一事实源（零额外请求）。
+  noteSessionList(lastList);
   const target = pane === undefined ? activePane() : pane;
   // LOCAL（未解析）容器的 id 是空串：此时没有「本会话」，列全部是对用户最有用的降级。
   currentSession = target === null ? '' : target.id;

@@ -107,6 +107,10 @@ export const shell = {
   'shell.sessbar.others': '{n} other sessions are running:',
   'shell.sessbar.switchTo': 'Switch to {name}',
   'shell.sessbar.thatSession': 'that session',
+  // W1471：the way back from a worker session to the session that dispatched it
+  'shell.sessbar.backToParent': '← Back to {name}',
+  'shell.sessbar.parentGone': 'Parent session is gone',
+  'shell.sessbar.parentGoneHint': 'The session that dispatched it ({id}) is no longer listed, so there is nothing to go back to',
   'shell.sessions.unavailable': 'The session list is temporarily unavailable',
   'shell.sessions.noMatch': 'No matches',
   'shell.sessions.empty': 'No sessions yet · click "New session" to create one',

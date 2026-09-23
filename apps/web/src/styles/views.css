@@ -114,6 +114,34 @@ body.resizing-col { cursor: col-resize; user-select: none; }
 }
 .sess-bar-chip:hover { background: var(--c-accent-soft); border-color: var(--c-border-strong); }
 
+/* ---- W1471：聚焦 worker 时的「返回父会话」入口 ----
+   用户报障「这个返回主 leader 的按钮在哪呢？」—— 进得去、出不来。入口落在本行
+   （已在回答「我现在看的是谁」，「它属于谁」是同一句话的下半句）。
+   形态与 .sess-bar-chip 同族：胶囊、token 颜色、无虚线；但它是**唯一的可点动作**，
+   所以给 --c-text-2 的字色与 hover 反白，比旁边的灰字更容易一眼找到。
+   无父可回时这里是 .sess-bar-unlinked —— 纯文本说明，不是按钮（不画死按钮）。 */
+.sess-bar-lineage {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0;
+}
+.sess-bar-lineage:empty { display: none; }
+.sess-bar-back {
+  flex: 0 0 auto; max-width: 240px;
+  border: 1px solid var(--c-accent); background: var(--c-surface);
+  border-radius: 999px; padding: 0 10px; line-height: 16px;
+  font-size: 11px; font-weight: 500; color: var(--c-accent); cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.sess-bar-back:hover { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-fg); }
+.sess-bar-back:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--c-accent-ring); }
+.sess-bar-unlinked {
+  flex: 0 1 auto; min-width: 0;
+  color: var(--c-text-3); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* ---- 运行态点（侧栏 / worker 组共用） ----
    W790：从「只有 title 的灰点」变成**可见状态点** —— 空闲=静态灰点（--c-text-3），
    运行中=绿点（--c-live）+ 光晕 + 呼吸；颜色语义与 statusline 的会话条状态点一致。 */
