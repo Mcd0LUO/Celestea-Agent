@@ -18,12 +18,23 @@
 // 几何契约：绝对定位于 #main（rail.css 已给 #main position:relative），钉在正文列
 //   左侧的空白带里竖排；pointer-events 只落在 chip 自身上（空白处穿透），
 //   z-index 低于 rail 的悬停卡；左侧留白不足以容纳 chip 时整条隐藏（正文优先）。
+//
+// W1472：**聚焦某个 worker 时，本条换形态**（用户原话：「不应该一样放在左上角吗」）。
+//   用户是从这条 chip 点进 worker 的，回程就该长在同一个入口处 —— 于是聚焦 worker 时
+//   本条不再列「本会话派出的 worker」（那时它是 worker 自己，归属判定必然落空 ⇒ 旧兜底
+//   会把**别的会话**的 worker 全摊开，与左侧栏谱系重复），而是回答两件事：
+//     ① 我在哪：这个 worker 自己的 wid / 短名 / 状态（带上一代徽标）；
+//     ② 怎么回去：一条「← 返回 <父会话>」入口（三态诚实降级见 ui/worker-lineage.ts）。
+//   行未知（列表还没对账到这个 worker）⇒ **什么都不画**，绝不猜成「没有父会话」。
+//   贴底会话条上的同一入口保留为 **≤1024px 的兜底**：本条在该断点整条隐藏（几何契约
+//   不变），窄屏上它是唯一的回程；views.css 用 min-width:1025px 让两者**互斥**，
+//   任何时候页面上只有一个回程入口可见（见 .sess-bar-lineage 的规则注释）。
 // ============================================================================
 import type { SessionInfo } from '../types';
 import { el } from '../utils/dom';
 import { t } from '../i18n';
 import { openSession } from './restore';
-import { noteSessionList } from './worker-lineage'; // W1471：谱系事实的唯一喂入点
+import { lineageOf, noteSessionList, type LineageLink } from './worker-lineage'; // W1471/W1472：谱系事实的唯一真源
 import { activePane, paneBusy, type SessionPane } from './viewctx';
 
 /** 一行「本会话的 worker」（由列表行折算；只保留渲染需要的字段）。 */
@@ -38,6 +49,30 @@ interface StripRow {
   inherited: boolean;
 }
 
+/**
+ * W1472：聚焦形态要画的东西 —— 「我在哪」（worker 自己的标识）+「怎么回去」（谱系）。
+ * 只有**列表里有这个 worker 的行**时才会构造出来（见 focusOf）；行未知时本条
+ * 走 'unknown' —— 什么都不画，绝不猜成「没有父会话」。
+ */
+interface FocusView {
+  id: string;
+  wid: string;
+  title: string;
+  status: string;
+  inherited: boolean;
+  lineage: LineageLink;
+}
+
+/**
+ * W1472：本条该画什么（三态，互斥）。
+ *   'list'    —— 常规 chip 列表（非 worker 容器 / 未解析的 LOCAL）；
+ *   'focus'   —— 聚焦某个 worker 且列表里有它的行：画「我在哪 / 怎么回去」；
+ *   'unknown' —— 聚焦某个 worker 但列表里**没有**它的行：什么都不画。
+ *               绝不退回 'list' 的兜底 —— 那会把**别的会话**的 worker 摊开
+ *               （旧 rowsForSession 的归属兜底），而用户此刻问的是「我在哪」。
+ */
+type StripMode = 'list' | 'focus' | 'unknown';
+
 let box: HTMLElement | null = null;
 let listEl: HTMLElement | null = null;
 let countEl: HTMLElement | null = null;
@@ -47,6 +82,12 @@ let lastList: SessionInfo[] = [];
 /** 当前快捷条显示的 worker 行。 */
 let rows: StripRow[] = [];
 let currentSession = '';
+/** W1472：本条当前形态（见 StripMode）。 */
+let mode: StripMode = 'list';
+/** W1472：mode==='focus' 时要画的东西。 */
+let focus: FocusView | null = null;
+/** W1472：聚焦形态的内容签名（不变则不重建，铁律 6）。 */
+let lastFocusKey = '\u0000';
 
 /** 标题前缀的 wid（`W866·短名`）；缺省回落后端给的 wid / id 末段。 */
 export function widOf(w: SessionInfo): string {
@@ -107,24 +148,123 @@ export function rowsForSession(list: SessionInfo[], sessionId: string): StripRow
   return (mine.length > 0 ? mine : workers).map(toRow);
 }
 
+/** 状态位文字：注册表状态优先，缺省按本页运行态回落（chip 与聚焦形态共用）。 */
+function metaText(r: StripRow, busy: boolean): string {
+  return r.status === '' ? (busy ? t('shell.tree.running') : t('shell.tree.idle')) : r.status;
+}
+
+/** chip 的悬停提示（同上，两种形态共用同一口径）。 */
+function rowHint(r: StripRow): string {
+  return r.wid + ' · ' + r.title + (r.model ? ' · ' + r.model : '') + t(r.inherited ? 'shell.worker.inheritedHint' : 'shell.worker.stripHint');
+}
+
+/** worker 的标识（状态点 + wid + 短名 + 上一代徽标）—— 聚焦形态与 chip 同族。 */
+function identityEl(r: StripRow, busy: boolean): HTMLElement {
+  const head = el('span', 'ws-strip-self');
+  head.appendChild(el('span', 'sess-dot' + (busy ? ' busy' : '')));
+  head.appendChild(el('span', 'ws-strip-wid', r.wid));
+  head.appendChild(el('span', 'ws-strip-title', r.title));
+  // W1470b：上一代行加一个徽标，与「本代运行中」的 chip 一眼可分。
+  if (r.inherited) head.appendChild(el('span', 'ws-strip-badge', t('shell.worker.inherited')));
+  head.appendChild(el('span', 'ws-strip-meta', metaText(r, busy)));
+  return head;
+}
+
+/**
+ * W1473：聚焦形态的「我在哪」—— 把标识**拆成两个兄弟行盒**。
+ *   · 第一层 .ws-strip-id   —— 状态点 + wid：**身份**，任何宽度都必须完整；
+ *   · 第二层 .ws-strip-facts —— 短名（省略号截断）+ 上一代徽标 + 状态位。
+ *
+ * 为什么必须拆（我第一版只把回程挪到第二行，不够）：左上角这条只有正文列左侧留白
+ * 那么宽（真机 1440px 实测 181px）。wid 与标题同处一条 inline-flex 时，标题是唯一的
+ * flex:0 1 auto 收缩项 —— 即使回程已经独占一行，标题仍只拿到 36px（需要 66px），
+ * 真机实测 titleClipped=true，显示成「calc-1…」。拆开后标题拿剩余全宽（105px ≥ 66px），
+ * 完整显示不截断。
+ */
+function focusIdentity(r: StripRow, busy: boolean): HTMLElement {
+  const wrap = el('div', 'ws-strip-idrow');
+  const id = el('span', 'ws-strip-id');
+  id.appendChild(el('span', 'sess-dot' + (busy ? ' busy' : '')));
+  id.appendChild(el('span', 'ws-strip-wid', r.wid));
+  const facts = el('span', 'ws-strip-facts');
+  facts.appendChild(el('span', 'ws-strip-title', r.title));
+  // W1470b：上一代行加一个徽标，与「本代运行中」的 chip 一眼可分。
+  if (r.inherited) facts.appendChild(el('span', 'ws-strip-badge', t('shell.worker.inherited')));
+  facts.appendChild(el('span', 'ws-strip-meta', metaText(r, busy)));
+  wrap.appendChild(id);
+  wrap.appendChild(facts);
+  return wrap;
+}
+
 function rowEl(r: StripRow): HTMLElement {
   const busy = paneBusy(r.id);
   const settled = r.status !== '' && r.status !== 'RUNNING';
   const row = el('button', 'ws-strip-row' + (busy ? ' running' : '') + (settled ? ' settled' : '') + (r.inherited ? ' inherited' : '')) as HTMLButtonElement;
   row.type = 'button';
   row.dataset.id = r.id;
-  row.appendChild(el('span', 'sess-dot' + (busy ? ' busy' : '')));
-  row.appendChild(el('span', 'ws-strip-wid', r.wid));
-  row.appendChild(el('span', 'ws-strip-title', r.title));
-  // W1470b：上一代行加一个徽标，与「本代运行中」的 chip 一眼可分。
-  if (r.inherited) row.appendChild(el('span', 'ws-strip-badge', t('shell.worker.inherited')));
-  row.appendChild(el('span', 'ws-strip-meta', r.status === '' ? (busy ? t('shell.tree.running') : t('shell.tree.idle')) : r.status));
-  row.title =
-    r.wid + ' · ' + r.title + (r.model ? ' · ' + r.model : '') + t(r.inherited ? 'shell.worker.inheritedHint' : 'shell.worker.stripHint');
+  row.appendChild(identityEl(r, busy));
+  row.title = rowHint(r);
   row.addEventListener('click', () => {
     openSession(r.id, { kind: 'worker', title: r.title });
   });
   return row;
+}
+
+/**
+ * W1472：聚焦 worker 时的回程入口（与 ui/sessionbar.ts 的 .sess-bar-back 同一口径）。
+ *   state='ok' → 可点按钮「← 返回 <父会话>」；
+ *   gone/unlinked → **不可点**的说明（沿用既有话术，绝不画死按钮）。
+ */
+function backEntry(link: LineageLink): HTMLElement {
+  if (link.state !== 'ok') {
+    const note = el('span', 'ws-strip-unlinked', t(link.state === 'gone' ? 'shell.sessbar.parentGone' : 'shell.worker.unlinked'));
+    note.title = link.id === '' ? t('shell.worker.unlinked') : t('shell.sessbar.parentGoneHint', { id: link.id });
+    return note;
+  }
+  const back = el('button', 'ws-strip-back', t('shell.sessbar.backToParent', { name: link.title })) as HTMLButtonElement;
+  back.type = 'button';
+  back.dataset.parent = link.id;
+  back.title = t('shell.worker.parentHint') + ' · ' + link.id;
+  back.addEventListener('click', () => {
+    openSession(link.id, { kind: 'session' });
+  });
+  return back;
+}
+
+/** 隐藏整条（无内容可画）。 */
+function hide(): void {
+  if (box === null || listEl === null || countEl === null) return;
+  box.classList.add('hidden');
+  listEl.replaceChildren();
+  countEl.textContent = '';
+  lastFocusKey = '\u0000';
+}
+
+/**
+ * W1472：聚焦 worker 的形态 —— 一条 chip 里回答「我在哪 / 怎么回去」。
+ *   调用前 mode 已是 'focus'（行未知走 'unknown' 分支，见 render），
+ *   因此这里的 lineage 一定存在。
+ *   内容签名不变则不重建（铁律 6：切会话/运行态变化都会调到这里）。
+ */
+function renderFocus(f: FocusView): void {
+  if (listEl === null || countEl === null || box === null || leadEl === null) return;
+  const busy = paneBusy(f.id);
+  const settled = f.status !== '' && f.status !== 'RUNNING';
+  const link = f.lineage;
+  const key = [f.id, f.wid, f.title, f.status, f.inherited ? '1' : '0', busy ? '1' : '0', link.state, link.id, link.title].join('\u0001');
+  box.classList.remove('hidden');
+  box.dataset.mode = 'focus';
+  if (key === lastFocusKey) return;
+  lastFocusKey = key;
+  leadEl.textContent = t('shell.worker.focusTitle');
+  countEl.textContent = '';
+  // W1473：标识**分层**（见 focusIdentity），回程是 chip 的**兄弟节点**（独占一行）。
+  // 纵向 flex 容器里自上而下：身份层 / 短名层 / 回程层，各占一行、互不挤宽。
+  // 关键不变量：.ws-strip-id 与 .ws-strip-back 是兄弟节点，几何上不可能重叠。
+  const chip = el('div', 'ws-strip-row ws-strip-focus' + (busy ? ' running' : '') + (settled ? ' settled' : '') + (f.inherited ? ' inherited' : ''));
+  chip.dataset.id = f.id; // 与列表形态同一把尺子（真机探针/测试都按 data-id 认这一行）
+  chip.appendChild(focusIdentity({ id: f.id, wid: f.wid, title: f.title, model: '', status: f.status, inherited: f.inherited }, busy));
+  listEl.replaceChildren(chip, backEntry(link));
 }
 
 /** 只重画列表内容（切会话 / 列表变化时才调）。 */
@@ -132,10 +272,20 @@ function render(): void {
   if (listEl === null || countEl === null || box === null) return;
   // 宿主不在（或只跑在 jsdom 的模块单测里）→ 只更新模块状态，不触碰 DOM。
   if (!box.isConnected) return;
+  if (mode === 'unknown') {
+    // 聚焦的 worker 行未知：不知道就说不知道（不画聚焦形态，也不退回「列全部」）。
+    box.dataset.mode = 'unknown';
+    hide();
+    return;
+  }
+  if (mode === 'focus' && focus !== null) {
+    renderFocus(focus);
+    return;
+  }
+  box.dataset.mode = 'list';
+  lastFocusKey = '\u0000';
   if (rows.length === 0) {
-    box.classList.add('hidden');
-    listEl.replaceChildren();
-    countEl.textContent = '';
+    hide();
     return;
   }
   box.classList.remove('hidden');
@@ -158,7 +308,11 @@ export function updateWorkerStrip(sessions: SessionInfo[] | null | undefined, pa
   const target = pane === undefined ? activePane() : pane;
   // LOCAL（未解析）容器的 id 是空串：此时没有「本会话」，列全部是对用户最有用的降级。
   currentSession = target === null ? '' : target.id;
-  rows = rowsForSession(lastList, currentSession);
+  focus = focusOf(lastList, target);
+  // 聚焦的是 worker 但列表里没有它的行 ⇒ 'unknown'（什么都不画），
+  // 绝不落到 rowsForSession 的「归属判定不出来时列全部」兜底。
+  mode = target !== null && target.kind === 'worker' ? (focus === null ? 'unknown' : 'focus') : 'list';
+  rows = mode === 'list' ? rowsForSession(lastList, currentSession) : [];
   render();
 }
 
@@ -174,6 +328,21 @@ export function noteWorkerSpawn(w: SessionInfo): void {
   if (at >= 0) rows[at] = { ...rows[at], ...row };
   else rows = [...rows, row];
   render();
+}
+
+/**
+ * W1472：聚焦的正是列表里的某个 worker 时，本条换成「我在哪 / 怎么回去」形态。
+ *   非 worker 容器、worker 但行未知（lineageOf → null）、列表里没有这一行 ⇒ null
+ *   （维持原来的 chip 形态，行为一字不动）。
+ */
+function focusOf(list: SessionInfo[], target: SessionPane | null): FocusView | null {
+  if (target === null || target.kind !== 'worker') return null;
+  const lineage = lineageOf(target);
+  if (lineage === null) return null; // 行未知 ⇒ null（updateWorkerStrip 据此走 'unknown'）
+  const row = list.find((s) => (s.id ?? '') === target.id);
+  if (row === undefined) return null; // 类型收窄：lineageOf 读的是同一份列表，正常到不了这里
+  const r = toRow(row);
+  return { id: r.id, wid: r.wid, title: r.title, status: r.status, inherited: r.inherited, lineage };
 }
 
 /** 装配（幂等）：把快捷条挂进 #main；返回宿主（null = 本页没有 #main）。 */
@@ -209,6 +378,9 @@ export function resetWorkerStrip(): void {
   rows = [];
   lastList = [];
   currentSession = '';
+  mode = 'list';
+  focus = null;
+  lastFocusKey = '\u0000';
 }
 
 /** 测试/诊断用只读视图（当前显示的行）。 */

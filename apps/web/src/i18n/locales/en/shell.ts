@@ -122,6 +122,8 @@ export const shell = {
   'shell.worker.stripHint': ' (click to open this worker session and talk to it directly)',
   'shell.worker.stripTitle': 'Background tasks · {n} running',
   'shell.worker.stripTitlePlain': 'Background tasks',
+  // W1472: focusing a worker swaps this strip's form — "where am I" + "how to get back".
+  'shell.worker.focusTitle': 'This worker',
   'shell.restore.orphanResult': 'Tool result (no matching call record):',
   'shell.restore.unavailable': 'History restore is temporarily unavailable',
   'shell.restore.folded': 'Earlier history is folded · showing only the last {n}',

@@ -114,12 +114,15 @@ body.resizing-col { cursor: col-resize; user-select: none; }
 }
 .sess-bar-chip:hover { background: var(--c-accent-soft); border-color: var(--c-border-strong); }
 
-/* ---- W1471：聚焦 worker 时的「返回父会话」入口 ----
-   用户报障「这个返回主 leader 的按钮在哪呢？」—— 进得去、出不来。入口落在本行
-   （已在回答「我现在看的是谁」，「它属于谁」是同一句话的下半句）。
-   形态与 .sess-bar-chip 同族：胶囊、token 颜色、无虚线；但它是**唯一的可点动作**，
-   所以给 --c-text-2 的字色与 hover 反白，比旁边的灰字更容易一眼找到。
-   无父可回时这里是 .sess-bar-unlinked —— 纯文本说明，不是按钮（不画死按钮）。 */
+/* ---- W1471：聚焦 worker 时的「返回父会话」入口（W1472 起降为**窄屏兜底**） ----
+   用户报障「这个返回主 leader 的按钮在哪呢？」—— 进得去、出不来。
+   形态与 .sess-bar-chip 同族：胶囊、token 颜色、无虚线；它是可点动作，
+   所以给 --c-accent 的字色与 hover 反白，比旁边的灰字更容易一眼找到。
+   无父可回时这里是 .sess-bar-unlinked —— 纯文本说明，不是按钮（不画死按钮）。
+   W1472 落点裁决：用户指出回程该长在他点进来的**左上角**（worker 快捷条），
+   于是主入口搬去 .ws-strip（workerstrip.css 的 .ws-strip-back）；本行这一份**保留**
+   但只在左侧空白带容不下快捷条时出现（≤1024px，workerstrip.css 在同一断点整条隐藏）
+   —— 窄屏上它是唯一的回程。两条规则互斥，页面上任何宽度**只有一个**入口可见。 */
 .sess-bar-lineage {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: 6px;
@@ -140,6 +143,12 @@ body.resizing-col { cursor: col-resize; user-select: none; }
   flex: 0 1 auto; min-width: 0;
   color: var(--c-text-3); font-size: 11px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* W1472：≥1025px 时本行的回程入口让位给左上角快捷条上的同一个入口（互斥，见上）。
+   只隐藏**内容**、不隐藏 .session-bar 自身 —— 那一行还要显示会话名与运行态。 */
+@media (min-width: 1025px) {
+  .sess-bar-lineage { display: none; }
 }
 
 /* ---- 运行态点（侧栏 / worker 组共用） ----

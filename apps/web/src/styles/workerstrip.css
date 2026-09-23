@@ -76,8 +76,43 @@
 }
 .ws-strip-row.inherited { border-color: var(--c-border-strong); }
 
+/* ---- W1472：聚焦某个 worker 时的**聚焦形态**（回答「我在哪 / 怎么回去」） ----
+   用户原话「不应该一样放在左上角吗」—— 他就是从这条 chip 点进 worker 的，回程理应
+   长在同一个入口处。形态：一条与 .ws-strip-row 同族的行（同底色/发丝线/字号），
+   左侧是 worker 自己的标识（状态点 + wid + 短名 + 上一代徽标 + 状态位），
+   右侧是**唯一的动作**「← 返回 <父会话>」（颜色/圆角/发丝线全走 token，无虚线）。
+   无父可回时这里是 .ws-strip-unlinked —— 纯文本说明，不是按钮（不画死按钮）。 */
+/* W1473：聚焦形态是**纵向**容器 —— 身份层 / 短名层 / 回程层自上而下各占一行。
+   这条只有正文列左侧留白那么宽（真机 1440px 实测 181px）：若把 wid 与标题放在同一条
+   inline-flex 里，标题是唯一的收缩项，会被压到 36px（需要 66px）⇒ 显示成「calc-1…」。
+   分层后 wid 恒完整、标题拿剩余全宽（105px）完整显示；回程是兄弟节点，几何上不可能重叠。 */
+.ws-strip-focus {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  cursor: default;
+  max-width: 100%;
+}
+.ws-strip-idrow { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; max-width: 100%; }
+.ws-strip-id { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.ws-strip-facts { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+.ws-strip-self { display: inline-flex; align-items: center; gap: 5px; min-width: 0; flex: 0 1 auto; }
+.ws-strip-back {
+  pointer-events: auto; flex: 0 0 auto;
+  border: var(--hairline) solid var(--c-accent);
+  background: var(--c-surface); color: var(--c-accent);
+  border-radius: var(--r-pill); padding: 0 8px;
+  font-family: var(--mono); font-size: 10px; line-height: 15px; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.ws-strip-back:hover { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-fg); }
+.ws-strip-back:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--c-accent-ring); }
+.ws-strip-unlinked { pointer-events: auto; color: var(--c-text-3); font-size: 10px; white-space: nowrap; }
+
 /* 窄屏降级：≤1024px 时左侧空白带已容不下 chip（正文列贴边）→ 整条隐藏，正文优先。
-   ≤640px 同一条规则已覆盖。 */
+   ≤640px 同一条规则已覆盖。
+   W1472：本条整条隐藏时，回程入口改由贴底会话条的 .sess-bar-lineage 提供
+   （views.css 里那条只在 ≥1025px 被隐藏）—— 于是任何宽度下**恰好一个**入口可见。 */
 @media (max-width: 1024px) {
   .ws-strip { display: none; }
+  .ws-strip-back, .ws-strip-unlinked { display: none; }
 }

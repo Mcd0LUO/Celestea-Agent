@@ -123,6 +123,8 @@ export const shell = {
   'shell.worker.stripHint': '（点击打开该 worker 会话，可直接对它说话）',
   'shell.worker.stripTitle': '后台任务 · {n} 运行中',
   'shell.worker.stripTitlePlain': '后台任务',
+  // W1472：聚焦某个 worker 时快捷条换形态 —— 左侧是「我在哪」，右侧是「怎么回去」。
+  'shell.worker.focusTitle': '当前 worker',
   'shell.restore.orphanResult': '工具结果（无对应调用记录）：',
   'shell.restore.unavailable': '历史恢复暂不可用',
   'shell.restore.folded': '更早的历史已折叠 · 仅显示最近 {n} 条',
