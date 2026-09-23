@@ -35,6 +35,10 @@ fixtures/sessions/*
 # 「本机事实（含凭据）只存本机，真身绝不进版本库」。
 .celestea/credentials/
 .celestea/credentials
+# 仓内临时产物（worker 的 CDP/变异脚本、一次性导出等）。
+# 它躺在工作树内（/src/celestea_studio-ts/tmp），git 会把它当未跟踪内容看到 ——
+# 一次 `git add -A` 就会把临时脚本提交进公开仓。锚定根目录，避免误伤同名子目录。
+/tmp/
 # 更老的根上产物（.celestea-trash/.celestea-archived/.celestea-prompts.json）
 .celestea-*
 # 最老的根上会话目录（<标题>-<秒>.<纳秒>）
