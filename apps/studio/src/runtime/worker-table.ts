@@ -20,7 +20,8 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { WorkerEntry } from "@celestea/core";
-import { hasDeliverable, observeWorkerTable, parseRegistryTsv, type WorkerRecoveryReport } from "@celestea/workers";
+import { workerSessionPrefix } from "@celestea/runtime";
+import { getExtra, hasDeliverable, observeWorkerTable, parseRegistryTsv, workerHost, workerOwner, type WorkerRecoveryReport } from "@celestea/workers";
 
 /** `CELESTEA_WORKER_REGISTRY` — the table path; empty = in-memory only. */
 export const ENV_WORKER_REGISTRY = "CELESTEA_WORKER_REGISTRY";
@@ -85,6 +86,81 @@ export function workerRecoveryBlock(input: WorkerRecoveryBlockInput): WorkerReco
     artifactExists: (entry) => hasDeliverable(input.resultsDir, entry.wid).found,
     ...(input.now === undefined ? {} : { now: input.now() }),
   });
+}
+
+/** Which persisted rows may be called "a previous generation's" (W1470b). */
+export interface InheritedRowsInput {
+  /** Does the host session that dispatched the worker still exist? Absent = cannot tell ⇒ nothing is inherited. */
+  knownHost?: (sid: string) => boolean;
+  /** wids a LIVE instance owns right now — a row is never listed twice. */
+  ownWids: readonly string[];
+  /** This process: a row IT owns is this generation's, never an inherited one. */
+  pid: number;
+}
+
+export interface WorkerTableStateInput extends InheritedRowsInput {
+  /** The configured table path (null = in-memory: nothing persisted to read). */
+  path: string | null;
+  /** Results dir of the deliverable probe (`results/<wid>*.md`). */
+  resultsDir: string;
+  now?: number;
+}
+
+export interface WorkerTableState {
+  /** E §2.3 P0 ③: the observation-only judgement (`stale[]` / `orphans[]`). */
+  recovery: WorkerRecoveryReport;
+  /** W1470b: the rows of a PREVIOUS generation, for the panel (never counted as own). */
+  inherited: WorkerEntry[];
+}
+
+/**
+ * W1470b — the ONE read of the table behind both faces: the P0 judgement the
+ * status view has always reported, plus the previous generation's rows.
+ *
+ * Why the table (and not the live registries): a restart leaves the table on
+ * disk while every registry starts empty, so a panel built from live instances
+ * cannot show a worker whose session has not been composed again. The table is
+ * the durable fact, and `knownHost` is the same evidence P0 already uses.
+ */
+export function workerTableStateOf(input: WorkerTableStateInput): WorkerTableState {
+  const { entries } = readWorkerTable(input.path);
+  return {
+    recovery: observeWorkerTable(entries, {
+      ...(input.knownHost === undefined ? {} : { knownHost: input.knownHost }),
+      artifactExists: (entry) => hasDeliverable(input.resultsDir, entry.wid).found,
+      ...(input.now === undefined ? {} : { now: input.now }),
+    }),
+    inherited: inheritedRowsOf(entries, input),
+  };
+}
+
+/**
+ * W1470b — which PERSISTED rows are a previous generation's, using exactly the
+ * evidence W1470's tool face uses (`SessionRegistry.inheritedEntries`):
+ *
+ *   1. no LIVE instance owns the wid right now (`ownWids`);
+ *   2. its `host=` conversation still EXISTS in this studio (an orphan is P0's
+ *      `orphans[]`, never a panel row);
+ *   3. its `sess=` was minted with that host's own prefix (`workerSessionPrefix`),
+ *      so a row of a sibling conversation can never be adopted by accident;
+ *   4. THIS process does not own it — `proc=`/`lease=` is another pid, i.e. a
+ *      generation that is gone. A row this process wrote is this generation's.
+ */
+export function inheritedRowsOf(entries: readonly WorkerEntry[], input: InheritedRowsInput): WorkerEntry[] {
+  const known = input.knownHost;
+  if (known === undefined) return [];
+  const own = new Set(input.ownWids);
+  const inherited: WorkerEntry[] = [];
+  for (const entry of entries) {
+    if (own.has(entry.wid)) continue;
+    const host = workerHost(entry);
+    if (host === null || !known(host)) continue;
+    const sess = getExtra(entry, "sess");
+    if (sess === null || !sess.startsWith(workerSessionPrefix(host))) continue;
+    if (workerOwner(entry)?.pid === input.pid) continue;
+    inherited.push(entry);
+  }
+  return inherited;
 }
 
 function messageOf(e: unknown): string {

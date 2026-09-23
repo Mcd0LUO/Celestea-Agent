@@ -12,6 +12,8 @@
  *   - `worker_stale`      — a persisted worker row whose owning process is dead;
  *   - `worker_orphan`     — a RUNNING row whose `host=` session is gone;
  *   - `worker_observed`   — the boot sweep's summary line (always exactly one);
+ *   - `worker_recovered`  — W1470 P2: a stale row was CLAIMED and settled
+ *                           (`CELESTEA_WORKER_RECOVER=1` only; absent otherwise);
  *   - `session_repaired`  — a crashed turn was closed by appending ONE
  *                           `turn_end: interrupted` row (§1.2.3, R1-1).
  *
@@ -38,7 +40,8 @@ export type RecoveryAuditEventName =
   | "session_repaired"
   | "worker_stale"
   | "worker_orphan"
-  | "worker_observed";
+  | "worker_observed"
+  | "worker_recovered";
 
 /** One audit line. `session` is null for process-level facts. */
 export interface RecoveryAuditEvent {

@@ -64,7 +64,7 @@
 
 | 行状态 | lease | 交付物 | attempts | 动作（P2 自动；P0 只观测并记审计） |
 |---|---|---|---|---|
-| `RUNNING` | 本机 pid 已死 | 存在 | 任意 | 收口 `DONE` + 补发**一次**幂等回执 |
+| `RUNNING` | 本机 pid 已死 | 存在 | 任意 | 收口 `DONE` + 补发**一次**幂等回执（W1470 只做前半：boot 期没有可投递的宿主会话，见下方落地说明） |
 | `RUNNING` | 本机 pid 已死 | 无 | `< maxRetries` | 重派：新 `attempt=+1`、新会话 id、`lease` 续期 |
 | `RUNNING` | 本机 pid 已死 | 无 | `>= maxRetries` | 收口 `FAILED` + 回执（FAILED 文本） |
 | `RUNNING` | 本机 pid 存活 | 任意 | 任意 | **不动**（另一进程正在驱动） |
@@ -80,6 +80,21 @@
 | **P0** | ① `SessionComposer` 的 `tsvPath` 从 `null` 改为可配路径（默认 `<data dir>/worker-registry.tsv`，env `CELESTEA_WORKER_REGISTRY`），**保留** `tsvPath: null` 作为测试/嵌入式选项；② `host=`/`attempt=`/`lease=` token 落行；③ boot 恢复器**只观测**：读表 → 判定 → 写审计 + `GET /api/worker/status` 增 `stale[]`/`orphans[]`（纯增字段），**不重派** |
 | **P1** | ① 回执 attempt 化 + `receipt=` 幂等 token + 报告文件名 attempt 化；② `drainHost()` 幂等键换 `receipt:<wid>:<attempt>`；③ `worker_status` 增 `attempt`/`host_session`/`last_receipt`；④ 与 DSH 侧的**只读**协同（可选读插件表做展示，绝不写） |
 | **P2** | ① 自动收养/重派（配置开关，**默认关**：`CELESTEA_WORKER_RECOVER=1` 才启用）；② lease 续期（driver 心跳，间隔 = `watch.intervalMs`）；③ 与 `autoDelete`/归档的交互（重派前确认归档可逆性，避免"归档会话被复活"） |
+
+**P2 ① 落地情况（W1470，2026-09-23）**：判定表的**动作**已实现并默认关闭 —— `packages/workers/src/recover-apply.ts`
+（`applyRecovery` + `recoveryEnabled`），宿主 boot 路径为 `apps/studio/src/runtime/worker-recovery.ts`
+的 `recoverWorkerTableOnBoot`（`createStudioApp` 里紧跟 P0 观测调用）。与上表的差异，逐条：
+
+- **收养**：`WorkerRegistry.claim` 在一次原子写里盖 `proc=` + `lease=` + 新增的 `claimed=<pid>@<unix>`
+  token（schema 已登记，列数仍 4）。owner 仍存活、行已冻结、或 `host=` 属于别的会话 → 拒绝认领。
+- **重派**：重启后**必然**降级为 `FAILED`，因为 `respawn` 需要内存态可读 brief（W831 R3 B4：`brief=`
+  token 是折叠+截断的有损副本）。这不是新规则，是决策表自己的兜底分支。
+- **补发回执**：**未做**（上表第 1 行的后半）。boot 期的恢复注册表没有宿主会话可投递，回执会进一个
+  没人消费的临时 mailbox —— "看起来送达"比"诚实地不送"更糟；且 `executeReceipt` 会写到
+  `results/<wid>-<short>-a<attempt>.md`，正好覆盖掉让它判 `close_done` 的那份交付物。
+- **未做**：② lease 心跳续期、③ 与 `autoDelete`/归档的交互（仍待办）。
+- **重启可寻址性**（W1470 附带）：`reload()` 现在按 `sess=`/`host=` 只读重建可寻址会话并 `reserve`
+  表里出现过的 id，使会话 id 跨重启单调、不重号；`worker_status` 用 `inherited: true` 报告这类行。
 
 ### 2.4 验收标准（机械可检验）
 

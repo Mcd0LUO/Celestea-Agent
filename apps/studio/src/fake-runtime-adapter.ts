@@ -292,6 +292,11 @@ class FakeRuntime implements FakeRuntimeAdapter {
     return this.workerRows();
   }
 
+  /** W1470b: the fake keeps no persisted table, so it has no previous generation. */
+  inheritedWorkerSessions(): WorkerSessionRow[] {
+    return [];
+  }
+
   async workerSpawn(req: WorkerSpawnRequest): Promise<WorkerSpawnOutcome> {
     const sessionId = `session-${this.workers.size + 1}`;
     const title = req.title !== undefined && req.title !== "" ? req.title : req.brief.slice(0, 40);

@@ -647,9 +647,9 @@
         "fields": [
           {
             "name": "sessions",
-            "type": "array<{id,workspace,title,model:string|null,mode:'standard'|'execution',size:int,modified:int,active:bool,kind?:'worker',archived?:true}>",
+            "type": "array<{id,workspace,title,model:string|null,mode:'standard'|'execution',size:int,modified:int,active:bool,kind?:'worker',archived?:true,inherited?:true,parentSessionId?:string}>",
             "required": false,
-            "note": "`archived:true` appears ONLY on the `?archived=1` listing (W791); the default listing never carries the key"
+            "note": "`archived:true` appears ONLY on the `?archived=1` listing (W791); the default listing never carries the key. W1470b: a `kind:'worker'` row carries `inherited:true` when it comes from the PERSISTED table's previous generation (a restart), and every worker row carries `parentSessionId` — the dispatching conversation — so the tree groups it under its session instead of the unlinked bucket."
           },
           {
             "name": "active_session",
@@ -663,7 +663,8 @@
         "No `ok` field. Three sources: workspace session dirs + engine in-memory worker sessions. Sorted by id ascending.",
         "W729: every row carries `mode` (worker rows included); a session without session.json.mode reads as \"standard\".",
         "W791 / W880: `?archived=1` reverses the scanner's dot-dir blind spot: the row set becomes the canonical `<CELESTEA_HOME>/workspaces/<ws>/archive/` directories holding `cli-main.jsonl` (legacy `<ws>/.celestea-archived/` still read), in the SAME shape and sort order as the default rows plus `archived:true` (id/workspace/title/model/mode/size/modified derive identically, `active` is always false, and worker rows are not part of that listing). Deleting an archived session (`POST /api/sessions/batch-delete`) and restoring it (`POST /api/sessions/{id}/unarchive`) both address it by its unchanged id.",
-        "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name."
+        "W779: the row `title` is the DISPLAY name — `session.json.title` when the session declared one, else the directory name with its `-{secs}.{nanos}[-N]` creation suffix stripped (`main-1789192174.492000000` -> `main`). The `id` keeps the raw directory name.",
+        "W1470b: the worker rows are the current generation PLUS the previous one (`inherited:true`), both read-only. A ghost row is never counted as a running worker by the guards that ask (`config`/`session-move` use the live listing only), and the id space is `worker:<sess>` for both — the marker, not the id, is what tells them apart."
       ],
       "probe": {
         "checked": true,
@@ -3002,6 +3003,12 @@
             "type": "string",
             "required": false,
             "optional": true
+          },
+          {
+            "name": "inherited",
+            "type": "array<object{wid,sess,host_session,title,status,state,model,mode,size,attempt,last_receipt,started_at,busy,context,inherited}>",
+            "required": false,
+            "note": "W1470b: the rows of a PREVIOUS generation this studio can still attribute to a session — read from the persisted table, the durable record a restart cannot empty. Every row carries inherited:true. They are NEVER counted in total/by_status/by_state (those keep counting the current generation) and never duplicated in workers[]. A ?wid= lookup that matches only such a row answers ok:true with an empty workers[] plus the row here; a wid nobody knows still answers ok:false. PURE ADDITION."
           }
         ]
       },
@@ -3015,7 +3022,8 @@
       "notes": [
         "Always 200, including the not-found case.",
         "Fields marked optional:true appear only in some response variants.",
-        "W787 (E §2.3 P0 ③): `stale` / `orphans` come from the boot observer's judgement of the studio's OWN table (`<data dir>/worker-registry.tsv`, env `CELESTEA_WORKER_REGISTRY`), never from the DSH-side plugin's table; the boot sweep writes one audit line per finding plus a summary into `<data dir>/recovery-audit.jsonl`."
+        "W787 (E §2.3 P0 ③): `stale` / `orphans` come from the boot observer's judgement of the studio's OWN table (`<data dir>/worker-registry.tsv`, env `CELESTEA_WORKER_REGISTRY`), never from the DSH-side plugin's table; the boot sweep writes one audit line per finding plus a summary into `<data dir>/recovery-audit.jsonl`.",
+        "W1470b: `inherited` is the SAME fact the tool face reports (`worker_status` -> `inherited: true`) and the same one `GET /api/sessions` marks on its worker rows, so a restart is visible in the panel, in this endpoint and to the model with ONE meaning. It is not a liveness claim: a row whose owner process is alive but which no live instance owns is not inherited, and a row of another host conversation never is."
       ],
       "probe": {
         "checked": true,

@@ -45,6 +45,10 @@ export class SessionRegistry {
 
   /** Create a session, register it and return it. */
   create(spec: WorkerSessionSpec): WorkerSession {
+    // W1470: an id that is already registered is never handed out twice — an
+    // adopted (rehydrated) session occupies its id exactly like a live one, so a
+    // restart can no longer mint `session-0` for a second worker.
+    while (this.byId.has(`${this.prefix}${this.nextId}`)) this.nextId += 1;
     const id = `${this.prefix}${this.nextId}`;
     this.nextId += 1;
     const session: WorkerSession = {
@@ -58,6 +62,38 @@ export class SessionRegistry {
   /** Register an existing session under its own id (the host conversation). */
   register(session: WorkerSession): void {
     this.byId.set(session.meta.id, session);
+  }
+
+  /**
+   * W1470: adopt PERSISTED sessions — the conversations a previous process
+   * minted and the table still names. Read-only (it never touches the table) and
+   * idempotent (an id that is already registered keeps its live session, so a
+   * later reload can never downgrade a real one to a placeholder).
+   */
+  adopt(metas: readonly WorkerSessionMeta[]): void {
+    for (const meta of metas) {
+      if (this.byId.has(meta.id)) continue;
+      this.byId.set(meta.id, { meta: { ...meta }, log: this.logFactory() });
+    }
+  }
+
+  /**
+   * W1470: never mint an id the persisted table already names. Seeding the
+   * counter (rather than only skipping on collision) keeps the ids MONOTONIC
+   * across restarts, which is what makes a stale row's `sess=` recognisable.
+   */
+  reserve(ids: Iterable<string>): void {
+    for (const id of ids) {
+      if (!id.startsWith(this.prefix)) continue;
+      const rest = id.slice(this.prefix.length);
+      const n = Number.parseInt(rest, 10);
+      if (Number.isSafeInteger(n) && String(n) === rest && n >= this.nextId) this.nextId = n + 1;
+    }
+  }
+
+  /** The id prefix this registry mints (`workerSessionPrefix(host)`). */
+  get prefixOf(): string {
+    return this.prefix;
   }
 
   get(id: string): WorkerSession | undefined {

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { recordingSessionLog } from "./log.js";
 import { WorkerRegistry, isOwn, withProc, withState } from "./registry.js";
-import { getExtra, parseRegistryTsv, receiptDelivered, receiptKey, serializeRegistryTsv, workerAttempt, workerHost, workerLease } from "./registry-tsv.js";
+import { WORKER_ROW_TOKENS, getExtra, parseRegistryTsv, receiptDelivered, receiptKey, serializeRegistryTsv, workerAttempt, workerHost, workerLease } from "./registry-tsv.js";
 import { workerTools } from "./tools.js";
 import { scriptedDrivers, scriptedLoop, waitUntil } from "./fakes.test-util.js";
 
@@ -363,14 +363,18 @@ describe("E §2.3 P0/P1 (W787): persisted table, attempt tokens, boot observatio
     expect(getExtra(reg.getEntry("W5")!, "retries")).toBe("1");
   });
 
-  it("B7: round-trips a row carrying all four new tokens byte-for-byte", () => {
-    const line = "W9\t2026-09-10_12:00:00Z\tRUNNING\tsess=s9 title=t host=ws/s1 attempt=3 lease=4242@1789000000 receipt=W9:2 proc=4242";
+  it("B7: round-trips a row carrying every declared token byte-for-byte", () => {
+    // W1470: `claimed=` (the P2 handover stamp) joined the vocabulary — the
+    // column count is still FOUR, which is what keeps an older parser reading.
+    const line = "W9\t2026-09-10_12:00:00Z\tRUNNING\tsess=s9 title=t host=ws/s1 attempt=3 lease=4242@1789000000 receipt=W9:2 claimed=4242@1789000001 proc=4242";
     const parsed = parseRegistryTsv(`${line}\n`);
     expect(parsed.entries).toHaveLength(1);
     expect(serializeRegistryTsv(parsed.entries)).toBe(`${line}\n`);
     const entry = parsed.entries[0]!;
     expect([workerHost(entry), workerAttempt(entry), workerLease(entry), receiptDelivered(entry, 2), receiptDelivered(entry, 3)]).toEqual(["ws/s1", 3, { pid: 4242, at: 1789000000 }, true, false]);
     expect(receiptKey(entry.wid, workerAttempt(entry))).toBe("receipt:W9:3");
+    expect(line.split("\t")).toHaveLength(4);
+    expect(WORKER_ROW_TOKENS).toEqual(["host", "attempt", "lease", "receipt", "claimed"]);
   });
 
   it("B6: writing one session's row KEEPS the rows another session already wrote", () => {

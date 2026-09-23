@@ -20,6 +20,10 @@
  *
  * The judgement NEVER throws: an unreadable table, a malformed lease or a dead
  * pid all degrade to "unknown", and `unknown` is never a reason to act.
+ *
+ * W1470: the ACTIONS the decision table describes are implemented in
+ * `recover-apply.ts` behind `CELESTEA_WORKER_RECOVER=1`. Nothing in THIS module
+ * changed: it is still pure, still read-only, and still the only judge.
  */
 
 import type { WorkerEntry } from "@celestea/core";
@@ -109,7 +113,7 @@ function judgeRow(
     report.frozen.push(entry.wid);
     return;
   }
-  const lease = ownerOf(entry);
+  const lease = workerOwner(entry);
   const host = workerHost(entry);
   // An orphan is a row whose host session vanished — auditable without any
   // liveness evidence, and NEVER auto re-dispatched (§2.2.4 row 6). It is not a
@@ -130,7 +134,7 @@ function judgeRow(
  * fallback — a row written before leases existed still names its owner, so it is
  * judged instead of being declared immortal.
  */
-function ownerOf(entry: WorkerEntry): WorkerLease | null {
+export function workerOwner(entry: WorkerEntry): WorkerLease | null {
   const lease = workerLease(entry);
   if (lease !== null) return lease;
   const proc = workerProc(entry);
@@ -138,7 +142,7 @@ function ownerOf(entry: WorkerEntry): WorkerLease | null {
 }
 
 function candidate(entry: WorkerEntry, reason: WorkerRecoveryReason, artifact: boolean): WorkerRecoveryCandidate {
-  const lease = ownerOf(entry);
+  const lease = workerOwner(entry);
   return {
     wid: entry.wid,
     status: entry.status,

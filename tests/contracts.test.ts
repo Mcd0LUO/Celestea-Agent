@@ -297,6 +297,25 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
     expect(API_ENDPOINT_COUNT).toBe(66);
   });
 
+  it("W1470b: the previous generation is a declared PURE ADDITION on both listings", () => {
+    const byId = new Map(loadEndpoints().endpoints.map((e) => [e.id, e]));
+    // ① the status endpoint reports it next to stale[]/orphans[] …
+    const status = byId.get("get_worker_status");
+    const field = status?.response.fields.find((f) => f.name === "inherited");
+    expect(String(field?.type)).toContain("inherited");
+    expect(String(field?.note)).toContain("NEVER counted in total/by_status/by_state");
+    expect((status?.notes ?? []).some((n) => n.includes("SAME fact the tool face reports"))).toBe(true);
+    // ② … and the session listing marks the worker rows the same way.
+    const sessions = byId.get("get_sessions");
+    const rowType = String(sessions?.response.fields[0]?.type);
+    expect(rowType).toContain("inherited?:true");
+    expect(rowType).toContain("parentSessionId?:string");
+    expect((sessions?.notes ?? []).some((n) => n.includes("PLUS the previous one"))).toBe(true);
+    // No new endpoint: the count is frozen at the W870 number.
+    expect(loadEndpoints().count).toBe(66);
+    expect(API_ENDPOINT_COUNT).toBe(66);
+  });
+
   it("B7: the studio's own worker table is a declared data file with the new tokens", () => {
     const entry = idx.files.find((f) => f.file === "<data dir>/worker-registry.tsv");
     expect(entry?.schema).toBe("registry-tsv.schema.json");
@@ -307,15 +326,23 @@ describe("E-P0③ checkpoint + boot recovery (contract delta)", () => {
       extraTokens: { whitelist: string[]; added: Record<string, string>; known: string[] };
       path: Record<string, string>;
       format: Record<string, string>;
+      recovery: Record<string, string>;
     };
-    expect(schema.extraTokens.whitelist).toEqual(["host", "attempt", "lease", "receipt"]);
-    expect(Object.keys(schema.extraTokens.added).sort()).toEqual(["attempt", "host", "lease", "receipt"]);
+    // W1470 appended `claimed` (the P2 handover stamp) WITHOUT changing the
+    // column count — the same backward-compatible move W787 made for four tokens.
+    expect(schema.extraTokens.whitelist).toEqual(["host", "attempt", "lease", "receipt", "claimed"]);
+    expect(Object.keys(schema.extraTokens.added).sort()).toEqual(["attempt", "claimed", "host", "lease", "receipt"]);
     expect(schema.path["studio"]).toContain("<data dir>/worker-registry.tsv");
     expect(schema.path["ownershipRule"]).toContain("MUST NEVER write each other");
-    // The three tokens a row is BUILT from are declared (the round-trip itself is
+    // The tokens a row is BUILT from are declared (the round-trip itself is
     // asserted in `packages/workers/src/registry.test.ts`).
     const tokens: string[] = schema.extraTokens.known;
-    for (const token of ["host=", "attempt=", "lease=", "receipt="]) expect(tokens.some((t) => t.startsWith(token))).toBe(true);
+    for (const token of ["host=", "attempt=", "lease=", "receipt=", "claimed="]) expect(tokens.some((t) => t.startsWith(token))).toBe(true);
+    // W1470: the schema also freezes the P0/P2 split and the restart rules, so the
+    // switch (`CELESTEA_WORKER_RECOVER=1`, default OFF) cannot drift from the code.
+    expect(schema.recovery["observation"]).toContain("read-only");
+    expect(schema.recovery["action"]).toContain("CELESTEA_WORKER_RECOVER=1 ONLY");
+    expect(schema.recovery["addressability"]).toContain("RESERVED");
   });
 
   it("keeps the session-event contract untouched (interrupted is a legal outcome)", () => {

@@ -37,6 +37,8 @@ export const shell = {
   'shell.tree.events': '{n} 次事件',
   'shell.worker.openHint': '（点击打开该 worker 会话视图：只读）',
   'shell.worker.unlinked': '未关联父会话',
+  'shell.worker.inherited': '上一代',
+  'shell.worker.inheritedHint': '（上一代进程留下的 worker：状态取自持久化登记，点开为只读视图）',
   'shell.worker.parentHint': '点击打开父会话视图',
   'shell.new.title': '新建会话',
   'shell.new.titlePlaceholder': '必填',

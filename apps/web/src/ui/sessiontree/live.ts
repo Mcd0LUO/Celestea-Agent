@@ -36,10 +36,13 @@ export function updateBusyDots(container: HTMLElement): void {
     const busy = paneBusy(id);
     row.classList.toggle('running', busy);
     const st = row.querySelector<HTMLElement>('.ws-worker-state');
-    if (st) {
-      st.textContent = busy ? t('shell.tree.running') : t('shell.tree.idle');
-      st.classList.toggle('busy', busy);
-    }
+    if (st === null) continue;
+    // W1470b：上一代行的状态位是**注册表状态**，不是本页运行态。没有活实例的行永远
+    // 不 busy，这里若照旧写 idle，就会在渲染后的第一次轮询里抹掉徽标要说明的那个事实
+    // （真机 CDP 实测抓到的正是这一条：渲染正确、轮询后变回 Idle）。
+    if (row.classList.contains('inherited')) continue;
+    st.textContent = busy ? t('shell.tree.running') : t('shell.tree.idle');
+    st.classList.toggle('busy', busy);
   }
 }
 

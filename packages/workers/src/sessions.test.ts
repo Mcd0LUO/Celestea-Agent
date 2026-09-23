@@ -67,3 +67,35 @@ describe("SessionRegistry", () => {
     expect(reg.size).toBe(0);
   });
 });
+describe("W1470: persisted ids are adopted, reserved and never re-minted", () => {
+  const meta = (id: string, title = "W1·t") => ({ id, title, workspace: null, model: null, mode: null });
+
+  it("adopts a persisted session so its exact id resolves again", () => {
+    const reg = new SessionRegistry({ prefix: "p-session-" });
+    reg.adopt([meta("p-session-0")]);
+    expect(reg.resolve("p-session-0").session?.meta.id).toBe("p-session-0");
+    expect(reg.logOf("p-session-0")).toBeDefined();
+  });
+
+  it("never replaces a session that is already registered (adopt is idempotent)", () => {
+    const reg = new SessionRegistry({ prefix: "p-session-" });
+    const live = reg.create({ title: "live" });
+    reg.adopt([meta(live.meta.id, "placeholder")]);
+    // Reference identity, not just equality: a reload must not downgrade a live
+    // session (with its log) to a placeholder.
+    expect(reg.get(live.meta.id)).toBe(live);
+    expect(reg.size).toBe(1);
+  });
+
+  it("skips an occupied id when minting, even with no reserve()", () => {
+    const reg = new SessionRegistry({ prefix: "p-session-" });
+    reg.adopt([meta("p-session-0")]);
+    expect(reg.create({ title: "next" }).meta.id).toBe("p-session-1");
+  });
+
+  it("reserve() seeds the counter past persisted ids and ignores foreign shapes", () => {
+    const reg = new SessionRegistry({ prefix: "p-session-" });
+    reg.reserve(["p-session-4", "other-session-9", "p-session-0x", "p-session-007"]);
+    expect(reg.create({ title: "next" }).meta.id).toBe("p-session-5");
+  });
+});

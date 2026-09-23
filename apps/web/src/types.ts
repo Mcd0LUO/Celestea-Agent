@@ -196,6 +196,11 @@ export interface SessionInfo {
   wid?: string;
   status?: string;
   state?: string;
+  /**
+   * W1470b：该 worker 行属于**上一代**（重启前的进程留下的持久化行，当前没有活实例拥有它）。
+   * 当前代的行不带这个键 —— 与 `archived` 同一约定（只有为真时才出现）。
+   */
+  inherited?: boolean;
   workspace?: string | null;
   events?: number;
   live?: boolean;

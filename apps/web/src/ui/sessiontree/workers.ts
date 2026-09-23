@@ -20,22 +20,29 @@ import { parentOf, truncateName, widOf, workerSessions, workerSigOf, workerTitle
 import { paneBusy, activeSessionId } from '../viewctx';
 import { t } from '../../i18n';
 
-/** 渲染一条 Worker 行（child=true 时缩进到父会话之下）。每行：运行态点 · wid · 标题 · 状态 · 模型。 */
+/**
+ * 渲染一条 Worker 行（child=true 时缩进到父会话之下）。每行：运行态点 · wid · 标题 · 状态 · 模型。
+ *
+ * W1470b：`inherited` 行（上一代进程留下的）多一个徽标，状态位显示**注册表状态**而不是
+ * 由本页运行态推导的 running/idle —— 一个没有活实例的行永远是「不忙」的，写 idle 等于说谎。
+ */
 function renderWorkerRow(host: HTMLElement, w: SessionInfo, child: boolean): HTMLElement {
   const id = w.id ?? '';
   const busy = paneBusy(id);
-  const row = el('div', 'ws-worker-row' + (child ? ' child' : '') + (activeSessionId() === id ? ' active' : ''));
+  const inherited = w.inherited === true;
+  const row = el('div', 'ws-worker-row' + (child ? ' child' : '') + (activeSessionId() === id ? ' active' : '') + (inherited ? ' inherited' : ''));
   row.dataset.id = id;
   row.appendChild(el('span', 'sess-dot' + (busy ? ' busy' : '')));
   row.appendChild(el('span', 'ws-worker-wid', widOf(w)));
   row.appendChild(el('span', 'ws-worker-title', workerTitleOf(w)));
-  const st = el('span', 'ws-worker-state' + (busy ? ' busy' : ''), busy ? t('shell.tree.running') : t('shell.tree.idle'));
+  if (inherited) row.appendChild(el('span', 'ws-worker-badge', t('shell.worker.inherited')));
+  const st = el('span', 'ws-worker-state' + (busy ? ' busy' : '') + (inherited ? ' inherited' : ''), inherited ? String(w.status ?? '') : busy ? t('shell.tree.running') : t('shell.tree.idle'));
   row.appendChild(st);
   const bits: string[] = [];
   if (w.model) bits.push(String(w.model));
   if (w.events !== undefined) bits.push(t('shell.tree.events', { n: w.events }));
   if (bits.length) row.appendChild(el('span', 'ws-worker-meta', bits.join(' · ')));
-  row.title = workerTitleOf(w) + (w.model ? ' · ' + w.model : '') + t('shell.worker.openHint');
+  row.title = workerTitleOf(w) + (w.model ? ' · ' + w.model : '') + t(inherited ? 'shell.worker.inheritedHint' : 'shell.worker.openHint');
   row.addEventListener('click', () => {
     const hostEl = document.getElementById('sessionTree') ?? host;
     openSessionRow(hostEl, id, { kind: 'worker', title: w.title || id });

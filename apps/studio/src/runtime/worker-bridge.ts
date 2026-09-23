@@ -14,9 +14,9 @@
  * for the host to aggregate a process-wide `worker_status`.
  */
 
-import { isRecord, type ToolRegistry } from "@celestea/core";
+import { isRecord, type ToolRegistry, type WorkerEntry } from "@celestea/core";
 import { projectMessages } from "@celestea/session";
-import { getExtra, workerAttempt, type WorkerRegistry } from "@celestea/workers";
+import { getExtra, workerAttempt, workerHost, workerTitle, type WorkerRegistry } from "@celestea/workers";
 import type {
   WorkerContextUsage,
   WorkerSessionRow,
@@ -60,6 +60,12 @@ export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId:
       status: entry.status,
       state: getExtra(entry, "state") ?? "",
       host_session: hostSessionId,
+      // W1470b: the dispatching conversation, in the field the tree ALREADY
+      // reads for lineage (parentSessionId). The frontend has grouped by it
+      // since W515 and the backend simply never sent it, so every worker fell
+      // into the "unlinked" bucket; sending it also keeps the per-session
+      // worker strip from mistaking an inherited row for this session own.
+      parentSessionId: hostSessionId,
       // E §2.3 P1 ③ (W787): which try this row is and the key of the receipt it
       // already delivered — the two facts a coordinator needs to tell a
       // re-dispatch from a duplicate.
@@ -67,6 +73,52 @@ export function workerSessionsOf(registry: WorkerRegistry | null, hostSessionId:
       last_receipt: getExtra(entry, "receipt"),
     };
   });
+}
+
+/**
+ * W1470b — the panel row of one PERSISTED row of a previous generation.
+ *
+ * The facts come from the ROW itself (it is the durable record): `sess` names
+ * the conversation, `title` the folded short name, `status`/`state` the last
+ * known lifecycle, `model`/`mode` the spawn parameters. What the row cannot
+ * carry is measured as absent, never invented: the transcript is memory-only
+ * (`size: 0`) and there is no live pane to be busy.
+ *
+ * `inherited: true` is the SAME marker the tool face uses (`worker_status` ->
+ * `inherited`), and `parentSessionId` is the dispatching conversation, so the
+ * row lands under its session instead of "unlinked".
+ */
+export function inheritedRowOf(entry: WorkerEntry): WorkerSessionRow {
+  const sess = getExtra(entry, "sess") ?? "";
+  const short = getExtra(entry, "title");
+  const host = workerHost(entry);
+  return {
+    id: `worker:${sess === "" ? entry.wid : sess}`,
+    workspace: "engine",
+    kind: "worker",
+    title: short === null ? entry.wid : workerTitle(entry.wid, short),
+    model: getExtra(entry, "model"),
+    mode: getExtra(entry, "mode") ?? "standard",
+    size: 0,
+    modified: 0,
+    active: false,
+    wid: entry.wid,
+    sess: sess === "" ? null : sess,
+    started_at: entry.started_at,
+    status: entry.status,
+    state: getExtra(entry, "state") ?? "",
+    host_session: host,
+    parentSessionId: host,
+    attempt: workerAttempt(entry),
+    last_receipt: getExtra(entry, "receipt"),
+    busy: false,
+    inherited: true,
+  };
+}
+
+/** W1470b: project every inherited table row for the panel (one place). */
+export function inheritedPanelRows(entries: readonly WorkerEntry[]): WorkerSessionRow[] {
+  return entries.map((entry) => inheritedRowOf(entry));
 }
 
 /**
@@ -81,6 +133,8 @@ export function aggregateWorkerStatus(
   rows: readonly WorkerSessionRow[],
   wid?: string,
   contextOf?: (sess: string) => WorkerContextUsage | null,
+  /** W1470b: previous-generation rows — reported, NEVER counted (see below). */
+  inherited: readonly WorkerSessionRow[] = [],
 ): WorkerStatusReport {
   const scoped = wid === undefined ? [...rows] : rows.filter((row) => row.wid === wid);
   const by_status: Record<string, number> = {};
@@ -103,9 +157,17 @@ export function aggregateWorkerStatus(
     return toStatusRow(row, sess === "" || contextOf === undefined ? null : contextOf(sess));
   };
   if (wid !== undefined && scoped.length === 0) {
+    // W1470b: a wid the PERSISTED table still names is KNOWN — reported with
+    // `ok: true` and `inherited: true` on the row, while `total`/`by_status`
+    // keep counting the current generation only (an inherited row is not a
+    // running worker of this generation, and must not inflate those numbers).
+    const ghosts = inherited.filter((row) => row.wid === wid);
+    if (ghosts.length > 0) return { ok: true, total: 0, by_status, by_state, workers: [], wid, inherited: ghosts.map(project) };
     return { ok: false, total: 0, by_status, by_state, workers: [], wid, error: `no worker ${wid} in registry` };
   }
-  return { ok: scoped.length > 0, total: scoped.length, by_status, by_state, workers: scoped.map(project), ...(wid === undefined ? {} : { wid }) };
+  const report: WorkerStatusReport = { ok: scoped.length > 0, total: scoped.length, by_status, by_state, workers: scoped.map(project), ...(wid === undefined ? {} : { wid }) };
+  // The unfiltered (panel) view lists them; a wid lookup about a live worker does not.
+  return wid !== undefined || inherited.length === 0 ? report : { ...report, inherited: inherited.map(project) };
 }
 
 /** Studio projection of a worker session transcript (null = unknown session). */

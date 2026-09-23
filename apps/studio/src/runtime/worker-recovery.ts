@@ -16,7 +16,7 @@
  *   3. `[celestea-worker-recovery]` on stderr (the operator's log).
  */
 
-import type { WorkerRecoveryCandidate, WorkerRecoveryReport } from "@celestea/workers";
+import { WorkerRegistry, applyRecovery, recoveryEnabled, type RecoveryApplied, type WorkerRecoveryCandidate, type WorkerRecoveryReport } from "@celestea/workers";
 import { workerRecoveryBlock } from "./worker-table.js";
 import type { RecoveryAuditWriter } from "./recovery-audit.js";
 
@@ -30,6 +30,12 @@ export interface WorkerBootObservationInput {
   audit?: RecoveryAuditWriter | null;
   now?: () => number;
   warn?: (message: string) => void;
+  /**
+   * W1470: where the P2 switch is read from (CELESTEA_WORKER_RECOVER). Optional
+   * so the P0 observer's callers are unchanged; the P2 half falls back to the
+   * process environment, like every other host-side switch.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -53,6 +59,51 @@ export function observeWorkerTableOnBoot(input: WorkerBootObservationInput): Wor
   });
   announce(input, report);
   return report;
+}
+
+/**
+ * W1470 P2 (E §2.2.4): the boot ACTIONS the P0 sweep above deliberately does not
+ * take — claim a dead generation's RUNNING row and settle it (DONE when the
+ * deliverable exists, FAILED otherwise), never re-dispatch an orphan.
+ *
+ * ARMED ONLY BY `CELESTEA_WORKER_RECOVER=1`: without it this returns null and
+ * the boot path is byte-for-byte the P0 observation it has always been. The
+ * judgement is NOT recomputed here — it is the report P0 just produced, so the
+ * action can never disagree with the line that was audited.
+ */
+export function recoverWorkerTableOnBoot(input: WorkerBootObservationInput, report: WorkerRecoveryReport): RecoveryApplied[] | null {
+  if (!recoveryEnabled(input.env ?? process.env)) return null;
+  const registry = new WorkerRegistry({
+    tsvPath: input.path,
+    resultsDir: input.resultsDir,
+    sourceLabel: "celestea.studio-ts",
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+  const applied = applyRecovery(registry, report);
+  for (const row of applied) auditApplied(input, row);
+  announceApplied(input, applied);
+  return applied;
+}
+
+/** One audit line per ACTION (the P0 lines already recorded the judgement). */
+function auditApplied(input: WorkerBootObservationInput, row: RecoveryApplied): void {
+  input.audit?.write({
+    event: "worker_recovered",
+    session: null,
+    wid: row.wid,
+    reason: row.reason,
+    action: row.action,
+    count: 1,
+    detail: `outcome=${row.outcome}`,
+  });
+}
+
+/** The stderr line of the action half: one line, and only when something ran. */
+function announceApplied(input: WorkerBootObservationInput, applied: readonly RecoveryApplied[]): void {
+  const warn = input.warn ?? ((message: string) => process.stderr.write(`${message}\n`));
+  const acted = applied.filter((row) => row.outcome !== "observed");
+  if (acted.length === 0) return;
+  warn(`[celestea-worker-recovery] CELESTEA_WORKER_RECOVER=1 applied: ${acted.map((r) => `${r.wid}(${r.action}->${r.outcome})`).join(", ")}`);
 }
 
 /** One audit line per finding — the row's identity, never its brief (§4.4). */

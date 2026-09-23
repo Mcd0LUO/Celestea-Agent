@@ -14,7 +14,10 @@
  *   - `attempt=<n>`    which try this row is (first = 0, re-dispatch +1, §5.2);
  *   - `lease=<pid>@<unix>` the owning process and when it last touched the row;
  *   - `receipt=<wid>:<attempt>` the idempotency key of the DELIVERED receipt
- *     (`wid:0` for the first try — the same 0-based numbering as the ledger).
+ *     (`wid:0` for the first try — the same 0-based numbering as the ledger);
+ *   - `claimed=<pid>@<unix>` (W1470, P2) the handover stamp of a row a DEAD
+ *     generation left behind: who took it over and when. Absent on every row a
+ *     process wrote itself, so "claimed" is exactly "recovered at boot".
  * A value is folded to ONE token (`oneToken`), because the list is whitespace
  * separated.
  */
@@ -101,6 +104,9 @@ export function entryView(entry: WorkerEntry): Record<string, unknown> {
     // W736: the terminal stamp of the state machine (null while RUNNING).
     ended_at: getExtra(entry, "ended_at"),
     fail: getExtra(entry, "fail"),
+    // W1470 P2: the handover stamp — null on every row a live process wrote, so
+    // a non-null value reads as "recovered from a dead generation".
+    claimed: getExtra(entry, "claimed"),
     proc: proc === null ? null : Number.parseInt(proc, 10),
     // E §2.3 P1 ③: the attempt / host / receipt face of the row.
     attempt: workerAttempt(entry),

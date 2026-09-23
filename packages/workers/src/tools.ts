@@ -19,7 +19,7 @@ import { isRecord, loadTools, type Tool, type ToolSpec } from "@celestea/core";
 import type { WorkerRegistry } from "./registry.js";
 import { getExtra } from "./registry-tsv.js";
 import type { ResolveError } from "./sessions.js";
-import { sanitizeExtra, truncateChars, utcNow } from "./types.js";
+import { sanitizeExtra, truncateChars, utcNow, workerTitle } from "./types.js";
 
 /** `{ok:false, step, error}` — the tool-facing failure envelope. */
 export function contractError(step: string, error: string): Record<string, unknown> {
@@ -73,7 +73,7 @@ async function spawnWorker(registry: WorkerRegistry, args: Record<string, unknow
   if (registry.getEntry(wid) !== undefined) return contractError("validate", `wid ${wid} already registered`);
 
   const short = optionalArg(args, "title") ?? deriveShort(brief, wid);
-  const fullTitle = `${wid}·${truncateChars(short, 20)}`;
+  const fullTitle = workerTitle(wid, short);
   const reportTo = optionalArg(args, "report_to");
   // W729 §2.3: an explicit `mode` wins; otherwise the worker inherits the mode
   // of the session that owns this registry (its own host conversation).

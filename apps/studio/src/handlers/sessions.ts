@@ -38,7 +38,9 @@ import { capacityJson, failJson, readJsonBody, strField, storeFail, type Deps } 
 import { contextPayload, type ContextUsage } from "./context-shape.js";
 
 function workerRows(deps: Deps): SessionRow[] {
-  return deps.runtime.workerSessions() as SessionRow[];
+  // W1470b: the current generation PLUS the previous one (`inherited: true`),
+  // so a restart no longer makes a worker disappear from the panel.
+  return [...deps.runtime.workerSessions(), ...deps.runtime.inheritedWorkerSessions()] as SessionRow[];
 }
 
 /** W513: `busy` is the session's OWN turn slot, never a process-wide flag. */

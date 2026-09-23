@@ -45,7 +45,7 @@ import { createRealRuntimeAdapter, startupEngineProfile } from "./runtime/index.
 import type { DisclosureOptions } from "./runtime/engine-plugins.js";
 import { recoverActiveSessionOnBoot } from "./runtime/boot-recovery.js";
 import { RecoveryAuditWriter } from "./runtime/recovery-audit.js";
-import { observeWorkerTableOnBoot } from "./runtime/worker-recovery.js";
+import { observeWorkerTableOnBoot, recoverWorkerTableOnBoot } from "./runtime/worker-recovery.js";
 import { workerTablePath } from "./runtime/worker-table.js";
 
 export interface StudioAppOptions {
@@ -289,12 +289,17 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   // session) and record it. Never re-dispatch: that is P2, behind an explicit
   // switch, and it needs the tool side-effect table first (§5.1).
   const dataDir = dirname(config.paths.workspacesFile);
-  observeWorkerTableOnBoot({
-    path: workerTablePath({ env, dataDir }),
+  const workerTable = workerTablePath({ env, dataDir });
+  const workerResults = join(dataDir, "worker-results");
+  const workerReport = observeWorkerTableOnBoot({
+    path: workerTable,
     knownHost: (sid) => services.sessions.resolve(sid).ok,
-    resultsDir: join(dataDir, "worker-results"),
+    resultsDir: workerResults,
     audit: bootAudit,
   });
+  // W1470 P2 (§2.2.4): the ACTIONS on the rows P0 just judged — armed only by
+  // `CELESTEA_WORKER_RECOVER=1`, so the default boot path stays observation-only.
+  recoverWorkerTableOnBoot({ path: workerTable, resultsDir: workerResults, audit: bootAudit, env }, workerReport);
   const endpointIds = registerHandlers(app, services, table);
   assertCoverage(table.routes, endpointIds);
 

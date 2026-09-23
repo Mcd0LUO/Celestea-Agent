@@ -65,7 +65,7 @@ import { CapacityError, EngineError, toolSpecView, type PendingQuestionView, typ
 import { HostAutowake, autowakeLog, autowakeStateOf } from "./host-autowake.js";
 import { injectionHooksOf, publishSubCall, type SessionInjectionHooks } from "./session-publisher.js";
 import { sessionContextOf } from "./context-snapshot.js";
-import { mergedWorkerRows, sendWorkerThrough, spawnWorkerThrough, workerMessagesAcross } from "./worker-bridge.js";
+import { inheritedPanelRows, mergedWorkerRows, sendWorkerThrough, spawnWorkerThrough, workerMessagesAcross } from "./worker-bridge.js";
 import type {
   ClearOutcome,
   CompactOutcome,
@@ -112,7 +112,7 @@ import { inboxMessageOf } from "./inbox-message.js";
 import { watchdogCount, watchdogOf, watchdogRunningOf, workerStatusOf } from "./watchdog-view.js";
 import { hasLiveWorkersOf } from "./worker-live.js";
 import { recoveryViewOf, type RecoveryView } from "./recovery-view.js";
-import { workerRecoveryBlock, workerTablePath } from "./worker-table.js";
+import { workerTablePath, workerTableStateOf, type WorkerTableState } from "./worker-table.js";
 import { clearSession, compactSession, type SessionLifecycleDeps } from "./session-lifecycle.js";
 import { releaseSessionOf, releaseSettleMs } from "./session-release.js";
 import { faceForMode } from "@celestea/tools";
@@ -652,6 +652,9 @@ class RealEngine implements RealRuntimeAdapter {
   /** Merged worker rows over every live instance (W513 aggregate view). */
   workerSessions(): WorkerSessionRow[] { return mergedWorkerRows(this.registry.list()); }
 
+  /** W1470b: the persisted table previous generation, for the panel. */
+  inheritedWorkerSessions(): WorkerSessionRow[] { return inheritedPanelRows(this.workerTableState(this.workerSessions()).inherited); }
+
   workerMessages(sessionId: string): unknown[] | null { return workerMessagesAcross(this.registry.list(), sessionId); }
 
   async workerSpawn(req: WorkerSpawnRequest): Promise<WorkerSpawnOutcome> {
@@ -669,7 +672,9 @@ class RealEngine implements RealRuntimeAdapter {
    */
   workerStatus(wid?: string): WorkerStatusReport {
     // W894: `statusline` PEEKS, so measuring a worker never composes a cold session.
-    return workerStatusOf(this.workerSessions(), watchdogCount(this.registry.list()), wid, this.workerRecovery(), (sess) => this.statusline(sess).context_usage);
+    const own = this.workerSessions();
+    const table = this.workerTableState(own);
+    return workerStatusOf(own, watchdogCount(this.registry.list()), { wid, recovery: table.recovery, inherited: inheritedPanelRows(table.inherited), contextOf: (sess) => this.statusline(sess).context_usage });
   }
 
   /** E §1.3 P1 ②: `/api/status.recovery` of one session (never composes one). */
@@ -682,13 +687,8 @@ class RealEngine implements RealRuntimeAdapter {
    * observer writes the same judgement to the audit channel once). Observation
    * only — nothing here settles a row or re-dispatches a worker (P2 territory).
    */
-  private workerRecovery(): WorkerRecoveryReport {
-    return workerRecoveryBlock({
-      path: this.workerTable,
-      knownHost: (sid) => this.opts.resolveSession?.(sid) != null,
-      resultsDir: this.opts.resultsDir ?? join(process.cwd(), "worker-results"),
-      now: this.now,
-    });
+  private workerTableState(own: readonly WorkerSessionRow[]): WorkerTableState {
+    return workerTableStateOf({ path: this.workerTable, ownWids: own.map((row) => row.wid ?? ""), pid: process.pid, knownHost: (sid) => this.opts.resolveSession?.(sid) != null, resultsDir: this.opts.resultsDir ?? join(process.cwd(), "worker-results"), now: this.now() });
   }
 
   // --- internals ---------------------------------------------------------

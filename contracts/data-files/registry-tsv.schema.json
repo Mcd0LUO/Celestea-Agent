@@ -27,7 +27,7 @@
       "DONE",
       "FAILED"
     ],
-    "extra": "free text; k=v tokens separated by whitespace (extra itself may contain spaces). state=<in-turn|idle> marks a RUNNING row's phase. report_to=<target> drives receipt wakeup. proc=<pid> marks the writing process (W234 row ownership).",
+    "extra": "free text; k=v tokens separated by whitespace (extra itself may contain spaces). state=<in-turn|idle> marks a RUNNING row's phase. report_to=<target> drives receipt wakeup. proc=<pid> marks the writing process (W234 row ownership); claimed=<pid>@<unix> (W1470, P2 only) marks a row TAKEN OVER from a dead process.",
     "atomicWrite": "tmp file in the same dir (<name>.tmp-<pid>-<seq>) then rename over the target",
     "viewRule": "summarize() only counts rows written by THIS registry: `proc=<pid>` (W234) and, when the registry declares a host conversation, `host=<sid>` (W787). A row with NO `host=` token is kept when `proc` matches (a legacy / directly-upserted row). Stale cross-process rows are invisible to by_status/by_state/workers and are not matched by a wid filter",
     "writeRule": "W787: one table carries the rows of EVERY studio session, so a write MERGES with the rows other session registries already wrote (`mergeTableRows`) before the atomic tmp+rename — writing the in-memory view alone would delete a sibling session's worker"
@@ -53,16 +53,23 @@
       "host=<session id>",
       "attempt=<n>",
       "lease=<pid>@<unix>",
-      "receipt=<wid>:<attempt>"
+      "receipt=<wid>:<attempt>",
+      "claimed=<pid>@<unix>"
     ],
-    "whitelist": ["host", "attempt", "lease", "receipt"],
+    "whitelist": ["host", "attempt", "lease", "receipt", "claimed"],
     "added": {
       "host": "the HOST conversation that dispatched the worker (E §2.2.2, closes G2-6); it is also the per-session ownership discriminator now that one process shares ONE table",
       "attempt": "which try this row is: the FIRST spawn is 0 and a re-dispatch adds one (§5.2, the cross-capability convention that the usage ledger and the model fallback already use; §2.2.2's local `first = 1` wording is superseded by the ruling). It names the report file (`results/<wid>-<short>-a<attempt>.md`) and keys the receipt (`receipt:<wid>:<attempt>`); a row with no token at all is a pre-W787 first try, i.e. 0",
       "lease": "`<pid>@<unix>` of the owning process and when it last touched the row; renewed on every driver state change. Absent (a legacy row) falls back to `proc=`",
-      "receipt": "the idempotency key `<wid>:<attempt>` of the receipt this row already DELIVERED — a second closeLoop for the same attempt is a no-op (E §2.2.3)"
+      "receipt": "the idempotency key `<wid>:<attempt>` of the receipt this row already DELIVERED — a second closeLoop for the same attempt is a no-op (E §2.2.3)",
+      "claimed": "W1470 (P2): `<pid>@<unix>` of the process that TOOK THE ROW OVER from a dead generation, and when. Stamped only by WorkerRegistry.claim, which is reachable only behind `CELESTEA_WORKER_RECOVER=1`; a row written by a live process never carries it, so its presence means exactly 'recovered at boot'. `proc=`/`lease=` are rewritten in the same atomic write, so a claimed row is owned — and settleable — by its claimer."
     },
-    "roundTrip": "tests/contracts.test.ts round-trips a row carrying ALL four new tokens through serializeRegistryTsv -> parseRegistryTsv byte-for-byte (B7)"
+    "roundTrip": "packages/workers/src/registry.test.ts round-trips a row carrying EVERY declared token (W787's four + W1470's claimed) through serializeRegistryTsv -> parseRegistryTsv byte-for-byte (B7), and asserts the column count stays 4"
+  },
+  "recovery": {
+    "observation": "P0 (always on, E §2.2.4): observeWorkerTable() judges every RUNNING row from lease=/proc= liveness, the deliverable probe (results/<wid>*.md) and host= existence. It is PURE and read-only — the studio's boot path exposes it as GET /api/worker/status stale[]/orphans[] plus one recovery-audit.jsonl line per finding, and rewrites nothing.",
+    "action": "P2 (CELESTEA_WORKER_RECOVER=1 ONLY; absent / any other value = OFF): the boot path claims each STALE row (proc= + lease= + claimed= in ONE atomic write) and settles it through the registry's single terminal write point — close_done => DONE, respawn with no remembered brief => FAILED, retries exhausted => FAILED. A row whose recorded owner is ALIVE is never claimed; an orphan whose owner is alive is observed and never re-dispatched (§2.2.4 row 6). Every action appends a worker_recovered audit line.",
+    "addressability": "W1470: a restart rebuilds the addressable sessions of THIS host conversation from the table's own sess= tokens (read-only, no row write) — the ids resolve again, and they are RESERVED, so the counter can never hand an id the table already names to a SECOND worker. worker_status reports such a row with inherited=true without counting it as a live worker of the current generation."
   },
   "columns": {
     "wid": "worker id (e.g. W101)",

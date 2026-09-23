@@ -187,6 +187,18 @@ body.resizing-col { cursor: col-resize; user-select: none; }
 .ws-worker-state { flex: 0 0 auto; font-family: var(--mono); font-size: 10px; color: var(--c-text-3); }
 .ws-worker-state.busy { color: var(--c-text-1); }
 
+/* W1470b：上一代 worker 行（重启后仍在的持久化行）。徽标用 --r-pill + 状态色 token，
+   与「本代运行中」的行一眼可分；边框一律实线，圆角不写死 px。 */
+.ws-worker-row.inherited .ws-worker-wid,
+.ws-worker-row.inherited .ws-worker-title { color: var(--c-text-3); }
+.ws-worker-state.inherited { color: var(--c-text-2); }
+.ws-worker-badge {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 9px; line-height: 1;
+  padding: 2px 5px; border-radius: var(--r-pill);
+  color: var(--c-warn); background: var(--c-warn-dim);
+  border: 1px solid var(--c-border-subtle);
+}
+
 /* ============================================================================
    W515 增量：转录三类消息（user / steering / queued / inbox）+ 谱系缩进 +
    提交两态切换。全部只做样式与 class，切换不重建 DOM。

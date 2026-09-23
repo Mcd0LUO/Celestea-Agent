@@ -32,9 +32,9 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { renameWithRetry, type SessionLog, type WorkerEntry, type WorkerStatus } from "@celestea/core";
+import { renameWithRetry, type WorkerEntry, type WorkerStatus } from "@celestea/core";
 import { runDriverLoop, type DriverExit, type WorkerDrivers } from "./driver.js";
-import { executeReceipt, lastAssistantSummary, type ReceiptRequest, type ReceiptResult } from "./receipt.js";
+import { executeReceipt, receiptSummary, verdictOf, type ReceiptRequest } from "./receipt.js";
 import { SessionMailbox } from "./mailbox.js";
 import { SessionRegistry } from "./sessions.js";
 import type { SessionLogFactory } from "./log.js";
@@ -54,8 +54,9 @@ import {
   workerRetries,
 } from "./registry-tsv.js";
 import { dropTokens, entryView, isOwn, setToken as setTokenOf, terminalEntry, withProc, withState, withTokens } from "./row.js";
-import { observeWorkerTable, type WorkerRecoveryOptions, type WorkerRecoveryReport } from "./recovery.js";
-import { sanitizeExtra, truncateChars, utcNow, type SpawnInfo, type WorkerSession, type WorkerVerdict } from "./types.js";
+import { observeWorkerTable, pidAliveDefault, workerOwner, type WorkerRecoveryOptions, type WorkerRecoveryReport } from "./recovery.js";
+import { hydrateSessions, inheritableRows, statusView } from "./rehydrate.js";
+import { sanitizeExtra, utcNow, workerTitle, type SpawnInfo, type WorkerSession, type WorkerVerdict } from "./types.js";
 import { PersistFailureLog, type PersistFailure } from "./persist-log.js";
 
 // W787: the pure ROW-FORMAT helpers moved to `row.ts` (§4.1 budget); their public
@@ -134,17 +135,23 @@ export class WorkerRegistry {
 
   // --- table state -------------------------------------------------------
 
-  /** Re-read the tsv table (missing file = empty table; bad rows are skipped). */
+  /**
+   * Re-read the tsv table (missing file = empty table; bad rows are skipped) and
+   * rebuild the ADDRESSABLE state the table still describes (W1470). The rebuild
+   * is read-only: it adopts the persisted sessions and reserves their ids, so a
+   * restart can address the previous generation's workers and can never hand
+   * their session ids to a new one.
+   */
   reload(): void {
     this.rows.clear();
-    if (this.path === null) return;
-    let text = "";
-    try {
-      text = readFileSync(this.path, "utf8");
-    } catch {
-      return;
+    if (this.path !== null) {
+      try {
+        for (const entry of parseRegistryTsv(readFileSync(this.path, "utf8")).entries) this.rows.set(entry.wid, entry);
+      } catch {
+        /* a missing / unreadable table is an empty table (W180 B1(c)) */
+      }
     }
-    for (const entry of parseRegistryTsv(text).entries) this.rows.set(entry.wid, entry);
+    hydrateSessions(this.sessionRegistry, this.entries(), { host: this.hostSessionValue, prefix: this.sessionRegistry.prefixOf });
   }
 
   /** Whole table in insertion order (foreign rows included). */
@@ -244,7 +251,7 @@ export class WorkerRegistry {
     if (oldSid !== null && oldSid !== "") this.releaseSession(oldSid);
     const mode = remembered.mode ?? getExtra(entry, "mode");
     const session = this.sessionRegistry.create({
-      title: `${wid}·${truncateChars(remembered.short, 20)}`,
+      title: workerTitle(wid, remembered.short),
       workspace: getExtra(entry, "workspace"),
       model: getExtra(entry, "model"),
       mode,
@@ -276,15 +283,46 @@ export class WorkerRegistry {
     return session.meta.id;
   }
 
-  /** `worker_status` payload: whole-table summary, or one worker when filtered. */
+  /**
+   * `worker_status` payload: the summary of the OWN rows, or one worker when
+   * filtered. W1470: a wid the persisted table names is reported too (marked
+   * `inherited`), because "the table still names it" is a fact — see
+   * `rehydrate.ts` (`statusView`).
+   */
   status(wid?: string | null): Record<string, unknown> {
-    const own = this.ownEntries();
-    if (wid !== undefined && wid !== null && wid !== "") {
-      const entry = own.find((e) => e.wid === wid);
-      if (entry === undefined) return { ok: false, step: "lookup", error: `no worker ${wid} in registry` };
-      return { ok: true, wid, worker: entryView(entry) };
-    }
-    return summarize(own) as unknown as Record<string, unknown>;
+    return statusView(this, wid);
+  }
+
+  /**
+   * W1470: rows of a PREVIOUS generation of this host conversation — the table
+   * names their session, their owner process is gone, and this registry has not
+   * claimed them. Visible (and addressable) but never counted as own workers.
+   */
+  inheritedEntries(): WorkerEntry[] {
+    return inheritableRows(this.entries(), { host: this.hostSessionValue, prefix: this.sessionRegistry.prefixOf }).filter((e) => !this.isMine(e));
+  }
+
+  /**
+   * W1470 P2 (§2.2.4): take a DEAD generation's RUNNING row under this process,
+   * so the terminal write point may settle it. Refuses — always — a row that is
+   * already ours, a frozen row, a row of another host conversation, and a row
+   * whose recorded owner is still ALIVE: liveness is the only licence to take a
+   * row over, and this method re-checks it rather than trusting the caller.
+   *
+   * The host guard is also what keeps [persist]'s merge honest: a write merges
+   * `ownEntries()` over the table, so a row that fails [mayInherit] would be
+   * mutated in memory and silently dropped on disk. Claim and ownership must
+   * therefore ask the SAME question — they do.
+   */
+  claim(wid: string, pidAlive: (pid: number) => boolean = pidAliveDefault): WorkerEntry | null {
+    const entry = this.rows.get(wid);
+    if (entry === undefined || entry.status !== "RUNNING" || !this.mayInherit(entry) || isOwn(entry, this.ownPid)) return null;
+    const owner = workerOwner(entry);
+    if (owner !== null && pidAlive(owner.pid)) return null;
+    const taken = withTokens(entry, { proc: String(this.ownPid), lease: this.lease(), claimed: this.lease() });
+    this.rows.set(wid, taken);
+    void this.persistObserved(wid);
+    return { ...taken };
   }
 
   /**
@@ -547,7 +585,16 @@ export class WorkerRegistry {
    * evidence it carries, and hiding it would lose a row this process owns.
    */
   private isMine(entry: WorkerEntry): boolean {
-    if (!isOwn(entry, this.ownPid)) return false;
+    return isOwn(entry, this.ownPid) && this.mayInherit(entry);
+  }
+
+  /**
+   * Does the row belong to THIS host conversation? A row with NO `host=` token
+   * (pre-W787 / directly upserted) is kept: `proc` is then the only evidence it
+   * carries. W1470: [claim] asks the same question, so ownership and takeover
+   * can never disagree about whose row it is.
+   */
+  private mayInherit(entry: WorkerEntry): boolean {
     const host = this.hostSessionValue;
     if (host === null) return true;
     const rowHost = getExtra(entry, "host");
@@ -634,27 +681,6 @@ export class WorkerRegistry {
       source: { kind: "subagent-settled", form: "notice", summary: receiptSummary(req, result.content), senderSessionId: sid },
     });
   }
-}
-
-/**
- * W736: the receipt verdict of one brief turn. A turn error fails the worker; so
- * does a receipt whose report could not be written, because then no deliverable
- * exists for the coordinator to read (stricter than the legacy implementation, which only warns).
- */
-function verdictOf(failure: string | null, result: ReceiptResult | null): WorkerVerdict {
-  if (failure !== null) return { ok: false, reason: failure };
-  if (result !== null && result.warn !== "") return { ok: false, reason: `receipt not written:${result.warn}` };
-  return { ok: true };
-}
-
-/** One-line summary of a settlement notice (the DSH `source.summary` field). */
-function receiptSummary(req: ReceiptRequest, content: string): string {
-  const summary = lastAssistantSummaryOf(req.log);
-  return summary === null ? truncateChars(content, 120) : truncateChars(summary, 120);
-}
-
-function lastAssistantSummaryOf(log: SessionLog | undefined): string | null {
-  return log === undefined ? null : lastAssistantSummary(log.events());
 }
 
 /** Timestamp helper re-exported for callers that build registry rows. */

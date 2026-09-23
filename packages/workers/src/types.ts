@@ -108,6 +108,18 @@ export function utcNow(now: number = Date.now()): string {
   return `${formatUtc(Math.floor(now / 1_000))}Z`;
 }
 
+/**
+ * W1470: the display title of a worker conversation (`<wid>·<short>`).
+ *
+ * It is a SHARED convention, not a spawn-time detail: the row only persists the
+ * folded `title=<short>` token, so the addressable session a restart rebuilds
+ * must derive the same string the live one had — otherwise a target that
+ * resolved by title before the restart would stop resolving after it.
+ */
+export function workerTitle(wid: string, short: string): string {
+  return `${wid}·${truncateChars(short, 20)}`;
+}
+
 /** Collapse tab/newline so a value can live inside one `extra` token. */
 export function sanitizeExtra(v: string): string {
   return v.replace(/[\t\n\r]/g, " ");

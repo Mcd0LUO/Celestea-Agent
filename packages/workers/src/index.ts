@@ -43,6 +43,8 @@ export * from "./mailbox.js";
 export * from "./registry.js";
 export * from "./row.js";
 export * from "./recovery.js";
+export * from "./recover-apply.js";
+export * from "./rehydrate.js";
 export * from "./driver.js";
 export * from "./receipt.js";
 export * from "./watchdog.js";

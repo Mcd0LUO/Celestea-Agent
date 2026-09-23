@@ -31,8 +31,10 @@ interface StripRow {
   wid: string;
   title: string;
   model: string;
-  /** 后端注册表状态（RUNNING / DONE / FAILED …）；缺省空串。 */
+  /** 注册表状态（RUNNING / DONE / FAILED …）；缺省空串。 */
   status: string;
+  /** W1470b：上一代进程留下的行（重启后仍在，当前没有活实例驱动它）。 */
+  inherited: boolean;
 }
 
 let box: HTMLElement | null = null;
@@ -69,6 +71,7 @@ function toRow(w: SessionInfo): StripRow {
     title: titleOf(w),
     model: String(w.model ?? ''),
     status: String(w.status ?? ''),
+    inherited: w.inherited === true,
   };
 }
 
@@ -106,15 +109,17 @@ export function rowsForSession(list: SessionInfo[], sessionId: string): StripRow
 function rowEl(r: StripRow): HTMLElement {
   const busy = paneBusy(r.id);
   const settled = r.status !== '' && r.status !== 'RUNNING';
-  const row = el('button', 'ws-strip-row' + (busy ? ' running' : '') + (settled ? ' settled' : '')) as HTMLButtonElement;
+  const row = el('button', 'ws-strip-row' + (busy ? ' running' : '') + (settled ? ' settled' : '') + (r.inherited ? ' inherited' : '')) as HTMLButtonElement;
   row.type = 'button';
   row.dataset.id = r.id;
   row.appendChild(el('span', 'sess-dot' + (busy ? ' busy' : '')));
   row.appendChild(el('span', 'ws-strip-wid', r.wid));
   row.appendChild(el('span', 'ws-strip-title', r.title));
+  // W1470b：上一代行加一个徽标，与「本代运行中」的 chip 一眼可分。
+  if (r.inherited) row.appendChild(el('span', 'ws-strip-badge', t('shell.worker.inherited')));
   row.appendChild(el('span', 'ws-strip-meta', r.status === '' ? (busy ? t('shell.tree.running') : t('shell.tree.idle')) : r.status));
   row.title =
-    r.wid + ' · ' + r.title + (r.model ? ' · ' + r.model : '') + t('shell.worker.stripHint');
+    r.wid + ' · ' + r.title + (r.model ? ' · ' + r.model : '') + t(r.inherited ? 'shell.worker.inheritedHint' : 'shell.worker.stripHint');
   row.addEventListener('click', () => {
     openSession(r.id, { kind: 'worker', title: r.title });
   });

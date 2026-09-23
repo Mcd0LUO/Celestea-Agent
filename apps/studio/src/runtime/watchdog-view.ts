@@ -44,14 +44,21 @@ export function watchdogCount(entries: readonly SessionRuntime[]): number {
  * the boot observer's judgement of the PERSISTED table (`stale[]` / `orphans[]`).
  * The last two are PURE ADDITIONS to the frozen response shape.
  */
-export function workerStatusOf(
-  rows: readonly WorkerSessionRow[],
-  watchdogs: number,
-  wid?: string,
-  recovery?: WorkerRecoveryReport | null,
-  contextOf?: (sess: string) => WorkerContextUsage | null,
-): WorkerStatusReport {
-  const report = aggregateWorkerStatus(rows, wid, contextOf);
+/**
+ * Everything the status fold needs beyond the live rows themselves. ONE object
+ * (not a sixth parameter): every field is an optional addition, so the frozen
+ * shape only grows by the fields the caller actually supplies.
+ */
+export interface WorkerStatusInput {
+  wid?: string;
+  recovery?: WorkerRecoveryReport | null;
+  contextOf?: (sess: string) => WorkerContextUsage | null;
+  /** W1470b: previous-generation rows — reported, never counted. */
+  inherited?: readonly WorkerSessionRow[];
+}
+
+export function workerStatusOf(rows: readonly WorkerSessionRow[], watchdogs: number, input: WorkerStatusInput = {}): WorkerStatusReport {
+  const report = aggregateWorkerStatus(rows, input.wid, input.contextOf, input.inherited ?? []);
   const sweepers = watchdogs === 0 ? report : { ...report, watchdogs };
-  return recovery == null ? sweepers : { ...sweepers, stale: recovery.stale, orphans: recovery.orphans };
+  return input.recovery == null ? sweepers : { ...sweepers, stale: input.recovery.stale, orphans: input.recovery.orphans };
 }

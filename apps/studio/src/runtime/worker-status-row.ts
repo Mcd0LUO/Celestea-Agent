@@ -24,5 +24,9 @@ export function toStatusRow(row: WorkerSessionRow, context: WorkerContextUsage |
     started_at: row.started_at ?? "",
     busy: row.busy === true,
     context,
+    // W1470b: the marker must SURVIVE the projection — the status report is
+    // where a caller reads it, and dropping it here would make `inherited[]`
+    // indistinguishable from a live worker of this generation.
+    ...(row.inherited === true ? { inherited: true as const } : {}),
   };
 }

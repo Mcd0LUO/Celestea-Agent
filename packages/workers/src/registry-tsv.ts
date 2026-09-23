@@ -154,8 +154,12 @@ export function workerRetries(entry: WorkerEntry): number {
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
 }
 
-/** E §2.2.2: the four tokens P0/P1 add to a row (the schema's whitelist). */
-export const WORKER_ROW_TOKENS = ["host", "attempt", "lease", "receipt"] as const;
+/**
+ * E §2.2.2 + W1470: the tokens the phases ADD to a row (the schema's whitelist).
+ * `claimed` is P2's handover stamp (see `row.ts`); it joins the list without
+ * changing the COLUMN COUNT, which is what keeps an older parser reading.
+ */
+export const WORKER_ROW_TOKENS = ["host", "attempt", "lease", "receipt", "claimed"] as const;
 
 /** The host session that dispatched this worker (`host=`; null when absent). */
 export function workerHost(entry: WorkerEntry): string | null {

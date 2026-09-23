@@ -30,6 +30,8 @@ core ← workers
 | `Watchdog` / `watchdogPlugin` / `WATCHDOG_SERVICE` | **独立看门狗插件**（ARCHITECTURE.md §7.3 步骤 5）：存活判定 + 自动重派 + 终态裁决（`tick()` 同步一轮，`start()`/`stop()` 定周期） |
 | `parseUtc` / `hasInProgressTurn` / `hasDeliverable` / `inGrace` / `watchdogConfig` | 看门狗纯函数（时间戳反解、进行中 turn、交付物、宽限期） |
 | `terminalEntry` / `WorkerVerdict` | 终态行构造（status + `ended_at` + `fail`）与判定值类型 |
+| `hydrateSessions` / `inheritableRows` / `statusView` | **W1470**：从持久化行重建可寻址状态（只读）、可继承行的纯判定、`worker_status` 视图 |
+| `applyRecovery` / `recoveryEnabled` / `ENV_WORKER_RECOVER` | **W1470 P2**：判定表的**动作**（认领 + 落终态）与开关（只认 `CELESTEA_WORKER_RECOVER=1`） |
 | `recordingSessionLog` / `SessionLogFactory` | 默认 worker 会话日志（只记录）与注入点 |
 
 ## registry.tsv 与行归属
@@ -85,6 +87,24 @@ driveIfPossible(sid, brief)
 
 看门狗是**独立插件**（`watchdogPlugin`），不塞进驱动/注册表实现里 —— 由装配层决定是否挂载与巡检周期。
 
+## 重启后的可寻址性与 P2 恢复（W1470）
+
+进程重启后 `SessionRegistry` 是空的（id 每进程自增），而 `registry.tsv` 还在：旧行为是**行里的
+`sess=` 解析不出来**（`send_message` 回 `not_found`、`worker_status` 说没有这个 worker），
+并且新进程从 0 重新发号，**同一个会话 id 会被发给第二个 worker**。W1470 按「持久化的事实」重建：
+
+- **可寻址（默认开、只读）**：`reload()` 调 `hydrateSessions` —— 把 `sess=` 前缀属于本会话、
+  `host=` 为空或等于本会话的行**收编**成可寻址会话（meta 取自行自己的 token，日志是空的：
+  worker 会话的对话本就不落盘），并 `reserve` 表里出现过的所有 id，使计数器**跨重启单调**。
+  只读：不重写任何行。
+- **可见（默认开、只读）**：`worker_status` 的单条查询会回退到这类行并标 `inherited: true`；
+  汇总的 `total` / `by_status` **仍然只数本进程行**（W787 的视图口径不变），继承行另列 `inherited[]`。
+- **落终态（P2，默认关）**：`CELESTEA_WORKER_RECOVER=1` 时，宿主 boot 路径把 P0 判定为 stale 的行
+  `claim`（同一次原子写里盖 `proc=` + `lease=` + `claimed=<pid>@<unix>`）再按判定表落终态：
+  `close_done` → `DONE`；`respawn` 但无可读 brief（重启后必然）→ `FAILED`；retries 耗尽 → `FAILED`。
+  **owner 还活着的行永不被认领**；只有 host 消失、owner 仍活的 orphan 只观察、永不重派（§2.2.4 行 6）。
+  每个动作另写一行 `worker_recovered` 审计。
+
 ## 注入点（为什么没有强引用环）
 
 | 注入 | 默认 | 说明 |
@@ -109,7 +129,7 @@ driveIfPossible(sid, brief)
 
 ## 测试
 
-`packages/workers/src/*.test.ts`（89 例）：
+`packages/workers/src/*.test.ts`：
 
 - `registry.test.ts`：tsv upsert/落盘/round-trip、行归属、汇总与过滤、state 标注、内存模式、驱动生命周期；
 - `mailbox.test.ts`：FIFO、挂起→唤醒→投递、多消费者顺序、signal abort、purge、release；
@@ -119,4 +139,7 @@ driveIfPossible(sid, brief)
 - `watchdog.test.ts`：时间戳反解/进行中 turn/交付物/宽限期纯函数、keep-running（进行中 turn 与挂起驱动两种）、
   `DONE`（有交付物）、`FAILED`（会话消失 + retries 耗尽 / 无可读 brief）、宽限 deferred、自动重派与新会话再驱动、
   探测 IO 错误跳过、终态行不被触碰、日志落盘、`watchdogPlugin` 挂载/自启开关；
-- `plugin.test.ts`：provide token、三工具注册进 ToolRegistry、后挂载覆盖。
+- `plugin.test.ts`：provide token、三工具注册进 ToolRegistry、后挂载覆盖；
+- `w1470-restart.test.ts`：**重启对比**（重启前可寻址 / 重启后仍可寻址且行字节不变）、`inherited` 视图、
+  id 不重号（含 sanitize 撞前缀的兄弟会话）、P2 默认关闭（重启本身不写表）、P2 动作与 `claim` 的
+  host/liveness 双重拒绝。

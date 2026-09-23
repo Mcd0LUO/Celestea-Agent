@@ -71,7 +71,12 @@ export function workerTitleOf(w: SessionInfo): string {
   return stripped || truncateName(w.id ?? '') || (w.id ?? '');
 }
 
-/** Worker 组内容签名：不变则不重建（铁律 6：轮询只做局部更新）。 */
+/**
+ * Worker 组内容签名：不变则不重建（铁律 6：轮询只做局部更新）。
+ *
+ * W1470b：`status` 与 `inherited` 进签名 —— 上一代行把**注册表状态**画在行上，
+ * 状态变了（例如 P2 收口 RUNNING→DONE）而签名不变，面板就会停在旧状态上。
+ */
 export function workerSigOf(workers: SessionInfo[]): string {
   return workers
     .map((w) =>
@@ -82,6 +87,8 @@ export function workerSigOf(workers: SessionInfo[]): string {
         paneBusy(w.id ?? '') ? '1' : '0',
         String(w.events ?? ''),
         parentOf(w) ?? '',
+        w.status ?? '',
+        w.inherited === true ? '1' : '0',
       ].join('\u0001'),
     )
     .join('\u0002');

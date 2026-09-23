@@ -26,7 +26,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { SessionEvent, SessionLog } from "@celestea/core";
-import { truncateChars } from "./types.js";
+import { truncateChars, type WorkerVerdict } from "./types.js";
 
 /** Everything the protocol needs about one worker. */
 export interface ReceiptRequest {
@@ -118,6 +118,32 @@ export function executeReceipt(req: ReceiptRequest): ReceiptResult {
     ? `WORKER_${req.wid}_DONE OK 报告 ${relPath}（完成）${tried}${warn}${answer}`
     : `WORKER_${req.wid}_FAILED ERR ${req.failure} 报告 ${relPath}（失败：${req.failure}）${tried}${warn}${answer}`;
   return { relPath, absPath, content, warn };
+}
+
+/**
+ * W1470 (moved out of `registry.ts`): the terminal VERDICT of one brief turn.
+ *
+ * A turn error fails the worker; so does a receipt whose report could not be
+ * written, because then no deliverable exists for the coordinator to read
+ * (stricter than the legacy implementation, which only warned). The helpers live
+ * here — with the protocol they judge — so the registry keeps only the state
+ * machine (and its §4.1 line budget).
+ */
+export function verdictOf(failure: string | null, result: ReceiptResult | null): WorkerVerdict {
+  if (failure !== null) return { ok: false, reason: failure };
+  if (result !== null && result.warn !== "") return { ok: false, reason: `receipt not written:${result.warn}` };
+  return { ok: true };
+}
+
+/** One-line summary of a settlement notice (the DSH `source.summary` field). */
+export function receiptSummary(req: ReceiptRequest, content: string): string {
+  const summary = lastAssistantSummaryOf(req.log);
+  return summary === null ? truncateChars(content, 120) : truncateChars(summary, 120);
+}
+
+/** The last assistant line of a session log, or null (the notice's summary). */
+export function lastAssistantSummaryOf(log: SessionLog | undefined): string | null {
+  return log === undefined ? null : lastAssistantSummary(log.events());
 }
 
 function summarySuffix(log: SessionLog): string {

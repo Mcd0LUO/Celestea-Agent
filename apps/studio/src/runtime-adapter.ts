@@ -291,6 +291,8 @@ export interface WorkerStatusRow {
   busy: boolean;
   /** W894: live context occupancy; null when there is no session to measure. */
   context: WorkerContextUsage | null;
+  /** W1470b: a PREVIOUS generation's row — absent on a live worker of this one. */
+  inherited?: true;
 }
 
 export interface WorkerStatusReport {
@@ -309,6 +311,13 @@ export interface WorkerStatusReport {
    */
   stale?: unknown[];
   orphans?: unknown[];
+  /**
+   * W1470b: rows of a previous generation this studio can still attribute to a
+   * session (the persisted table's own record). PURE ADDITION — they are NEVER
+   * part of `total` / `by_status` / `by_state`, which keep counting the current
+   * generation, and each row carries `inherited: true`.
+   */
+  inherited?: WorkerStatusRow[];
   /**
    * W740: how many live instances are sweeping their worker rows (the count of
    * RUNNING watchdog timers). Absent from an engine that mounts no watchdog.
@@ -334,8 +343,19 @@ export interface WorkerSessionRow {
   sess?: string | null;
   /** W894: registry `started_at` (when dispatched). */
   started_at?: string;
+  /**
+   * W515/W1470b: the conversation that dispatched this worker (`host=`). The
+   * session tree groups by it; the per-session worker strip scopes by it.
+   */
+  parentSessionId?: string | null;
   /** Registry status: `RUNNING` / `DONE` / `FAILED`. */
   status?: string;
+  /**
+   * W1470b: this row is a PREVIOUS generation's — the persisted table still
+   * names it and no live instance owns it. ABSENT on current rows (the same
+   * "key only where it is true" convention as `archived`).
+   */
+  inherited?: true;
   /** Driver state: `idle` / `in-turn`. */
   state?: string;
   /** Host session that owns this worker's registry. */
@@ -455,6 +475,13 @@ export interface RuntimeAdapter {
   workerSend(req: WorkerSendRequest): Promise<Record<string, unknown>>;
   workerStatus(wid?: string): WorkerStatusReport;
   workerSessions(): WorkerSessionRow[];
+  /**
+   * W1470b: the worker rows of a PREVIOUS generation (`inherited: true`), read
+   * from the persisted table — they survive a restart that empties every live
+   * registry. Separate from [workerSessions] on purpose: the liveness guards
+   * that ask "is a worker running" must never see a ghost as a running worker.
+   */
+  inheritedWorkerSessions(): WorkerSessionRow[];
   /** Transcript of an engine-memory worker session, or null when unknown. */
   workerMessages(sessionId: string): unknown[] | null;
   /**

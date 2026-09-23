@@ -67,6 +67,14 @@
 }
 .ws-strip-meta { flex: 0 0 auto; color: var(--c-text-3); }
 .ws-strip-row.settled { opacity: .72; }
+/* W1470b：上一代 worker chip 的徽标（与侧栏同一个文案 key，颜色/圆角全走 token）。 */
+.ws-strip-badge {
+  flex: 0 0 auto; font-size: 9px; line-height: 1;
+  padding: 1px 4px; border-radius: var(--r-pill);
+  color: var(--c-warn); background: var(--c-warn-dim);
+  border: 1px solid var(--c-border-subtle);
+}
+.ws-strip-row.inherited { border-color: var(--c-border-strong); }
 
 /* 窄屏降级：≤1024px 时左侧空白带已容不下 chip（正文列贴边）→ 整条隐藏，正文优先。
    ≤640px 同一条规则已覆盖。 */

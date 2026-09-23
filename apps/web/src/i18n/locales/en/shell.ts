@@ -37,6 +37,8 @@ export const shell = {
   'shell.tree.events': '{n} events',
   'shell.worker.openHint': ' (click to open this worker session view: read-only)',
   'shell.worker.unlinked': 'Unlinked parent session',
+  'shell.worker.inherited': 'prev gen',
+  'shell.worker.inheritedHint': ' (left by a previous process generation: status comes from the persisted registry; opens read-only)',
   'shell.worker.parentHint': 'Click to open the parent session view',
   'shell.new.title': 'New session',
   'shell.new.titlePlaceholder': 'Required',
