@@ -30,6 +30,11 @@ fixtures/sessions/*
 .celestea/trash/
 .celestea/run-code/
 .celestea/prompts.json
+# 凭据（**绝不入库**：本仓是公开的 GitHub 仓）。放本机 git 凭据，供本仓 push 用；
+# 目录与文件都是 600/700，且整段忽略 —— 与 docs/AGENT.local.md 同一约定：
+# 「本机事实（含凭据）只存本机，真身绝不进版本库」。
+.celestea/credentials/
+.celestea/credentials
 # 更老的根上产物（.celestea-trash/.celestea-archived/.celestea-prompts.json）
 .celestea-*
 # 最老的根上会话目录（<标题>-<秒>.<纳秒>）
