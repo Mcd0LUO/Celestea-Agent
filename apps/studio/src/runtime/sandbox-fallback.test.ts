@@ -10,8 +10,11 @@
  *    `run_shell-sandbox: code=config`) instead of being swallowed by a `catch`
  *    that quietly returned the userspace provider;
  * 3. the decision (`degraded` / `fallback_reason` / `fallback_mode` /
- *    `fallback_source`) travels in every `run_shell` result and in the audit,
- *    so a degradation is observable rather than inferred from prose.
+ *    `fallback_source`) travels in the audit on every call, and rides in the
+ *    `run_shell` result **whenever it carries information** (a real degradation,
+ *    a refusal reason, or a non-policy origin) — so a degradation is observable
+ *    rather than inferred from prose, while the ordinary path stays at the frozen
+ *    `sandbox` contract (W1469: four fields + optional cpu_sec).
  *
  * Every test injects a `HostProbe`, so nothing depends on this host's bwrap. The
  * bwrap cases use a stand-in binary that records its own use and then execs the
@@ -151,13 +154,14 @@ describe.skipIf(!POSIX_SHELL)("W741 §1 — the production composition prefers b
     expect(shellValue(out).exit_code).toBe(0);
     // the stand-in binary ran: the command really went through the bwrap argv
     expect(existsSync(join(dir, "used-by-bwrap"))).toBe(true);
-    expect(shellValue(out).sandbox).toMatchObject({
-      provider: "bwrap",
-      degraded: false,
-      fallback_reason: null,
-      fallback_mode: "userspace",
-      fallback_source: "policy",
-    });
+    // W1469：普通路径（policy 选了 bwrap、什么都没降级）只带**契约字段**。
+    // 契约（contracts/tools.json 的 run_shell / endpoints.json 的 /exec）明确写的是
+    // 「contract fields only: provider, net_isolated, tmp_private, seccomp, optional
+    // cpu_sec」。决策四件套在普通路径上全是常量，塞进每个结果就是契约要避免的上下文洪水。
+    expect(shellValue(out).sandbox).toMatchObject({ provider: "bwrap" });
+    for (const k of ["degraded", "fallback_reason", "fallback_mode", "fallback_source"]) {
+      expect(k in shellValue(out).sandbox, "普通路径不得携带 " + k).toBe(false);
+    }
   });
 
   it("keeps bwrap for a `network` grant (the grant only adds --share-net)", async () => {
@@ -171,7 +175,8 @@ describe.skipIf(!POSIX_SHELL)("W741 §1 — the production composition prefers b
     const out = await runShell(tools, "printf net-grant");
     expect(shellValue(out).stdout).toBe("net-grant");
     // the grant reached the bwrap argv: `--share-net` ⇒ the net ns is NOT isolated
-    expect(shellValue(out).sandbox).toMatchObject({ provider: "bwrap", net_isolated: false, fallback_source: "policy" });
+    expect(shellValue(out).sandbox).toMatchObject({ provider: "bwrap", net_isolated: false });
+    expect("fallback_source" in shellValue(out).sandbox, "grant 未改变 provider ⇒ 仍是普通路径").toBe(false);
   });
 });
 

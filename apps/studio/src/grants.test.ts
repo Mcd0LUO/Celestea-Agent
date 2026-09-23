@@ -285,13 +285,12 @@ describe("the grant boundary of a composed instance (§4.1/§4.2)", () => {
       grants: { ...effectiveGrantsOf(dir, "ws/s1", env, NOW).grants, network: true, unsandboxed: true, netHosts: ["10.1.2.3"] },
       audit: (event) => events.push(event.event),
     });
-    // `degraded_by_grant` itself is asserted deterministically in
-    // packages/tools/src/sandbox/bwrap.test.ts (injected probe); here the point
-    // is that a `fail` deployment composes instead of throwing when the session
-    // holds `unsandboxed`, and that an inactive HTTP policy is reported.
+    // "Composed" must be observed on the DECISION, not on a non-null registry:
+    // a `fail` refusal reports `provider:"none"`. bwrap absent ⇒ the
+    // `unsandboxed` grant is the only reason `fail` did not refuse.
     expect(events).toContain("net_hosts_ineffective");
-    expect(tools.registry).toBeDefined();
-    expect(userspaceOrBwrap(tools)).toBe(true);
+    expect(tools.decision.provider).not.toBe("none");
+    expect(tools.decision.source).toBe(tools.decision.provider === "userspace" ? "grant" : "policy");
   });
 
   it("hands the session the provider policy when `network` is granted (§4.1)", () => {
@@ -486,7 +485,3 @@ describe("grants through the live app (§4.2, §4.4, §5.5.5)", () => {
   });
 });
 
-/** The assembled sandbox is one of the two providers (never undefined). */
-function userspaceOrBwrap(tools: { registry: unknown }): boolean {
-  return tools.registry !== undefined;
-}

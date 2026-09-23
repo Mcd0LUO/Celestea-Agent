@@ -74,6 +74,11 @@ export interface ToolCardRef {
   body: HTMLElement;
   /** W866：该卡片的工具名（live 与历史恢复同源）——结果回填时据此识别 spawn_worker。 */
   toolName: string;
+  /**
+   * W1467：该卡的**子调用**容器（`.toolcard-subs`，在卡片之外、`.mcol` 之内）。
+   * run_code 的子项缩进挂在这里；顶层卡这个容器恒为空，不产生任何几何。
+   */
+  subs: HTMLElement;
 }
 
 /**

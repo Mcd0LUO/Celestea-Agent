@@ -51,6 +51,27 @@ export default defineConfig({
     // W839 (R3 B8 / W818-P2-1): the weak-reference release case needs --expose-gc.
     // Vitest 5 removed poolOptions; execArgv is a top-level (and inherited) option.
     execArgv: ["--expose-gc"],
+    /**
+     * 覆盖率是**诊断**，不是门禁（与 deps:audit 同一定位，DEPENDENCY-POLICY.md §6）。
+     * 为什么明确不设 thresholds：本仓门禁的唯一价值是**确定性**——覆盖率随平台/运行波动，
+     * 一旦进门禁就会制造「代码没动却红」的假红，正是 §6 拒绝 audit 进门禁的同一条理由。
+     * 只统计产品源码：测试自身、包入口（re-export 收口，不含逻辑）与生成物不计入。
+     */
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "text", "html"],
+      reportsDirectory: "coverage",
+      include: [
+        "packages/*/src/**/*.ts",
+        "apps/studio/src/**/*.ts",
+        "apps/cli/src/**/*.ts",
+        "apps/web/src/**/*.ts",
+      ],
+      exclude: ["**/*.test.ts", "**/*.test-util.ts", "**/index.ts", "**/*.d.ts"],
+      // 诊断工具必须**无论红绿都出数**：默认 reportOnFailure=false 会在有失败用例时
+      // 什么都不打印，恰好抹掉最需要覆盖率的时刻。
+      reportOnFailure: true,
+    },
     projects: [
       {
         resolve: { alias },

@@ -85,11 +85,19 @@ describe("A2 · core's default projection", () => {
 
   it("rejects a store that ships its own deriveMessages (the []-history stub)", () => {
     const store: EventStore = memoryEventStore();
-    expect(typeof store.append).toBe("function");
     // @ts-expect-error — `deriveMessages?: never`: a self-projecting store is
     // not a legal store, so "deriveMessages() { return [] }" cannot be mounted.
     // (If this line ever stops erroring, the A2 guard rail is gone.)
     const stubbed: EventStore = { ...store, deriveMessages: (): never[] => [] };
-    expect(stubbed).toBeDefined();
+    // The @ts-expect-error above is the TYPE half of the guard rail. The runtime
+    // half: even when a store smuggles in `deriveMessages`, the seam's own
+    // projection WINS — the smuggled `[]` must never reach the model.
+    // (The previous `expect(stubbed).toBeDefined()` / `typeof store.append ===
+    // "function"` were tautologies guaranteed by the EventStore type.)
+    const log = projectingSessionLog(stubbed);
+    log.append({ type: "user_message", text: "smuggled" });
+    expect(log.deriveMessages()).toEqual([
+      { role: "user", content: [{ type: "text", content: "smuggled" }], tool_call_id: null },
+    ]);
   });
 });

@@ -1,0 +1,53 @@
+/* ============================================================================
+   styles/tooltree.css — W1467：run_code 子调用缩进树。
+
+   形态（用户给的参考图）：一个 run_code 卡片，它的所有子调用（程序里通过 SDK
+   桥接发起的 read_file / run_shell / …）**缩进**挂在它下面，而不是与顶层工具卡
+   平铺。
+
+   结构（构建方：ui/toolcards.ts 的 buildToolCard / mountToolCard）：
+
+     .mcol                      ← 顶层条目（与其它消息同级）
+       .msg.tool > .bubble > details.toolcard        ← 父卡（run_code）
+       .toolcard-subs           ← 子容器，在 <details> **之外**
+         .mcol.tool-sub         ← 一个子项（同样是 .mcol + .msg.tool + .toolcard）
+           ...
+           .toolcard-subs       ← 可再嵌套（子调用里再 run_code）
+
+   为什么子容器在 <details> 之外：折叠规则 `.toolcard:not([open]) > .toolcard-body`
+   会把卡片正文藏起来。子项若放进 body，父卡一折叠整棵子树就消失 —— 而「折叠父卡
+   仍然看得见子项」正是这棵树的意义。
+
+   颜色只走 tokens.css 的 --c-* / --bg-* / --label-*；圆角只走 --r-*；
+   全站禁虚线（border-style 只允许 solid）⇒ 竖向导引线用实线 + 低对比色。
+   ============================================================================ */
+
+/* 子容器：整体右缩进一个 gutter，并用一条实线导引线标出从属关系。 */
+/* W1468 修正：导引线原用 --c-hairline-l2（rgba(0,0,0,.09)）—— 工具卡去掉底色之后
+   父/子卡已完全同形，这条几乎不可见的线就成了唯一的从属线索，真机看起来「缩进关系
+   没了」。改用 --c-border-strong 让树结构一眼可辨（仍是实线，全站禁虚线）。 */
+.toolcard-subs {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 6px 0 0 0;
+  padding-left: 20px;
+  border-left: 1px solid var(--c-border-strong);
+}
+
+/* 子项自身不再重复缩进（间距由上面的 padding 给），也不再有列宽居中 —— 它已经
+   在父项的列里了。 */
+.toolcard-subs > .mcol {
+  width: 100%; max-width: 100%; margin: 0;
+}
+
+/* 子项的折叠行比顶层更轻：字号不变（等宽 12 与卡片同一口径），只降对比，
+   让「这是子项」在第一眼就成立，而不必去数缩进。 */
+.toolcard-subs .toolcard-name { color: var(--c-text-2); font-weight: 500; }
+.toolcard-subs .step-tag { color: var(--c-text-3); }
+
+/* W1468：顶层工具卡已无块边界 ⇒ 子项也不再有底色（层次由导引线 + 缩进承担）。 */
+.toolcard-subs .toolcard > summary.toolcard-head { padding-top: 0; padding-bottom: 0; }
+
+/* 移动端：正文列本就窄，18px 缩进会明显吃掉宽度 —— 收到 10px。 */
+@media (max-width: 640px) {
+  .toolcard-subs { padding-left: 10px; }
+}

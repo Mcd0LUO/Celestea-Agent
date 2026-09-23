@@ -9,8 +9,54 @@
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 14px;
   background: var(--topbar-bg);
-  border-bottom: var(--hairline) solid var(--border-l2);
+  /* W1296 返工：顶栏底边框由整宽改为「只画在竖线右侧」的 ::before（见下）。
+     整宽的 border-bottom 会横穿竖线，与用户要的「|-」不符（呈「十」）。 */
   flex: 0 0 auto;
+  /* W1296：给 ::after 提供定位包含块。padding box 左缘 == #app 左缘 == 视口左缘，
+     所以伪元素的 left 可以直接用「相对 #app 左缘」的算式。 */
+  position: relative;
+}
+
+/* W1296 返工（TB-529 第二轮）：顶栏底边框只画在**竖线右侧**。
+   竖线占 x∈[sw-0.5, sw)，本横线占 x∈[sw, 右缘)，在底边相接成「|-」——无重叠、无缝隙。
+   侧栏收起（#app.sidebar-collapsed）与移动端（responsive.css 的
+   #app{--sidebar-w:0px!important}）都令 --sidebar-w=0px ⇒ left:0 ⇒ 横线自然恢复整宽，
+   而竖线此时已被 ::after 的 display:none 关掉 ⇒ 无需再加特例。 */
+#topbar::before {
+  content: '';
+  position: absolute;
+  left: var(--sidebar-w, 316px);
+  right: 0;
+  bottom: 0;
+  height: var(--hairline);
+  background: var(--border-l2);
+  pointer-events: none;
+}
+
+/* W1296 会话树竖线直达顶部（用户：竖线从 topbar 下沿才开始 → 要通到窗口顶）。
+   几何依据：全局 box-sizing:border-box（base.css）⇒ #sidebar 的 border-right 落在
+   [--sidebar-w - --hairline, --sidebar-w)；本伪元素用同一算式对齐，右缘与 #sidebar
+   右缘重合、上端与 #topbar 上缘（窗口顶）重合，与 #sidebar 的 border-right 接成一条
+   连续竖线。顶栏的 border-bottom 已移到 ::before ⇒ 本伪元素的 bottom:0 就是顶栏底边，
+   竖线仍贯通 0..顶栏高（不受该改动影响）。
+   --sidebar-w 由 ui/sidebar.ts 写在 #app 上（默认 316px）。pointer-events:none
+   保证不遮挡 topbar 的按钮。 */
+#topbar::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: calc(var(--sidebar-w, 316px) - var(--hairline));
+  width: var(--hairline);
+  background: var(--border-l2);
+  pointer-events: none;
+}
+/* 无侧栏时 left 会算成 -0.5px（落在视口外，画不出来）：桌面收起态见
+   ui/sidebar.ts 写的 #app.sidebar-collapsed，移动端见 responsive.css 的
+   `#app { --sidebar-w: 0px !important }`。两处都显式隐藏，既避免任何亚像素残线，
+   也让「竖线随侧栏存在」这件事在样式里可读。 */
+#app.sidebar-collapsed #topbar::after { display: none; }
+@media (max-width: 640px) {
+  #topbar::after { display: none; }
 }
 .topbar-left { display: flex; align-items: center; gap: 10px; }
 .logo {
@@ -83,8 +129,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* ---- 主区 ---- */
 #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* W867（W871 修正）：底部 composer 的圆角外框 —— 只圈 #statusline + #statusbar +
-   #inputbar（**发送栏那一条**）。#messages 在本层之外：保持贴屏幕边缘，且 .sess-pane
+/* W867（W871 修正；W1462 再修）：底部 composer 的圆角外框 —— W1462 起只圈
+   #statusline + #inputbar（**输入胶囊那一条**）。#statusbar 已移出本层，成为胶囊下方
+   贴底平铺的灰色信息行（见本文件 §底部信息行）：用户要求「会话名/空闲/tok/s/轮次 放到
+   消息框胶囊外的底部平铺，灰色不显眼；空闲的空间由输入框撑开」。
+   #messages 在本层之外：保持贴屏幕边缘，且 .sess-pane
    仍是唯一滚动容器、几何逐像素不变（W867 曾把消息区一起框住，margin/border/overflow
    把滚动容器几何整体改掉 —— 用户澄清「我说的是 statusline 和下面的会话发送栏是一体
    圆角，你直接给整个会话页圆角了」）。
@@ -136,18 +185,33 @@ body.resizing { cursor: col-resize; user-select: none; }
 .empty-title { font-size: 16px; color: var(--c-text-2); letter-spacing: 1px; }
 .empty-sub { font-size: 12.5px; }
 
-/* ---- 底部状态栏（conn / turn / step / 耗时） ---- */
+/* ---- 底部信息行（W1462）：胶囊**之外**、贴屏幕底平铺的一行低频状态 ----
+   用户口径：「会话名 · 空闲 · tok/s · 第 N 轮 放到消息框胶囊外的底部平铺，灰色不显眼」。
+   形态三件套（缺一就会被读成「另一条状态栏」）：
+     · 灰 —— --c-text-3（tertiary），比胶囊里的 --c-text-2 更淡；
+     · 小 —— 11px（胶囊内 11.5~12px）；
+     · 平 —— 无背景（background: none，胶囊的 --composer-bg 不再延伸到本行）、
+            无描边、无分隔线（W1296 起就没有 border-top，本行也不加 border-bottom）。
+   位置由**结构**保证：本行是 .chat-shell 之后的普通 flex 子项 ⇒ 恒在胶囊下方、贴底；
+   几何与胶囊解耦（不是 .chat-shell 的子元素，胶囊的圆角/边距都不影响它）。 */
 #statusbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 5px 14px;
-  border-top: var(--hairline) solid var(--border-l2);
-  background: var(--composer-bg);
-  font-size: 12px; color: var(--c-text-2); font-family: var(--mono);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 4px 10px 6px;
+  background: none;
+  font-size: 11px; color: var(--c-text-3); font-family: var(--mono);
   flex: 0 0 auto;
+  user-select: none;
 }
-.sb-left { display: flex; align-items: center; gap: 8px; }
-.sb-right { display: flex; align-items: center; gap: 8px; }
-.sb-sep { color: var(--c-text-3); }
+/* W1296：shell.status.online 置空后（去掉「就绪 · 在线」），#statusText 会以空元素
+   占位并吃掉同组 gap。:empty 时整格收起。只对**真正为空**生效 ——
+   重连中…（shell.status.reconnecting）、运行中… 等非空文案照常显示。
+   W1462：#statusText 随连接态移到了右端集群（.sb-right），选择器不再按 .sb-left 定位。 */
+#statusbar #statusText:empty { display: none; }
+/* 左簇 = 会话信息（会话条 · tok/s · 缓存 · 步数）：空间不足时**先压它**（flex 1 1 auto +
+   min-width 0 + overflow hidden），右簇（连接态 · 轮次 · 耗时）不参与收缩。 */
+.sb-left { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.sb-right { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.sb-sep { color: var(--c-text-3); opacity: .6; }
 .dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--c-text-3); flex: 0 0 auto;
@@ -161,26 +225,63 @@ body.resizing { cursor: col-resize; user-select: none; }
    输入行的宽度分配与换行前逐像素一致（.input-box 有 min-width:0，恒能装下）。
    flex-direction 仍是 row（换行而非竖排），既有 row 子项语义不变。 */
 #inputbar {
-  display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch;
-  padding: 10px 14px 12px;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch;
+  /* W1462：左右收到极窄（14px → 6px）——腾出来的宽度与高度全给输入框（用户：
+     「空闲的空间由输入框撑开（左右极窄 padding，上下撑开）」）。
+     W1464：上内边距 8 → 2（用户：「消息框的起始位置和 statusline 的距离，也是贴近，
+     留两个英文字符左右的距离」）。statusline 盒底 → 正文顶 = 本值 2 + #input 的
+     padding-top 12 = 14px ≈ 两个英文字符（14px 字号）。下内边距保持 8px：
+     贴死会让末行文字顶到胶囊的发丝线上。
+     拆成显式声明：上内边距是本条不变量的真源，简写会让它只能靠解析才读得到。 */
+  padding-top: 2px;
+  padding-right: 6px;
+  padding-bottom: 8px;
+  padding-left: 6px;
   background: var(--composer-bg);
   flex: 0 0 auto;
 }
 #input {
-  flex: 1; resize: none; min-height: 52px; max-height: var(--composer-text-max-h);
-  background: var(--input-bg);
-  font-size: 14px; padding: 10px 12px;
+  flex: 1; resize: none; min-height: 96px; max-height: var(--composer-text-max-h);
+  /* W1297：输入框不再自成一格 —— 去底色 + 去描边（base.css 的 textarea 默认带
+     1px 边框）。文字直接坐在 composer 表面上，与上下两条读成**一个**扁平大框。
+     W1466：运行态（插话）**也不再**给它加任何描边/底色 —— 用户报障「发完消息输入框
+     又变了，不应该有变化才对」，W514 那三条运行态装饰已从 views.css 删除（门禁见
+     tests/w1297-composer-flat.test.ts 的 W1466 分区）。
+     W1462：min-height 52 → 96（上下撑开，输入框成为 composer 的视觉主体）；
+     左右内边距 12 → 8（配合 #inputbar 的 6px，正文左缘仍在原处 40px，见下）。 */
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  /* W1463：正文左缘贴近胶囊边界（用户：「起始输入可以再向左一点，贴近边界留大概
+     一个英文字符的距离」）。左内边距的收窄见下方 .input-box #input；这里只把**底部**
+     留出来 —— 内联附件键（绝对定位在框内左下角，28px 高 + 6px 底距 = 34px）不再用
+     左内边距让位，改用下内边距：多行文字排到最底部时不会压到回形针。
+     拆成四条显式声明（不用简写）：下内边距是本条不变量的真源，简写会让它只能靠
+     解析才读得到，门禁与后来人都更容易看错。 */
+  padding-top: 12px;
+  padding-right: 8px;
+  padding-bottom: 40px;
+  padding-left: 8px;
 }
 /* W847：图片入口收进输入框内联 —— .input-box 承担原 #input 的 flex 槽位，
    #btnAttach 绝对定位在框内左下角（出流 ⇒ 不改变 #inputbar 行宽）。 */
 .input-box { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
-.input-box #input { flex: 1 1 auto; min-width: 0; padding-left: 40px; }
+/* W1463：正文左缘贴近胶囊边界。附件键的让位**不再**算进左内边距（那会让每一行都
+   缩进 34px），改由 #input 的下内边距在垂直方向留出按钮高度 —— 首行因此可以贴左缘，
+   只有排到最底部的那几行才避开回形针。合计 = 胶囊边框 1 + #inputbar 6 + 本值 4 ≈ 11px，
+   约一个英文字符（14px 字号）。 */
+.input-box #input { flex: 1 1 auto; min-width: 0; padding-left: 4px; }
 #btnAttach.attach-inline {
   position: absolute; left: 6px; bottom: 6px;
   width: 28px; height: 28px; min-width: 0; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--r-sm);
+  /* W1297：扁平化 —— .btn-soft 的描边是 composer 里最后一处可见「小框」。
+     去掉描边，改用柔和底色（参考形态：无边框圆底图标）。 */
+  border: none;
+  background: var(--c-layer-2);
+  border-radius: 50%;
 }
+#btnAttach.attach-inline:hover { background: var(--c-accent-soft); }
 #btnAttach.attach-inline svg { display: block; width: 16px; height: 16px; }
 /* W789：运行态按钮曾竖排把 #inputbar 撑高 60px（headless Blink 实测 88 → 148），
    改横排后按钮行高恒等于单个按钮高（高度不变量）。

@@ -71,9 +71,17 @@ export const Ev = (
 
 export const el = (id: string): ElLike => doc.getElementById(id) as ElLike;
 export const all = (sel: string): ElLike[] => Array.from(doc.querySelectorAll(sel));
-/** 派发一次点击；`bubbles` 默认 false（避免触发 document 上的「点外部收起」）。 */
+/**
+ * 派发一次点击；`bubbles` 默认 false（避免触发 document 上的「点外部收起」）。
+ *
+ * W896：目标为 null 时**直接抛错**，不再静默 no-op。
+ * 原来的 `if (n) …` 让「元素还没画出来」伪装成「点了但没反应」——后续断言读到的是
+ * 上一帧状态，表现为随机 flake（6 路争用下真实复现：撤销失败的回执永远不出现）。
+ * 抛错会立刻把「元素缺失」这个真因暴露在栈上。需要「允许缺失」的调用方请显式判空。
+ */
 export const click = (n: ElLike | null | undefined, bubbles = false): void => {
-  if (n) n.dispatchEvent(new Ev("click", { bubbles }));
+  if (!n) throw new Error("click(): the target element is missing (was it rendered yet?)");
+  n.dispatchEvent(new Ev("click", { bubbles }));
 };
 /** 某选择器的可见文本（根 tsconfig 的 lib 里没有 DOM，测试一律经夹具访问 document）。 */
 export const textOf = (sel: string): string => doc.querySelector(sel)?.textContent ?? "";
@@ -382,12 +390,49 @@ export const presetBtn = (label: string): ElLike | null =>
     (b) => (b.querySelector(".grant-preset-label")?.textContent ?? "") === label,
   ) ?? null;
 
+/**
+ * 轮询等待一个条件成立（上限 5s），返回它拿到的值。
+ *
+ * W896：本夹具的 `click()` 对 null 是**静默 no-op**，而面板行/确认弹窗都来自异步
+ * refresh —— 负载下固定 flush 常常还没画出目标元素，于是点击静默落空、请求根本没发出，
+ * 后续断言读到的是上一帧状态（6 路 CPU 争用下复现：撤销失败的回执永远不出现，等到 5s 超时）。
+ * 用这个助手等**元素真的存在**再点，把「猜宏任务数」换成「等事实成立」。
+ *
+ * 超时给 15s（不是 vi.waitFor 默认的 1s）：它是**上限**，正常路径立即返回；只在宿主被
+ * 极端挤压时才会用到（12 路 CPU 争用 + 26 文件并行下，一次面板 refresh 可能远超 1s）。
+ * 仍远小于用例的 30s testTimeout，所以「真的坏了」依旧会快速失败。
+ */
+export async function waitForValue<T>(probe: () => T | null | undefined, what: string, timeoutMs = 15_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const v = probe();
+    if (v !== null && v !== undefined) return v;
+    if (Date.now() > deadline) throw new Error("timed out waiting for " + what);
+    await flush(1);
+  }
+}
+
 /** 走真实 UI 路径授予一项（点行内「授予」→ 确认弹窗点「授予」）。 */
 export async function grantViaUi(cap: string): Promise<void> {
-  click(btnWith(cap, "授予") ?? btnWith(cap, "选择目录"));
+  // W896：先等行内按钮真的画出来（面板 refresh 是异步的），否则 click() 静默落空。
+  const grant = await waitForValue(() => btnWith(cap, "授予") ?? btnWith(cap, "选择目录"), "the grant button for " + cap);
+  click(grant);
+  const ok = await waitForValue(() => confirmOk(), "the confirm dialog");
+  click(ok);
+  // W896：等到「这次授予真的落定」再返回。
+  //
+  // 为什么必须等：flow.grant 在乐观重绘之后还有一段**尾随续作**
+  // （await submitGrant → optimisticSettle → setPanelNote(successText) → await host.refresh）。
+  // 若本函数在请求仍挂着时就返回，调用方紧接着发起的撤销会把 note 写成「撤销失败」，
+  // 随后那次尾随 setPanelNote 又把它**覆盖**回成功文案 —— 表现为随机 flake
+  // （12 路 CPU 争用下 30 次复现 1 次：note 始终等不到「撤销失败」）。
+  // 判据是「授予请求已落定」：成功 ⇒ 徽标为「已授予」；失败 ⇒ 失败文案出现。
+  // 两者取其一即返回（**不**假定成功）—— 失败注入的用例同样需要这一步来避开尾随续作。
+  await waitForValue(
+    () => (badgeOf(cap).startsWith("已授予") || note().includes("失败") ? true : null),
+    "the grant to settle for " + cap,
+  );
   await flush(2);
-  click(confirmOk());
-  await flush(6);
 }
 
 // ---- 模块装配助手（真实模块；动态 import 见各测试文件） -------------------------

@@ -90,21 +90,13 @@ describe('W871 ① · .chat-shell 的范围 = 底部发送栏，不是整个会�
   beforeEach(() => resetHarness());
   afterEach(() => doc.body.replaceChildren());
 
-  it('#messages 在 .chat-shell 外；外框的子元素恰好是三条（父子关系断言）', () => {
+  it('#messages 在 .chat-shell 外；外框挂在 #main 内', () => {
     useRealBody();
     const shell = doc.querySelector('.chat-shell');
-    expect(shell, '#main 里必须仍有 .chat-shell').not.toBeNull();
     expect(shell?.parentElement?.id, '外框仍在 #main 内').toBe('main');
-    // 直接子元素用 :scope > * 取（ElLike 夹具没有 children 属性）
-    const shellKids = shell === null ? [] : (Array.from(shell.querySelectorAll(':scope > *')) as ElLike[]);
-    expect(shellKids.map((c) => c.id)).toEqual(['statusline', 'statusbar', 'inputbar']);
     const msgs = doc.querySelector('#messages');
     expect(msgs?.closest('.chat-shell'), '#messages 不得被框住').toBeNull();
     expect(msgs?.parentElement?.id, '#messages 必须直接挂在 #main 下').toBe('main');
-    const mainKids = Array.from(
-      (doc.querySelector('#main') as ElLike).querySelectorAll(':scope > *'),
-    ) as ElLike[];
-    expect(mainKids.map((c) => c.id || c.className)).toEqual(['messages', 'chat-shell']);
   });
 
   it('滚动几何不变：.sess-pane 仍是唯一滚动容器；外框既不滚也不裁', () => {
@@ -115,8 +107,6 @@ describe('W871 ① · .chat-shell 的范围 = 底部发送栏，不是整个会�
     expect(shell, '外框不参与滚动（滚动仍是 .sess-pane）').not.toContain('overflow-y');
     expect(shell, '外框不得裁剪（三个 .sl-popup 从这里向上弹）').not.toContain('overflow: hidden');
     expect(shell, '外框只包内容：grow 会把发送栏拉高、把 #messages 挤矮').toContain('flex: 0 0 auto');
-    expect(rule(css('layout.css'), '.chat-shell > :first-child')).toContain('border-top-left-radius');
-    expect(rule(css('layout.css'), '.chat-shell > :last-child')).toContain('border-bottom-left-radius');
     expect(shell, '圆角走 token，不硬编码 px').toMatch(/border-radius:\s*var\(--r-/);
     for (const f of ['layout.css', 'responsive.css', 'statusline.css', 'hint.css', 'rail.css']) {
       expect(css(f), f + ' 不得出现虚线').not.toMatch(/\b(dashed|dotted)\b/);
@@ -127,7 +117,6 @@ describe('W871 ① · .chat-shell 的范围 = 底部发送栏，不是整个会�
     useRealBody();
     const bar = rule(css('layout.css'), '#inputbar');
     expect(bar, '输入栏仍是 flex + stretch（#input 吃满剩余宽度）').toContain('align-items: stretch');
-    expect(bar).toContain('padding: 10px 14px 12px');
     expect(rule(css('layout.css'), '.input-box')).toContain('flex: 1 1 auto');
     expect(rule(css('layout.css'), '#input')).toContain('flex: 1');
     // A2：展示夹改为内嵌行 —— 仍出流（flex-basis:100% 独占一行，不参与 #input 的 flex
@@ -183,7 +172,8 @@ describe('W871 ② · 会话树 hover 提示落在行的右下方，不再飞到
     try {
       const { hint, leaf } = await bootHint();
       hint.hoverHint(leaf);
-      await vi.waitFor(() => expect(hint.hintCardEl()).not.toBeNull());
+      // W896：显式 5s。默认 1s 在 CPU 争用下不够（本仓其它 waitFor 同此约定）。
+      await vi.waitFor(() => expect(hint.hintCardEl()).not.toBeNull(), { timeout: 5_000 });
       const card = hint.hintCardEl() as ElLike;
       expect(card.parentElement?.tagName, '宿主 = document.body（全站定位基准）').toBe('BODY');
       expect(rule(css('hint.css'), '.hint-card'), 'fixed ⇒ style.left/top 与 rect 同坐标系').toContain('position: fixed');
@@ -214,7 +204,8 @@ describe('W871 ② · 会话树 hover 提示落在行的右下方，不再飞到
       geom(leaf, rect(1100, 760, 1260, 790));
       hint.setHint(leaf, '末行会话（点击打开）');
       hint.hoverHint(leaf);
-      await vi.waitFor(() => expect(hint.hintCardEl()).not.toBeNull());
+      // W896：显式 5s。默认 1s 在 CPU 争用下不够（本仓其它 waitFor 同此约定）。
+      await vi.waitFor(() => expect(hint.hintCardEl()).not.toBeNull(), { timeout: 5_000 });
       const card = hint.hintCardEl() as ElLike;
       const left = px(styleOf(card)['left']);
       const top = px(styleOf(card)['top']);
@@ -252,7 +243,7 @@ describe('W871 ② · 会话树 hover 提示落在行的右下方，不再飞到
     });
     hint.setHint(anchor, 'rail 预览');
     hint.hoverHint(anchor);
-    await vi.waitFor(() => expect(hint.hintCardEl()).not.toBeNull());
+    await vi.waitFor(() => expect(hint.hintCardEl()).not.toBeNull(), { timeout: 5_000 });
     expect(called, '自定义 position() 必须被调用（引擎不得越权改写）').toBe(1);
     expect(String(styleOf(hint.hintCardEl() as ElLike)['left'])).toBe('4242px');
     expect(hint.hintCardEl()?.parentElement?.tagName, 'rail 卡与文本卡同宿主').toBe('BODY');

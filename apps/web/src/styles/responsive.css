@@ -58,7 +58,9 @@ button,
   #statusbar .btn,
   .side-sec .btn-mini,
   #btnSend { min-height: var(--tap-min); }
-  #input { min-height: var(--tap-min); }
+  /* W1462：触摸档同样「上下撑开」——不再是 44px 的触控下限，而是明显的输入主体。
+     桌面 96px 在本档保留（窄屏高度更紧张，取 84px）。 */
+  #input { min-height: 84px; }
 
   /* statusline：环/模型/档位/盾牌/停止全是可点目标；环保持 14px 视觉、命中区 44px */
   .sl-ring {
@@ -75,9 +77,11 @@ button,
   .sl-effort, .sl-mode { padding: 0 8px; }
   .sl-grant, .sl-stop { width: var(--tap-min); height: var(--tap-min); }
   .sl-grant svg { width: 14px; height: 14px; }
-  /* W847：内联图片入口的触控命中区 ≥ --tap-min；#input 让位避免文字压到图标 */
+  /* W847：内联图片入口的触控命中区 ≥ --tap-min。W1463：让位改走**垂直**方向 ——
+     左内边距保持贴边（4px），下内边距留出 44px 按钮 + 6px 底距。 */
   #btnAttach.attach-inline { width: var(--tap-min); height: var(--tap-min); }
-  .input-box #input { padding-left: calc(var(--tap-min) + 8px); }
+  #input { padding-bottom: calc(var(--tap-min) + 6px); }
+  .input-box #input { padding-left: 4px; }
 
   /* 列表 / 折叠行 / 工具卡 / 弹层选项 */
   .sess-leaf, .ws-head { min-height: var(--tap-min); }
@@ -104,7 +108,6 @@ button,
   /* W867：这一档正文列宽固定 16/14（用户列宽不生效）→ 列宽手柄一并隐藏，
      避免「能拖但没反应」的误导；回到桌面档自动恢复。 */
   .chatcol-resizer { display: none; }
-  .toolcard { --card-gutter: 26px; }
 }
 
 /* -------------------------------------------------- 2) mobile ≤640px */
@@ -165,7 +168,7 @@ button,
   #statusline,
   .statusline { padding: 2px 10px 2px; font-size: 12px; }
   .sl-row-main { min-height: var(--tap-min); gap: 6px; flex-wrap: nowrap; }
-  .sl-row-sub { min-height: 16px; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
+  /* W1462：原第 2 行 .sl-row-sub 已移出胶囊（→ 贴底信息行 #statusbar），本档不再有该行。 */
   .sl-model { max-width: 40vw; flex: 0 1 auto; } /* 长模型名压缩，不挤走右端入口 */
   .sl-effort { font-size: 11px; flex: 0 0 auto; }
   /* W789：提示改为与其余项同行、可压缩省略（原先 flex-basis:100% 抢整行，实测把模型名
@@ -174,9 +177,14 @@ button,
   .sl-hint:empty { display: none; }
   .sl-tps, .sl-cache, .sl-steps { white-space: nowrap; }
 
-  /* ---- 2.4 输入区：占满宽度 + 底部安全区 + 16px 字号（iOS 聚焦不放大） ---- */
-  #inputbar { padding: 8px 10px calc(8px + var(--safe-b)); gap: 8px; }
+  /* ---- 2.4 输入区：占满宽度 + 16px 字号（iOS 聚焦不放大）----
+     W1462：底部安全区不再由 #inputbar 承担（它上面多了贴底信息行，已不是最底一条）——
+     改挂在 #statusbar 的下内边距上，见 2.3b。左右同样收到极窄（10px → 6px）。 */
+  #inputbar { padding: 2px 6px 8px; gap: 6px; }
   #input { font-size: 16px; max-height: 32dvh; }
+  /* ---- 2.3b W1462：胶囊**之外**的贴底信息行（会话名·空闲·tok/s·缓存·步数·轮次·耗时）----
+     灰色小字、无背景、无描边；小屏再收一档，并接管 iOS 底部安全区。 */
+  #statusbar { padding: 3px 8px calc(5px + var(--safe-b)); gap: 8px; font-size: 10.5px; }
   #btnSend { min-width: 72px; padding: 0 12px; }
   /* W847：车道键收成 ~32px 内联图标（文字视觉隐藏、无障碍名保留），不为它牺牲取消键 */
   #btnMode { min-width: 32px; padding: 0 6px; }
@@ -194,7 +202,6 @@ button,
   .chat-shell { margin: 2px; border-radius: var(--r-md); --r-shell: var(--r-md); }
   .sess-pane { padding: 12px 10px; }
   .msg.user .bubble { max-width: 100%; } /* 桌面 78% 的窄气泡在手机上浪费宽度 */
-  .toolcard { --card-gutter: 22px; }
   .tool-args, .tool-out { max-height: 200px; }
   .content pre { max-width: 100%; } /* 代码块横向自滚（overflow-x 已在 components.css） */
   .think-seg-body { max-height: 240px; }

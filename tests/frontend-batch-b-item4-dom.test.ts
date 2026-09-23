@@ -201,7 +201,6 @@ describe("W790 · item 4 引擎：唯一宿主 + 150ms 停留 + 撤卡", () => {
     expect(hint.hintCardEl(), "149ms 不该弹").toBeNull();
     vi.advanceTimersByTime(1);
     const card = hint.hintCardEl();
-    expect(card).not.toBeNull();
     expect(card?.className).toContain("hint-card");
     expect(card?.getAttribute("role")).toBe("tooltip");
     expect(card?.textContent).toContain("运行中");
@@ -309,14 +308,12 @@ describe("W790 · item 4 rail 富卡片 = priority 10 的提供者（压过内�
 
     rail.railAdd(pane, col, "user");
     const bar = doc.querySelector("#main .railv3-item") as ElLike | null;
-    expect(bar, "rail 长条必须已建出来").not.toBeNull();
     expect(bar?.getAttribute(hint.HINT_ATTR), "长条提示走注册缝（不再写原生 title）").toBeTruthy();
     expect(bar?.title).toBe("");
 
     hint.hoverHint(bar); // rail 的悬停意图（条带 pointer-events:none，由 rail 自算命中后直驱）
     vi.advanceTimersByTime(150);
     const card = hint.hintCardEl();
-    expect(card).not.toBeNull();
     expect(card?.className, "rail 提供者构建富卡片").toContain("railv3-card");
     expect(card?.textContent).toContain("第一轮提问"); // 内容取自消息 DOM
   });

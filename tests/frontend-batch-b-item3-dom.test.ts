@@ -107,20 +107,16 @@ const el = (tag: string): ElLike => doc.createElement(tag);
 // ============================================================================
 
 describe("W790 · item 3 结构：会话条在 statusline 的既有行内（真实 index.html）", () => {
-  it("index.html 里 #sessionBar 是 .sl-row-sub 的孩子，不再是 #messages 上方独立一行", () => {
+  // W1462：用户要求「会话名 · 空闲 · tok/s · 第 N 轮 放到消息框胶囊外的底部平铺，灰色不显眼」
+  // ⇒ 会话条随整条低频信息移出 #statusline（胶囊），住进胶囊下方的贴底信息行 #statusbar。
+  it("index.html 里 #sessionBar 挂在贴底信息行 #statusbar（不再是 #messages 上方独立一行，也不再在胶囊里）", () => {
     const html = readFileSync(join(WEB, "index.html"), "utf8");
     const body = html.slice(html.indexOf("<body>") + 6, html.indexOf("</body>"));
     doc.body.innerHTML = body;
     const bar = doc.getElementById("sessionBar");
     expect(bar, "index.html 必须仍有 #sessionBar").not.toBeNull();
-    expect(bar?.closest("#statusline"), "会话条必须挂在 #statusline 里").not.toBeNull();
-    expect(bar?.closest(".sl-row-sub"), "会话条必须落在既有行 .sl-row-sub 内").not.toBeNull();
-    expect(bar?.closest(".sl-row-main"), "不该挤进主行（主行有 spacer 与右端控件）").toBeNull();
-    const msgs = doc.getElementById("messages");
-    expect(msgs?.previousElementSibling?.id).not.toBe("sessionBar");
-    // 行数不增：statusline 仍然只有 main + sub 两行
-    const rows = Array.from(doc.querySelectorAll("#statusline .sl-row"));
-    expect(rows.map((r) => r.className)).toEqual(["sl-row sl-row-main", "sl-row sl-row-sub"]);
+    expect(bar?.closest("#statusbar"), "会话条必须挂在贴底信息行里").not.toBeNull();
+    expect(bar?.closest(".chat-shell"), "会话条必须在胶囊**之外**（W1462：信息出框）").toBeNull();
   });
 
   it("几何前提：该行 min-height 16px、会话条可收缩、chip ≤15px（并入不新增行高）", () => {
@@ -184,7 +180,6 @@ describe("W790 · item 3 行为：一键切换到任一运行中会话（W514 �
     sb.updateSessionBar();
 
     const bar = doc.getElementById("sessionBar") as ElLike;
-    expect(bar.closest(".sl-row-sub")).not.toBeNull();
     expect(bar.querySelector(".sess-bar-name")?.textContent).toBe("甲会话");
     // W846：聚焦会话「运行中」的**文字**由 #statusText 单点表达（避免同一状态出现两次）；
     // 会话条只留状态点（.busy → ::before 绿点 + 呼吸，W790 语义不变）。

@@ -75,7 +75,7 @@
     "codeRef": "src/main.rs:883-892"
   },
   "payloadExtensions": {
-    "note": "Keys the TypeScript host adds to an event payload beyond the frozen legacy table above (W513 per-session frames + W515 injection placements). They are contract too: `payloadExtensions.<event>` is the ONLY place a host-only payload key may be declared, and the W744 parity test fails on any produced key that appears in neither the event's `payload` table nor here. W785 added the `phase:\"fallback\"` value (a payload VALUE, not a new event name) and its five companion keys under `payloadExtensions.status`; the 9 event names are untouched (K5/D8).",
+    "note": "Keys the TypeScript host adds to an event payload beyond the frozen legacy table above (W513 per-session frames + W515 injection placements). They are contract too: `payloadExtensions.<event>` is the ONLY place a host-only payload key may be declared, and the W744 parity test fails on any produced key that appears in neither the event's `payload` table nor here. W785 added the `phase:\"fallback\"` value (a payload VALUE, not a new event name) and its five companion keys under `payloadExtensions.status`; the 9 event names are untouched (K5/D8). W1467 added `parent_id` under `payloadExtensions.tool` and `payloadExtensions.tool_result`: a run_code SUB-CALL row (the program SDK bridge call) is published on the same two events as a top-level tool, and the client indents it under the card whose id equals parent_id. The 9 event names are untouched.",
     "status": {
       "session": "string|null (the session the frame belongs to; null = process-level)",
       "dropped": "integer (per-session bucket overflow counter, lagged frames only)",
@@ -88,6 +88,12 @@
       "to": "string (W785: the target about to run; `phase:\"fallback\"` frames only)",
       "reason": "string (W785: `http_503` / `timeout_idle` / `stream` / `network` / `generate`)",
       "attempt": "integer (W785: index of the attempt ABOUT to run, §5.2 numbering)"
+    },
+    "tool": {
+      "parent_id": "string (W1467: the enclosing run_code call id; present ONLY on a sub-call frame - the row own id is `<parent_id>:c<n>`. Absent = a top-level call)"
+    },
+    "tool_result": {
+      "parent_id": "string (W1467: same as payloadExtensions.tool.parent_id - the enclosing run_code call id, present only on a sub-call result)"
     }
   },
   "count": 9,

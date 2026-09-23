@@ -116,14 +116,18 @@ describe("limits + config", () => {
     expect(SDK_TOOLS).toEqual(["read_file", "write_file", "list_dir", "run_shell"]);
   });
 
-  it("defaults to 120s / 20 sub-calls / 256KiB / 64KiB", () => {
+  it("defaults to 120s / 20 sub-calls / 256KiB / 64KiB / 5s stdin-write", () => {
     expect(runCodeConfig()).toEqual({
       timeoutMs: 120_000,
       maxSubCalls: 20,
       maxSubOutputBytes: 262_144,
       maxLogBytes: 65_536,
+      stdinWriteTimeoutMs: 5_000,
     });
     expect(runCodeConfig({ timeoutMs: 900 })).toMatchObject({ timeoutMs: 900, maxSubCalls: 20 });
+    // W896: the stdin-write bound is injectable (outside tests nothing overrides the
+    // default), which is what lets the "child stopped reading stdin" case run in ~1s.
+    expect(runCodeConfig({ stdinWriteTimeoutMs: 1_000 }).stdinWriteTimeoutMs).toBe(1_000);
   });
 
   it("reads CELAESTEA_RUN_CODE_TIMEOUT_MS and clamps it to [1, 120000]", () => {

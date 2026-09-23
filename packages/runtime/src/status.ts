@@ -8,6 +8,8 @@
  *   - `rate`      the `tokens_per_sec` estimate over text/thinking deltas: the
  *                 5s sliding-window rate (W754) while the window still carries
  *                 output, else the mean over the turn's ACTIVE intervals (W763).
+ *                 W1467: the NUMERATOR is a token estimate, not a character
+ *                 count — see the unit note below.
  *
  * W754 rate semantics (the window half): the rate averages over ACTIVE intervals
  * only. Two deltas farther apart than `GAP_MS` (1s) bound a no-flow break (long
@@ -25,10 +27,28 @@
  * intervals ([turnRate]), a stable positive number until the next `beginTurn()`.
  * 0 therefore means exactly one thing: this turn has produced no delta yet (TTFT).
  *
- * Unit note: what is computed here is CHARACTERS per second, not tokens. The
- * field has always been named `tokens_per_sec` (frozen contract) and the
- * frontend renders it as an approximate ~1:1 token rate, so the unit semantics
- * are deliberately unchanged by W754 — only the denominator changed.
+ * Unit note (W1467 — the numerator IS tokens now): W754 changed only the
+ * DENOMINATOR and left the numerator as a raw character count, which the
+ * frontend rendered as "tok/s" on a ~1:1 assumption. That assumption is wrong
+ * for any non-ASCII output: the field has always been named `tokens_per_sec`
+ * (frozen contract, never renamed), so the honest fix is to make the numerator
+ * match the name.
+ *
+ * The conversion is [tokensFromBytes] (UTF-8 bytes / 4, rounded up) — the exact
+ * arithmetic of [estimateTokens], the estimator the loop's trim budget and the
+ * context ring already use (`estimatedContextTokens`), so the statusline's two
+ * numbers share ONE token model instead of drifting apart. Samples accumulate
+ * BYTES and the single conversion happens at the division, which keeps the
+ * result identical to estimating the concatenated window (rounding every small
+ * delta up would over-report). The ratio is defensible in both directions:
+ *   · English/ASCII is 1 byte per char -> 4 chars per token, which is the
+ *     well-known BPE ratio for English prose;
+ *   · CJK is 3 bytes per char -> ~1.33 chars per token, close to the real
+ *     behaviour of CJK tokenizers (one character is usually one token, and
+ *     occasionally two).
+ * A scalar chars/s cannot express that difference at all, which is why the
+ * conversion happens HERE (where the delta text is still available) rather than
+ * in the frontend.
  *
  * W755 context-usage口径 (aligned with the DSH host's `contextPressure`):
  *   1. a provider usage frame has been seen -> `used` = that request's REAL
@@ -66,10 +86,25 @@ export const MIN_ACTIVE_MS = 1_000;
 /** W218: cadence of the SSE status "progress" events during a turn. */
 export const STATUS_TICK_MS = 2_000;
 
-/** One output delta: when it landed and how many chars it carried. */
+/** One output delta: when it landed and how many UTF-8 BYTES it carried (W1467). */
 export interface RateSample {
   at: number;
-  chars: number;
+  bytes: number;
+}
+
+/**
+ * W1467: bytes -> tokens, the SAME conversion [estimateTokens] applies (UTF-8
+ * bytes / 4, rounded up).
+ *
+ * Why the samples carry BYTES and the division does the rounding: a stream
+ * arrives as many small deltas, and rounding EACH one up (a 3-byte CJK delta is
+ * "1 token") would inflate the numerator by a factor that grows as deltas get
+ * smaller — a systematic over-report, the exact bug this change removes. Bytes
+ * are additive, so converting once per computed rate keeps the identity
+ * rate == estimateTokens(concatenated deltas) / activeSeconds for a window.
+ */
+export function tokensFromBytes(bytes: number): number {
+  return Math.ceil(bytes / 4);
 }
 
 export class StatusTracker {
@@ -95,11 +130,15 @@ export class StatusTracker {
     this.steps += 1;
   }
 
-  /** Record one output delta (text/thinking) into the rate window and the turn's intervals (W763). */
-  addChars(chars: number): void {
+  /**
+   * Record one output delta (text/thinking) into the rate window and the turn's
+   * intervals (W763). W1467: the delta's TEXT is what gets measured — its token
+   * estimate is the rate numerator (see the module's unit note).
+   */
+  addDelta(text: string): void {
     const at = this.now();
-    const n = Math.max(0, Math.trunc(chars));
-    this.samples.push({ at, chars: n });
+    const n = Buffer.byteLength(text, "utf8");
+    this.samples.push({ at, bytes: n });
     this.trim(at);
     pushTurnDelta(this.segments, at, n);
   }
@@ -118,9 +157,11 @@ export class StatusTracker {
   }
 
   /**
-   * Chars-per-second estimate (W754 + W763): the responsive window rate while
-   * the 5s window still carries output, otherwise the turn's active-interval
-   * mean. 0 only while this turn has not produced a single delta (TTFT).
+   * Tokens-per-second estimate (W754 + W763 + W1467): the responsive window rate
+   * while the 5s window still carries output, otherwise the turn's
+   * active-interval mean. 0 only while this turn has not produced a single delta
+   * (TTFT). W1467: the numerator is [estimateTokens] of each delta, not a
+   * character count (see the module's unit note).
    */
   rate(): number {
     const now = this.now();
@@ -177,19 +218,19 @@ export interface TurnSegment {
   start: number;
   /** Wall clock of the interval's last delta (ms) — the segment's live edge. */
   at: number;
-  /** Characters carried by every delta of this interval. */
-  chars: number;
+  /** UTF-8 bytes carried by every delta of this interval (W1467: bytes, not chars). */
+  bytes: number;
 }
 
 /** W763: fold one delta into the turn's segments (O(1); allocates only when a pause opens a new interval). */
-export function pushTurnDelta(segments: TurnSegment[], at: number, chars: number): void {
+export function pushTurnDelta(segments: TurnSegment[], at: number, bytes: number): void {
   const last = segments[segments.length - 1];
   if (last === undefined || at - last.at > GAP_MS) {
-    segments.push({ start: at, at, chars });
+    segments.push({ start: at, at, bytes });
     return;
   }
   last.at = at;
-  last.chars += chars;
+  last.bytes += bytes;
 }
 
 /**
@@ -211,22 +252,25 @@ export function turnSpanMs(segments: readonly TurnSegment[], now: number): numbe
 }
 
 /**
- * W763: chars/s averaged over the turn's ACTIVE intervals — the "有流时段均值" the
+ * W763: tokens/s averaged over the turn's ACTIVE intervals — the "有流时段均值" the
  * operator asked for. 0 iff the turn has produced no delta at all yet.
+ * W1467: the numerator is a token estimate, so this is a real tok/s (see the
+ * module's unit note).
  */
 export function turnRate(segments: readonly TurnSegment[], now: number): number {
   if (segments.length === 0) return 0;
-  let chars = 0;
-  for (const seg of segments) chars += seg.chars;
-  return (chars / turnSpanMs(segments, now)) * 1_000;
+  let bytes = 0;
+  for (const seg of segments) bytes += seg.bytes;
+  if (bytes === 0) return 0;
+  return (tokensFromBytes(bytes) / turnSpanMs(segments, now)) * 1_000;
 }
 
-/** W754 window half: the 5s-window rate, 0 when the window holds no char-carrying sample. */
+/** W754 window half: the 5s-window rate, 0 when the window holds no token-carrying sample. */
 function windowRateOf(samples: readonly RateSample[], now: number): number {
-  let chars = 0;
-  for (const s of samples) chars += s.chars;
-  if (chars === 0) return 0;
-  return (chars / activeSpanMs(samples, now)) * 1_000;
+  let bytes = 0;
+  for (const s of samples) bytes += s.bytes;
+  if (bytes === 0) return 0;
+  return (tokensFromBytes(bytes) / activeSpanMs(samples, now)) * 1_000;
 }
 
 /** Factory form (ARCHITECTURE.md §6.1). */

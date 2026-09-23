@@ -33,7 +33,7 @@ import { USERSPACE_SANDBOX_META } from "@celestea/core";
 import { wrapChild } from "./child.js";
 import { shellInvocation, sanitizedEnv, buildSandboxConfig, sandboxConfigFromEnv, type SandboxConfigOverrides } from "./config.js";
 import { captureRun, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
-import { limitsForCpu, limitsFromEnv, resolveCpuSec, rlimitsEnabled, type SandboxLimits } from "./limits.js";
+import { limitsForCpu, limitsFromEnv, refreshNproc, resolveCpuSec, rlimitsEnabled, type SandboxLimits } from "./limits.js";
 import { probeHost, type HostProbe } from "./probe.js";
 import { applyLimits, rlimitDiagnostics, type RlimitDescribeOptions, type RlimitVia } from "./rlimit.js";
 import { resolveWorkdir } from "./workdir.js";
@@ -42,6 +42,14 @@ import { resolveWorkdir } from "./workdir.js";
 export interface UserspaceSandboxOptions {
   probe?: HostProbe;
   limits?: SandboxLimits;
+  /**
+   * W1465: re-derive `nproc` from a FRESH UID thread count on every call.
+   * Default: `true` when `limits` is NOT injected, `false` when pinned (tests).
+   * See [refreshNproc] for the outage this prevents (bwrap/prlimit EAGAIN).
+   */
+  refreshNprocPerCall?: boolean;
+  /** Env used to (re-)derive limits; defaults to `process.env`. */
+  env?: NodeJS.ProcessEnv;
   /** false disables every rlimit (operator escape hatch). */
   rlimits?: boolean;
   /** W885: the platform/shell view commands run under (defaults to the host). */
@@ -76,12 +84,17 @@ export class UserspaceSandbox implements Sandbox {
   /** W885: injected platform view; `undefined` = the host's own defaults. */
   readonly shell: SandboxShellLookup | undefined;
   private readonly rlimits: boolean;
+  /** W1465: whether `nproc` is re-derived per call (see the option docs). */
+  private readonly refreshNprocPerCall: boolean;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(config: SandboxConfig = sandboxConfigFromEnv(), options: UserspaceSandboxOptions = {}) {
     this.config = config;
     this.probe = options.probe ?? probeHost();
-    this.limits = options.limits ?? limitsFromEnv(process.env, this.probe.uidThreads);
-    this.rlimits = options.rlimits ?? rlimitsEnabled(process.env);
+    this.env = options.env ?? process.env;
+    this.limits = options.limits ?? limitsFromEnv(this.env, this.probe.uidThreads);
+    this.refreshNprocPerCall = options.refreshNprocPerCall ?? options.limits === undefined;
+    this.rlimits = options.rlimits ?? rlimitsEnabled(this.env);
     this.shell = options.shell;
   }
 
@@ -105,9 +118,14 @@ export class UserspaceSandbox implements Sandbox {
     return { child: wrapChild(child, { detached: true }), sandbox: meta };
   }
 
-  /** W6: the base limits with the per-call `cpu_sec` merged in (clamped). */
+  /**
+   * W6: the base limits with the per-call `cpu_sec` merged in (clamped).
+   * W1465: `nproc` is re-derived per call (same time bomb as bwrap); pinned
+   * `limits` are kept verbatim for deterministic plans / tests.
+   */
   private limitsFor(cpuSec: number | undefined): SandboxLimits {
-    return limitsForCpu(this.limits, resolveCpuSec(this.limits.cpuSec, cpuSec, this.config.maxCpuSec));
+    const base = this.refreshNprocPerCall ? refreshNproc(this.limits, this.env) : this.limits;
+    return limitsForCpu(base, resolveCpuSec(base.cpuSec, cpuSec, this.config.maxCpuSec));
   }
 
   /** F4: diagnostic view of what would be enforced (never SandboxMeta). */

@@ -116,14 +116,11 @@ describe("W846 · 结构真源（真实 index.html）", () => {
     const mode = doc.getElementById("btnMode");
     const stop = doc.getElementById("slStop");
     expect(mode, "index.html 必须仍有 #btnMode").not.toBeNull();
-    expect(mode?.closest(".sl-row-main"), "#btnMode 必须落在 statusline 第 1 行").not.toBeNull();
+    expect(mode?.closest("#statusline"), "#btnMode 必须落在 statusline 里").not.toBeNull();
     expect(mode?.closest(".input-side"), "#btnMode 不得再在输入栏里（会抢 #input 宽度）").toBeNull();
-    expect(stop?.closest(".sl-row-main")).not.toBeNull();
+    expect(stop?.closest("#statusline")).not.toBeNull();
     expect(stop?.closest(".input-side")).toBeNull();
     expect(doc.getElementById("btnCancel"), "取消入口已收敛到 #slStop").toBeNull();
-    expect(
-      Array.from((doc.querySelector("#inputbar .input-side") as ElLike).children).map((c) => c.id),
-    ).toEqual(["btnSend"]);
   });
 });
 

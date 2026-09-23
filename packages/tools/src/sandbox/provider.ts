@@ -100,6 +100,12 @@ export function selectSandboxDetailed(options: SelectOptions = {}): SandboxSelec
   if (probe.bwrapUsable && probe.bwrapPath !== null) {
     const sandbox = new BwrapSandbox(config, {
       probe,
+      env,
+      // W1465: RLIMIT_NPROC counts the whole real UID host-wide, so a cap derived
+      // once here is a time bomb — the UID's thread count grows and the frozen
+      // value eventually makes bwrap fail to create its namespace at all
+      // (EAGAIN, "Resource temporarily unavailable"). Re-derive per call.
+      refreshNprocPerCall: true,
       limits: limitsFromEnv(env, probe.uidThreads),
       // W516 §4.3.5: `unsandboxed` is IGNORED when bwrap works — isolation is
       // already in effect and grants only ever add an escape when a policy
@@ -115,7 +121,7 @@ export function selectSandboxDetailed(options: SelectOptions = {}): SandboxSelec
     // the user explicitly asked (by clicking) for this session to run anyway.
     if (grants.unsandboxed === true) {
       return {
-        sandbox: new UserspaceSandbox(config, { probe, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
+        sandbox: new UserspaceSandbox(config, { probe, env, refreshNprocPerCall: true, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
         provider: "userspace",
         degraded: true,
         reason: `${reason} — degraded by the 'unsandboxed' session grant`,
@@ -130,7 +136,7 @@ export function selectSandboxDetailed(options: SelectOptions = {}): SandboxSelec
     );
   }
   return {
-    sandbox: new UserspaceSandbox(config, { probe, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
+    sandbox: new UserspaceSandbox(config, { probe, env, refreshNprocPerCall: true, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
     provider: "userspace",
     degraded: true,
     reason,

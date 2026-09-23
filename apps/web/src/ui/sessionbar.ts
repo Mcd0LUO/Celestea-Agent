@@ -29,8 +29,9 @@ export function initSessionBar(): void {
   kindEl = el('span', 'sess-bar-kind hidden', 'WORKER');
   stateEl = el('span', 'sess-bar-state', t('shell.sessbar.idle'));
   othersEl = el('span', 'sess-bar-others');
-  const lead = el('span', 'sess-bar-lead', t('shell.sessbar.session'));
-  bar.replaceChildren(lead, kindEl, nameEl, stateEl, othersEl);
+  // W1462：去掉「会话」前缀（.sess-bar-lead）—— 贴底信息行要「不显眼」，一个 SESSION 标签
+  // 在这条 11px 灰字里是最响的元素；会话名本身（.sess-bar-name）已经说明这一格是什么。
+  bar.replaceChildren(kindEl, nameEl, stateEl, othersEl);
 }
 
 /** 聚焦会话或运行态变化时调用（文本就地更新，不重建）。 */

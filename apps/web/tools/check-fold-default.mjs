@@ -601,9 +601,12 @@ async function main() {
     /\.msg\.think-seg\.collapsed\s+\.think-seg-body\s*\{\s*display:\s*none/.test(css),
     'CSS：折叠态隐藏思考正文（.msg.think-seg.collapsed）',
   );
+  // W1468：判据是「折叠态**显示**占位行」，不是「display 恰为 block」——
+  // 占位行已移进头行，改为 display:inline 与标题同行（折叠段因此只占一行）。
+  // 仍必须显式显示（none 会让折叠态失去状态的可读来源）。
   truthy(
-    /\.msg\.think-seg\.collapsed\s+\.think-seg-folded\s*\{\s*display:\s*block/.test(css),
-    'CSS：折叠态显示占位行',
+    /\.msg\.think-seg\.collapsed\s+\.think-seg-folded\s*\{\s*display:\s*(?:block|inline)\b/.test(css),
+    'CSS：折叠态显示占位行（block 或 inline）',
   );
   truthy(
     /\.toolcard:not\(\[open\]\)\s*>\s*\.toolcard-body\s*\{\s*display:\s*none/.test(css),

@@ -75,8 +75,20 @@ pnpm audit 是**诊断**，不是门禁。
 - packages/tools：无外部运行时依赖（W0 移除了头解析第三方库，改仓内 attachments/image-header.ts）。
 - packages/core、session、llm、agent-loop、workers、runtime：无外部运行时依赖。
 - 开发工具：typescript、vite、esbuild、vitest、jsdom、eslint、typescript-eslint、dependency-cruiser、
-  tsx、@types/node、@types/marked。
+  tsx、@types/node、@types/marked、@vitest/coverage-v8。
+- **@vitest/coverage-v8 是诊断工具，不是门禁**（与 deps:audit 同一定位，见 §6）：
+  `pnpm test:coverage` 出数，**不设 thresholds、不进 `pnpm check`**。理由与 §6 拒绝 audit
+  进门禁完全同源 —— 覆盖率随平台/运行波动，进门禁就会制造「代码没动却红」的假红。
+  它是 vitest 已声明的 optional peerDependency（版本随 vitest 走），不是新的版本解析面。
 - 注意：tsx 是 devDependency，却是生产的实际运行时（systemd → run-studio-ts.sh → pnpm start → tsx src/main.ts）。
+
+## 7.1 W896 批次记录（2026-09-22）
+
+- 新增 devDependency：`@vitest/coverage-v8@5.0.1`（+13 个传递包，全部 dev-only）。
+  动机：仓库有 2537 条用例却**零覆盖率度量**，无法回答「测试是否覆盖了被测代码」；
+  诊断命令 `pnpm test:coverage`，不进 `pnpm check`（§7 的定位说明）。
+- 同批：测试收敛（合并小文件）+ 补 `test:coverage` 脚本 + `.gitignore`/`eslint ignores` 收 `coverage/`。
+- 未动：任何运行时依赖；packages/* 的零依赖取向。
 
 ## 8. W0 批次记录（2026-09-18）
 

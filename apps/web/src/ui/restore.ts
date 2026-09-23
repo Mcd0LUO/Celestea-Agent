@@ -32,7 +32,7 @@ import {
 } from './messages';
 import { parseQuoteBlocks } from './quote/model'; // F1：历史回放解析引用块
 import { railReset, railSync } from './rail';
-import { buildToolCard, descFromArgs, setToolResult } from './toolcards';
+import { buildToolCard, descFromArgs, mountToolCard, setToolResult, subCallIndex } from './toolcards';
 // W784：转录里的提问行（§7.2）+ 未决列表重建（刷新 / 重连 / 切会话后）。
 import { historyQuestionsOf, type HistoryQuestion } from './question/format';
 import { recoverQuestions, renderHistoryQuestionCard } from './question';
@@ -119,18 +119,28 @@ function appendToolLine(text: string, container: HTMLElement): void {
   container.appendChild(col);
 }
 
-/** 渲染一条结构化 tool 消息（call 建卡 / result 按 id 配对回填）。 */
+/**
+ * 渲染一条结构化 tool 消息（call 建卡 / result 按 id 配对回填）。
+ *
+ * W1467：带 `tool_parent_id` 的行是 run_code 子调用 —— 缩进挂到父卡的
+ * `.toolcard-subs` 下，**与 live 路径同一个 [mountToolCard]**，两条路径因此
+ * 产生同一棵树。子调用不计入 `histToolStep`（与 live 的 `ctx.step` 同口径），
+ * 否则刷新后的「第 N 步」会比实时多出子调用的数量。
+ */
 function renderToolMessage(ctx: SessionPane, m: HistoryMsg, container: HTMLElement): void {
   if (m.kind === 'call') {
-    ctx.histToolStep += 1;
-    const id = m.tool_call_id ?? 'call_' + ctx.histToolStep;
+    const parentId = typeof m.tool_parent_id === 'string' ? m.tool_parent_id : undefined;
+    const id = m.tool_call_id ?? 'call_' + (ctx.histToolStep + 1);
+    const sub = parentId === undefined ? undefined : subCallIndex(id);
+    if (parentId === undefined) ctx.histToolStep += 1;
     const ref = buildToolCard({
       step: ctx.histToolStep,
       name: m.tool_name ?? 'tool',
       argsText: toJsonText(m.tool_args),
       desc: descFromArgs(m.tool_args), // W778：折叠行标签（与 live 同一取值口径）
+      ...(sub === undefined ? {} : { sub }),
     });
-    container.appendChild(ref.col);
+    mountToolCard(ref, parentId, ctx.restoreOps, container);
     ctx.restoreOps.set(id, ref);
     return;
   }

@@ -110,7 +110,8 @@ export const shell = {
   'shell.sessions.empty': 'No sessions yet · click "New session" to create one',
   'shell.status.turn': 'Turn {n}',
   'shell.status.turnNone': 'Turn —',
-  'shell.status.online': 'Ready · online',
+  // W1296：same as zh —— key kept, value emptied (see zh/shell.ts).
+  'shell.status.online': '',
   'shell.status.reconnecting': 'Reconnecting…',
   'shell.worker.stripHint': ' (click to open this worker session and talk to it directly)',
   'shell.worker.stripTitle': 'Background tasks · {n} running',

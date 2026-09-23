@@ -37,7 +37,7 @@ import {
   type BwrapOptions,
 } from "./bwrap-argv.js";
 import { captureRun, preview, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
-import { limitsForCpu, limitsFromEnv, resolveCpuSec, type SandboxLimits } from "./limits.js";
+import { limitsForCpu, limitsFromEnv, refreshNproc, resolveCpuSec, type SandboxLimits } from "./limits.js";
 import { probeHost, type HostProbe } from "./probe.js";
 import { applyLimits, rlimitDiagnostics, rlimitVia, type RlimitDescribeOptions, type RlimitVia } from "./rlimit.js";
 import { openSeccompBlob } from "./seccomp.js";
@@ -72,6 +72,17 @@ export interface BwrapMeta {
 export interface BwrapSandboxOptions {
   probe?: HostProbe;
   limits?: SandboxLimits;
+  /**
+   * W1465: re-derive `nproc` from a FRESH UID thread count on every call.
+   *
+   * Default: `true` when `limits` is NOT injected (the production path, which
+   * derives from env), `false` when the caller pinned `limits` (tests need a
+   * deterministic plan). Pinning a stale `nproc` in production is exactly the
+   * outage this option exists to prevent — see [refreshNproc].
+   */
+  refreshNprocPerCall?: boolean;
+  /** Env used to (re-)derive limits; defaults to `process.env`. */
+  env?: NodeJS.ProcessEnv;
   run?: Partial<BwrapOptions>;
   /** false disables every rlimit (operator escape hatch). */
   rlimits?: boolean;
@@ -91,11 +102,16 @@ export class BwrapSandbox implements Sandbox {
 
   private readonly rlimits: boolean;
   private readonly seccompDir: string | undefined;
+  /** W1465: whether `nproc` is re-derived per call (see the option docs). */
+  private readonly refreshNprocPerCall: boolean;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(config: SandboxConfig, options: BwrapSandboxOptions = {}) {
     this.config = config;
     this.probe = options.probe ?? probeHost();
-    this.limits = options.limits ?? limitsFromEnv(process.env, this.probe.uidThreads);
+    this.env = options.env ?? process.env;
+    this.limits = options.limits ?? limitsFromEnv(this.env, this.probe.uidThreads);
+    this.refreshNprocPerCall = options.refreshNprocPerCall ?? options.limits === undefined;
     this.options = { ...DEFAULT_BWRAP_OPTIONS, ...(options.run ?? {}) };
     this.rlimits = options.rlimits ?? true;
     this.seccompDir = options.seccompDir;
@@ -121,9 +137,15 @@ export class BwrapSandbox implements Sandbox {
     return { child: wrapChild(child, { detached: true }), sandbox: meta };
   }
 
-  /** W6: the base limits with this call's `cpu_sec` merged in (clamped). */
+  /**
+   * W6: the base limits with this call's `cpu_sec` merged in (clamped).
+   * W1465: `nproc` is re-derived from a FRESH thread count on every call -- the
+   * construction-time value is a time bomb (see [refreshNproc]). Callers that
+   * pinned `limits` keep them verbatim (deterministic plans / tests).
+   */
   private limitsFor(cpuSec: number | undefined): SandboxLimits {
-    return limitsForCpu(this.limits, resolveCpuSec(this.limits.cpuSec, cpuSec, this.config.maxCpuSec));
+    const base = this.refreshNprocPerCall ? refreshNproc(this.limits, this.env) : this.limits;
+    return limitsForCpu(base, resolveCpuSec(base.cpuSec, cpuSec, this.config.maxCpuSec));
   }
 
   /** Isolation actually in force, without running anything (logs / health). */

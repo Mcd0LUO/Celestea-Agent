@@ -24,6 +24,7 @@ import {
   mintToken,
   verifyPassword,
   verifyToken,
+  type PasswordVerdict,
 } from "./index.js";
 import { FILE_MODES_MEANINGFUL } from "@celestea/tools";
 
@@ -140,13 +141,32 @@ describe("failure limiter", () => {
   });
 });
 
+/**
+ * W896：真实子进程 + 满负载 ⇒ 偶发 spawn EAGAIN/EMFILE。
+ *
+ * `verifyPassword` 的契约里 "error" 是**如实上报**「helper 用不了」，且它内部已对非超时的
+ * spawn 失败重试一次（见 htpasswd.ts:34-40）。6 路 CPU 争用下实测复现：ghost 用户那次
+ * spawn 撞上资源耗尽 → 返回 "error" 而非 "denied"。
+ * 这是**宿主瞬时状况**，不是被测逻辑的缺陷 —— 把瞬时 EAGAIN 当断言失败会制造 flake。
+ * 这里重试**整个校验**（最多 3 次）：真出现「永久 error」时仍会红（重试也救不了），
+ * 瞬时资源耗尽则不再误报。**不要**放宽成「error 也算通过」—— 那会掩盖真缺陷。
+ */
+function verifyWithRetry(file: string, user: string, password: string): PasswordVerdict {
+  let last: PasswordVerdict = "error";
+  for (let i = 0; i < 3; i++) {
+    last = verifyPassword(file, user, password);
+    if (last !== "error") return last;
+  }
+  return last;
+}
+
 describe.skipIf(!HAS_HTPASSWD)("password helper (htpasswd -vbi)", () => {
   it("accepts the right password and denies a wrong one or an unknown user", () => {
     const file = join(tmp(), "htpasswd");
     writeFileSync(file, sha1Line("admin", "s3cret-pass"));
-    expect(verifyPassword(file, "admin", "s3cret-pass")).toBe("ok");
-    expect(verifyPassword(file, "admin", "nope")).toBe("denied");
-    expect(verifyPassword(file, "ghost", "s3cret-pass")).toBe("denied");
+    expect(verifyWithRetry(file, "admin", "s3cret-pass")).toBe("ok");
+    expect(verifyWithRetry(file, "admin", "nope")).toBe("denied");
+    expect(verifyWithRetry(file, "ghost", "s3cret-pass")).toBe("denied");
   });
 
   it("reports an unusable store as `error` (never as a wrong password)", () => {

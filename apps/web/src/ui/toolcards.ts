@@ -108,6 +108,11 @@ export interface ToolCardData {
   argsText: string; // 参数全文
   /** W778：可选 desc 标签（取自 args.desc）；缺失时折叠行回落工具名。 */
   desc?: string;
+  /**
+   * W1467：子调用序号（`<parent>:c<n>` 里的 n）。给出时该卡是 run_code 的子项：
+   * 折叠行显示 `c<n>` 而不是「第 N 步」，并且**不占**模型级步数。
+   */
+  sub?: number;
 }
 
 /** 构建工具调用卡片 DOM（消息流级条目；live 与恢复渲染共用同一款式）。 */
@@ -131,7 +136,11 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   head.className = 'toolcard-head';
   head.setAttribute('aria-expanded', 'false');
   const row1 = el('div', 'toolcard-row1');
-  row1.appendChild(el('span', 'step-tag', t('chat.tool.step', { n: d.step })));
+  // W1467：子调用用 `c<n>` 标记（与日志里的 `<parent>:c<n>` id 同一口径），
+  // 顶层卡仍是「第 N 步」——子调用不是模型级的一步，两者不能混为一谈。
+  row1.appendChild(
+    el('span', 'step-tag', d.sub === undefined ? t('chat.tool.step', { n: d.step }) : 'c' + d.sub),
+  );
   // W778：折叠行标签 = desc（缺失回落工具名）；title 里保留工具名，悬停可辨。
   const nameEl = el('span', 'toolcard-name', toolDescLabel(d.desc, d.name));
   nameEl.title = d.name;
@@ -194,6 +203,10 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
   bubble.appendChild(card);
   msg.appendChild(bubble);
   col.appendChild(msg);
+  // W1467：子调用容器在 <details> **之外**（col 内、卡片之后）——父卡折叠时子项
+  // 仍然可见，这才是「父项 + 缩进子项」的树形；放进 body 会被折叠规则一起藏掉。
+  const subs = el('div', 'toolcard-subs');
+  col.appendChild(subs);
   return {
     toolName: d.name,
     col,
@@ -201,7 +214,37 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
     label: state.querySelector<HTMLElement>('.ts-label') ?? state,
     resultPv,
     body,
+    subs,
   };
+}
+
+/**
+ * W1467：`<parent>:c<n>` → n。解析不出来（老服务 / 手工 id）时返回 undefined，
+ * 该卡便按顶层样式渲染 —— 与改动前逐字一致，不猜。
+ */
+export function subCallIndex(id: string): number | undefined {
+  const m = /:c(\d+)$/.exec(id);
+  if (m === null) return undefined;
+  const n = Number.parseInt(m[1] ?? '', 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * W1467：把一张已构建的工具卡挂到它该在的位置 —— 有 `parentId` 且父卡在
+ * [parents] 里 ⇒ 挂进父卡的子容器（缩进树）；否则挂到 [fallback]（消息流尾部）。
+ *
+ * live 与历史恢复共用这一个函数，两条路径因此不可能分叉：唯一的差别只是
+ * 「父卡索引是哪个 Map」和「parent 字段来自 SSE 还是历史行」。
+ * 父卡缺失（乱序 / 父卡已被淘汰）时安静地退回顶层 —— 丢内容比缩进错更糟。
+ */
+export function mountToolCard(
+  ref: ToolCardRef,
+  parentId: string | undefined,
+  parents: Map<string, ToolCardRef>,
+  fallback: HTMLElement,
+): void {
+  const parent = parentId === undefined ? undefined : parents.get(parentId);
+  (parent === undefined ? fallback : parent.subs).appendChild(ref.col);
 }
 
 /**
@@ -228,16 +271,26 @@ export function setToolResult(ref: ToolCardRef, resultText: string, failed: bool
   }
 }
 
-/** 新建工具调用卡片（live 事件；按事件时间插入该会话视图尾部）。 */
+/**
+ * 新建工具调用卡片（live 事件；按事件时间插入该会话视图尾部）。
+ *
+ * W1467：带 `parent_id` 的帧是 run_code 的**子调用**，缩进挂到父卡的
+ * `.toolcard-subs` 下；它**不计入** `ctx.step`（那数是模型级步数，与状态栏的
+ * 「第 N 步」同口径 —— 子调用是程序内部的桥接调用，不是模型的一步）。
+ * 父卡不在索引里时退回顶层，不丢内容。
+ */
 export function pushToolCard(ctx: SessionPane, p: ToolPayload, into?: HTMLElement): HTMLElement {
-  ctx.step += 1;
+  const parentId = typeof p.parent_id === 'string' ? p.parent_id : undefined;
+  const sub = parentId === undefined ? undefined : subCallIndex(String(p.id));
+  if (parentId === undefined) ctx.step += 1;
   const ref = buildToolCard({
     step: ctx.step,
     name: String(p.name || 'tool'),
     argsText: toJsonText(p.args),
     desc: descFromArgs(p.args), // W778：折叠行标签（缺失回落工具名）
+    ...(sub === undefined ? {} : { sub }),
   });
-  (into ?? ctx.el).appendChild(ref.col);
+  mountToolCard(ref, parentId, ctx.ops, into ?? ctx.el);
   if (!into) autoscroll(ctx);
   ctx.ops.set(String(p.id), ref);
   return ref.col;

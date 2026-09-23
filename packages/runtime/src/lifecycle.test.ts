@@ -129,7 +129,11 @@ describe("session rebind", () => {
     expect(() => runtime.rebind(sessionBinding(memoryLog()))).toThrow(TurnBusyError);
     runtime.cancelTurn();
     await turn;
-    expect(runtime.rebind(sessionBinding(memoryLog()))).toBeDefined();
+    // The rebind succeeds once the turn is gone — and it really takes effect
+    // (the getter's return type already rules out "undefined", so assert the
+    // swap, not existence).
+    const rebound = runtime.rebind(sessionBinding(memoryLog()));
+    expect(runtime.session).toBe(rebound);
   });
 });
 

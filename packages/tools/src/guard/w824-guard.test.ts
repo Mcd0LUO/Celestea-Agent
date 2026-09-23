@@ -46,7 +46,6 @@ describe("W824 guard P0-1: dangling symlink write escape", () => {
 
     const registry = createToolRegistry([writeFileTool()], [policyFor(ws)]);
     const out = await registry.dispatch({ call_id: "c1", name: "write_file", args: { path: "link", content: "ESC" } });
-    expect(out.error).not.toBeNull();
     expect(out.error).toMatch(/denied|path_forbidden/);
     expect(existsSync(join(outside, "new.txt"))).toBe(false);
   });

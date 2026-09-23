@@ -56,10 +56,11 @@
         <!-- W514：多会话视图宿主——每个会话一个 .sess-pane 容器（hidden 切换，零重渲染） -->
         <div id="messages" tabindex="-1"></div>
 
-        <!-- W867（W871 修正）：.chat-shell = **底部那一条 composer** 的圆角外框 ——
-             statusline / #statusbar / #inputbar 是一体的发送栏（同一表面色 + 发丝线 +
-             --r-shell 圆角）。#messages 在本层**之外**：保持屏幕边缘、保持唯一滚动容器
-             .sess-pane 的几何逐像素不变（W867 曾把消息区一起框住）。
+        <!-- W867（W871 修正；W1462 再修）：.chat-shell = **输入胶囊**的圆角外框 ——
+             W1462 起只圈 #statusline（模型/上下文/档位 + 右端集群）与 #inputbar（输入框 + 发送）。
+             低频状态信息（会话名/空闲 · tok/s · 缓存 · 步数 · 轮次/耗时）已移到胶囊**下方**的
+             贴底信息行 #statusbar（见下），灰色小字、无背景无描边 —— 信息出框、空间给输入框。
+             #messages 在本层**之外**：保持屏幕边缘、保持唯一滚动容器 .sess-pane 的几何逐像素不变。
              本层不设 overflow:hidden —— 三个 .sl-popup 都从 statusline 向上弹出
              （bottom: calc(100% - 2px)），裁剪会切掉面板；圆角改由首/末子元素各自带
              （子元素自带不透明的 --composer-bg，不带角会盖住外框的圆角）。 -->
@@ -118,32 +119,11 @@
               <span class="sl-hint" id="slHint"></span>
             </div>
           </div>
-          <div class="sl-row sl-row-sub">
-            <!-- W514 聚焦会话条（会话名 / worker 标记 / 运行态 / 其它运行中会话入口）。
-                 W790：并入本行 —— 不再独占 #messages 上方的一行；行高由 .sl-row 的
-                 min-height 决定，条内每个元素 ≤15px，因此并入不新增 statusline 行高。 -->
-            <div id="sessionBar" class="session-bar" title="当前聚焦会话 · 可切换其它运行中的会话"></div>
-            <span class="sl-sep">·</span>
-            <span class="sl-tps" id="slTps">— tok/s</span>
-            <span class="sl-sep">·</span>
-            <span class="sl-cache" id="slCache" title="缓存命中：最近一次请求">缓存 —</span>
-            <span class="sl-sep">·</span>
-            <span class="sl-steps" id="slSteps">— 步</span>
-          </div>
+          <!-- W1462：原第 2 行（会话条 / tok/s / 缓存 / 步数）已移出胶囊 → 贴底信息行 #statusbar。
+               本行因此只剩「模型 / 上下文 / 档位 / 工作方式 + 右端集群」，statusline 不再有两行。 -->
         </div>
 
-        <footer id="statusbar">
-          <div class="sb-left">
-            <span class="dot" id="statusDot"></span>
-            <span id="statusText">连接中…</span>
-          </div>
-          <div class="sb-right">
-            <span id="statusTurn">第 — 轮</span>
-            <span class="sb-sep">·</span>
-            <span id="statusTime">00:00</span>
-          </div>
-        </footer>
-
+        <!-- ---------- 输入区（composer 的视觉主体：上下撑开） ---------- -->
         <div id="inputbar">
           <!-- W847：.input-box 承担原 #input 的 flex 槽位；图片入口 #btnAttach 由 JS 注入
                到框内（绝对定位、内联回形针 SVG），出流 ⇒ 不改变本行宽度。 -->
@@ -160,6 +140,32 @@
           </div>
         </div>
         </section>
+
+        <!-- W1462：低频状态信息移到胶囊（.chat-shell）**之外**、贴底平铺一行 ——
+             会话名/空闲态（#sessionBar）、吞吐（#slTps）、缓存（#slCache）、步数（#slSteps）、
+             连接点/文本（#statusDot/#statusText）、轮次/耗时（#statusTurn/#statusTime）。
+             灰色小字、无背景、无描边、无分隔线（"不显眼"）；位置由 layout.css 的
+             #statusbar 承担（.chat-shell 之后的普通 flex 子项 ⇒ 自然落在胶囊下方）。
+             这些 id 是运行时与行为测试的取节点真源，层级可动、id 不可丢。 -->
+        <footer id="statusbar">
+          <div class="sb-left">
+            <div id="sessionBar" class="session-bar" title="当前聚焦会话 · 可切换其它运行中的会话"></div>
+            <span class="sl-sep">·</span>
+            <span class="sl-tps" id="slTps">— tok/s</span>
+            <span class="sl-sep">·</span>
+            <span class="sl-cache" id="slCache" title="缓存命中：最近一次请求">缓存 —</span>
+            <span class="sl-sep">·</span>
+            <span class="sl-steps" id="slSteps">— 步</span>
+          </div>
+          <div class="sb-right">
+            <span class="dot" id="statusDot"></span>
+            <span id="statusText">连接中…</span>
+            <span class="sb-sep">·</span>
+            <span id="statusTurn">第 — 轮</span>
+            <span class="sb-sep">·</span>
+            <span id="statusTime">00:00</span>
+          </div>
+        </footer>
       </main>
     </div>
   </div>

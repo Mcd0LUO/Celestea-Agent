@@ -12,7 +12,7 @@
  * instead. Either way the runtime never imports an L1 implementation.
  */
 
-import { outcomeError, outcomePhase, type LoopEvent, type SseEventName } from "@celestea/core";
+import { outcomeError, outcomePhase, type LoopEvent, type SessionEvent, type SseEventName } from "@celestea/core";
 
 /** One SSE frame: the frozen event name plus its `data:` payload. */
 export interface TurnFrame {
@@ -54,6 +54,42 @@ export function loopEventToFrame(ev: LoopEvent): TurnFrame {
 function frame(event: SseEventName, payload: Record<string, unknown>): TurnFrame {
   return { event, payload };
 }
+/**
+ * W1467: one `run_code` SUB-CALL as an SSE frame, or null when the row is not
+ * a sub-call.
+ *
+ * Why this is host-built rather than part of [loopEventToFrame]: a sub-call never
+ * becomes a `LoopEvent`. The program's `tools.read_file(...)` bridge travels to
+ * the broker, which dispatches it through the registry and records the row
+ * itself (`packages/tools/src/run-code/broker.ts`); the agent loop only ever sees
+ * the enclosing `run_code` call. So the frame is built here, next to
+ * [questionFrame] and for the same reason: the module that owns every frozen SSE
+ * payload owns the host-emitted ones too, and the two can never drift apart.
+ *
+ * The payload mirrors the loop's own tool/tool_result frames EXACTLY (same keys,
+ * same value/render/error/decision) plus `parent_id` — declared in
+ * `contracts/sse-events.json` under `payloadExtensions`. A client that ignores
+ * `parent_id` renders the sub-call as an ordinary tool card, which is the
+ * pre-W1467 behaviour.
+ */
+export function subCallFrame(event: SessionEvent): TurnFrame | null {
+  if (event.type === "tool_call" && event.parent_id !== undefined) {
+    return frame("tool", { id: event.id, name: event.name, args: event.args, parent_id: event.parent_id });
+  }
+  if (event.type === "tool_result" && event.parent_id !== undefined) {
+    return frame("tool_result", {
+      id: event.id,
+      ok: event.error === null,
+      value: event.value,
+      render: null,
+      error: event.error,
+      decision: null,
+      parent_id: event.parent_id,
+    });
+  }
+  return null;
+}
+
 
 /**
  * W783: one parked user question.

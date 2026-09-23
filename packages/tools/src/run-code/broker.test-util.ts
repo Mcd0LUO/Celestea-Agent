@@ -16,6 +16,7 @@ import type { Sandbox, SessionEvent, Tool, ToolRegistry, ToolSpec } from "@celes
 import { fnTool } from "../fn-tool.js";
 import { userspaceSandboxWith } from "../sandbox/userspace.js";
 import { RegistryHandle, runCodeToolWithHandle } from "../tools/run-code.js";
+import type { RunCodeConfig } from "./limits.js";
 import { ToolRegistryImpl } from "../registry.js";
 import { resolveShellKind } from "../platform/exec.js";
 import { quoteWord } from "../platform/quote.js";
@@ -47,7 +48,10 @@ export interface BrokerHarness {
   /** Why a matrix is not runnable here (empty when both interpreters answered). */
   skipReasons: string[];
   /** Register `run_code`, then bind its handle to that same registry. */
-  mount(registry: ToolRegistryImpl, options?: { events?: (event: SessionEvent) => void }): Tool;
+  mount(
+    registry: ToolRegistryImpl,
+    options?: { events?: (event: SessionEvent) => void; config?: RunCodeConfig },
+  ): Tool;
   run(tool: Tool, callId: string, args: unknown): Promise<unknown> & { value?: unknown };
   /** `run_code_*` files left behind in `<workdir>/.celestea/run-code` (W880). */
   leftoverScripts(): Promise<string[]>;
@@ -172,10 +176,14 @@ export async function startBrokerHarness(options: BrokerHarnessOptions = {}): Pr
     pythonReady,
     nodeReady,
     skipReasons,
-    mount(registry: ToolRegistryImpl, options: { events?: (event: SessionEvent) => void } = {}): Tool {
+    mount(
+      registry: ToolRegistryImpl,
+      options: { events?: (event: SessionEvent) => void; config?: RunCodeConfig } = {},
+    ): Tool {
       const { tool, handle } = runCodeToolWithHandle({
         sandbox,
         ...(options.events === undefined ? {} : { events: options.events }),
+        ...(options.config === undefined ? {} : { config: options.config }),
       });
       registry.register(tool);
       handle.set(registry);

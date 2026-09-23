@@ -95,6 +95,32 @@ export function deriveNproc(threads: number | null, headroom = NPROC_HEADROOM, f
   return Math.max(floor, (threads ?? 0) + headroom);
 }
 
+/**
+ * W1465: refresh ONLY the derived nproc from a **fresh** thread count.
+ *
+ * Why this exists (real outage): RLIMIT_NPROC counts every thread owned by the
+ * real UID **host-wide**, so a value derived once at construction becomes a time
+ * bomb -- the UID thread count keeps growing (other sessions, vitest workers,
+ * MC servers) and the moment it passes the frozen cap, prlimit --nproc=<frozen>
+ * makes bwrap fail to create its namespace at all:
+ *
+ *   bwrap: Creating new namespace failed: Resource temporarily unavailable
+ *
+ * The program then never starts, so every tool call inside it silently never
+ * happens. Measured on this host: 1038 threads + NPROC_FLOOR 1024 => EAGAIN;
+ * 1100 => exit 0.
+ *
+ * An explicit CELESTEA_SANDBOX_NPROC is an operator decision and is left alone;
+ * otherwise the cap is re-derived per call so it always leads the real count.
+ */
+export function refreshNproc(limits: SandboxLimits, env: NodeJS.ProcessEnv = process.env, threads = countUidThreads()): SandboxLimits {
+  const explicit = envInt(env, ENV_SANDBOX_NPROC);
+  if (explicit !== undefined && explicit > 0) return limits;
+  const headroom = envInt(env, ENV_SANDBOX_NPROC_HEADROOM) ?? NPROC_HEADROOM;
+  const nproc = deriveNproc(threads, headroom);
+  return nproc === limits.nproc ? limits : { ...limits, nproc };
+}
+
 /** Limits for one provider instance: measured `nproc` plus env overrides. */
 export function limitsFromEnv(
   env: NodeJS.ProcessEnv = process.env,

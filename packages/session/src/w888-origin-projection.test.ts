@@ -31,9 +31,9 @@ describe("W888 origin projection", () => {
 
   it("labels are stable and non-empty", () => {
     for (const origin of ORIGINS) {
-      const label = originLabel(origin);
-      expect(typeof label).toBe("string");
-      expect(label.length).toBeGreaterThan(0);
+      // `originLabel` is typed `=> string`, so `typeof label === "string"` was a
+      // tautology; the real promise is a NON-EMPTY label for every origin.
+      expect(originLabel(origin).length, `empty label for origin "${origin}"`).toBeGreaterThan(0);
     }
     expect(originLabel("memory")).toContain("记忆");
     expect(originLabel("skill")).toContain("技能");

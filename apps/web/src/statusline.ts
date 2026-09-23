@@ -24,7 +24,7 @@ import { need } from './utils/dom';
 import type { OverlayHandle } from './utils/overlays';
 import type { ConfigPatch, SessionMode, StatusPayload, StatusSnapshot } from './types';
 import { pickStatusFields } from './statusline/fields';
-import { fixed1 } from './statusline/icons';
+import { DockCells } from './statusline/dock';
 import {
   closePopup,
   retryPendingPick,
@@ -47,17 +47,10 @@ import {
 } from './statusline/permission';
 import {
   RING_C,
-  renderCacheCell,
   renderContextCell,
   renderModelCell,
   type ModelCellState,
 } from './statusline/ring';
-import {
-  createTpsSamples,
-  pushTpsSamples,
-  tpsDisplay,
-  type TpsSamples,
-} from './statusline/tps';
 
 import { initGoalBadge, refreshGoalBadge } from './statusline/goal'; // A3：目标徽标
 import { t } from './i18n'; // i18n P1-a：statusline 域文案走字典
@@ -76,10 +69,6 @@ export class Statusline implements PickerHost, ModeHost {
   private ctxEl: HTMLElement;
   private modelEl: HTMLElement;
   private effortEl: HTMLElement;
-  private tpsEl: HTMLElement;
-  /** W263: cache-hit-ratio cell (last stream + cumulative in the title). */
-  private cacheEl: HTMLElement;
-  private stepsEl: HTMLElement;
   private hintEl: HTMLElement;
   /** W788：会话工作方式徽标（只读；点击弹层切换）。 */
   private modeEl: HTMLElement;
@@ -100,10 +89,10 @@ export class Statusline implements PickerHost, ModeHost {
   /** W750：状态栏已渲染的模型名/图标键（避免每次轮询重建同一行）。 */
   private modelCell: ModelCellState = { label: '', iconKey: null };
   /**
-   * W789：吞吐的近期采样缓冲（按会话隔离，像 snapshot 一样跨切换保留）——
-   * 会话 inactive 时服务端给 0/缺省，状态栏改为显示近期均值而不是 0.0 tok/s。
+   * W1462：贴底信息行（胶囊**之外**）的三个数值格 + 它们的 stale 降对比。
+   * 三项（tok/s / 缓存 / 步数）已移出 #statusline，宿主与写入规则收口在 ./statusline/dock.ts。
    */
-  private tpsCache = new Map<string, TpsSamples>();
+  private readonly dock = new DockCells();
   private staleMsg = '';
   private note = '';
   private noteTimer: number | null = null;
@@ -115,9 +104,8 @@ export class Statusline implements PickerHost, ModeHost {
     this.ctxEl = need<HTMLElement>('#slCtx', this.el);
     this.modelEl = need<HTMLElement>('#slModel', this.el);
     this.effortEl = need<HTMLElement>('#slEffort', this.el);
-    this.tpsEl = need<HTMLElement>('#slTps', this.el);
-    this.cacheEl = need<HTMLElement>('#slCache', this.el);
-    this.stepsEl = need<HTMLElement>('#slSteps', this.el);
+    // W1462：这三项已移出胶囊（住贴底信息行 #statusbar）⇒ 作用域**必须**从 this.el
+    // 放开到 document；仍用 need()（id 是运行时真源，缺失要当场炸而不是静默）。
     this.hintEl = need<HTMLElement>('#slHint', this.el);
     this.modeEl = need<HTMLElement>('#slMode', this.el);
     // W858：档位入口（徽标可选：其它骨架/老页面没有 #slPerm 时安静地不装入口）
@@ -154,15 +142,6 @@ export class Statusline implements PickerHost, ModeHost {
       if (!modePopupHit(e) && !this.modeEl.contains(e.target as Node)) closeModePopup();
       this.perm.onOutsideClick(e); // W858：档位弹层同款（点自己/徽标不关，点别处关掉）
     });
-  }
-
-  /** W789：本会话的吞吐采样缓冲（首次访问即建，按会话隔离）。 */
-  private tpsSamplesFor(id: string): TpsSamples {
-    const cur = this.tpsCache.get(id);
-    if (cur) return cur;
-    const fresh = createTpsSamples();
-    this.tpsCache.set(id, fresh);
-    return fresh;
   }
 
   /** PickerHost：弹层挂载点（#statusline 元素）。 */
@@ -338,12 +317,16 @@ export class Statusline implements PickerHost, ModeHost {
       if (asked !== this.session) return; // 竞态：期间已切换会话，丢弃本次结果
       this.staleMsg = '';
       this.el.classList.remove('sl-stale');
+      this.dock.setStale(false); // W1462：贴底信息行上的降对比同步复位
       this.snapshot = { ...this.snapshot, ...s };
       this.cache.set(this.session, this.snapshot);
       this.render();
     } catch (err) {
       // /api/status 未上线或后端不可达：保持占位符，不打断聊天
       this.el.classList.add('sl-stale');
+      // W1462：tok/s / 缓存 / 步数已移出 #statusline（住贴底信息行 #statusbar）——
+      // 降对比必须同时打到它们的**实际宿主**上，否则这三项在 stale 态看起来「是活的」。
+      this.dock.setStale(true);
       this.staleMsg = t('statusline.statusUnavailable');
       this.renderHint();
       this.el.title = userErrorText(err, t('statusline.statusUnavailable'));
@@ -364,24 +347,12 @@ export class Statusline implements PickerHost, ModeHost {
     this.effortEl.title = t('statusline.effortTitle', { effort: effort ? String(effort) : t('statusline.standard') });
     this.effortEl.setAttribute('aria-label', t('statusline.effortAria', { effort: effort ? String(effort) : t('statusline.standard') }));
 
-    // W789：吞吐 —— 有效采样原样显示；服务端给 0/缺省（会话 inactive）时显示最近
-    // N 次采样的均值并带 `≈` 前缀，不再从「42.5 tok/s」直接跳成「0.0 tok/s」。
-    const samples = pushTpsSamples(this.tpsSamplesFor(this.session), s.tokens_per_sec);
-    this.tpsCache.set(this.session, samples);
-    const tps = tpsDisplay(samples, s.tokens_per_sec, s.busy === true, fixed1);
-    this.tpsEl.textContent = tps.text;
-    this.tpsEl.title = tps.title;
-    this.tpsEl.setAttribute('aria-label', t('statusline.tpsAria', { text: tps.text }));
-
-    // W263 缓存命中率：只改文本（铁律 1/2/5——不重建 DOM，不重渲染背景）
-    renderCacheCell(this.cacheEl, s.usage);
+    // W1462：吞吐 / 缓存命中 / 步数三项住在**胶囊之外**的贴底信息行 —— 写入与 stale
+    // 降对比整段收口在 ./statusline/dock.ts（本类不再自己拿这三个节点）。
+    this.dock.render(s, this.session);
 
     // W788：工作方式徽标（未知 → 隐藏入口，不显示错误——设计 §6.5）
     renderModeBadge(this.modeEl, s.mode);
-
-    const steps = s.steps;
-    this.stepsEl.textContent = typeof steps === 'number' && steps >= 1 ? t('statusline.steps', { n: steps }) : t('statusline.stepsNone');
-    this.stepsEl.setAttribute('aria-label', this.stepsEl.textContent);
 
     // W514：后端 busy 字段（多会话状态显示）——只切 class，不改布局
     this.el.classList.toggle('sl-live', s.busy === true);

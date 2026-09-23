@@ -47,6 +47,14 @@ export interface HistoryMsg {
   tool_args?: unknown;
   tool_value?: unknown;
   tool_error?: string | null;
+  /**
+   * W1467: the enclosing `run_code` call id, written by the Studio projection
+   * (`packages/session/src/messages.ts` maps the log row's `parent_id` onto this
+   * key). Present only for a SUB-CALL row; absent = top level. The live SSE path
+   * carries the same value as `ToolPayload.parent_id`, which is what makes the
+   * indent identical before and after a refresh.
+   */
+  tool_parent_id?: string;
 }
 
 export interface MessagesResp {

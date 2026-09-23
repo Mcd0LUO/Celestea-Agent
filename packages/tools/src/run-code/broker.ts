@@ -43,7 +43,6 @@ import {
   MAX_LINE_BYTES,
   RUN_CODE_ERROR_PREFIX,
   SDK_TOOLS,
-  STDIN_WRITE_TIMEOUT_MS,
   resolveTimeoutMs,
   runCodeFailure,
   type RunCodeConfig,
@@ -403,7 +402,7 @@ async function answerSubCall(
 ): Promise<void> {
   const reply = await buildReply(ctx, request, state);
   try {
-    await writeReply(child.stdin as Writable, encodeReply(reply, request.id));
+    await writeReply(child.stdin as Writable, encodeReply(reply, request.id), ctx.config.stdinWriteTimeoutMs);
   } catch (e) {
     if (e instanceof ToolFailure && e.kind === "timeout") {
       // W833 (R3 B1): a reply the child never drains is a wall-clock failure,
@@ -469,14 +468,15 @@ function encodeReply(reply: Record<string, unknown>, id: number): string {
   return JSON.stringify({ id, ok: false, error: "reply not serializable" });
 }
 
-async function writeReply(stdin: Writable, line: string): Promise<void> {
+/** W896: the bound is a parameter so tests can shrink it (default stays 5s). */
+async function writeReply(stdin: Writable, line: string, timeoutMs: number): Promise<void> {
   const written = new Promise<void>((resolve, reject) => {
     stdin.write(`${line}\n`, (error) => (error === null || error === undefined ? resolve() : reject(error)));
   });
-  if ((await withTimeout(written, STDIN_WRITE_TIMEOUT_MS)) === TIMED_OUT) {
+  if ((await withTimeout(written, timeoutMs)) === TIMED_OUT) {
     throw runCodeFailure(
       "timeout",
-      `reply was not written after ${STDIN_WRITE_TIMEOUT_MS}ms (the program stopped reading stdin)`,
+      `reply was not written after ${timeoutMs}ms (the program stopped reading stdin)`,
     );
   }
 }

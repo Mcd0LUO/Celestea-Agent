@@ -25,7 +25,8 @@
    把消息区（flex:1）顶掉一截，用户看到的就是「发送后下方窗口浮动」。
    不靠 overflow 截断：需要压缩的项自己带 ellipsis（.sl-model / .sl-hint）。 */
 .sl-row-main { flex-wrap: nowrap; min-width: 0; overflow: hidden; }
-.sl-row-sub { color: var(--c-text-3); }
+/* W1462：原第 2 行 .sl-row-sub（会话条 · tok/s · 缓存 · 步数）已移出胶囊 —— 那几项现在
+   住在贴底信息行 #statusbar 里（layout.css §底部信息行），本行不再有两行结构。 */
 
 .sl-sep { color: var(--c-text-3); opacity: .6; }
 /* W847：右端集群（盾牌/车道/停止/提示）—— flex:0 0 auto + margin-left:auto 取代
@@ -62,8 +63,10 @@
 .sl-effort:empty { display: none; }
 .sl-tps, .sl-steps, .sl-cache {
   font-variant-numeric: tabular-nums;
-  padding: 1px 7px; border-radius: var(--r-badge);
-  background: var(--c-layer-2);
+  /* W1297：去掉灰底胶囊 —— 数值直接排在状态行上，不再有「小方块」。
+     W1462：这三项已移到胶囊外的贴底信息行，本规则继续生效（类选择器与宿主无关）——
+     「无背景」是它们移出后仍必须守住的不变量（门禁 tests/w1297-composer-flat.test.ts）。 */
+  padding: 0;
 }
 /* W789：提示是运行态才出现的「新栏」，必须可压缩（否则 nowrap 下会把右端盾牌/停止挤出去） */
 .sl-hint {
@@ -88,14 +91,16 @@
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-/* /api/status 不可用时整条降低对比并显示提示 */
+/* /api/status 不可用时整条降低对比并显示提示。
+   W1462：tok/s / 缓存 / 步数已移出 #statusline（住贴底信息行）——降对比改用
+   #statusbar.sl-stale 那一支（statusline.ts 把同一个类同时写在两处）。 */
 #statusline.sl-stale .sl-model,
 #statusline.sl-stale .sl-ctx,
 #statusline.sl-stale .sl-effort,
-#statusline.sl-stale .sl-mode,
-#statusline.sl-stale .sl-tps,
-#statusline.sl-stale .sl-steps,
-#statusline.sl-stale .sl-cache { opacity: .55; }
+#statusline.sl-stale .sl-mode { opacity: .55; }
+#statusbar.sl-stale .sl-tps,
+#statusbar.sl-stale .sl-steps,
+#statusbar.sl-stale .sl-cache { opacity: .55; }
 
 /* ============================================================================
  * W227：模型 / 推理档位快速切换（按钮 + 紧凑下拉面板）
@@ -131,7 +136,8 @@
 .sl-effort,
 .sl-mode {
   color: var(--c-text-2);
-  border: 1px solid var(--c-border-subtle);
+  /* W1297：扁平化 —— 去掉胶囊描边。档位/工作方式只以文字 + 悬停底色区分，
+     不再给 composer 表面增加第二层「小框」。 */
   border-radius: var(--r-badge);
   padding: 0 8px;
   font-size: 11px;
@@ -141,12 +147,11 @@
 /* W788：执行模式给一点强调（标准模式保持默认灰阶） */
 .sl-mode.exec {
   color: var(--c-text-1);
-  border-color: var(--c-accent-ring);
   background: var(--c-accent-soft);
 }
 .sl-model:hover, .sl-effort:hover, .sl-mode:hover {
   color: var(--c-text-1);
-  border-color: var(--c-accent-ring);
+  background: var(--c-accent-soft);
 }
 .sl-model:focus-visible, .sl-effort:focus-visible, .sl-mode:focus-visible {
   outline: 1px solid var(--c-accent-ring);
@@ -354,13 +359,12 @@
   display: inline-flex; align-items: center;
   height: 16px; padding: 0 6px;
   font-family: var(--mono); font-size: 10.5px; line-height: 15px;
-  background: transparent; border: 1px solid var(--c-border-subtle); border-radius: var(--r-sm);
+  background: transparent; border: none; border-radius: var(--r-sm);
   color: var(--c-text-2); cursor: pointer;
 }
 .sl-mode-btn:hover {
   background: var(--c-accent-soft);
   color: var(--c-text-1);
-  border-color: var(--c-accent-ring);
 }
 .sl-mode-btn:focus-visible {
   outline: 1px solid var(--c-accent-ring);
@@ -380,7 +384,7 @@
   width: 18px; height: 18px;
   padding: 0;
   background: transparent;
-  border: 1px solid var(--c-border-subtle);
+  border: none;
   border-radius: var(--r-sm);
   color: var(--c-text-2);
   cursor: pointer;
@@ -390,7 +394,6 @@
 .sl-stop:hover {
   background: var(--c-accent-soft);
   color: var(--c-text-1);
-  border-color: var(--c-accent-ring);
 }
 .sl-stop:focus-visible {
   outline: 1px solid var(--c-accent-ring);
@@ -401,5 +404,4 @@
   cursor: default;
   background: transparent;
   color: var(--c-text-2);
-  border-color: var(--c-border-subtle);
 }

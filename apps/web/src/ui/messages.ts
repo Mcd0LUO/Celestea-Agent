@@ -102,6 +102,10 @@ export function buildThinkSeg(
   const msg = el('div', 'msg think-seg');
   const cap = el('div', 'msg-caption think-head') as HTMLElement;
   cap.appendChild(el('span', 'who', t('chat.think.title')));
+  // W1468：折叠提示行从 .bubble 移到**头行之内** —— 它此前独占第二行，使一个折叠的
+  // 思考段占两行（用户：「思考块太大了，改为文字级大小」）。桌面端 chevron 是 hover
+  // 才淡入，提示行确实承担状态信息，所以不删，只与标题同行显示。
+  cap.appendChild(el('span', 'think-seg-folded', thinkFoldedHint()));
   const foldMark = el('span', 'think-fold-mark');
   foldMark.innerHTML = THINK_CHEVRON_SVG; // W765：SVG chevron（方向由 data-fold 驱动）
   cap.appendChild(foldMark);
@@ -114,7 +118,6 @@ export function buildThinkSeg(
   const body = el('div', 'think-seg-body');
   if (opts.text !== undefined) body.textContent = opts.text;
   bubble.appendChild(body);
-  bubble.appendChild(el('div', 'think-seg-folded', thinkFoldedHint()));
   msg.appendChild(bubble);
   root.appendChild(msg);
   const seg: ThinkSegDom = { root, msg, head: cap, body, foldMark, text: opts.text ?? '' };

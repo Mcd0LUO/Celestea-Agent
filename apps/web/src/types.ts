@@ -142,20 +142,10 @@ export interface ThinkingPayload extends SseMeta {
   delta: string;
 }
 
-export interface ToolPayload extends SseMeta {
-  id: string;
-  name?: string;
-  args?: unknown;
-}
-
-export interface ToolResultPayload extends SseMeta {
-  id: string;
-  ok?: boolean;
-  value?: unknown;
-  render?: string;
-  error?: string | null;
-  decision?: 'allow' | 'deny' | 'ask' | null;
-}
+// W1467：ToolPayload / ToolResultPayload 搬到 ./types/tool-events.ts（模块体积棘轮），
+// 这里原样再导出，调用方零改动。
+import type { ToolPayload } from './types/tool-events';
+export type { ToolPayload, ToolResultPayload } from './types/tool-events';
 
 export interface DonePayload extends SseMeta {
   text?: string;

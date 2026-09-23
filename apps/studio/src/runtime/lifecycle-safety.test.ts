@@ -17,8 +17,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getJson, jsonRequest, type StudioHarness } from "../harness.test-util.js";
 import { activate, engineOf, makeEngineHarness, readSessionLog, turns } from "./test-util.js";
 
-/** A brief turn slow enough to observe the worker while its row is RUNNING. */
-const SLOW_BRIEF = { script: [{ text: "x".repeat(4_000) }], deltaMs: 4, chunkChars: 8 };
+/**
+ * A brief turn slow enough to observe the worker while its row is RUNNING.
+ *
+ * W896: was 4000 chars / 4ms ≈ 2.0s. The property is "the brief is still
+ * streaming when the epoch bump lands", which a shorter stream proves just as
+ * well; 1500 chars / 1ms ≈ 0.19s removes ~1.8s from this case while keeping a
+ * wide margin over the in-process bump.
+ */
+const SLOW_BRIEF = { script: [{ text: "x".repeat(1_500) }], deltaMs: 1, chunkChars: 8 };
 
 const harnesses: StudioHarness[] = [];
 

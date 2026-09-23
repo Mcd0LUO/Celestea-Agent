@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   LlmError as CoreLlmError,
+  LlmRegistry as CoreLlmRegistry,
   ROLES as CORE_ROLES,
   assistantText as coreAssistantText,
   messageToolCalls as coreMessageToolCalls,
@@ -77,9 +78,11 @@ describe("A1 · @celestea/llm re-exports core's seam instead of redeclaring it",
   });
 
   it("re-exports core's LlmRegistry (one registry implementation, not two)", () => {
-    const registry = new LlmRegistry();
-    expect(registry).toBeInstanceOf(LlmRegistry);
-    const asCore: CoreLlmRegistryType = registry;
+    // Identity, not "an instance of itself": `new LlmRegistry()` is trivially an
+    // LlmRegistry, so the old `toBeInstanceOf` could never fail. The invariant is
+    // that the re-exported VALUE is core's own class object.
+    expect(LlmRegistry).toBe(CoreLlmRegistry);
+    const asCore: CoreLlmRegistryType = new LlmRegistry();
     expect(asCore.list()).toEqual([]);
   });
 
@@ -96,8 +99,13 @@ describe("A1 · @celestea/llm re-exports core's seam instead of redeclaring it",
     });
   });
 
-  it("keeps the one documented delta (failed.kindOf) exclusive to the provider", () => {
-    expect(DELTA_IS_ONLY_THE_FAILED_MEMBER).toBe(true);
-    expect(ENGINE_REQUEST_IS_A_DRAFT).toBe(true);
-  });
 });
+
+// The two guards are TYPE-LEVEL: `Assert<T extends true>` makes each
+// declaration itself the assertion, so a mismatched union/request fails the
+// build. Their old runtime companions — e.g.
+// `expect(DELTA_IS_ONLY_THE_FAILED_MEMBER).toBe(true)` — were tautologies (the
+// constant's type IS `true`) and have been removed. The `void` reads keep the
+// declarations "used" (the root tsconfig does not enable noUnusedLocals).
+void DELTA_IS_ONLY_THE_FAILED_MEMBER;
+void ENGINE_REQUEST_IS_A_DRAFT;

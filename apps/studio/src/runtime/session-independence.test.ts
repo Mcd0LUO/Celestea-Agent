@@ -21,8 +21,17 @@ import { activate, engineOf, makeEngineHarness, readSessionLog, turns, waitIdle 
 import type { OfflineStep } from "./offline-llm.js";
 
 const harnesses: StudioHarness[] = [];
-/** Frames of the slow step: 2400 chars / 8 per frame, 3ms each ≈ 0.9s. */
-const SLOW_TEXT = "x".repeat(2400);
+/**
+ * Frames of the slow step.
+ *
+ * W896: was 2400 chars / 3ms ≈ 0.9s. Every case in this file needs the turn to
+ * still be RUNNING when the second request lands — that is the property, and it
+ * needs a *stream*, not a particular duration. 1600 chars / 1ms ≈ 0.2s keeps a
+ * ~10x margin over an in-process request round-trip while cutting ~0.7s per case
+ * (four cases here). The mid-stream polling in this file samples every 10ms, so
+ * the window is still ~20 samples wide.
+ */
+const SLOW_TEXT = "x".repeat(1600);
 
 function make(options: Parameters<typeof makeEngineHarness>[0] = {}): StudioHarness {
   const h = makeEngineHarness(options);
@@ -38,7 +47,7 @@ function make(options: Parameters<typeof makeEngineHarness>[0] = {}): StudioHarn
  */
 function makeSlow(sessions: Record<string, readonly SessionEvent[]>): StudioHarness {
   const script: OfflineStep[] = [];
-  const h = make({ sessions, llm: { script, deltaMs: 3, chunkChars: 8 } });
+  const h = make({ sessions, llm: { script, deltaMs: 1, chunkChars: 8 } });
   script.push({ text: SLOW_TEXT, tool_calls: [{ id: "c1", name: "list_dir", args: { path: h.workspace } }] });
   return h;
 }
@@ -49,6 +58,16 @@ afterEach(() => {
 
 function eventsOf(h: StudioHarness, name: string): SessionEvent[] {
   return parseSessionJsonl(readSessionLog(h, name)).events;
+}
+
+/**
+ * 一轮结束后的行序不变量（W896 抽取，供两处用例共用）：
+ * 整轮只有一个 turn_start；末条 user_message 写在 turn_end 之前。
+ */
+function expectTurnOrdering(events: readonly SessionEvent[]): void {
+  const kinds = events.map((e) => e.type);
+  expect(kinds.filter((k) => k === "turn_start")).toHaveLength(1);
+  expect(kinds.lastIndexOf("user_message"), "插话必须写在 turn_end 之前").toBeLessThan(kinds.lastIndexOf("turn_end"));
 }
 
 function userTexts(events: readonly SessionEvent[]): string[] {
@@ -134,20 +153,19 @@ describe("session independence", () => {
     expect(injected.status).toBe(200);
     expect(injected.body).toEqual({ ok: true, injected: true, turn: 1, pending: 1, placement: "steering", duplicate: false });
 
-    // The interjection is written by the RUNNING turn: it shows up before the
-    // turn_end row, while the turn is still in flight.
-    const midTurn = await pollLog(h, "s1", (events) => userTexts(events).includes("中途插话"));
-    expect(midTurn).not.toBeNull();
-    expect((midTurn ?? []).some((e) => e.type === "turn_end")).toBe(false);
+    // W896（flake 修复）：原判据是「轮询到含插话的那一帧，再断言该帧没有 turn_end」，
+    // 依赖调度时序 —— 轮询若在 turn_end 写完之后才首次看到插话就随机变红。
+    // 要证的是「插话写在 turn_end 之前」，正确判据是**行序**：等本轮结束再断言。
+    const done = await pollLog(h, "s1", (events) => events.some((e) => e.type === "turn_end"));
+    expect(done).not.toBeNull();
+    expectTurnOrdering(done ?? []);
 
     await waitIdle(h);
     const events = eventsOf(h, "s1");
-    expect(events.filter((e) => e.type === "turn_start")).toHaveLength(1);
-    expect(events.filter((e) => e.type === "turn_end")).toHaveLength(1);
+    expectTurnOrdering(events);
     expect(userTexts(events)).toEqual(["第一轮输入", "中途插话"]);
     const kinds = events.map((e) => e.type);
     expect(kinds.indexOf("tool_result")).toBeLessThan(kinds.lastIndexOf("user_message"));
-    expect(kinds.lastIndexOf("user_message")).toBeLessThan(kinds.lastIndexOf("turn_end"));
   });
 
   it("injects a worker message into the running turn at the next step boundary", async () => {
@@ -160,9 +178,11 @@ describe("session independence", () => {
     const send = await getJson(h.app, "/api/worker/send", jsonRequest("POST", { target: "sample-ws/s1", content: "WORKER_W1_DONE 报告 results/W1-x.md" }));
     expect(send.body).toMatchObject({ ok: true, delivered: true });
 
-    const midTurn = await pollLog(h, "s1", (events) => userTexts(events).some((t) => t.includes("WORKER_W1_DONE")));
-    expect(midTurn).not.toBeNull();
-    expect((midTurn ?? []).some((e) => e.type === "turn_end")).toBe(false);
+    // W896：同上一处 —— 判据改成行序（回执写在 turn_end 之前），不依赖「某一帧恰好还没结束」。
+    const done = await pollLog(h, "s1", (events) => events.some((e) => e.type === "turn_end"));
+    expect(done).not.toBeNull();
+    expect(userTexts(done ?? []).some((t) => t.includes("WORKER_W1_DONE")), "回执必须已写入该轮").toBe(true);
+    expectTurnOrdering(done ?? []);
     await waitIdle(h);
 
     const events = eventsOf(h, "s1");
@@ -200,7 +220,19 @@ describe("session independence", () => {
       if (worker?.["state"] === "idle") break;
       await new Promise((r) => setTimeout(r, 20));
     }
-    await log.settle(100);
+    // W896：原来是固定 settle(100)。收件箱排空是异步的，争用下 100ms 可能不够。
+    // 这里不猜时间：等「收件箱确有排队项」这一事实成立。注意 /api/status 没有 pending 字段，
+    // 得读 worker 状态行——driver 停在 mailbox 循环即回执已入队（与上面 while 的判据同一来源）。
+    {
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const st = await getJson(h.app, "/api/worker/status?wid=W1");
+        const worker = (st.body["workers"] as Array<Record<string, unknown>> | undefined)?.[0];
+        if (worker?.["state"] === "idle") break;
+        if (Date.now() > deadline) throw new Error("the worker never parked in its mailbox loop");
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    }
 
     // 3. the next turn drains it at the TURN START: placement "context", envelope
     //    `subagent-settled` (a settlement notice, not a deliberate relay).
@@ -229,14 +261,23 @@ describe("session independence", () => {
     await slow.app.request("/api/turn", jsonRequest("POST", { input: "长任务", session: "sample-ws/s1" }));
     const injected = await getJson(slow.app, "/api/turn", jsonRequest("POST", { input: "中途插话", session: "sample-ws/s1" }));
     expect(injected.body["placement"]).toBe("steering");
-    await slowLog.settle(200);
-    const steering = slowLog.find((p) => p["placement"] === "steering");
-    expect((steering?.["message"] as Record<string, unknown>)["lane"]).toBe("next-step");
+    // W896：settle(200) 是固定 sleep，争用下可能不足（同文件其它处已改用条件轮询）。
+    // 改成等「该帧已到达」，上限 5s、正常路径立即返回。
+    const untilFrame = async (predicate: (p: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> => {
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const hit = slowLog.find(predicate);
+        if (hit !== undefined) return hit;
+        if (Date.now() > deadline) throw new Error("frame did not arrive in time");
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    };
+    const steering = await untilFrame((p) => p["placement"] === "steering");
+    expect((steering["message"] as Record<string, unknown>)["lane"]).toBe("next-step");
     await waitIdle(slow);
-    await slowLog.settle(200);
-    const context = slowLog.find((p) => p["placement"] === "context" && p["boundary"] === "step");
-    expect(context?.["boundary"]).toBe("step");
-    expect((context?.["message"] as Record<string, unknown>)["summary"]).toBe("中途插话");
+    const context = await untilFrame((p) => p["placement"] === "context" && p["boundary"] === "step");
+    expect(context["boundary"]).toBe("step");
+    expect((context["message"] as Record<string, unknown>)["summary"]).toBe("中途插话");
 
     log.stop();
     slowLog.stop();

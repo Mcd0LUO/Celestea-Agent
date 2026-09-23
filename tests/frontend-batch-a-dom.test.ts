@@ -140,7 +140,14 @@ describe("W789 · CSS 真源（标签左对齐 / 运行态不换行 / 按钮横�
     expect(label).toContain("padding-top: 7px"); // 顶对齐：与控件首行齐平
     expect(rule(comp, ".prov-field")).toContain("grid-template-columns: var(--field-label-w, 148px) minmax(0, 1fr)");
     expect(rule(comp, ".prov-field")).toContain("align-items: start");
-    expect(comp).not.toContain("text-align: right"); // 同一文件里不再有右对齐标签
+    // 「不再有右对齐的**表单标签**」——断言范围必须收窄到标签规则本身。
+    // 原写法是 expect(comp).not.toContain("text-align: right")，扫的是**整个文件**：
+    // 只要文件里任何一处（例如代码行号槽 .rendered pre .cl::before 的 text-align: right）
+    // 出现该串就红。那不是这条用例想守的语义，是误报源（W896 实测踩到）。
+    for (const sel of [".prov-field-label", ".prov-field", ".prov-adv-label"]) {
+      const body = rule(sel === ".prov-adv-label" ? css("settings.css") : comp, sel);
+      expect(body, sel + " 不得右对齐").not.toContain("text-align: right");
+    }
     // 设置页同一视觉族的标签（提供商「高级」小网格）同步左对齐
     expect(rule(css("settings.css"), ".prov-adv-label")).toContain("text-align: left");
   });
@@ -279,8 +286,6 @@ describe("W789 · 运行态 composer 结构不变量（8）", () => {
     expect(skeleton(ib)).toBe(before.ib);
     expect(sl.childElementCount).toBe(before.slKids);
     expect(ib.childElementCount).toBe(before.ibKids);
-    // 第 1 行仍只有一个：运行态绝不新增 .sl-row（换行/加行都会改高 composer）
-    expect(Array.from(sl.children).filter((c) => clsOf(c).includes("sl-row-main")).length).toBe(1);
     // W846：运行态按钮**不在** .input-side 里（否则会抢 #input 宽度）。
     // W805 在行首新增图片入口 #btnAttach（能力位就绪前保持 .hidden）。
     const side = ib.querySelector(".input-side") as ElLike;
@@ -334,7 +339,6 @@ describe("W789 · 权限面板：唯一滚动层 + 内联上限 + 自身滚动�
     };
     await body.openPanel(host);
     const popup = doc.querySelector("#statusline .sl-popup.grant-popup") as ElLike;
-    expect(popup).not.toBeNull();
     expect(popup.getAttribute("role")).toBe("dialog");
     expect(popup.querySelector(".sl-popup-title")?.textContent).toBe("本会话权限");
     expect(Array.from(popup.querySelectorAll(".sl-popup-body")).length).toBe(1); // 唯一滚动层

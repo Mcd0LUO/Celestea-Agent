@@ -61,25 +61,23 @@
 body.resizing-col .chatcol-resizer::after { opacity: 1; }
 body.resizing-col { cursor: col-resize; user-select: none; }
 
-/* ---- 聚焦会话条（W514；W790 并入 statusline 的 .sl-row-sub，不再独占一行） ----
-   并入的硬约束 = 不新增 statusline 行高：本行高由 .sl-row 的 min-height:16px 决定，
-   条内一切可点目标 ≤15px（chip：行高 13 + 上下边框各 1）。空间不足时**先压缩会话条**
-   （flex-shrink 1 + min-width 0 + overflow hidden），右侧的 tok/s / 缓存 / 步数不被挤走。 */
+/* ---- 聚焦会话条（W514；W790 并入状态行；W1462 随状态行移出胶囊到贴底信息行） ----
+   W1462 口径：本行是**胶囊之外**的低频信息，整条降到 tertiary 灰（--c-text-3）——
+   连会话名也不再加重（用户：「灰色不显眼」，信息不是控件）。空间不足时**先压缩会话条**
+   （flex-shrink 1 + min-width 0 + overflow hidden），右侧的 tok/s / 缓存 / 步数不被挤走。
+   行高不再受「并入 statusline 不新增行高」约束（已不在胶囊内）。 */
 .session-bar {
   flex: 0 1 auto; min-width: 0; max-width: 100%;
   display: flex; align-items: center; gap: 8px;
   padding: 0;
   background: none;
-  font-size: 11.5px; color: var(--c-text-2);
+  font-size: 11px; color: var(--c-text-3);
   overflow: hidden;
-}
-.sess-bar-lead {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 1.2px;
-  text-transform: uppercase; color: var(--c-text-3); flex: 0 0 auto;
 }
 .sess-bar-name {
   flex: 0 1 auto; min-width: 0;
-  color: var(--c-text-1); font-weight: 600;
+  /* W1462：会话名不再用 --c-text-1/600 加重 —— 贴底信息行整行同灰（tertiary）。 */
+  color: inherit; font-weight: 400;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sess-bar-kind {
@@ -93,7 +91,7 @@ body.resizing-col { cursor: col-resize; user-select: none; }
   flex: 0 0 auto;
   font-family: var(--mono); font-size: 11px; color: var(--c-text-3);
 }
-.sess-bar-state.busy { color: var(--c-text-1); }
+.sess-bar-state.busy { color: inherit; } /* W1462：运行态只靠下面的活动点表达，文字不再加重 */
 .sess-bar-state.busy::before {
   content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px;
   border-radius: 50%; background: var(--c-live); /* W790：运行态=活动点（与会话树同色） */
@@ -131,18 +129,14 @@ body.resizing-col { cursor: col-resize; user-select: none; }
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-/* ---- 运行中插话（输入条 + 消息样式 + 轻提示） ---- */
-#inputbar.interject { box-shadow: inset 0 1px 0 var(--c-accent-ring); }
-#inputbar.interject #input {
-  border: 1px solid var(--c-border-strong);
-  background: var(--c-surface);
-}
-#inputbar.interject::before {
-  content: '插话';
-  position: absolute; margin-top: -2px; margin-left: 8px;
-  font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px;
-  color: var(--c-text-3);
-}
+/* ---- 运行中插话（**只剩消息样式与轻提示**） ----
+   W1466：输入条本身**不再随运行态变化**（用户：「发完消息，输入框又变成了图片所示，
+   噪声很大，不应该有变化才对」）。W514 时代的三条装饰 —— #inputbar 的内阴影线、
+   #inputbar #input 的描边 + 底色、::before 的「插话」伪标签 —— 都写在 W1297 扁平化
+   之前，会在发送后把刚合并好的扁平大框重新拆回「一个框里套一个小框」。三条已删除：
+   idle 与 interject 两态下 #input 的 border/background 声明逐条相同，由
+   tests/w1297-composer-flat.test.ts 的 W1466 门禁机械守住（只改 class 不加样式）。
+   运行态的可辨识形态改由**消息气泡**承担（见下一条），与输入条无关。 */
 #inputbar.readonly #input { opacity: .85; }
 .msg.user.interject .bubble {
   border: 1px solid var(--c-border-strong);

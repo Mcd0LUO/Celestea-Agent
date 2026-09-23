@@ -61,7 +61,12 @@ describe("W795 ②③ 权限面板：授予 / 撤销的当帧终态与失败回�
       if (method === "POST" && u.endsWith("/grants")) atRequest = badgeOf("network");
     };
     click(confirmOk());
-    await flush(4); // 请求已发出、仍在飞
+    // W896（flake 修复）：原来是 await flush(4)。flush 只泵 4 个宏任务，机器有负载时
+    // POST 还没发出，atRequest 仍是 ""，断言就随机变红（复现到的真实报错：expected '' to be ...）。
+    // 等**观察点真的发生**：onRequest 被调用即证明请求已发出，此时读到的界面就是「请求发出那一刻」。
+    await vi.waitFor(() => {
+      expect(atRequest, "请求必须已经发出（观察点成立）").not.toBe("");
+    }, { timeout: 5_000 });
 
     expect(atRequest, "请求发出的那一刻，界面就必须已经是终态").toBe("已授予 · 永久");
     expect(badgeOf("network")).toBe("已授予 · 永久");
@@ -73,7 +78,11 @@ describe("W795 ②③ 权限面板：授予 / 撤销的当帧终态与失败回�
   it("② 撤销：点下去当帧即按「已撤销」画（请求挂起也照样是终态）", async () => {
     click(el("slGrant"));
     await grantViaUi("network");
-    expect(badgeOf("network")).toBe("已授予 · 永久");
+    // W896：grantViaUi 内部是固定 flush；等终态真的画出来再进入下一步，避免在负载下
+    // 读到中间态（复现到的真实报错：expected '已授予 · 永久' to be '未授予'）。
+    await vi.waitFor(() => {
+      expect(badgeOf("network")).toBe("已授予 · 永久");
+    }, { timeout: 5_000 });
     expect(shieldBadge()).toBe("1");
 
     stub.revokeHang = true; // 撤销请求挂起
@@ -91,6 +100,10 @@ describe("W795 ②③ 权限面板：授予 / 撤销的当帧终态与失败回�
     click(el("slGrant"));
     await grantViaUi("network");
 
+    // W896：等回滚链跑完（失败提示出现）再看终态，别猜宏任务数。
+    await vi.waitFor(() => {
+      expect(note()).toContain("放宽失败");
+    }, { timeout: 5_000 });
     expect(badgeOf("network")).toBe("未授予");
     expect(btnWith("network", "授予")).not.toBeNull();
     expect(btnWith("network", "撤销")).toBeNull();
@@ -109,10 +122,13 @@ describe("W795 ②③ 权限面板：授予 / 撤销的当帧终态与失败回�
     // W887d：撤销失败的回滚是异步的（api.revokeCap → catch → setPanelNote）。固定
     // flush(n) 只是泵 n 个宏任务，不保证这条链已跑完（多一跳就读到旧文本）。等目标
     // 条件本身成立（事件驱动轮询），而不是猜一个宏任务数。
+    // W896：vi.waitFor 的默认超时是 1000ms —— 6 路 CPU 争用下实测不够（真报错：等到超时
+    // 仍读到上一帧文案 '已放宽：访问网络…'）。本文件其它 waitFor 一律显式给 5s，这里补齐；
+    // 它是「等条件成立」的上限，不是 sleep，正常路径立即返回。
     await vi.waitFor(() => {
       expect(note()).toContain("撤销失败");
       expect(note()).toContain("服务暂时不可用");
-    });
+    }, { timeout: 5_000 });
 
     expect(badgeOf("network")).toBe("已授予 · 永久");
     expect(btnWith("network", "撤销")).not.toBeNull();
@@ -143,14 +159,21 @@ describe("W795 ②④ 快捷授权多步 / 竞态快照 / 事件路径", () => {
         atFailure = badgeOf("network") + " | " + badgeOf("net_hosts"); // 权威快照回来之前的这一帧
       }
     };
-    await flush(6);
-
-    expect(atStep2).toBe("已授予 · 永久 | 已授予 2 项");
+    // W896（flake 修复）：这里原来是 await flush(6) —— flush(n) 只泵 n 个宏任务，
+    // 机器有负载时这条多步链（POST network → POST net_hosts → 失败 → GET 快照）可能还没走到
+    // 观察点，于是 atStep2/atFailure 仍是 "" 而断言失败。改成等**目标条件本身**成立
+    // （与本文件 ③ 的 vi.waitFor 同一修法）：既消除 flake，也顺带把「观察点确实发生过」
+    // 从隐含假设变成显式断言 —— 否则即使链没跑，断言也可能空过。
+    await vi.waitFor(() => {
+      expect(atStep2, "第 2 步 POST 发出时的那一帧必须被观察到").toBe("已授予 · 永久 | 已授予 2 项");
+    }, { timeout: 5_000 });
     // 这一帧发生在服务端快照回来之前 ⇒ 结论只可能来自「失败项单独回滚」
-    expect(atFailure, "失败项已回滚、已成功项仍保持").toBe("已授予 · 永久 | 未授予");
+    await vi.waitFor(() => {
+      expect(atFailure, "失败项已回滚、已成功项仍保持").toBe("已授予 · 永久 | 未授予");
+    }, { timeout: 5_000 });
+    await vi.waitFor(() => { expect(note()).toContain("快捷授权中断"); }, { timeout: 5_000 });
     expect(badgeOf("network"), "已成功的那一步必须保持已授予").toBe("已授予 · 永久");
     expect(badgeOf("net_hosts"), "只有失败的那一步回滚").toBe("未授予");
-    expect(note()).toContain("快捷授权中断");
     expect(note()).toContain("已成功：访问网络");
     expect(panelText()).not.toMatch(/正在|进行中|加载中/);
   });
@@ -161,15 +184,23 @@ describe("W795 ②④ 快捷授权多步 / 竞态快照 / 事件路径", () => {
     // 已授予 → 未授予 → 已授予的闪回。乐观项的「请求结束时刻」与「快照发起时刻」比先后即可避免。
     stub.grantHangCaps.add("network");
     click(el("slGrant"));
+    // W896（flake 修复）：面板行来自 openPanel 的异步 refresh，固定 flush 在负载下可能
+    // 还没画出行就点了个 null（点击静默无效，后面才失败）。等**目标元素存在**再点。
+    await vi.waitFor(() => {
+      expect(btnWith("network", "授予"), "面板行必须先画出来").not.toBeNull();
+    }, { timeout: 5_000 });
     click(btnWith("network", "授予"));
-    await flush(2);
+    await vi.waitFor(() => { expect(confirmOk()).not.toBeNull(); }, { timeout: 5_000 });
     click(confirmOk());
-    await flush(4);
-    expect(badgeOf("network")).toBe("已授予 · 永久");
+    await vi.waitFor(() => {
+      expect(badgeOf("network")).toBe("已授予 · 永久");
+    }, { timeout: 5_000 });
 
     click(el("slGrant")); // 收起
     click(el("slGrant")); // 再打开 → openPanel 会 await refresh(true)（真实并发快照）
-    await flush(6);
+    // 等这次并发快照真的跑完（行重新出现即快照已应用），再断言乐观项没被带走；
+    // 否则固定 flush 可能早于快照完成，断言会空过（假绿）。
+    await vi.waitFor(() => { expect(rowOf("network")).not.toBeNull(); }, { timeout: 5_000 });
     expect(badgeOf("network"), "在飞的乐观项不该被竞态快照带走").toBe("已授予 · 永久");
     expect(shieldBadge()).toBe("1");
   });
@@ -180,7 +211,9 @@ describe("W795 ②④ 快捷授权多步 / 竞态快照 / 事件路径", () => {
     // （改用事件路径 composedPath() 后不再是问题）。
     click(el("slGrant"));
     await grantViaUi("network");
-    expect(badgeOf("network")).toBe("已授予 · 永久");
+    await vi.waitFor(() => {
+      expect(badgeOf("network")).toBe("已授予 · 永久");
+    }, { timeout: 5_000 });
 
     stub.revokeHang = true; // 请求挂着：只看这一帧的界面
     click(btnWith("network", "撤销"), true); // ← 冒泡，与真人点击一致

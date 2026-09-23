@@ -123,7 +123,8 @@
   --fs-secondary: 13px; /* 次级正文：思考正文 / 折叠行标题 */
   --lh-secondary: 20px;
   --card-radius: var(--r-lg); /* 卡片圆角：工具卡 / 信息块（= --r-lg） */
-  --card-gutter: 30px; /* 工具卡左侧 gutter：运行状态点独占列 */
+  /* W1468：--card-gutter 已删 —— 工具卡改为文字级后不再有 gutter 列，
+     状态点回到 .toolcard-row1 的行内流（旧值 30px 及 responsive 的两处覆盖一并移除）。 */
   --code-lh: 18px; /* 等宽正文行高 */
 
   --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.09);
@@ -135,17 +136,24 @@
   --drawer-w: min(86vw, 320px); /* 移动端会话抽屉宽度 */
   --safe-b: env(safe-area-inset-bottom, 0px); /* iOS 底部安全区（viewport-fit=cover） */
 
-  /* 代码高亮 token 灰阶 */
-  --hl-comment: #888;
-  --hl-keyword: #222;
-  --hl-string: #444;
-  --hl-number: #333;
-  --hl-title: #111;
-  --hl-attr: #555;
-  --hl-builtin: #444;
-  --hl-literal: #222;
-  --hl-meta: #666;
-  --hl-type: #333;
+  /*
+   * 代码高亮 token（浅色底 #f4f4f4）。
+   *
+   * W895-C：此前是**灰阶**（--hl-title 与正文 --c-text-1 同为 #111 ⇒ 完全不可辨），
+   * 实测「高亮生效了但看不见」。用户裁决给**代码**上色（界面其余部分保持单色）。
+   * 取值用 GitHub Light 那套 —— 在浅底上经过大量验证的可读性；不引入任何依赖，
+   * 仍是纯 token，主题切换与「零新依赖」验收项都不受影响。
+   */
+  --hl-comment: #6a737d;
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-number: #0550ae;
+  --hl-title: #8250df;
+  --hl-attr: #0550ae;
+  --hl-builtin: #953800;
+  --hl-literal: #0550ae;
+  --hl-meta: #6639ba;
+  --hl-type: #116329;
 
   /* ==========================================================================
    * W12 三层 token：static（--s-*，见 :root）→ alias（本段）→ specific（本段末）。
@@ -236,6 +244,19 @@
   --s-red-600: #f87171;
   --bg-layer-2: rgba(255, 255, 255, 0.06);
   --bg-code: #1a1a1a;
+
+  /* W895-C：深色底 #1a1a1a 的代码配色（GitHub Dark）。此前 dark 未覆盖 --hl-*，
+     会沿用浅色值 —— 浅底可读的深色 token 落在深底上等于不可读。 */
+  --hl-comment: #8b949e;
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-attr: #79c0ff;
+  --hl-builtin: #ffa657;
+  --hl-literal: #79c0ff;
+  --hl-meta: #d2a8ff;
+  --hl-type: #7ee787;
   --interactive-accent: #ededed;
   --interactive-accent-strong: #ffffff;
   --interactive-accent-soft: rgba(255, 255, 255, 0.08);

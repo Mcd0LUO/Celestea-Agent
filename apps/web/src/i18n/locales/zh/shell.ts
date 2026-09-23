@@ -110,7 +110,9 @@ export const shell = {
   'shell.sessions.empty': '无会话记录 · 点击「新会话」创建',
   'shell.status.turn': '第 {n} 轮',
   'shell.status.turnNone': '第 — 轮',
-  'shell.status.online': '就绪 · 在线',
+  // W1296：用户要求去掉消息框底部的「就绪 · 在线」。**键保留**（zh/en key 集合
+  // 一致性门禁比对键，删键会红），值为空串 ⇒ setStatus('') ⇒ #statusText:empty 收起。
+  'shell.status.online': '',
   'shell.status.reconnecting': '重连中…',
   'shell.worker.stripHint': '（点击打开该 worker 会话，可直接对它说话）',
   'shell.worker.stripTitle': '后台任务 · {n} 运行中',

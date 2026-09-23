@@ -84,7 +84,6 @@ describe('W847 W8 · 双 tooltip 防回归', () => {
     await sessions.loadSessions();
     await flush(4);
     const leaf = doc.querySelector('#sessionTree .sess-leaf') as ElLike | null;
-    expect(leaf).not.toBeNull();
     expect(leaf?.getAttribute('data-hint') ?? '').toContain('点击打开');
     expect(leaf?.getAttribute('title')).toBeNull();
     expect(Array.from(doc.querySelectorAll('[data-hint][title]')).length).toBe(0);

@@ -13,7 +13,7 @@
  */
 
 import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
-import { listSkills, memoryContextOf, readLayers, renderSkillCatalog, type Llm, type PendingInjection, type Sandbox, type SessionLog, type Tool, type ToolGuard } from "@celestea/core";
+import { listSkills, memoryContextOf, readLayers, renderSkillCatalog, type Llm, type PendingInjection, type Sandbox, type SessionEvent, type SessionLog, type Tool, type ToolGuard } from "@celestea/core";
 import { createSessionInbox, type SessionInbox, type TurnContextRow } from "@celestea/runtime";
 import {
   createLedgerLlm,
@@ -50,7 +50,7 @@ import type { FallbackWiring } from "./fallback-host.js";
 import { workerTablePath } from "./worker-table.js";
 import type { RecoveryAuditWriter } from "./recovery-audit.js";
 import type { SessionGrantsReader } from "./session-grants.js";
-import { ATTACHMENTS_DIRNAME, createAttachmentStore, type AttachmentStore } from "@celestea/tools";
+import { ATTACHMENTS_DIRNAME, createAttachmentStore, type AttachmentStore, type RunCodeEventSink } from "@celestea/tools";
 import { createImageDowngradeLlm, type ImageDowngradeInfo, type Llm as ProviderLlm } from "@celestea/llm";
 import { withAttachments } from "./attachments-llm.js";
 
@@ -189,6 +189,12 @@ export interface SessionComposerOptions {
    * (info block / statusline / audit).
    */
   onModelDowngrade?: (sessionId: string | null, info: ImageDowngradeInfo) => void;
+  /**
+   * W1467: publish one `run_code` SUB-CALL row as an SSE frame (the host owns the
+   * bus and the turn number). Absent = sub-calls are still logged, just not
+   * streamed live — a host that omits it gets the replay tree only.
+   */
+  publishRunCodeEvent?: (sessionId: string | null, event: SessionEvent) => void;
 }
 
 /** Non-negative integer from the environment, else the frozen default. */
@@ -266,6 +272,11 @@ export class SessionComposer {
     // `isLive` probe and the log write both need.
     const questionHolder: { runtime: Runtime | null } = { runtime: null };
     const questions = this.questionWiring(sessionId, questionHolder);
+    // W1467: the same late-binding trick for `run_code` sub-calls — the sink is
+    // handed to the tool assembly BEFORE `compose()` returns the log it must
+    // append to, so the runtime travels through a holder.
+    const runCodeHolder: { runtime: Runtime | null } = { runtime: null };
+    const onRunCodeEvent = this.runCodeSink(sessionId, runCodeHolder);
     const engine = enginePlugins({
       profile,
       // W791 (P1, §5.2 #2): the mode decided at compose time. The DETACHED
@@ -286,6 +297,7 @@ export class SessionComposer {
       grants: read.grants,
       ...(reader === undefined ? {} : { audit: reader.audit(sessionId) }),
       env: this.opts.env,
+      ...(onRunCodeEvent === undefined ? {} : { onRunCodeEvent }),
     });
     // After the boundary is built: audit the generation and spend one-shots, so
     // THIS turn keeps its grants and the next one sees the consumption.
@@ -325,7 +337,45 @@ export class SessionComposer {
     // W783: bind the just-composed runtime into the question wiring, so
     // `isLive` and the `user_question` log row address THIS generation.
     questionHolder.runtime = composed;
+    runCodeHolder.runtime = composed; // W1467: same late binding for sub-call rows
     return composed;
+  }
+
+  /**
+   * W1467: the `run_code` sub-call sink of ONE session generation.
+   *
+   * Two halves, and BOTH are required for the feature to be coherent:
+   *   · append the row to this session's log — the row carries `parent_id`, the
+   *     Studio projection turns it into `tool_parent_id`
+   *     (`packages/session/src/messages.ts`), and a refresh replays the tree;
+   *   · publish it on this session's bus — without the live half the streamed
+   *     view would render a flat top-level card and a refresh would indent it,
+   *     which is precisely the live/replay divergence this repo forbids.
+   *
+   * Best-effort by construction, like every other frame and row on this path: a
+   * released generation drops the frame (the W794 rule) and a log that refuses
+   * the write already reports itself through the log's degraded channel — a
+   * sub-call row is audit-only and must never break the program that made it.
+   *
+   * Returns undefined when the host wired no publisher, so the tool assembly can
+   * skip mounting the sink entirely (byte-identical pre-W1467 behaviour).
+   */
+  private runCodeSink(
+    sessionId: string | null,
+    holder: { runtime: Runtime | null },
+  ): RunCodeEventSink | undefined {
+    const publish = this.opts.publishRunCodeEvent;
+    if (publish === undefined) return undefined;
+    return (event: SessionEvent): void => {
+      const runtime = holder.runtime;
+      if (runtime === null || runtime.isReleased) return;
+      try {
+        runtime.session.append(event);
+      } catch {
+        /* audit-only row: the log's own degraded channel reports the failure */
+      }
+      publish(sessionId, event);
+    };
   }
 
   /**

@@ -106,29 +106,30 @@
    W764：对齐 DSH Web 客户端的 TerminalBlock —— 12px 圆角 + code-block 表面、
    banner padding 9px 14px、等宽 12/18、运行状态点独占 30px gutter 列、状态用 Pill、
    banner 与正文之间 0.5px 发丝线（运行中只有 banner，不画线）。 ---- */
-.toolcards { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.toolcards { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+/* W1468：工具卡改为**文字级**（用户：「工具块太大了，改为文字级大小，无块边界」）。
+   原先它是一张 code-block 表面的卡（--c-code-bg 底 + --r-card 圆角 + 30px gutter 内缩），
+   视觉重量远大于正文。现在底色 / 圆角 / 边框 / gutter 全去，行高与正文同级，
+   只靠状态点 + 名称 + 状态文本 + 折叠 chevron 区分。 */
 .toolcard {
   position: relative;
-  /* gutter 是卡片自己的内边距（不是 margin）：状态点的位置与参数/命令的左缘由同一个
-     变量决定，任何一处改 margin 都不会把它们拆开（TerminalBlock 的教训） */
-  padding-left: var(--card-gutter);
-  background: var(--c-code-bg);
-  border-radius: var(--r-card);
-  overflow: hidden;
-  font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
+  font-family: var(--mono); font-size: var(--fs-secondary); line-height: var(--lh-secondary);
 }
 /* banner：先跨回 gutter 通铺整张卡，再按同量重新内缩（TerminalBlock .header） */
 .toolcard > summary.toolcard-head {
   cursor: pointer; user-select: none; list-style: none;
-  margin-left: calc(-1 * var(--card-gutter));
-  padding: 9px 14px 9px var(--card-gutter);
-  border-top-left-radius: var(--r-card);
-  border-top-right-radius: var(--r-card);
-  max-height: 150px; overflow-y: auto;
+  padding: 1px 0;
+  /* W1469（真机报障「展开的时候会晃动」的根因）：这里原本只写 overflow-y: auto，
+     而按 CSS 规范，另一轴是 visible 时会**计算成 auto** —— 于是折叠行也带上了横向
+     滚动。展开后 .toolcard-row1 的 width:100% 出现 1~2px 亚像素取整溢出
+     （真机实测 scrollWidth 670→671→672），浏览器随即冒出一条 10px 横向滚动条，
+     头部 22→32px、下方内容整体下移 10px —— 就是那「一瞬间的滑动条」。
+     折叠行是**单行摘要**（名称本身已 text-overflow: ellipsis），永远不该横向滚动：
+     显式 overflow-x: hidden 关掉它，纵向仍保留 auto 以防超长行。 */
+  max-height: 150px; overflow-x: hidden; overflow-y: auto;
 }
 .toolcard > summary.toolcard-head::-webkit-details-marker { display: none; }
-/* 运行中卡片只有 banner → 不画分隔线；其余画 0.5px 发丝线 */
-.toolcard:not(.running) > .toolcard-head { border-bottom: 0.5px solid var(--c-hairline-l2); }
+/* W1468：banner 与正文之间不再画发丝线（无块边界）。 */
 .toolcard-head {
   /* W778：折叠态 = 单行（第 N 步 + desc/工具名 + 状态 + 复制 + 折叠指示） */
   display: flex; align-items: center; gap: 3px;
@@ -178,9 +179,8 @@
 .toolcard-state {
   margin-left: auto; flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: 4px;
-  height: var(--row-h); padding: 0 8px; border-radius: var(--r-badge);
-  font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
-  color: var(--c-text-2); background: var(--c-layer-2);
+  font-family: var(--mono); font-size: var(--fs-secondary); line-height: var(--lh-secondary);
+  color: var(--c-text-2);
 }
 .toolcard.ok .toolcard-state { color: var(--c-ok); }
 .toolcard.err .toolcard-state, .toolcard.deny .toolcard-state { color: var(--c-err); }
@@ -201,15 +201,15 @@
 /* 参数 / 结果正文：等宽 pre、不换行、横向滚动（TerminalBlock .output）；
    滚动条浮在圆角外侧：transparent 2px border + padding-box */
 .tool-args, .tool-out {
-  margin: 0; padding: 12px 14px 12px 0;
+  margin: 0; padding: 2px 0 2px calc(var(--lead-box) + var(--lead-gap));
   color: var(--c-text-2); background: none;
   font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
   white-space: pre; overflow-x: auto; overflow-y: auto;
   max-height: 260px;
 }
-.tool-out { color: var(--c-text-1); border-top: 0.5px solid var(--c-hairline-l2); }
+.tool-out { color: var(--c-text-1); }
 /* W778：结果预览在展开区内，和结果全文一起与参数区分隔 */
-.toolcard-result-preview.has { border-top: 0.5px solid var(--c-hairline-l2); margin-top: 2px; }
+.toolcard-result-preview.has { margin-top: 2px; }
 .tool-out.err-c { color: var(--c-err); }
 .toolcard-head::-webkit-scrollbar-thumb,
 .tool-args::-webkit-scrollbar-thumb,
@@ -284,6 +284,26 @@
 .rendered .code-fold { position: absolute; bottom: 6px; right: 6px; font-size: 11px; padding: 2px 8px; line-height: 1.4; }
 .rendered pre.code-folded { max-height: 22em; overflow-y: hidden; }
 .rendered pre .cl { display: block; }
+/*
+ * W895-C：行号。
+ *
+ * 用 CSS counter 画在 `.cl` 的 **::before** 上，而不是插真文本节点 ——
+ * 伪元素不进 `textContent`，所以「复制」按钮读 textContent 时不会带上行号；
+ * `user-select: none` 再挡住拖选。`.cl` 由 code-extras 切行时产生，
+ * 组件关掉就没有 `.cl`，行号自然也不存在（与开关语义一致）。
+ */
+.rendered pre code { counter-reset: cl-line; }
+.rendered pre .cl::before {
+  counter-increment: cl-line;
+  content: counter(cl-line);
+  display: inline-block;
+  min-width: 2ch;
+  margin-right: .6em;
+  text-align: right;
+  color: var(--c-text-3);
+  user-select: none;
+  -webkit-user-select: none;
+}
 /* 换行载体：只为了让 code.textContent 可正确复制，视觉上完全不可见。 */
 .rendered pre .cl-nl { display: none; }
 .rendered pre .cl:hover { background: var(--c-surface-raised); }
@@ -459,24 +479,25 @@
   padding: 0; background: none; border: none; border-radius: 0; color: var(--c-text-3);
 }
 .think-seg-body {
-  padding: 4px 0 4px calc(var(--lead-box) + var(--lead-gap));
+  padding: 0 0 2px calc(var(--lead-box) + var(--lead-gap));
   color: var(--c-text-3);
   font-family: var(--sans); font-size: var(--fs-secondary); line-height: var(--lh-secondary);
   white-space: pre-wrap; word-break: break-word;
-  max-height: 320px; overflow-y: auto;
 }
 
 /* 信息块（同族语言：统一圆角 + 次级层底 + 紧凑行高；保留左侧 2px 语义条做区分） */
 .msg.info .msg-caption .who { color: var(--c-text-3); }
+/* W1468：上下文注入块**只缩小**（用户：「上下文注入块只缩小」）—— 保留左侧语义条 +
+   次级层底 + 圆角这些块边界，只把内边距与行高收紧一档。 */
 .info-bubble {
   width: 100%; max-width: 100%;
-  padding: 8px 12px; border-radius: var(--r-card);
+  padding: 5px 10px; border-radius: var(--r-md);
   border-left: 2px solid var(--c-warn);
   background: var(--c-layer-2); box-shadow: none;
 }
 .msg.info.err .info-bubble { border-left-color: var(--c-err); background: var(--c-err-dim); }
 .info-content {
-  font-size: var(--fs-secondary); line-height: var(--lh-secondary);
+  font-size: 12.5px; line-height: 18px;
   color: var(--c-text-2); white-space: pre-wrap; word-break: break-word;
 }
 
@@ -520,9 +541,9 @@
 .msg.think-seg .think-head {
   position: relative; overflow: hidden;
   display: flex; align-items: center; gap: var(--lead-gap);
-  height: var(--row-h); margin: 0;
+  height: auto; margin: 0;
   padding-left: calc(var(--lead-box) + var(--lead-gap));
-  font-family: var(--sans); font-size: var(--fs-secondary); line-height: var(--row-h);
+  font-family: var(--sans); font-size: var(--fs-secondary); line-height: var(--lh-secondary);
   color: var(--c-text-2);
   cursor: pointer; user-select: none;
 }
@@ -583,15 +604,18 @@
   margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--c-text-3);
   font-variant-numeric: tabular-nums;
 }
+/* W1468：折叠提示住在头行之内（不再是独占一行的第二行）。折叠一个思考段因此只占
+   **一行**文字 —— 与工具卡同级；提示文本仍是状态的可读来源（桌面端 chevron 是 hover
+   才淡入，不能只靠它）。窄屏先省略提示，标题与时长仍在。 */
 .think-seg-folded {
   display: none;
-  padding: 2px 0 2px calc(var(--lead-box) + var(--lead-gap));
-  font-size: 12px; line-height: var(--lh-secondary); color: var(--c-text-3);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; line-height: var(--lh-secondary); color: var(--c-text-3);
 }
 /* 折叠态挂在 .msg.think-seg 本身（W752 修：此前 live 把类挂在 .mcol 根上，
    这两条选择器永不命中 → 点了没反应、永远展开）。 */
 .msg.think-seg.collapsed .think-seg-body { display: none; }
-.msg.think-seg.collapsed .think-seg-folded { display: block; }
+.msg.think-seg.collapsed .think-seg-folded { display: inline; }
 
 /* 运行状态点（StateDot）：::before 同色 0.10 光晕 + ::after（inset 20%）实心核；
    四态取色沿用本仓灰阶语义色（ok/warn/err/idle）；进行中用 chase 离散步进。 */
@@ -608,8 +632,7 @@
   25%, 37.4% { opacity: .35; }
   37.5%, 100% { opacity: .15; }
 }
-/* 状态点独占卡片 gutter 列：绝对定位出流，不挤占参数/命令宽度（TerminalBlock .runState） */
-.toolcard-row1 .ts-dot {
-  position: absolute; left: calc(-1 * var(--card-gutter) + 8px); top: 50%;
-  transform: translateY(-50%);
-}
+/* W1468：卡片不再有 gutter 列 ⇒ 状态点回到行内流（.toolcard-row1 本就是 flex + gap）。
+   必须保留 .ts-dot 自身的 position: relative（基类规则）——它的 ::before/::after 用 inset: 0
+   画光晕与实心核；定位上下文一旦落到 .toolcard（position: relative），两层伪元素会被
+   拉伸成整卡宽的一条深色横条（真机实测踩过）。所以这里只去掉绝对定位，不改 position。 */

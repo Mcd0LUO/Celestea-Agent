@@ -132,6 +132,9 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      // 覆盖率产物（test:coverage 生成）：HTML 报表里的 assets/*.js 是第三方运行时，
+      // 不是本仓源码；lint 它们只会产生噪声。
+      "coverage/**",
       // W886: worker worktrees live at <repo>/.worktrees/<wid>. Each is a full
       // checkout of this repo; linting them from the main worktree would grade a
       // worker's in-progress code and duplicate every finding.

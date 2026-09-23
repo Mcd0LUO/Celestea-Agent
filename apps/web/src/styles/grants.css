@@ -20,7 +20,8 @@
   height: 18px;
   padding: 0;
   background: transparent;
-  border: 1px solid var(--c-border-subtle);
+  /* W1297：扁平化 —— 去掉描边，盾牌只以图标/状态色区分。 */
+  border: none;
   border-radius: var(--r-sm);
   color: var(--c-grant-idle);
   cursor: pointer;
@@ -35,7 +36,6 @@
 }
 .sl-grant:hover {
   background: var(--c-accent-soft);
-  border-color: var(--c-accent-ring);
 }
 .sl-grant:focus-visible {
   outline: 1px solid var(--c-accent-ring);
@@ -44,7 +44,6 @@
 /* 已授予：橙实心盾 */
 .sl-grant.granted {
   color: var(--c-grant);
-  border-color: var(--c-grant);
 }
 .sl-grant.granted svg path {
   fill: var(--c-grant);

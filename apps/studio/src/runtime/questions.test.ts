@@ -87,7 +87,6 @@ describe("W783 · the answer resolves the parked tool call (never a message)", (
     const id = await waitForQuestion(h);
     // The frame the UI needs, validated against the frozen SSE contract.
     const frame = frames.find((f) => f.event === "question");
-    expect(frame).toBeDefined();
     expect(frame?.payload["id"]).toBe(id);
     expect(frame?.payload["session"]).toBe("sample-ws/s1");
     expect(loadSse().events.map((e) => e.name)).toContain("question");
@@ -144,8 +143,13 @@ describe("W783 · the answer resolves the parked tool call (never a message)", (
 });
 
 describe("W783 · the maximum wait (§6)", () => {
+  // W896: the wait values below were 3000/3000/1500ms — arbitrary picks, not boundaries.
+  // The real boundaries (clamp to 1ms / MAX) are covered by their own cases; these three
+  // only need "the timer fires and settles the parked call", so 1000ms keeps the same
+  // coverage while cutting ~4.5s of pure sleeping from the gate. The read-time assertions
+  // below still have ~1s of margin before expiry.
   it("returns {answers:[],timed_out:true} and does NOT decide for the model", async () => {
-    const h = asker(OPTIONS, 3000);
+    const h = asker(OPTIONS, 1000);
     await activate(h, "sample-ws/s1");
     const turned = await h.app.request("/api/turn", jsonRequest("POST", { input: "问一下", session: "sample-ws/s1" }));
     expect(turned.status).toBe(202);
@@ -174,7 +178,7 @@ describe("W783 · the maximum wait (§6)", () => {
   }, 20_000);
 
   it("the question is gone from the recovery list once settled, and answering late is refused", async () => {
-    const h = asker(OPTIONS, 3000);
+    const h = asker(OPTIONS, 1000);
     await activate(h, "sample-ws/s1");
     await h.app.request("/api/turn", jsonRequest("POST", { input: "问一下", session: "sample-ws/s1" }));
     const id = await waitForQuestion(h);
@@ -194,13 +198,13 @@ describe("W783 · the maximum wait (§6)", () => {
   }, 20_000);
 
   it("honours the caller's timeout_ms instead of the default", async () => {
-    const h = asker(OPTIONS, 1500);
+    const h = asker(OPTIONS, 1000);
     await activate(h, "sample-ws/s1");
     await h.app.request("/api/turn", jsonRequest("POST", { input: "问一下", session: "sample-ws/s1" }));
     const id = await waitForQuestion(h);
     const list = (await (await h.app.request("/api/questions")).json()) as { questions: Array<Record<string, unknown>> };
     expect(list.questions[0]?.["id"]).toBe(id);
-    expect(list.questions[0]?.["timeout_ms"]).toBe(1500);
+    expect(list.questions[0]?.["timeout_ms"]).toBe(1000);
     await waitIdleOf(h, 10_000);
   }, 20_000);
 
@@ -213,7 +217,6 @@ describe("W783 · the maximum wait (§6)", () => {
     const service = createUserQuestionService({ registry, bus: createEventBus(), sessionId: "sample-ws/s1", now: () => now });
     const asked = service.ask({ questions: OPTIONS, timeoutMs: 0.5 });
     const question = service.pending()[0];
-    expect(question).toBeDefined();
     expect(question?.timeoutMs).toBe(1);
     expect(question?.expiresAt).toBe(now + 1);
     expect(question?.expiresAt).toBeGreaterThanOrEqual(now + 1);

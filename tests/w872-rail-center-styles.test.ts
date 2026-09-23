@@ -7,7 +7,7 @@
  *      这里对 rail.css 再钉一遍）；
  *   ③ 命中条 .is-center **只改颜色/描边**：规则块里不得出现任何几何属性
  *      （width/height/top/left/right/bottom/margin/padding/transform/inset），
- *      这是「与 fisheye 宽度解耦」的机械证据（行为侧另见 w872-rail-center.test.ts ④）。
+ *      这是「与 fisheye 宽度解耦」的机械证据（行为侧另见 rail-center.test.ts ④）。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

@@ -17,6 +17,7 @@ import {
   ImageUnsupportedError,
   isImageUnsupportedBody,
   isImageUnsupportedError,
+  LlmError,
   OpenAiCompatClient,
   type ImageRef,
   type ModelRequestDraft,
@@ -110,7 +111,10 @@ describe("400 classification (stage 3, section 7.6)", () => {
 
   it("builds an ImageUnsupportedError that is an LlmError with httpStatus 400", () => {
     const err = new ImageUnsupportedError(400, "400 Bad Request", "multimodal input is not supported");
-    expect(err).toBeInstanceOf(ImageUnsupportedError);
+    // `new X() instanceof X` is a tautology; the promise is the BASE class and the
+    // discriminant the rest of the code switches on.
+    expect(err).toBeInstanceOf(LlmError);
+    expect(err.imageUnsupported).toBe(true);
     expect(isImageUnsupportedError(err)).toBe(true);
     expect(err.httpStatus).toBe(400);
     expect(err.retryable).toBe(false);

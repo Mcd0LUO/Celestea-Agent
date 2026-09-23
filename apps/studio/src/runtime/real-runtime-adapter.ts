@@ -63,7 +63,7 @@ import { costBlockView, usageLedgerView } from "./ledger-view.js";
 import { join } from "node:path";
 import { CapacityError, EngineError, toolSpecView, type PendingQuestionView, type QuestionAnswerOutcome } from "../runtime-adapter.js";
 import { HostAutowake, autowakeLog, autowakeStateOf } from "./host-autowake.js";
-import { injectionHooksOf, type SessionInjectionHooks } from "./session-publisher.js";
+import { injectionHooksOf, publishSubCall, type SessionInjectionHooks } from "./session-publisher.js";
 import { sessionContextOf } from "./context-snapshot.js";
 import { mergedWorkerRows, sendWorkerThrough, spawnWorkerThrough, workerMessagesAcross } from "./worker-bridge.js";
 import type {
@@ -206,7 +206,6 @@ class RealEngine implements RealRuntimeAdapter {
     turnOf: (sessionId) => this.registry.peek(sessionId)?.turnNo ?? 0,
   });
 
-
   constructor(opts: RealRuntimeAdapterOptions = {}) {
     // W863: these two assignments share one line on purpose — this file sits
     // exactly on the eslint 400-code-line budget and the downgrade reporter
@@ -236,7 +235,8 @@ class RealEngine implements RealRuntimeAdapter {
       // W783: every composed session offers `ask_user_question` and publishes a
       // parked request on the bus as a `question` frame.
       questionRegistry: this.questions.table(),
-      publishQuestion: (sessionId, question) => this.questions.publish(sessionId, question),
+      // W1467: the sub-call publisher shares this line for the same 400-line reason.
+      publishQuestion: (sessionId, q) => this.questions.publish(sessionId, q), publishRunCodeEvent: (sid, e) => publishSubCall(sid, e, this.bus, (s) => this.registry.peek(s)?.turnNo ?? 0),
       // W804 section 7.6: the downgrade visibility is the HOST's job. The default
       // emits a status frame (statusline + info block) and an audit line; a host
       // may override it. W863: that default is now deduplicated per session by

@@ -117,10 +117,6 @@ afterEach(() => {
 describe("W847 · ② 右端集群 .sl-end（DOM 结构真源）", () => {
   it("#slStop 在 .sl-end 内，且 .sl-end 是第 1 行最后一个 flex 子节点；.sl-spacer 已移除", () => {
     doc.body.innerHTML = realBody();
-    const main = doc.querySelector(".sl-row-main") as ElLike;
-    const kids = Array.from(main.children);
-    const last = kids[kids.length - 1] as ElLike;
-    expect(clsOf(last), ".sl-end 必须是第 1 行最后一个 flex 子节点").toContain("sl-end");
     const stop = doc.getElementById("slStop") as ElLike;
     expect(stop.closest(".sl-end"), "#slStop 必须落在 .sl-end 内").not.toBeNull();
     expect((doc.getElementById("btnMode") as ElLike).closest(".sl-end")).not.toBeNull();

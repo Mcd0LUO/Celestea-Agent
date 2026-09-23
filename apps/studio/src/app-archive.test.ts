@@ -116,7 +116,6 @@ describe("W791 archived session listing (?archived=1)", () => {
     const restored = await getJson(h.app, `/api/sessions/${encodeURIComponent(sid)}/unarchive`, jsonRequest("POST"));
     expect(restored.body).toEqual({ ok: true });
     const after = (await sessions(h)).rows.find((r) => r["id"] === sid) as Row;
-    expect(after).toBeDefined();
     expect(after["archived"]).toBeUndefined();
     // Byte-identical to the row it had before it was archived.
     expect(after).toEqual(live);

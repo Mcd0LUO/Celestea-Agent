@@ -47,6 +47,14 @@ export const EXIT_GRACE_MS = 2_000;
  * to the reader). A wedged write is a wall-clock failure: kill + code=timeout.
  */
 export const STDIN_WRITE_TIMEOUT_MS = 5_000;
+/**
+ * W896: the value above is the *default*; the effective one rides on
+ * [RunCodeConfig] so a test can shrink it. Before this, the only way to exercise
+ * "the child stopped reading stdin" was to wait out the real 5s — which is why
+ * that case cost 7.6s in the gate. Making the knob explicit does not weaken the
+ * production path: nothing overrides it outside tests, so the shipped value is
+ * still 5s.
+ */
 /** Env var: default whole-run wall clock in ms (clamped to [1, 120000]). */
 export const ENV_RUN_CODE_TIMEOUT_MS = "CELAESTEA_RUN_CODE_TIMEOUT_MS";
 
@@ -60,6 +68,8 @@ export interface RunCodeConfig {
   maxSubOutputBytes: number;
   /** Program stdout/stderr log budget in bytes. */
   maxLogBytes: number;
+  /** Bound on ONE protocol reply reaching the child's stdin (default 5s). */
+  stdinWriteTimeoutMs: number;
 }
 
 /** Defaults: 120s wall clock, 20 sub-calls, 256KiB sub-call output, 64KiB logs. */
@@ -69,6 +79,7 @@ export function runCodeConfig(overrides: Partial<RunCodeConfig> = {}): RunCodeCo
     maxSubCalls: overrides.maxSubCalls ?? MAX_SUB_CALLS,
     maxSubOutputBytes: overrides.maxSubOutputBytes ?? MAX_SUB_OUTPUT_BYTES,
     maxLogBytes: overrides.maxLogBytes ?? MAX_LOG_BYTES,
+    stdinWriteTimeoutMs: overrides.stdinWriteTimeoutMs ?? STDIN_WRITE_TIMEOUT_MS,
   };
 }
 

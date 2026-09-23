@@ -14,9 +14,10 @@
  * changed — only where it is written down.
  */
 
-import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
-import type { InjectionPlacement, PendingInjection } from "@celestea/core";
+import { createSessionInbox, subCallFrame, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
+import type { InjectionPlacement, PendingInjection, SessionEvent } from "@celestea/core";
 import { inboxMessageOf } from "./inbox-message.js";
+import type { StudioBus } from "../sse.js";
 
 /**
  * The session hooks the composer consumes (inbox + observed boundaries).
@@ -65,4 +66,29 @@ export function injectionHooksOf(sessionId: string | null, deps: PublisherDeps):
       for (const message of messages) publish("context", inboxMessageOf(message as InjectedMessage), boundary);
     },
   };
+}
+
+/**
+ * W1467: one `run_code` SUB-CALL row as an SSE frame on its session.
+ *
+ * A sub-call never becomes a `LoopEvent` (the program's `tools.read_file(...)`
+ * bridge is dispatched by the broker, not by the agent loop), so this frame is
+ * host-emitted exactly like the `question` frame above — which is why it lives
+ * here rather than in the adapter. The payload is built by the runtime's own
+ * `subCallFrame`, the module that owns every frozen payload, so the live frame
+ * and the replayed one come from ONE builder and cannot drift.
+ *
+ * A row that is not a sub-call publishes nothing: the enclosing `run_code` call
+ * already has its own frame from the agent loop, and publishing it twice would
+ * render two identical cards.
+ */
+export function publishSubCall(
+  sessionId: string | null,
+  event: SessionEvent,
+  bus: StudioBus | null | undefined,
+  turnOf: (sessionId: string | null) => number,
+): void {
+  const frame = subCallFrame(event);
+  if (frame === null) return;
+  bus?.emit(frame.event, turnOf(sessionId), frame.payload, sessionId);
 }

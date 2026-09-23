@@ -32,7 +32,6 @@ describe("W824 W812-P0-4/A1: IPv4-mapped IPv6", () => {
     expect(policy.active).toBe(true);
     expect(await policy.checkUrl("http://169.254.169.254/")).not.toBeNull();
     const checked = await policy.resolveChecked("http://[::ffff:169.254.169.254]/");
-    expect(checked.reason).not.toBeNull();
     expect(checked.reason).toContain("deny list");
     expect(checked.ips).toEqual([]);
   });

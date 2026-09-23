@@ -349,7 +349,6 @@ live("W805 · 多模态附件对真实 3777 的端到端", () => {
       expect(res.turn).toBe(1);
       expect(seen).toContain("/api/turn"); // 确实是前端 api 层发的
       const row = await waitAttachment(id, 60000);
-      expect(row, "消息里必须出现附件引用").not.toBeNull();
       expect(row?.content).toBe("看这张图");
       expect(row?.attachments?.[0]).toMatchObject({
         attachment_id: SHA,

@@ -21,6 +21,7 @@ import {
   limitsFromEnv,
   NPROC_FLOOR,
   NPROC_HEADROOM,
+  refreshNproc,
   type SandboxLimits,
 } from "./limits.js";
 import { applyLimits, ulimitScript } from "./rlimit.js";
@@ -60,6 +61,43 @@ describe("deriveNproc", () => {
   it("stays strictly above a busy UID (the W274 failure mode)", () => {
     // nproc <= threads makes bwrap unable to fork its own pid 1 (EAGAIN).
     for (const threads of [347, 900, 1000, 1200]) expect(deriveNproc(threads)).toBeGreaterThan(threads);
+  });
+});
+
+describe("W1465 refreshNproc — the frozen-cap time bomb", () => {
+  it("re-derives nproc from a FRESH count, not the construction-time value", () => {
+    // Construction happened when the UID had 100 threads ⇒ frozen nproc = FLOOR.
+    const frozen = limitsFromEnv({}, 100);
+    expect(frozen.nproc).toBe(NPROC_FLOOR);
+    // The UID has since grown past the frozen cap (the real outage: bwrap EAGAIN).
+    const fresh = refreshNproc(frozen, {}, 1100);
+    expect(fresh.nproc, "must lead the current thread count").toBe(1100 + NPROC_HEADROOM);
+    expect(fresh.nproc).toBeGreaterThan(1100);
+    // Everything except nproc is untouched.
+    expect({ ...fresh, nproc: 0 }).toEqual({ ...frozen, nproc: 0 });
+  });
+
+  it("keeps an explicit operator override (never silently raises it)", () => {
+    const pinned: SandboxLimits = { ...DEFAULT_LIMITS, nproc: 4096 };
+    expect(refreshNproc(pinned, { [ENV_SANDBOX_NPROC]: "4096" }, 99_999).nproc).toBe(4096);
+  });
+
+  it("honours a custom headroom when re-deriving", () => {
+    const frozen = limitsFromEnv({}, 100);
+    expect(refreshNproc(frozen, { [ENV_SANDBOX_NPROC_HEADROOM]: "100" }, 5000).nproc).toBe(5100);
+  });
+
+  it("returns the SAME object when nothing changed (no needless churn)", () => {
+    const frozen = limitsFromEnv({}, 5000);
+    expect(refreshNproc(frozen, {}, 5000)).toBe(frozen);
+  });
+
+  it("the derived cap always exceeds the count it was derived from", () => {
+    // The exact invariant bwrap needs: nproc > threads, else namespace creation EAGAINs.
+    for (const threads of [100, 1024, 1038, 5000]) {
+      const cap = refreshNproc(limitsFromEnv({}, 100), {}, threads).nproc;
+      expect(cap, "threads=" + threads).toBeGreaterThan(threads);
+    }
   });
 });
 

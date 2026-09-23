@@ -233,10 +233,15 @@ export class TurnRunner {
     };
   }
 
-  /** W263口径: a step per tool CALL; deltas feed the rate window. */
+  /**
+   * W263口径: a step per tool CALL; deltas feed the rate window.
+   * W1467: the delta TEXT goes in (not its length) — the tracker measures it with
+   * the shared token estimator, which is what makes `tokens_per_sec` a real
+   * token rate for CJK output instead of a character count.
+   */
   private observe(event: LoopEvent): void {
-    if (event.kind === "text") this.deps.status.addChars(event.delta.length);
-    else if (event.kind === "thinking") this.deps.status.addChars(event.delta.length);
+    if (event.kind === "text") this.deps.status.addDelta(event.delta);
+    else if (event.kind === "thinking") this.deps.status.addDelta(event.delta);
     else if (event.kind === "tool_call") this.deps.status.addStep();
   }
 

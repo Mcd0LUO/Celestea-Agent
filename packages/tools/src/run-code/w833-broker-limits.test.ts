@@ -57,12 +57,14 @@ describe("B1 W812 P1-1: the wall clock is independent of the pump", () => {
     const tool = h.mount(registry);
     const code = ["  const r = tools.run_shell({ command: 'sleep 30' });", "  return r;"].join("\n");
     const started = Date.now();
-    const failure = (await h.run(tool, "rc-w833-slow", { code, timeout_ms: 2_000 }).catch((e: unknown) => e)) as Error;
+    // W896: 800ms is enough to prove "cut at the wall clock, not after the 30s sleep";
+    // the original 2000ms bought nothing but a longer gate.
+    const failure = (await h.run(tool, "rc-w833-slow", { code, timeout_ms: 800 }).catch((e: unknown) => e)) as Error;
     const elapsed = Date.now() - started;
     release();
     expect(failure).toBeInstanceOf(Error);
     expect(failure.message).toMatch(/^run_code: code=timeout /);
-    expect(elapsed).toBeLessThan(3_500);
+    expect(elapsed).toBeLessThan(2_500);
   }, 20_000);
 
   it("times out a reply the child refuses to drain (full pipe) instead of hanging", async (ctx) => {
@@ -70,7 +72,11 @@ describe("B1 W812 P1-1: the wall clock is independent of the pump", () => {
       ctx.skip("the TypeScript runtime is unavailable inside the sandbox here");
       return;
     }
-    const tool = h.mount(h.echoRegistry());
+    // W896: inject a 1s stdin-write bound instead of waiting out the real 5s default.
+    // The property under test ("a reply the child never drains is a timeout, not a hang")
+    // is unchanged; only the wall-clock constant is parameterised. The production default
+    // is still 5s — nothing outside tests sets this.
+    const tool = h.mount(h.echoRegistry(), { config: runCodeConfig({ stdinWriteTimeoutMs: 1_000 }) });
     const code = [
       "  const big = 'A'.repeat(200000);",
       '  process.stdout.write(JSON.stringify({ id: 1, tool: "read_file", args: { path: "/tmp/x.txt", content: big } }) + "\\n");',
@@ -83,8 +89,8 @@ describe("B1 W812 P1-1: the wall clock is independent of the pump", () => {
     expect(failure).toBeInstanceOf(Error);
     expect(failure.message).toMatch(/^run_code: code=timeout /);
     expect(failure.message).toContain("stopped reading stdin");
-    expect(elapsed).toBeGreaterThanOrEqual(4_000);
-    expect(elapsed).toBeLessThan(9_000);
+    expect(elapsed).toBeGreaterThanOrEqual(900);
+    expect(elapsed).toBeLessThan(4_000);
     expect(await h.leftoverScripts()).toEqual([]);
   }, 20_000);
 });

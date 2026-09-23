@@ -61,6 +61,7 @@ import {
   type SessionFsScope,
   selectSandboxDetailed,
   type HostProbe,
+  type RunCodeEventSink,
   type SandboxFallbackMode,
   type SandboxSelection,
 } from "@celestea/tools";
@@ -129,6 +130,17 @@ export interface EnginePluginInput {
    * feature is not mounted at all (the tool is then not offered to the model).
    */
   questions?: QuestionWiring | null;
+  /**
+   * W1467: the `run_code` sub-call sink. Every nested call a program makes
+   * through the SDK bridge arrives here as a `SessionEvent` carrying
+   * `parent_id` (= the parent `run_code` call id, ids shaped `<parent>:c<n>`).
+   *
+   * Two consumers, which is why this is one callback and not two: the row is
+   * appended to the session log (so a refresh replays the same tree) AND
+   * published as an SSE frame (so the live view builds it too). Absent = the
+   * sub-calls are dispatched but recorded nowhere — the pre-W1467 behaviour.
+   */
+  onRunCodeEvent?: RunCodeEventSink;
 }
 
 /**
@@ -245,6 +257,10 @@ export function engineTools(opts: EnginePluginInput): EngineTools {
     scope,
     grants: { readRoots: grants.readRoots, writeRoots: grants.writeRoots, workspaceWritable: grants.workspaceWritable },
     ...(opts.guard === undefined ? {} : { guard: opts.guard }),
+    // W1467: the sub-call sink rides the SAME assembly the program dispatches
+    // through, so a nested row can never be recorded by a different registry
+    // than the one that executed it.
+    ...(opts.onRunCodeEvent === undefined ? {} : { runCode: { events: opts.onRunCodeEvent } }),
   });
   // W791 (P1, §5.2 #2 — the "关键机关"): the CONTEXT sees the mode's model-visible
   // face while `run_code`'s RegistryHandle stays bound to the INNER registry
@@ -319,15 +335,37 @@ interface SandboxChoice {
   decision: SandboxDecision;
 }
 
-/** Annotate one provider meta with the decision (`run_shell` reports it verbatim). */
-function decidedMeta(meta: SandboxMeta, decision: SandboxDecision): DecidedSandboxMeta {
-  return {
+/**
+ * W1469: annotate the provider meta with the fallback decision **only when the
+ * decision carries information**.
+ *
+ * The model-visible `sandbox` object is a frozen contract: `contracts/tools.json`
+ * (run_shell) and `contracts/endpoints.json` (the /exec result) both declare
+ * exactly `{provider, net_isolated, tmp_private, seccomp}` + optional `cpu_sec`
+ * ("contract fields only"). W741 added the decision to EVERY result so that a
+ * degradation is observable — but on the ordinary path (policy chose bwrap,
+ * nothing degraded) all four fields are constants: `degraded:false`,
+ * `fallback_reason:null`, `fallback_mode:"userspace"`, `fallback_source:"policy"`.
+ * Shipping constants into every tool result is exactly the context flood the
+ * contract was reduced to prevent (user report: the result "echoed information
+ * that should not appear").
+ *
+ * So the decision rides along only when there is something to say: a real
+ * degradation, a refusal reason, or a non-policy origin (grant / refused /
+ * injected). The audit sink keeps the full decision on every call either way.
+ */
+function decidedMeta(meta: SandboxMeta, decision: SandboxDecision): SandboxMeta {
+  const worthReporting =
+    decision.degraded === true || decision.reason !== null || decision.source !== "policy";
+  if (!worthReporting) return meta;
+  const annotated: DecidedSandboxMeta = {
     ...meta,
     degraded: decision.degraded,
     fallback_reason: decision.reason,
     fallback_mode: decision.mode,
     fallback_source: decision.source,
   };
+  return annotated;
 }
 
 /** Wraps a policy-chosen sandbox so every result carries WHY it was chosen. */

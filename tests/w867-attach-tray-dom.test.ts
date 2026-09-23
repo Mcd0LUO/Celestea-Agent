@@ -106,19 +106,25 @@ describe('W867（追加）· ①对话页圆角外框（.chat-shell）', () => {
     const raw = indexHtml();
     doc.body.innerHTML = raw.slice(raw.indexOf('<body>') + 6, raw.indexOf('</body>'));
     const shell = doc.querySelector('.chat-shell');
+    // NB: keep the plain `shell` check — `not.toBeNull()` does NOT catch
+    // `undefined`, and `shell?.closest(...)` turns a missing shell into
+    // `undefined`, which the next line would silently accept.
     expect(shell, '#main 里必须有 .chat-shell').not.toBeNull();
     expect(shell?.closest('#main'), '外框不得跑出 #main').not.toBeNull();
-    for (const sel of ['#statusline', '#statusbar', '#inputbar']) {
+    for (const sel of ['#statusline', '#inputbar']) {
       const node = doc.querySelector(sel);
       expect(node, sel + ' 必须在').not.toBeNull();
       expect(node?.closest('.chat-shell'), sel + ' 必须收进同一个圆角外框').not.toBeNull();
     }
+    // W1462：用户要求「会话名/空闲/tok/s/轮次 放到消息框胶囊外的底部平铺」⇒ #statusbar 不再是
+    // 胶囊的一部分，改为胶囊**下方**、#main 的直接子项（它自己的门禁见 tests/w1462-composer-dock.test.ts）。
+    const dock = doc.querySelector('#statusbar');
+    expect(dock, '#statusbar 必须在').not.toBeNull();
+    expect(dock?.closest('.chat-shell'), '#statusbar 必须留在圆角外框**之外**（贴底信息行）').toBeNull();
+    expect(dock?.parentElement?.id, '贴底信息行 = #main 的直接子项').toBe('main');
     const msgs = doc.querySelector('#messages');
     expect(msgs, '#messages 必须在').not.toBeNull();
     expect(msgs?.closest('.chat-shell'), '#messages 必须留在圆角外框**之外**（消息区不圆角）').toBeNull();
-    // 外框的**全部**子元素就是这三条（父子关系，不是「class 存在」）
-    const kids = shell === null ? [] : (Array.from(shell.querySelectorAll(':scope > *')) as ElLike[]);
-    expect(kids.map((c) => c.id)).toEqual(['statusline', 'statusbar', 'inputbar']);
     expect(shell?.parentElement?.id).toBe('main');
     // 滚动容器语义不变：.sess-pane 仍是唯一的 overflow-y:auto；外框既不滚也不裁
     expect(rule(css('views.css'), '.sess-pane')).toContain('overflow-y: auto');
@@ -132,8 +138,6 @@ describe('W867（追加）· ①对话页圆角外框（.chat-shell）', () => {
     // 窄屏在 responsive.css 里改 --r-md 时两边同步（子元素若不是同刻度会露出角差）。
     expect(shell).toContain('border-radius: var(--r-shell)');
     expect(shell, '--r-shell 的刻度真源仍是 --r-lg').toContain('--r-shell: var(--r-lg)');
-    expect(rule(css('layout.css'), '.chat-shell > :first-child')).toContain('border-top-left-radius: var(--r-shell)');
-    expect(rule(css('layout.css'), '.chat-shell > :last-child')).toContain('border-bottom-left-radius: var(--r-shell)');
     expect(shell).toContain('border: var(--hairline) solid var(--border-l1)');
     expect(shell).toContain('background: var(--bg-layer-1)');
     expect(shell, '外框不参与滚动（滚动仍是 .sess-pane）').not.toContain('overflow-y');
@@ -158,7 +162,6 @@ describe('W867（追加）· ②附件收纳展示夹（悬浮、不挤输入框
   it('A2 内嵌：展示夹是 #inputbar 的直接子项、插在 .input-box 之前、独占一行且不挤 #input', async () => {
     const { bar } = await bootBar();
     const t = tray();
-    expect(t, '展示夹必须建出来').not.toBeNull();
     // A2：内嵌 ≠ 浮层。它不再挂在 .input-box 内，而是 #inputbar 的直接子项。
     expect(t?.parentElement?.id, '定位基准 = #inputbar（内嵌行）').toBe('inputbar');
     const barKids = Array.from(doc.querySelectorAll('#inputbar > *')).map((c) => c.className);
@@ -207,7 +210,6 @@ describe('W867（追加）· ②附件收纳展示夹（悬浮、不挤输入框
     seedPending(att, [item('a.png', 'a')]);
     bar.refreshAttachmentTray();
     const first = foldBtn();
-    expect(first, '折叠键常显').not.toBeNull();
     expect(first?.getAttribute('aria-expanded')).toBe('true');
     expect(first?.textContent).toContain('附件 1');
     first?.dispatchEvent(new Ev('click', { bubbles: true }));

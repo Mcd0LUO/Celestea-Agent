@@ -68,8 +68,12 @@ describe("compose", () => {
   });
 
   it("resolves the optional seams and leaves them null when absent", () => {
-    const runtime = compose({ profile: testProfile(), plugins: [memorySessionPlugin()], workers: false });
-    expect(runtime.session).toBeDefined();
+    const log = memoryLog();
+    const runtime = compose({ profile: testProfile(), plugins: [memorySessionPlugin(log)], workers: false });
+    // The required seam is the VERY log the plugin provided (identity — the
+    // getter's return type already rules out "undefined", so `toBeDefined()`
+    // was a tautology).
+    expect(runtime.session).toBe(log);
     expect(runtime.llm).toBeNull();
     expect(runtime.tools).toBeNull();
     expect(runtime.agentConfig.model).toBe("deepseek-chat");

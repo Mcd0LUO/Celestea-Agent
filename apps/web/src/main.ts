@@ -26,6 +26,7 @@ import './styles/preview.css'; // F2 文件侧边预览（覆盖式浮层 / 代�
 import './styles/commands.css'; // A3 斜杠命令补全框 / 终端输出 / 目标条
 import './styles/workbench.css'; // G4 多面板工作区（入口菜单 / 可停靠面板 / 文件管理器）
 import './styles/workerstrip.css'; // W866 会话页左上角 worker 快捷条
+import './styles/tooltree.css'; // W1467 run_code 子调用缩进树
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
 
 import { api } from './api';

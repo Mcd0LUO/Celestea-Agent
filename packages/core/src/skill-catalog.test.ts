@@ -42,7 +42,6 @@ describe("W884 · skill catalog text", () => {
 
   it("lists name + description only, with the load_skill instruction", () => {
     const text = renderSkillCatalog(listing([skill("alpha", "First skill."), skill("beta", "Second skill.")]));
-    expect(text).not.toBeNull();
     expect(text).toContain("- alpha: First skill.");
     expect(text).toContain("- beta: Second skill.");
     expect(text).toContain("load_skill");
