@@ -57,6 +57,19 @@ export function buildOmittedNote(omitted: number, onExpand: () => void): HTMLEle
   return note;
 }
 
+/**
+ * W1505：只报「省略了多少」，**不给展开按钮** —— 用于调用方**真的没有保留**全文的
+ * 场合（思考段的内存上限）。
+ *
+ * 为什么必须区分：带按钮的那版承诺「点一下能看到全部」。若调用方已经把超出部分丢掉，
+ * 再挂按钮就是**撒谎**（点下去只能再显示同样的前缀）。宁可诚实地说「未保留」。
+ */
+export function buildTruncatedNote(omitted: number): HTMLElement {
+  const note = el('div', 'oversize-note');
+  note.appendChild(el('span', 'oversize-text', t('chat.oversize.omitted', { n: omitted })));
+  return note;
+}
+
 /** 就地更新提示行的省略字数（复用节点时用）。 */
 export function setOmittedCount(note: HTMLElement, omitted: number): void {
   const span = note.querySelector('.oversize-text');

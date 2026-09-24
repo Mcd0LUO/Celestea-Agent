@@ -27,7 +27,7 @@ import { el, fmtNow } from '../utils/dom';
 import type { SessionPane } from './viewctx';
 import { railSync } from './rail';
 import { autoscroll, hideEmptyHint } from './messages/scroll';
-import { buildOmittedNote, clampForRender, setOmittedCount } from './messages/oversize';
+import { buildTruncatedNote, setOmittedCount } from './messages/oversize';
 import { t } from '../i18n';
 
 /**
@@ -40,8 +40,21 @@ import { t } from '../i18n';
  * 而真实日志里就有一条 1363020 字符的 thinking 段。一次 241ms 的同步布局 × 每个
  * 节拍 = 主线程被钉死，正是用户报的「切回即卡死」。
  *
- * 与助手正文同量级：正常思考远小于 64K，超出的部分折叠成一行提示（原文一字不丢，
- * 点「展开全部」按全文渲染一次）。
+ * ★ W1505（P1-1）修正了这里的**内存**面。W1485 只堵了「画多少」：正文钳到 64K，
+ * 但 `seg.text` 一字不丢地留着，于是内存上界由**模型单段推理长度**决定（实测
+ * 1,362,974 字符），而不是由产品常量决定。现在**同一个数管两件事**：
+ *   · `seg.text` 超过 [THINK_RENDER_LIMIT] 的部分**直接丢弃**并计入 `dropped`；
+ *   · 正文画保留的那部分 + 一行「已省略 N 字符」提示，**不给展开按钮** ——
+ *     因为我们确实没有全文，挂按钮就是撒谎。
+ *
+ * 代价是「原文一字不丢」这个承诺**被撤销**了。为什么可以撤：本仓没有单条消息端点
+ * （契约冻结，不加分页），无法按需 rehydrate；而真实数据里 155 个思考段只有 1 个
+ * 超过 64K（0.6%），且思考是默认折叠的弱内容。用一个几乎用不到的「展开全部」去换
+ * 无界内存不划算。
+ *
+ * ★ 为什么**两条路径都钳**（live 与历史恢复）：本仓有一条硬契约 —— 实时流与历史重放
+ * 必须产出**逐字相同**的 DOM（W895-R）。若 live 钳而恢复不钳，刷新后同一个思考段会
+ * 突然变长，契约就破了。`buildThinkSeg` 是两条路径的唯一构造器，钳在它里面即天然一致。
  */
 export const THINK_RENDER_LIMIT = 65536;
 
@@ -82,10 +95,16 @@ export interface ThinkSegDom {
   head: HTMLElement; // 标题行（点击 / 回车 / 空格切换）
   body: HTMLElement; // 正文
   foldMark: HTMLElement; // 折叠箭头（W765：内联 SVG chevron，方向由 data-fold 驱动）
-  text: string; // 累积思考文本（与 ui/view.ts 的 ThinkSeg 同字段，便于直接挂到 ctx）
-  /** W1485：用户点过「展开全部」后按全文渲染（此后不再钳位）。 */
-  expanded?: boolean;
-  /** W1485：省略提示行（复用节点，避免每节拍重建按钮）。 */
+  /**
+   * **保留**的思考文本（与 ui/view.ts 的 ThinkSeg 同字段，便于直接挂到 ctx）。
+   *
+   * W1505（P1-1）：它的长度上限就是 [THINK_RENDER_LIMIT] —— 同一个数同时管
+   * 「画多少」与「留多少」。超出部分进 [dropped]，**不保留**。
+   */
+  text: string;
+  /** W1505：超出上限、**已丢弃**的字符数（0 = 一字未丢）。 */
+  dropped: number;
+  /** 省略提示行（复用节点，避免每节拍重建）。 */
   note?: HTMLElement;
 }
 
@@ -116,31 +135,52 @@ export function setThinkStreaming(seg: ThinkSegDom, on: boolean): void {
  * collapsed 缺省 = true（默认折叠）；只有 live 流式期间显式传 false 自动展开。
  */
 /**
- * W1485：把 `seg.text` 按渲染上限画进正文（原文一字不丢）。
+ * W1505：把 `seg.text`（**已按上限保留**）画进正文，并在丢弃过内容时挂一行诚实提示。
  *
  * 单一写入口 —— buildThinkSeg（首次/恢复）与 appendThinking（每节拍）都走它，
- * 两条路径的钳位口径因此不可能分叉。已展开（`expanded`）的段不再钳位。
+ * 两条路径的钳位口径因此不可能分叉。
+ *
+ * ★ 与 W1485 的关键差别：那时正文钳位、`seg.text` 留全文，于是「展开全部」有内容可给。
+ * 现在 `seg.text` 自己就只保留到上限，所以**没有可展开的东西** —— 提示行用
+ * [buildTruncatedNote]（无按钮），而不是带按钮的 [buildOmittedNote]。
+ * 挂了按钮却点不出更多内容就是撒谎。
  */
 function paintThinkBody(seg: ThinkSegDom, emptyText = ''): void {
-  const clamped = seg.expanded ? { text: seg.text, omitted: 0 } : clampForRender(seg.text, THINK_RENDER_LIMIT);
   // emptyText 由调用方给：buildThinkSeg 传 ''（保持「无文本 = 空」的原语义），
   // appendThinking 传占位文案（live 流式的「思考中…」）。
-  seg.body.textContent = clamped.text === '' ? emptyText : clamped.text;
-  if (clamped.omitted > 0) {
+  seg.body.textContent = seg.text === '' ? emptyText : seg.text;
+  if (seg.dropped > 0) {
     if (!seg.note) {
-      seg.note = buildOmittedNote(clamped.omitted, () => {
-        seg.expanded = true;
-        seg.note = undefined;
-        paintThinkBody(seg);
-      });
+      seg.note = buildTruncatedNote(seg.dropped);
       seg.body.after(seg.note);
     } else {
-      setOmittedCount(seg.note, clamped.omitted);
+      setOmittedCount(seg.note, seg.dropped);
     }
   } else if (seg.note) {
     seg.note.remove();
     seg.note = undefined;
   }
+}
+
+/**
+ * W1505：把一个思考增量并进段里，**保留到上限为止**，返回实际保留的新增字符数。
+ *
+ * 为什么是「保留到上限」而不是「超了就整段丢弃」：前缀是有用的（用户能看到推理的开头），
+ * 而后半段本来就是被钳掉的部分。保留前缀也让「已省略 N 字符」这个数随流式单调增长，
+ * 而不是先显示 64K、超限后又跳回 0。
+ */
+function retainThinking(seg: ThinkSegDom, delta: string): void {
+  const room = THINK_RENDER_LIMIT - seg.text.length;
+  if (room <= 0) {
+    seg.dropped += delta.length;
+    return;
+  }
+  if (delta.length <= room) {
+    seg.text += delta;
+    return;
+  }
+  seg.text += delta.slice(0, room);
+  seg.dropped += delta.length - room;
 }
 
 export function buildThinkSeg(
@@ -167,9 +207,11 @@ export function buildThinkSeg(
   bubble.appendChild(body);
   msg.appendChild(bubble);
   root.appendChild(msg);
-  const seg: ThinkSegDom = { root, msg, head: cap, body, foldMark, text: opts.text ?? '' };
+  // W1505：构造时就把文本钳到上限（历史恢复路径的全文可能远超上限）。
+  const initial = opts.text ?? '';
+  const kept = initial.length > THINK_RENDER_LIMIT ? initial.slice(0, THINK_RENDER_LIMIT) : initial;
+  const seg: ThinkSegDom = { root, msg, head: cap, body, foldMark, text: kept, dropped: initial.length - kept.length };
   thinkFolds.set(root, seg);
-  // W1485：正文经渲染上限（原文留在 seg.text，展开即见全文）。
   paintThinkBody(seg);
   setThinkCollapsed(seg, opts.collapsed !== false);
   const toggle = (): void => {
@@ -261,13 +303,14 @@ export function appendThinking(ctx: SessionPane, delta: string): void {
     ctx.el.insertBefore(seg.root, target); // 紧贴目标上方
   }
   if (seg !== null) {
-    seg.text += delta || '';
-    // W1485：经 paintThinkBody（钳位 + 复用提示行），不再直接写全文。
-    // `ctx.thinkSeg` 的类型是较窄的 view.ThinkSeg（只有 root/head/body/text），
-    // 而 paintThinkBody 需要 ThinkSegDom 的 expanded/note —— 从登记表按 root 反查
-    // （与 foldThinkSeg / appendThinking 上面那段同一手法）。
+    // W1505：`ctx.thinkSeg` 的类型是较窄的 view.ThinkSeg（只有 root/head/body/text），
+    // 而 retainThinking 需要 ThinkSegDom 的 dropped/note —— 从登记表按 root 反查
+    // （与上面 foldThinkSeg 同一手法）。
     const parts = thinkFolds.get(seg.root);
-    if (parts) paintThinkBody(parts, t('chat.think.thinking'));
+    if (parts) {
+      retainThinking(parts, delta || '');
+      paintThinkBody(parts, t('chat.think.thinking'));
+    }
   }
   autoscroll(ctx);
   railSync(ctx);
