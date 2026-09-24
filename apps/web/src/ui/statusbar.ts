@@ -10,10 +10,34 @@ const StatusText = need<HTMLElement>('#statusText');
 const StatusDot = need<HTMLElement>('#statusDot');
 const StatusTurn = need<HTMLElement>('#statusTurn');
 const StatusTime = need<HTMLElement>('#statusTime');
+/**
+ * W1479：live region 节点。用可选查询而非 need()：它是**无障碍增强**，不是
+ * 状态栏的功能依赖——缺了它顶多不播报，绝不该让整个状态栏（乃至 app）崩掉。
+ * 真实页面里 index.html 一定有这个节点；测试夹具没带它时静默降级。
+ */
+const StatusLive = document.getElementById('statusLive');
+
+/**
+ * W1479：上次播报过的文本。`setStatus` 有 33 个调用点，且同一阶段文本会被重复写入
+ * （切会话、重连、重画状态栏都会走到），若每次都写 live region，读屏会把同一句
+ * 反复念出来。只在**文本真的变了**时播报。
+ */
+let announced = '';
+
+/** 播报一句阶段文本（`''` = 清空，不播报）。节点缺失时静默降级。 */
+function announce(text: string): void {
+  if (StatusLive === null || text === announced) return;
+  announced = text;
+  // 先清空再写：部分读屏只对「内容发生变化」的节点播报，同值重写会被忽略。
+  StatusLive.textContent = '';
+  if (text !== '') StatusLive.textContent = text;
+}
 
 export function setStatus(text: string, cls?: string): void {
   StatusText.textContent = text;
   StatusDot.className = 'dot' + (cls ? ' ' + cls : '');
+  // 视觉状态栏与读屏播报同源：能看见的阶段文本，读屏也应当听得到。
+  announce(text);
 }
 
 export function setStatusTurn(n: number | null): void {

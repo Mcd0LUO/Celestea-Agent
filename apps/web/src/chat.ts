@@ -9,7 +9,6 @@ import { SseClient } from './sse';
 import { pickStatusFields, statusline } from './statusline';
 import type {
   DonePayload,
-  InboxPayload,
   StatusPayload,
   TextPayload,
   ThinkingPayload,
@@ -293,6 +292,11 @@ export function connectSse(): SseClient {
         mergePaneStatus(ctx, p);
       }
       onStatus(ctx, p);
+      // W1479: the injected-message lane rides ON the status frame (the backend
+      // has always sent `placement` + `inbox` here). It used to have its own
+      // `inbox` event, which the server can never emit, so live injection showed
+      // up only after a refresh replayed the transcript.
+      onStatusInbox(ctx, p);
     } catch (err) {
       console.warn('SSE status', err);
     }
@@ -333,30 +337,11 @@ export function connectSse(): SseClient {
       console.warn('SSE done', err);
     }
   });
-  sse.on('context', (p) => {
-    try {
-      // 上下文注入/裁剪等系统事件 → 信息块按序出现在对应会话的流中
-      renderInfoBlock(
-        ctxFor(p),
-        p.text || t('chat.status.contextEvent'),
-        p.cls === 'err' ? 'err' : p.cls === 'warn' ? 'warn' : undefined,
-      );
-    } catch (err) {
-      console.warn('SSE context', err);
-    }
-  });
   sse.on('compact', (p) => {
     try {
       onCompact(p);
     } catch (err) {
       console.warn('SSE compact', err);
-    }
-  });
-  sse.on('inbox', (p) => {
-    try {
-      onInbox(ctxFor(p), p);
-    } catch (err) {
-      console.warn('SSE inbox', err);
     }
   });
   // W784：提问帧 → 卡片；重连 → 用未决列表补齐（都在模块内，chat.ts 只留这一行）
@@ -381,13 +366,27 @@ export function requestCancel(): void {
 }
 
 /**
- * W515：inbox 事件（Agent Inbox / worker 回执 / 系统注入）→ 转录里的独立条目。
- * 只读展示，不与用户消息混同；字段缺失（无 text）→ 不发任何事件，保持现状。
+ * W1479：inbox 条目（Agent Inbox / worker 回执 / 系统注入）→ 转录里的独立条目。
+ *
+ * 数据在 `status` 帧上（后端 `session-publisher.ts` 一直在发 `placement` +
+ * `inbox`），不再是独立的 `inbox` 事件——那个事件服务端**永远发不出来**（总线
+ * 每次 emit 都断言契约清单），所以这条车道曾经只是「看起来接好了」。
+ *
+ * 只读展示，不与用户消息混同；没有正文 → 什么都不做（保持现状）。
+ * `placement === 'context'` 才是「已进入模型可见历史」的那一刻，也正是在那时
+ * 它同时出现在 transcript 里——所以这一帧是唯一一次「实时显示」的机会。
  */
-function onInbox(ctx: SessionPane, p: InboxPayload): void {
-  const text = (p.text ?? p.note ?? p.hint ?? '').trim();
+function onStatusInbox(ctx: SessionPane, p: StatusPayload): void {
+  if (p.placement !== 'context') return;
+  const message = p.message;
+  // Discriminate by SHAPE, not by `phase`: the downgrade frame's prose is a
+  // string and this lane's payload is an object. (Typing it as a union is what
+  // makes this check possible — it was `string`-only before, so the object was
+  // unreachable and the lane rendered nothing.)
+  if (typeof message !== 'object' || message === null) return;
+  const text = (message.summary ?? '').trim();
   if (text === '') return;
-  renderInboxMessage(ctx, text, { source: p.source, target: p.target });
+  renderInboxMessage(ctx, text, { source: message.from, target: message.lane, kind: message.kind });
 }
 
 // ---- 装配 ----------------------------------------------------------------------

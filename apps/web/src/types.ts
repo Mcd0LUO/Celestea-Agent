@@ -35,7 +35,17 @@ export interface SseMeta {
   seq?: number;
 }
 
-/** SSE event names (mirrored from the engine LoopEvent variants). */
+/**
+ * SSE event names. W1479: the SAME closed set as the server's `SSE_EVENT_NAMES`
+ * (contracts/sse-events.json), enforced by `tools/check-sse-events.mjs`.
+ *
+ * It used to carry `context` and `inbox`, which the server can NEVER emit — its
+ * bus asserts the contract list on every emit — so those two listeners were dead
+ * code and live injection never appeared (it only showed up after a refresh, via
+ * the transcript restore path). `turn_end` is deliberately absent: the UI learns
+ * a turn's end from the `status` phase and from `done`. The checker records that
+ * exemption explicitly instead of letting the two sets drift apart again.
+ */
 export type SseEventName =
   | 'status'
   | 'text'
@@ -43,10 +53,7 @@ export type SseEventName =
   | 'tool'
   | 'tool_result'
   | 'done'
-  | 'context'
   | 'compact'
-  /** W515：Agent Inbox / worker 回执等系统注入（kind='inbox' 的转录条目）。 */
-  | 'inbox'
   /** W784：模型向用户提问（挂起等待作答；答案不经 POST /api/turn 回传）。 */
   | 'question';
 
@@ -129,9 +136,25 @@ export interface StatusPayload extends StatusSnapshot {
    * 该帧的 envelope.turn=0（进程级提示），前端不得据此结束当前轮次。
    */
   reason?: string;
-  message?: string;
+  /**
+   * W805/W1479: a UNION by `phase` — `error` carries the image-downgrade prose
+   * (a string); `progress` carries the injected message (an object). Typed
+   * `string`-only before, so the object was unreachable and the live injection
+   * lane rendered nothing until a refresh replayed the transcript.
+   */
+  message?: string | InjectedMessagePayload;
   placeholder?: string;
   http_status?: number;
+  /** W1479: where the injected message LANDED. Only `context` = in the history. */
+  placement?: 'queued' | 'steering' | 'context';
+}
+
+/** W1479: the `progress`-frame shape of `StatusPayload.message`. */
+export interface InjectedMessagePayload {
+  kind?: string;
+  from?: string;
+  lane?: string;
+  summary?: string;
 }
 
 export interface TextPayload extends SseMeta {
@@ -150,29 +173,6 @@ export type { ToolPayload, ToolResultPayload } from './types/tool-events';
 export interface DonePayload extends SseMeta {
   text?: string;
   tool_calls?: ToolPayload[];
-}
-
-/** context 类事件（W240：上下文注入 / 裁剪等系统提示）。 */
-export interface ContextPayload extends SseMeta {
-  text?: string;
-  cls?: string;
-}
-
-/**
- * W515：inbox 事件（Agent Inbox / worker 回执 / 系统注入）。
- * DSH 的 inbox 分两车道：next-step（steer，最近 step 边界插入）与
- * next-turn（queue，下一回合独立投递）——前端只负责分类展示。
- * 字段全部可选：后端未就绪时不发该事件（现状降级）。
- */
-export interface InboxPayload extends SseMeta {
-  /** 展示文本（缺省时回落到 note/hint）。 */
-  text?: string;
-  /** 来源标记：worker id / 'system' 等。 */
-  source?: string;
-  /** 'next-step' | 'next-turn'（与 InboxTarget 对齐）。 */
-  target?: string;
-  note?: string;
-  hint?: string;
 }
 
 /** compact 类事件（W259：/compact 压缩完成；payload 带会话 id）。 */

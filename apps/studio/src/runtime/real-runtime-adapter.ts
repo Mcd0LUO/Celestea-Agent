@@ -688,7 +688,12 @@ class RealEngine implements RealRuntimeAdapter {
    * only — nothing here settles a row or re-dispatches a worker (P2 territory).
    */
   private workerTableState(own: readonly WorkerSessionRow[]): WorkerTableState {
-    return workerTableStateOf({ path: this.workerTable, ownWids: own.map((row) => row.wid ?? ""), pid: process.pid, knownHost: (sid) => this.opts.resolveSession?.(sid) != null, resultsDir: this.opts.resultsDir ?? join(process.cwd(), "worker-results"), now: this.now() });
+    // W1479: `hostExists` (existence), NOT `resolveSession != null` (location — it
+    // also succeeds for a session that does not exist, so every host looked alive
+    // and `orphans[]` could never fill). Absent = "cannot tell" = never an orphan.
+    const exists = this.opts.hostExists;
+    const knownHost = exists === undefined ? {} : { knownHost: (sid: string) => exists(sid) };
+    return workerTableStateOf({ path: this.workerTable, ownWids: own.map((row) => row.wid ?? ""), pid: process.pid, ...knownHost, resultsDir: this.opts.resultsDir ?? join(process.cwd(), "worker-results"), now: this.now() });
   }
 
   // --- internals ---------------------------------------------------------

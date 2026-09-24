@@ -49,6 +49,11 @@ export function injectionHooksOf(sessionId: string | null, deps: PublisherDeps):
       phase: "progress",
       placement,
       ...(boundary === undefined ? {} : { boundary }),
+      // W1479: the wire keeps `message` (it is the shipped, test-pinned shape).
+      // It is a UNION discriminated by `phase`: an `error` frame carries the
+      // image-downgrade prose as a STRING, a `progress` frame carries this object.
+      // The frontend used to type it as `string` only, which is why nothing could
+      // read the object and the live inbox lane rendered nothing.
       message: {
         id: message.id,
         kind: message.kind,

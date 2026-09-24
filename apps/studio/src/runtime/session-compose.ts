@@ -79,6 +79,20 @@ export interface SessionComposerOptions {
   baseProfile: () => Profile;
   /** Host lookup: `<workspace>/<session>` -> directory (null = detached). */
   resolveSession?: (id: string) => SessionTarget | null;
+  /**
+   * W1479: does this session actually EXIST on disk?
+   *
+   * Deliberately separate from [resolveSession]: that hook answers "where would
+   * this session live", which the composer needs for sessions it is about to
+   * CREATE (a not-yet-written id must still resolve to its target directory).
+   * The worker-table probe asks a different question — "is the host conversation
+   * that dispatched this row still here?" — and answering it with a
+   * location-shaped lookup made every host look alive.
+   *
+   * Absent = "cannot tell", which the recovery judgement already treats as
+   * "never an orphan" (no guessing without evidence).
+   */
+  hostExists?: (id: string) => boolean;
   /** Session-level model override (`session.json`), applied per instance. */
   sessionModel?: (id: string) => string | null;
   /**

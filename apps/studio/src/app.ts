@@ -154,6 +154,11 @@ export function createStudioEngine(deps: StudioEngineDeps): EngineFactory {
           ? { sessionId: id, dir: resolved.value.dir, workspace: sessionWorkspaceOf(resolved.value) }
           : null;
       },
+      // W1479: existence, NOT location. `resolve` above answers "where would this
+      // live" and stays ok for a session that was never written (the composer
+      // relies on that when creating one), so the worker-table probe needs this
+      // separate question — "is the host conversation still on disk?".
+      hostExists: (id) => stores.sessions.require(id).ok,
       // W513: the session-level model override is applied to that session's own
       // instance (it no longer rewrites a global engine profile).
       sessionModel: (id) => sessionMetaAt(stores, id)?.model ?? null,
@@ -293,7 +298,13 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   const workerResults = join(dataDir, "worker-results");
   const workerReport = observeWorkerTableOnBoot({
     path: workerTable,
-    knownHost: (sid) => services.sessions.resolve(sid).ok,
+    // W1479: `require`, not `resolve`. `resolve` only validates the ID's SHAPE and
+    // picks a candidate directory — it answers ok for a session that does not
+    // exist — so `resolve(sid).ok` made every host look alive: `orphans[]` stayed
+    // empty forever and a row whose host is gone was filed STALE (action
+    // `respawn`) instead of an orphan (§2.2.4 row 6: orphans are never
+    // re-dispatched). `require` adds the existence check the probe's name promises.
+    knownHost: (sid) => services.sessions.require(sid).ok,
     resultsDir: workerResults,
     audit: bootAudit,
   });

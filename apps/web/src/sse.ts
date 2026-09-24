@@ -7,9 +7,7 @@
 import type {
   CompactPayload,
   ConnState,
-  ContextPayload,
   DonePayload,
-  InboxPayload,
   QuestionPayload,
   SseEnvelope,
   SseEventName,
@@ -27,10 +25,7 @@ export interface SseHandlerMap {
   tool: (p: ToolPayload) => void;
   tool_result: (p: ToolResultPayload) => void;
   done: (p: DonePayload) => void;
-  context: (p: ContextPayload) => void;
   compact: (p: CompactPayload) => void;
-  /** W515：Agent Inbox / worker 回执（系统注入，与普通用户消息分类展示）。 */
-  inbox: (p: InboxPayload) => void;
   /**
    * W784：模型向用户提问（挂起等待作答）。信封的 turn = 挂起那个 turn 的会话
    * 本地序号；payload 带 id/questions/expires_at/timeout_ms。
@@ -64,6 +59,13 @@ function withEnvelope(payload: unknown, env: SseEnvelope): unknown {
   return out;
 }
 
+/**
+ * W1479: exactly the names the server can emit (`SSE_EVENT_NAMES` in
+ * `@celestea/core`, frozen in `contracts/sse-events.json`). `context` and
+ * `inbox` were listed here but are unemittable — the server's bus asserts the
+ * contract list on every emit — so those subscriptions could never fire while
+ * looking wired. A gate (`tools/check-sse-events.mjs`) keeps this list honest.
+ */
 const EVENT_NAMES: readonly SseEventName[] = [
   'status',
   'text',
@@ -71,9 +73,7 @@ const EVENT_NAMES: readonly SseEventName[] = [
   'tool',
   'tool_result',
   'done',
-  'context',
   'compact',
-  'inbox',
   'question',
 ];
 
