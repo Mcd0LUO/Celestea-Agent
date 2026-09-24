@@ -26,12 +26,20 @@ afterEach(() => {
   while (temps.length > 0) rmSync(temps.pop() as string, { recursive: true, force: true });
 });
 
-/** W701 dead owner + deliverable; W702 dead owner, nothing; W703 owner ALIVE. */
+/**
+ * W701 dead owner + deliverable; W702 dead owner, nothing; W703 owner ALIVE.
+ *
+ * The live owner is THIS process, not a hardcoded pid: liveness goes through the
+ * product's real `pidAliveDefault` (`process.kill(pid, 0)`), and pid 1 is only
+ * alive on POSIX — on Windows it is `ESRCH`, so W703 would be judged stale and
+ * the "never touch a live row" half of the test would never run.
+ */
+const LIVE_PID = process.pid;
 function ghostTable(): string {
   return [
     "W701\t2026-09-23_11:00:00Z\tRUNNING\tsess=s1 title=ghost host=ws/gone attempt=0 lease=999999@1789000000 proc=999999",
     "W702\t2026-09-23_11:01:00Z\tRUNNING\tsess=s2 title=ghost2 host=ws/gone attempt=0 lease=999998@1789000000 proc=999998",
-    "W703\t2026-09-23_11:02:00Z\tRUNNING\tsess=s3 title=live host=ws/live attempt=0 lease=1@1789000000 proc=1",
+    `W703\t2026-09-23_11:02:00Z\tRUNNING\tsess=s3 title=live host=ws/live attempt=0 lease=${LIVE_PID}@1789000000 proc=${LIVE_PID}`,
   ].join("\n") + "\n";
 }
 
@@ -93,7 +101,7 @@ describe("W1470 P2: the boot action is OFF unless CELESTEA_WORKER_RECOVER=1", ()
     // W703's owner is alive: no claim, no terminal, no token.
     expect(rowOf(dir, "W703").status).toBe("RUNNING");
     expect(token(rowOf(dir, "W703").extra, "claimed")).toBeNull();
-    expect(token(rowOf(dir, "W703").extra, "proc")).toBe("1");
+    expect(token(rowOf(dir, "W703").extra, "proc")).toBe(String(LIVE_PID));
 
     const events = readFileSync(join(dir, "recovery-audit.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
     // No `knownHost` hook here, so nothing is judged an orphan ("cannot tell" is

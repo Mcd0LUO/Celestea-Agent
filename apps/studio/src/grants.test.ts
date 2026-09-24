@@ -84,14 +84,16 @@ function pinPathOnlySession(dataDir: string, session: string): void {
 const HOME = process.env["HOME"] ?? homedir();
 
 /**
- * W892: the `$HOME` the rules see is chosen to be INDEPENDENT of the data dir.
- * On Windows the temp data dir lives under %USERPROFILE%, so a home equal to the
- * real $HOME is caught by the earlier "covers the studio data directory" rule and
- * the `$HOME`-wording assertion never fires. Both paths REJECT; this just makes
- * the rule under test the one that actually fires.
+ * W892: one stable `$HOME`, INDEPENDENT of every data dir. On Windows the temp
+ * data dir sits under %USERPROFILE%, so the real $HOME hits the earlier "covers the
+ * studio data directory" rule and the `$HOME` wording never fires (both reject).
+ * It must be a single constant: the granted root has to be the exact string the
+ * rules see, and `tempDir` mints a fresh sibling on every call.
  */
+const HOME_DIR = independentHome(tempDir("home-anchor"), HOME, tempDir, isInside);
+
 function envOf(dataDir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME: independentHome(dataDir, HOME, tempDir, isInside), ...extra };
+  return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME: HOME_DIR, ...extra };
 }
 
 const NOW = 1_700_000_500;
@@ -122,7 +124,7 @@ describe("effectiveGrantsOf — fail-closed reading (§4.3)", () => {
     writeFile(dir, [
       grantEntry("read_roots", { roots: [good, "/"] }), // one bad root voids the whole entry
       grantEntry("write_roots", { roots: [dataDir] }), // the studio data dir
-      grantEntry("write_roots", { roots: [HOME] }),
+      grantEntry("write_roots", { roots: [HOME_DIR] }),
       grantEntry("read_roots", { roots: ["relative/dir"] }, { id: "g-bad" }),
       grantEntry("read_roots", { roots: [join(dir, "nope")] }, { id: "g-gone" }),
       grantEntry("net_hosts", { hosts: ["10.1.2.3", "not a host", "/etc/passwd"] }),
