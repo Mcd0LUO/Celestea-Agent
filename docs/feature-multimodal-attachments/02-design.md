@@ -171,7 +171,7 @@ export type Content = TextContent | ToolCallContent | ImageContent;   // ← 唯
 | --- | --- | --- |
 | `llm/src/seam.ts:114-119` | `collectMessageText` 静默丢弃非 text 块 | **保留**（它只答「文本是什么」）；新增 `collectMessageParts(content)` 产出 `WireContentPart[]`，并在注释里写明「切勿用它处理带图消息」 |
 | `llm/src/wire.ts:29-34` | `WireMessage.content: string \| null` | 放宽为 `string \| WireContentPart[] \| null` |
-| `llm/src/wire.ts:57-86` | `mapMessage` 四个 role 分支 | `user`：有图则产数组；`tool`：有图则**不在这里产**（交给 buildRequestBody 拆分）；`system`/`assistant` 保持纯文本 |
+| `llm/src/wire.ts:200` | `mapMessage` 四个 role 分支 | `user`：有图则产数组；`tool`：有图则**不在这里产**（交给 buildRequestBody 拆分）；`system`/`assistant` 保持纯文本 |
 | `llm/src/wire.ts:110-130` | `buildRequestBody` 逐条 push `mapMessage` | 新增：单个 seam message 可能展开成 **2 条** wire message（tool 文本 + user 图片），并保持顺序 |
 | `llm/src/index.ts:32-34` | 导出 `collectMessageText` 等 | 导出新 helper |
 | `llm/src/stream.ts:82` | `doneMessage` 只产 text/tool_call | **不改**（本轮不处理「模型回图」；OpenAI chat 流式本就不回图） |
@@ -180,7 +180,7 @@ export type Content = TextContent | ToolCallContent | ImageContent;   // ← 唯
 
 | 文件:行 | 现状 | 必须怎么改 |
 | --- | --- | --- |
-| `agent-loop/src/context-trim.ts:56-57` | `if isTextContent … else if isToolCallContent …` | **加 image 分支**：图片必须有 token 估算（例如按尺寸/固定值），否则上下文裁减**系统性低估**，可能把超窗请求发给上游 |
+| `agent-loop/src/context-trim.ts:61` | `if isTextContent … else if isToolCallContent …` | **加 image 分支**：图片必须有 token 估算（例如按尺寸/固定值），否则上下文裁减**系统性低估**，可能把超窗请求发给上游 |
 | `agent-loop/src/step.ts:43-44` | `messageTexts` / `messageToolCalls` | 无需改（图片不进 assistant 文本、也不是 tool_call） |
 | `agent-loop/src/events.ts:58-59` | `messageTexts(message).join("")` | 无需改；但 `done` 事件的文本等于「可见文本」，图片不参与 |
 | `agent-loop/src/loop.ts:313,327` | `session.append({type:"tool_result", value: output.value, …})` | 工具返回的 `value.attachments` 自动入日志；**不需要 loop 特判** |
@@ -213,7 +213,7 @@ export type Content = TextContent | ToolCallContent | ImageContent;   // ← 唯
 | `web/src/api.ts:180-186` | `turn(input, session?, mode?)` 只发 `{input}` | 加 `attachments`（或先上传） |
 | `web/src/ui/inputbar.ts` | 只有 textarea | 加 3 个入口（§8） |
 | `web/src/ui/messages/user.ts:33-62` | `body.textContent = text` | 渲染附件块（缩略图/文件名 + 点击放大） |
-| `web/src/chat.ts:450-520` | `injectInput` 发送/回滚 | 附件随消息一并乐观渲染与回滚 |
+| `web/src/chat.ts` | 发送/回滚 | 附件随消息一并乐观渲染与回滚 |
 | `web/src/state.ts` / `types.ts` | 消息响应类型 | 加 `attachments` |
 | `web/src/styles/*.css` | — | 新增附件样式 |
 

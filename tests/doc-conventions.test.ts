@@ -16,7 +16,7 @@
  *   ⑦ 可达：分册目录里的非索引文档必须被该目录的 `README.md` 链接。
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const REPO = process.cwd();
@@ -117,6 +117,46 @@ function lineCount(file: string): number {
   return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
 }
 
+/**
+ * ③b 的实现：现行文档里的 `file:line` 锚点必须落在真实文件的**非空行**上。
+ *
+ * 抽成模块级函数而不是留在 `it()` 里：`it()` 的回调有 150 行上限（AGENT.md §7），
+ * 而这段含两段 WHY 注释，直接写进去会超（真实踩到：187 > 150）。
+ *
+ * 两个刻意的范围收窄（都由实测决定，不是图省事）：
+ *   · **不含归档**：归档是冻结的历史快照，锚点本来就该停在写下那天（§7 规则 7
+ *     「归档不是删除，不删正文」）。纳入会逼人改历史 —— 比锚点漂移更糟。
+ *   · **跳过围栏代码块**：块里是「当时跑过的命令 + 当时的输出」（grep 结果、探针
+ *     输出），那是**记录**不是引用，必须原样保留才能被追溯。
+ */
+function anchorProblems(): string[] {
+  const problems: string[] = [];
+  for (const p of activeDocs()) {
+    let inFence = false;
+    const text = readFileSync(p, 'utf8')
+      .split('\n')
+      .map((line) => {
+        if (/^\s*```/.test(line)) { inFence = !inFence; return ''; }
+        return inFence ? '' : line;
+      })
+      .join('\n');
+    for (const m of text.matchAll(/([a-zA-Z0-9_@/.-]+\.(?:ts|mjs|js|css)):(\d+)/g)) {
+      const target = m[1]!;
+      const line = Number(m[2]);
+      const candidates = [target, target.replace(/^@celestea\//, ''), 'packages/' + target, 'apps/' + target];
+      const real = candidates.find((c) => existsSync(join(REPO, c)));
+      if (real === undefined) continue; // 不是仓内文件：外部引用/包名，跳过
+      const body = readFileSync(join(REPO, real), 'utf8').split('\n');
+      if (line > body.length) {
+        problems.push(relDocs(p) + ': ' + m[0] + ' 越界（该文件只有 ' + body.length + ' 行）');
+      } else if ((body[line - 1] ?? '').trim() === '') {
+        problems.push(relDocs(p) + ': ' + m[0] + ' 指向空行');
+      }
+    }
+  }
+  return problems;
+}
+
 describe('文档不变量', () => {
   it('① 每篇现行文档都登记在地图里，且地图链接都指向存在的东西', () => {
     const rows = mapRows();
@@ -133,6 +173,29 @@ describe('文档不变量', () => {
       if (!existsSync(p)) dead.push('docs/README.md:' + r.line + ' -> ' + r.target);
     }
     expect(dead, '地图里的链接指向了不存在的东西').toEqual([]);
+  });
+
+  it('①b 地图表格的每一行都是完整的 4 列（防行错位/合并）', () => {
+    // WHY: `mapRows()` 的正则只认「行首有 | [链接](目标) | 状态 |」这一形状，于是
+    // **两行被误合并成一行**时它照样匹配（取到第一个状态列就停），坏行静默通过
+    // 全部 7 条断言 —— 真实发生过：feature-display-components 与
+    // feature-dynamic-tool-disclosure 两行被并成一行，多出的两列挂在行尾。
+    // 机械判据：索引表里每个数据行的**段数**必须与表头一致。
+    const lines = readFileSync(MAP, 'utf8').split('\n');
+    const header = lines.find((l) => /^\|\s*文件\s*\|/.test(l));
+    expect(header, 'docs/README.md 里找不到索引表的表头').toBeDefined();
+    const width = header!.split('|').length;
+    const bad: string[] = [];
+    let inTable = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line === header) { inTable = true; continue; }
+      if (!inTable) continue;
+      if (!line.startsWith('|')) break; // 表结束
+      const cells = line.split('|').length;
+      if (cells !== width) bad.push('第 ' + (i + 1) + ' 行有 ' + cells + ' 段，表头是 ' + width + ' 段');
+    }
+    expect(bad, '地图索引表的行错位了（多半是两行被合并）').toEqual([]);
   });
 
   it('② 每篇都声明状态、与地图同类（闭集），且现行文档不得是历史类', () => {
@@ -195,6 +258,47 @@ describe('文档不变量', () => {
     expect(problems, '断链或死锚点').toEqual([]);
   });
 
+  it('③b 文档里的 `file:line` 锚点指向真实存在的非空行', () => {
+    // WHY: 172 个锚点靠人眼不可能维护。真实漂移过：`routes.ts:48` 在文件只有 44 行
+    // 时指向空行、`turn-id.ts:25-47` 在内容搬到 core 后指向一个 16 行的重导出垫片。
+    // 判据与两处范围收窄见 `anchorProblems()` 的注释。
+    expect(anchorProblems(), '文档里的 file:line 锚点漂了（文件搬走/行号变了）').toEqual([]);
+  });
+
+});
+
+/**
+ * ⑤ 的一部分：现行文档不得把**本仓的 checkout 绝对路径**当成契约来写。
+ *
+ * 为什么单独抽出来：`it()` 回调有 150 行上限、控制流嵌套有 4 层上限
+ * （AGENT.md §7），内联写会同时踩到两条（真实踩到：嵌套 5 层）。
+ *
+ * 只钉**本仓自己的** checkout 路径，不钉别的绝对路径：
+ *   · `/var/lib/celestea-agent` 是产品默认值（configuration.md 必须写它）；
+ *   · `/api/...`、`/compact` 是路由字面量；
+ *   · `/src/celestea_harness`、`/src/dsh_plugins` 是**外部仓库的引用**（已删除的
+ *     参照实现 / 兄弟项目）—— 那是引述，不是本机的路径事实。
+ *   把后三类也钉上会逼着人删掉有用的交叉引用，是更糟的交换。
+ *
+ * 两处范围收窄（与 ③b 的锚点检查同一取舍）：归档是冻结的历史快照；围栏代码块里
+ * 是样例载荷与当时的命令输出（记录，不是叙述）。
+ */
+function checkoutPathProblems(p: string, text: string): string[] {
+  if (isArchived(p)) return [];
+  const ownDir = '/src/' + basename(REPO);
+  const problems: string[] = [];
+  let inFence = false;
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    for (const m of line.matchAll(/\/src\/[A-Za-z0-9_.-]+/g)) {
+      if (m[0] === ownDir) problems.push(relDocs(p) + ' 含本机 checkout 路径：' + m[0] + '（本仓用相对路径表达）');
+    }
+  }
+  return problems;
+}
+
+describe('文档不变量 · 规模与机器事实', () => {
   it('④ 任何文档单篇 ≤ 700 行（超了就拆进同名子目录）', () => {
     const over = [...activeDocs(), ...archiveDocs()]
       .map((p) => ({ f: relDocs(p), n: lineCount(p) }))
@@ -227,6 +331,12 @@ describe('文档不变量', () => {
       for (const m of text.matchAll(/\/home\/[a-z][a-z0-9_-]*\//g)) {
         problems.push(relDocs(p) + ' 含本机绝对 home 路径：' + m[0] + '（用 ~ 表达）');
       }
+      // W1505: the earlier checks only caught ABSOLUTE PATHS IN MARKDOWN LINKS
+      // (`](/src/...)`) and `/home/<user>/`. A bare `code-span` path therefore slipped
+      // through — docs/README.md listed THIS CHECKOUT's directory as if it were part
+      // of the contract. A committed doc must describe the repo RELATIVELY.
+      //
+      problems.push(...checkoutPathProblems(p, text));
     }
     expect(problems, '机器相关的事实不进提交进仓的文档').toEqual([]);
   });

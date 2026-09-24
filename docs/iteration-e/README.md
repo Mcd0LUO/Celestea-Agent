@@ -42,7 +42,7 @@
 | K3 | 单文件 ≤400 / 单函数 ≤80 / 嵌套 ≤4 / 形参 ≤5 | §4.1 | 恢复器、规则表必须**数据表外提**（§4.2 范式 2），否则一落地就超线 |
 | K4 | 事件日志是唯一真源，模型可见历史是派生物 | §3.1 `SessionLog` 行 | 恢复**只能追加**日志，不得重写既有行；`deriveMessages` 的修复（合成 tool 结果）已经存在，不要重复造 |
 | K5 | 事件名与信封冻结（8 个事件名，`assertEventName`） | `apps/studio/src/sse.ts:180-184` | 回退/账本/恢复的可见性**只能加 envelope/payload 字段**，不得新增事件名 |
-| K6 | 契约是硬断言（端点数、data-file schema） | `apps/studio/src/routes.ts:48`（`API_ENDPOINT_COUNT = 43`）、`app.ts:81-109` | 每新增一个端点必须同步 `contracts/endpoints.json` + 常量，否则启动即抛错（这是**好事**：天然机械检验） |
+| K6 | 契约是硬断言（端点数、data-file schema） | `apps/studio/src/routes.ts` 的 `API_ENDPOINT_COUNT`、`app.ts` 的 `assertCoverage` | 每新增一个端点必须同步 `contracts/endpoints.json` + 常量，否则启动即抛错（这是**好事**：天然机械检验） |
 | K7 | `core` 零依赖、零实现 | §3.1 | `CheckpointStore` 这类 seam 只放接口 + 服务 token；`Usage` 结构已有，不为其加价格字段（价格属于账本实现，不是引擎语义） |
 
 ---
@@ -54,9 +54,9 @@
 | 日志持久化 | `PersistentSessionLog.open` = `mkdir` → `replayFile` 取**最长有效前缀** → 截断 torn tail → 补尾换行 → `nextTurnNumber()` 恢复计数器 → `openSync(path,"a")` | `packages/session/src/log/persistent.ts:58-73` |
 | 写入耐久性 | `fs.writeSync`（无缓冲，达 OS）；`flush()` 是 no-op；`sync()` 才 fsync；`syncEachAppend` 默认 **false** | `persistent.ts:75-90,117-125`；`defaultPersistentOptions` `:36-38` |
 | 写失败模型 | 磁盘写失败**不抛**：事件仍在内存视图 + stderr 告警 + `writeErrorCount()`（**静默降级**，无 durable 标记） | `persistent.ts:75-90,127-130` |
-| turn 计数 | 日志拥有计数器，`maxTurnNumber(events)+1`，从不复用 id | `packages/session/src/turn-id.ts:25-47` |
+| turn 计数 | 日志拥有计数器，`maxTurnNumber(events)+1`，从不复用 id | `packages/core/src/turn-id.ts:30`（`packages/session/src/turn-id.ts` 是稳定重导出路径） |
 | 崩溃残留 | 悬空 `turn_start` 只被**统计**（`analyzeReplay().danglingTurns`），无任何代码闭合或标注 | `packages/session/src/replay.ts:14-15,88` |
-| 历史修复 | 悬空 `tool_call` 在**投影层**补合成 cancelled 结果（插入到派生消息，**不改日志**） | `packages/session/src/log/derive.ts:105-146` |
+| 历史修复 | 悬空 `tool_call` 在**投影层**补合成 cancelled 结果（插入到派生消息，**不改日志**） | `packages/core/src/projection.ts:159`（`balanceToolCalls`；`packages/session/src/log/derive.ts` 是稳定重导出路径） |
 | turn 终态 | 只对**当轮**解析：日志有 `turn_end` 则用它；否则 throw / `cancelled` / `interrupted` | `packages/runtime/src/turn-runner.ts:239-263` |
 | 会话实例状态 | `turnNo/profileEpoch/lastOutcome/inFlight/lastActiveAt` 全在内存；`rebuild()` 把 `turnNo` 归零 | `packages/runtime/src/session-registry.ts:41-51,273-281` |
 | 配置世代 | `RealEngine.baseEpoch` 从 0 起（进程级），实例 epoch 落后即重建 | `apps/studio/src/runtime/real-runtime-adapter.ts:126,384-387` |
@@ -65,7 +65,7 @@
 | worker 驱动 | `brief turn` → 回执（每轮 loop 结束**执行一次**）→ mailbox 轮询；`driveIfPossible` 只在 spawn 时调用 | `packages/workers/src/driver.ts:69-102`；`registry.ts:223-242` |
 | 回执协议 | 写 `results/<wid>-<short>.md`（同名覆盖）+ 投递一行 `WORKER_<wid>_DONE|FAILED`；**幂等键 = mailbox 内存序号** | `packages/workers/src/receipt.ts:70-89`；`mailbox.ts:26-27`；`packages/runtime/src/worker-wiring.ts:110-123` |
 | 用量 | 5 计数器；每个 `usage` 帧 `record()` 累加；`total` 跨 turn 累计、`latest` = 最后一次响应 | `packages/llm/src/usage.ts:11-46`；`packages/agent-loop/src/loop.ts:229-230`；`packages/runtime/src/usage.ts:34-56` |
-| 用量视图 | `Statusline.usage: UsageBlock & {total}`（按会话取） | `packages/core/src/types.ts:179-198`；`real-runtime-adapter.ts:362-374` |
+| 用量视图 | `Statusline.usage: UsageBlock & {total}`（按会话取） | `packages/core/src/types.ts:369`（`usage`）与 `:372`（`UsageBlock`） |
 | LLM 失败 | 单次尝试、零重试；非 2xx → `LlmError("stream request failed: <status>: …","generate")`，**状态码只在文案里** | `packages/llm/src/client.ts:132-146,169-176` |
 | 超时 | 三档 connect 15s / response 60s / idle 90s；无总请求超时（有意） | `packages/llm/src/timeouts.ts:26-58` |
 | provider 选择 | 宿主侧 `providers.json` + profile（`base_url`/`api_key_env`）；`LlmRegistry` last-wins 但 studio 只构造**一个** | `apps/studio/src/runtime/provider-target.ts`、`llm-assembly.ts:99-115`、`packages/core/src/llm.ts:21-39` |
@@ -118,7 +118,7 @@
 | 文件 | 变更 | 阶段 |
 |---|---|---|
 | `contracts/endpoints.json` | `+GET /api/usage/ledger`（W785 已落：49→50）；`get_status` 响应增 `cost`/`effective_model`/`fallback`（W785 已落）+ `recovery`（**W787 已落**，纯增字段）；`get_worker_status` 响应增 `stale[]`/`orphans[]`（**W787 已落**，纯增字段） | 1-P1 / 2-P0 / 3-P1 / 4-P1 |
-| `apps/studio/src/routes.ts:48` | `API_ENDPOINT_COUNT` 同步（漏改 → `app.ts:109` 启动抛错） | 同上 |
+| `apps/studio/src/routes.ts` | `API_ENDPOINT_COUNT` 同步（漏改 → `app.ts` 的 `assertCoverage` 启动抛错） | 同上 |
 | `contracts/data-files/` | 新增 `checkpoint` / `pricing` / `usage-ledger` / `fallbacks`（W785 已落，index 11 → 12）/ `llm-cooldown`（P2 未落）schema + `index.json` 计数；**W787**：`checkpoint.schema.json` 增 `lanes`（消息形状）+ `delivered_ids`（必填），`index.json` 12 → **13**（`<data dir>/worker-registry.tsv` 作为 studio 自己的数据文件登记） | 各 P0/P1 |
 | `contracts/sse-events.json` | 只增 payload **optional** 字段（`status.phase:"fallback"` + `effective_model`/`from`/`to`/`reason`/`attempt` —— W785 已落；`cost_delta`/`recovery` 未落），事件名集合不变（**W787 未动本文件**：能力 1-P1/2-P1 的可见性走 `/api/status` 与 `/api/worker/status` 的纯增字段，K5 的 9 个事件名与信封逐字不变） | 1-P1 / 3-P1 / 4-P1 |
 | `contracts/data-files/registry-tsv.schema.json` | 新 token（`host`/`attempt`/`lease`/`receipt`）白名单 + round-trip 用例（**W787 已落**：`extraTokens` 段 + `path.studio`/`ownershipRule`/`format.writeRule`；round-trip 在 `packages/workers/src/registry.test.ts` 的 B7、契约侧在 `tests/contracts.test.ts`） | 2-P0/P1 |

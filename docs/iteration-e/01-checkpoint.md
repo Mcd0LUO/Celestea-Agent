@@ -81,7 +81,7 @@
 **幂等边界（明确写出）**：
 1. 修复动作**只追加一行**，且只在 `open_turn` 与日志共同签名时触发；
 2. 同一 `(session, turn_id)` 的修复**至多一次**：判据是"日志中该 id 已存在 `turn_end`"（第二个 boot 看到的是已闭合的日志 → no-op）；
-3. `outcome: "interrupted"` 是 `TurnOutcome` 的**合法既有成员**（`packages/core/src/types.ts:17-22`），因此**不需要改 `session-event.schema.json`** —— 这是本设计能在 P0 落地且不破坏契约的关键；
+3. `outcome: "interrupted"` 是 `TurnOutcome` 的**合法既有成员**（`packages/core/src/types.ts:19`），因此**不需要改 `session-event.schema.json`** —— 这是本设计能在 P0 落地且不破坏契约的关键；
 4. 「这行是引擎写的还是恢复器写的」不写进日志（避免契约变更），只写进 checkpoint 的 `repaired[]` 与审计。**诚实标注**：代价是单看 jsonl 无法区分，属可接受取舍。
 
 **`turnNo` 恢复**：`SessionRuntimeRegistry.ensure()` 建立实例时，若 runtime 的 session log 非空，则 `entry.turnNo = maxTurnNumber(events)+1`（现在是 `0`：`session-registry.ts:161`）。这是"重启后 turn 号不回头"的唯一改动点，且与日志 id 同源。

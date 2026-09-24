@@ -11,7 +11,7 @@
 > 一句话目标：**同一份引擎，两种会话工作方式**——标准模式按今天的方式逐步调用工具；执行模式把多步依赖调用折叠进 `run_code` 程序里，并以**会话元数据**固定下来，而不是每轮改口径。
 >
 > **术语**：`<session dir>` = `<workspace>/<session>/`；`mode` 只有两个字面量 —— **`standard`**（标准模式）与 **`execution`**（执行模式，文档/UI 里括号注明「PTC 对应物」）。
-> **本文的实现状态栏**：所有「现状」均标注 `文件:行号`，为本次实读结论（`/src/celestea_studio-ts`，live 服务 `celestea-studio-ts` 在 127.0.0.1:3777，pid 618902）；
+> **本文的实现状态栏**：所有「现状」均标注 `文件:行号`，为本次实读结论（本仓，live 服务 `celestea-studio-ts` 在 127.0.0.1:3777，pid 618902）；
 > 所有「建议数值/估值」均**不是实测数据**；无法确认的宿主事实集中在 §7。
 
 ---
@@ -39,7 +39,7 @@
 | K3 | 单文件 ≤400 / 单函数 ≤80 / 嵌套 ≤4 / 形参 ≤5 | §4.1 | 模式表、变体表必须**数据表外提**为模块级常量（§4.2 范式 2） |
 | K4 | 事件日志是唯一真源，模型可见历史是派生物 | §3.1 `SessionLog` 行 | 切模式**不重写、不裁剪日志**；历史里指向已折叠工具的 `tool_call` 行原样保留（历史合法性见 U3） |
 | K5 | 事件名与信封冻结（8 个事件名；信封 `{v:2, session, turn, seq, payload}`） | `apps/studio/src/sse.ts:39,180-184` | mode 的可见性**只加 payload optional 字段**（`status.mode`），不得新增事件名 |
-| K6 | 契约是硬断言（端点数、data-file schema） | `apps/studio/src/routes.ts:48`（`API_ENDPOINT_COUNT = 43`）、`app.ts:81-109`（`assertCoverage`）、`prompts.test.ts:40-42` | 每加一个端点必须同步 `contracts/endpoints.json` 的 `count` 与常量；`BUILTIN_SECTIONS` 长度与 order 数组被测试钉死 |
+| K6 | 契约是硬断言（端点数、data-file schema） | `apps/studio/src/routes.ts` 的 `API_ENDPOINT_COUNT`、`app.ts` 的 `assertCoverage`、`prompts.test.ts` | 每加一个端点必须同步 `contracts/endpoints.json` 的 `count` 与常量；`BUILTIN_SECTIONS` 长度与 order 数组被测试钉死 |
 | K7 | `core` 零依赖、零实现 | §3.1 | 模式**不进** `AgentConfig`/`Profile` 冻结键集（12 键，`packages/runtime/src/profile.ts:8-36`）；不由 core 认识 mode 值 |
 | K8 | 今天的行为是基线，未声明的差异视为缺陷 | §0 红线 | 无 `session.json.mode` 的会话**逐字节等同今天**（P0 的向后兼容判据，见 M3/M13） |
 
@@ -228,7 +228,7 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | 文件 | 变更 | 阶段 |
 |---|---|---|
 | `contracts/endpoints.json` | `post_sessions.request` 增可选 `mode`（+ `errors.400` 新文案）；`get_sessions.response` 行增 `mode`；`get_status.response` 增 `mode`；`get_health.response.capabilities` 增 `session_mode`；**P1**：新增 `post_session_mode`（`count` 43→44）；`get_tools.request` 增可选 `session` query | P0 / P1 |
-| `apps/studio/src/routes.ts:48` | `API_ENDPOINT_COUNT`：**P0 保持 43**；**P1 改 44**（漏改 → `app.ts:81-109` `assertCoverage` 启动抛错） | P0 / P1 |
+| `apps/studio/src/routes.ts` | `API_ENDPOINT_COUNT`：P0 **不变**；P1 **+1**（漏改 → `app.ts` 的 `assertCoverage` 启动抛错） | P0 / P1 |
 | `contracts/data-files/session.schema.json` | `properties` 增 `mode: {"enum":["standard","execution"]}`；`notes` 增「缺省 = standard；非空才写盘；非法值 → 400 `invalid mode: <v>`；`additionalProperties: true` 保持」 | P0 |
 | `contracts/data-files/index.json` | **无新增文件、计数不变**（本设计不引入任何新数据文件） | — |
 | `contracts/sse-events.json` | `status.payload` 增 **optional** `mode`（仅切换/首轮携带）；事件名集合**逐字不变**（8 个） | P1 |
