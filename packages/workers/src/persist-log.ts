@@ -7,8 +7,7 @@
  * append-only alert log (a file, so the failure survives a restart).
  */
 
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendRotating } from "@celestea/core";
 
 /** One failed persist, recorded so it cannot be silent. */
 export interface PersistFailure {
@@ -46,13 +45,13 @@ export class PersistFailureLog {
     return [...this.entries];
   }
 
+  /**
+   * W1505 (P1-3): rotated at the same 16 MiB ceiling as every other diagnostic.
+   * This sink shares `alerts.log` with the watchdog, so before this change it was
+   * one of the two append-only logs in the repo that could grow without bound.
+   */
   private append(line: string): void {
     if (this.alertsLog === null) return;
-    try {
-      mkdirSync(dirname(this.alertsLog), { recursive: true });
-      appendFileSync(this.alertsLog, line + "\n", "utf8");
-    } catch {
-      // The alert sink is diagnostics, not state (W180 B1(c)).
-    }
+    appendRotating(this.alertsLog, line + "\n");
   }
 }

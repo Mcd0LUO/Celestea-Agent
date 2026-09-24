@@ -39,9 +39,8 @@
  *     default) instead of being hard-wired to a deployment path.
  */
 
-import { appendFileSync, mkdirSync, readdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { definePlugin, type Plugin, type SessionEvent, type WorkerEntry } from "@celestea/core";
+import { readdirSync } from "node:fs";
+import { appendRotating, definePlugin, type Plugin, type SessionEvent, type WorkerEntry } from "@celestea/core";
 import type { WorkerRegistry } from "./registry.js";
 import { getExtra, workerRetries } from "./registry-tsv.js";
 import { utcNow, type WorkerVerdict } from "./types.js";
@@ -337,15 +336,24 @@ function describe(action: WatchAction): string {
   }
 }
 
-/** Best-effort append: an unwritable log must never break a sweep. */
+/**
+ * Best-effort append with a 16 MiB ceiling: an unwritable log must never break a
+ * sweep.
+ *
+ * W1505 (P1-3): these two logs were the only append-only diagnostics in the repo
+ * with NO rotation — measured at 13.7 MB (watcher.log) and 7.6 MB (alerts.log) on
+ * the live host, growing for the life of the deployment. The rotation is
+ * [appendRotating] from core: the same "roll to `<path>.1` before writing" shape
+ * the audit logs already use, extracted once instead of copied a fifth time.
+ *
+ * These are AUDIT/DIAGNOSTIC logs, so the replacing shape is right here: a
+ * previous `.1` is a nicety, and keeping generations forever would be its own
+ * unbounded-growth bug. (The session log uses generations instead — it is the
+ * source of model-visible history, so replacing `.1` there would delete history.)
+ */
 function appendLine(path: string | null, line: string): void {
   if (path === null) return;
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `${line}\n`, "utf8");
-  } catch {
-    // Logging is diagnostics, not state (W180 B1(c)).
-  }
+  appendRotating(path, `${line}\n`);
 }
 
 function errorCode(error: unknown): string {

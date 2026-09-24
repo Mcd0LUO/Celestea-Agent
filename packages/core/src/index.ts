@@ -61,6 +61,7 @@ export * from "./redact.js";
 export * from "./repo.js";
 export * from "./celestea-home.js";
 export * from "./fs-atomic.js";
+export * from "./log-rotate.js";
 export * from "./celestea-sources.js";
 export * from "./skills.js";
 export * from "./skill-catalog.js";
