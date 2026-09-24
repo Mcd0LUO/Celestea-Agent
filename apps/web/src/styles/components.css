@@ -465,6 +465,15 @@
   content: ''; flex: 1; height: 1px; background: var(--c-border-subtle);
 }
 .live-sep span { letter-spacing: 1px; white-space: nowrap; }
+/* W1485：单条消息超长时的渲染折叠行（正文/工具结果共用）。
+   与 .restore-fold 同一视觉语言（居中小字 + 等宽），但它是**可点的**，
+   所以按钮保持 .btn 的既有几何，只把容器改成 flex 行。 */
+.oversize-note {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: .5em 0 0;
+  font-size: 11.5px; color: var(--c-text-3); font-family: var(--mono);
+}
+.oversize-note .oversize-more { font-size: 11px; padding: 2px 8px; }
 .content.restore-tool {
   white-space: pre-wrap; word-break: break-all;
   font-family: var(--mono); font-size: 12px; color: var(--c-text-2);

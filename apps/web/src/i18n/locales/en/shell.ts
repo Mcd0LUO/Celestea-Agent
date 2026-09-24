@@ -128,6 +128,10 @@ export const shell = {
   'shell.restore.unavailable': 'History restore is temporarily unavailable',
   'shell.restore.folded': 'Earlier history is folded · showing only the last {n}',
   'shell.restore.noResult': '(no result record)',
+  // W1485: render folding for an over-long single message (nothing is dropped;
+  // expanding re-renders the full text once, on the user's click).
+  'chat.oversize.omitted': '{n} characters omitted (content too long)',
+  'chat.oversize.expand': 'Show all',
   'shell.restore.sessionStart': 'Below is this session',
   'shell.restore.earlier': 'Above are earlier messages',
   'shell.restore.noActive': 'No active session found · it will be created after you send the first message',

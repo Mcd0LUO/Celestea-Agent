@@ -129,6 +129,9 @@ export const shell = {
   'shell.restore.unavailable': '历史恢复暂不可用',
   'shell.restore.folded': '更早的历史已折叠 · 仅显示最近 {n} 条',
   'shell.restore.noResult': '（无结果记录）',
+  // W1485：单条消息超长时的渲染折叠（原文不丢，点开按全文重渲染一次）。
+  'chat.oversize.omitted': '已省略 {n} 字符（内容过长）',
+  'chat.oversize.expand': '展开全部',
   'shell.restore.sessionStart': '以下为本次会话',
   'shell.restore.earlier': '上方为更早的消息',
   'shell.restore.noActive': '未找到活跃会话 · 发送第一条消息后自动建立',

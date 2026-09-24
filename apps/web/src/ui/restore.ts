@@ -32,12 +32,38 @@ import {
 } from './messages';
 import { parseQuoteBlocks } from './quote/model'; // F1：历史回放解析引用块
 import { railReset, railSync } from './rail';
-import { buildToolCard, descFromArgs, mountToolCard, setToolResult, subCallIndex } from './toolcards';
+import { renderToolMessage } from './restore-tool'; // W1485：工具条目渲染拆出（纯搬家）
+import { setToolResult } from './toolcards'; // 收尾时给「有调用无结果」的卡补终态
+import { prunePaneDom } from './messages/dom-cap'; // W1485：消息容器的 DOM 上限
 // W784：转录里的提问行（§7.2）+ 未决列表重建（刷新 / 重连 / 切会话后）。
 import { historyQuestionsOf, type HistoryQuestion } from './question/format';
 import { recoverQuestions, renderHistoryQuestionCard } from './question';
 
 const MAX_RESTORE = 200;
+
+/**
+ * W1485：历史恢复的**分帧**片大小（条/片）。
+ *
+ * 症状：刷新时同步渲染最近 200 条，其中可能包含若干 100KB+ 的消息 —— 主线程被
+ * 一次性占满，观感就是「刷新网页本身也被卡死」。修法是把离屏构建切成片，片间让出
+ * 一次事件循环（requestIdleCallback 优先，回落 setTimeout(0)）。
+ *
+ * 为什么「小于两片就不让出」：小会话（≤ RESTORE_CHUNK 条）在同一个微任务里就建完了
+ * —— 那正是 W867 的要求（历史在 0ms 内到位，不等节拍），也让 w867-render-timing 的
+ * 「0ms 内渲染完」继续成立。让出只发生在**确实需要**分批的时候。
+ */
+const RESTORE_CHUNK = 40;
+
+/** 让出一次事件循环（浏览器空闲优先；无 requestIdleCallback 时回落 setTimeout）。 */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => resolve(), { timeout: 50 });
+      return;
+    }
+    window.setTimeout(resolve, 0);
+  });
+}
 
 // ---- 衔接去重状态（每容器一份） ------------------------------------------------
 
@@ -93,71 +119,6 @@ export function finalAssistantDedup(ctx: SessionPane, text?: string): boolean {
   return drop;
 }
 
-// ---- 渲染 ---------------------------------------------------------------------
-
-function toJsonText(v: unknown): string {
-  if (typeof v === 'string') return v;
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return String(v);
-  }
-}
-
-function appendToolLine(text: string, container: HTMLElement): void {
-  const col = el('div', 'mcol');
-  const msg = el('div', 'msg tool');
-  const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', t('chat.tool.title')));
-  msg.appendChild(cap);
-  const bubble = el('div', 'bubble');
-  const body = el('div', 'content restore-tool');
-  body.textContent = text;
-  bubble.appendChild(body);
-  msg.appendChild(bubble);
-  col.appendChild(msg);
-  container.appendChild(col);
-}
-
-/**
- * 渲染一条结构化 tool 消息（call 建卡 / result 按 id 配对回填）。
- *
- * W1467：带 `tool_parent_id` 的行是 run_code 子调用 —— 缩进挂到父卡的
- * `.toolcard-subs` 下，**与 live 路径同一个 [mountToolCard]**，两条路径因此
- * 产生同一棵树。子调用不计入 `histToolStep`（与 live 的 `ctx.step` 同口径），
- * 否则刷新后的「第 N 步」会比实时多出子调用的数量。
- */
-function renderToolMessage(ctx: SessionPane, m: HistoryMsg, container: HTMLElement): void {
-  if (m.kind === 'call') {
-    const parentId = typeof m.tool_parent_id === 'string' ? m.tool_parent_id : undefined;
-    const id = m.tool_call_id ?? 'call_' + (ctx.histToolStep + 1);
-    const sub = parentId === undefined ? undefined : subCallIndex(id);
-    if (parentId === undefined) ctx.histToolStep += 1;
-    const ref = buildToolCard({
-      step: ctx.histToolStep,
-      name: m.tool_name ?? 'tool',
-      argsText: toJsonText(m.tool_args),
-      desc: descFromArgs(m.tool_args), // W778：折叠行标签（与 live 同一取值口径）
-      ...(sub === undefined ? {} : { sub }),
-    });
-    mountToolCard(ref, parentId, ctx.restoreOps, container);
-    ctx.restoreOps.set(id, ref);
-    return;
-  }
-  const id = m.tool_call_id ?? '';
-  const ref = ctx.restoreOps.get(id);
-  if (ref) {
-    const failed = !!m.tool_error && m.tool_error !== '';
-    setToolResult(ref, failed ? String(m.tool_error) : toJsonText(m.tool_value), failed, m.tool_value);
-    ctx.restoreOps.delete(id);
-    return;
-  }
-  appendToolLine(
-    t('shell.restore.orphanResult') +
-      (m.tool_error ? String(m.tool_error) : toJsonText(m.tool_value)),
-    container,
-  );
-}
 
 /**
  * W515：历史条目的种类映射 ——
@@ -268,7 +229,16 @@ export async function restoreSessionHistory(
   const recent = all.length > MAX_RESTORE ? all.slice(all.length - MAX_RESTORE) : all;
   // W784 §7.2：提问/回答两行按 question_id 配对（有问无答 = 该提问不可再答）。
   const questions = new Map(historyQuestionsOf(recent).map((row) => [row.id, row]));
-  for (const m of recent) renderOne(ctx, m, off, questions);
+  // W1485：分片渲染（片间让出事件循环）—— 200 条重消息不再一次性占满主线程。
+  // 单片的会话不进这个循环的 await（见 RESTORE_CHUNK 注释）。
+  for (let i = 0; i < recent.length; i += RESTORE_CHUNK) {
+    if (i > 0) {
+      await yieldToBrowser();
+      if (guard && !guard()) return; // 期间切了会话：丢弃半成品（离屏容器随之被 GC）
+      if (ctx.streaming) return;     // 期间开跑了：不打断实时流（与开头同一判据）
+    }
+    for (const m of recent.slice(i, i + RESTORE_CHUNK)) renderOne(ctx, m, off, questions);
+  }
   if (ctx.restoreOps.size) {
     for (const ref of ctx.restoreOps.values()) {
       setToolResult(ref, t('shell.restore.noResult'), false);
@@ -296,6 +266,9 @@ export async function restoreSessionHistory(
   ctx.dedup.guardBuf = '';
   ctx.dedup.guardAll = false;
   ctx.restored = true;
+  // W1485：恢复收尾统一裁一次 DOM（force：不参与 assistant 那条时间窗节流）。
+  // 历史本身已按 MAX_RESTORE 条截断，这一步兜的是「服务端一次给回上千条」的情形。
+  prunePaneDom(ctx, true);
   railSync(ctx);
   autoscroll(ctx, true);
   // 历史就位后再问服务端「还有哪些提问没结算」：进程没重启的刷新靠这一步把卡片

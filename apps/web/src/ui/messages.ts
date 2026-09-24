@@ -27,7 +27,23 @@ import { el, fmtNow } from '../utils/dom';
 import type { SessionPane } from './viewctx';
 import { railSync } from './rail';
 import { autoscroll, hideEmptyHint } from './messages/scroll';
+import { buildOmittedNote, clampForRender, setOmittedCount } from './messages/oversize';
 import { t } from '../i18n';
+
+/**
+ * W1485：思考段的渲染上限（字符）。
+ *
+ * 为什么思考段也需要上限：流式期间本段**自动展开**（见 appendThinking 的 W752 分支），
+ * 而 appendThinking 每个 tick 都做一次 `body.textContent = seg.text` + `autoscroll`。
+ * 真机 CDP 实测「已挂载且可见」的代价（同一台 headless shell，1440×900）：
+ *   50K → 9.7ms / 200K → 31.9ms / 600K → 104.8ms / **1.36M → 241.7ms（单 tick）**
+ * 而真实日志里就有一条 1363020 字符的 thinking 段。一次 241ms 的同步布局 × 每个
+ * 节拍 = 主线程被钉死，正是用户报的「切回即卡死」。
+ *
+ * 与助手正文同量级：正常思考远小于 64K，超出的部分折叠成一行提示（原文一字不丢，
+ * 点「展开全部」按全文渲染一次）。
+ */
+export const THINK_RENDER_LIMIT = 65536;
 
 // ---- thinking（弱化独立段，按事件顺序出现，不再聚合进气泡） ----------------------
 
@@ -67,6 +83,10 @@ export interface ThinkSegDom {
   body: HTMLElement; // 正文
   foldMark: HTMLElement; // 折叠箭头（W765：内联 SVG chevron，方向由 data-fold 驱动）
   text: string; // 累积思考文本（与 ui/view.ts 的 ThinkSeg 同字段，便于直接挂到 ctx）
+  /** W1485：用户点过「展开全部」后按全文渲染（此后不再钳位）。 */
+  expanded?: boolean;
+  /** W1485：省略提示行（复用节点，避免每节拍重建按钮）。 */
+  note?: HTMLElement;
 }
 
 /** root → 折叠零件（不改 ui/view.ts 的 ThinkSeg 合同）。 */
@@ -95,6 +115,34 @@ export function setThinkStreaming(seg: ThinkSegDom, on: boolean): void {
  * 构建思考段 —— live 追加与历史恢复**共用这一处**（默认态的唯一真源）。
  * collapsed 缺省 = true（默认折叠）；只有 live 流式期间显式传 false 自动展开。
  */
+/**
+ * W1485：把 `seg.text` 按渲染上限画进正文（原文一字不丢）。
+ *
+ * 单一写入口 —— buildThinkSeg（首次/恢复）与 appendThinking（每节拍）都走它，
+ * 两条路径的钳位口径因此不可能分叉。已展开（`expanded`）的段不再钳位。
+ */
+function paintThinkBody(seg: ThinkSegDom, emptyText = ''): void {
+  const clamped = seg.expanded ? { text: seg.text, omitted: 0 } : clampForRender(seg.text, THINK_RENDER_LIMIT);
+  // emptyText 由调用方给：buildThinkSeg 传 ''（保持「无文本 = 空」的原语义），
+  // appendThinking 传占位文案（live 流式的「思考中…」）。
+  seg.body.textContent = clamped.text === '' ? emptyText : clamped.text;
+  if (clamped.omitted > 0) {
+    if (!seg.note) {
+      seg.note = buildOmittedNote(clamped.omitted, () => {
+        seg.expanded = true;
+        seg.note = undefined;
+        paintThinkBody(seg);
+      });
+      seg.body.after(seg.note);
+    } else {
+      setOmittedCount(seg.note, clamped.omitted);
+    }
+  } else if (seg.note) {
+    seg.note.remove();
+    seg.note = undefined;
+  }
+}
+
 export function buildThinkSeg(
   opts: { time?: string; text?: string; collapsed?: boolean } = {},
 ): ThinkSegDom {
@@ -116,12 +164,13 @@ export function buildThinkSeg(
   msg.appendChild(cap);
   const bubble = el('div', 'bubble think-seg-bubble');
   const body = el('div', 'think-seg-body');
-  if (opts.text !== undefined) body.textContent = opts.text;
   bubble.appendChild(body);
   msg.appendChild(bubble);
   root.appendChild(msg);
   const seg: ThinkSegDom = { root, msg, head: cap, body, foldMark, text: opts.text ?? '' };
   thinkFolds.set(root, seg);
+  // W1485：正文经渲染上限（原文留在 seg.text，展开即见全文）。
+  paintThinkBody(seg);
   setThinkCollapsed(seg, opts.collapsed !== false);
   const toggle = (): void => {
     thinkUserFolded.add(seg.root); // 记下用户意图
@@ -213,7 +262,12 @@ export function appendThinking(ctx: SessionPane, delta: string): void {
   }
   if (seg !== null) {
     seg.text += delta || '';
-    seg.body.textContent = seg.text === '' ? t('chat.think.thinking') : seg.text;
+    // W1485：经 paintThinkBody（钳位 + 复用提示行），不再直接写全文。
+    // `ctx.thinkSeg` 的类型是较窄的 view.ThinkSeg（只有 root/head/body/text），
+    // 而 paintThinkBody 需要 ThinkSegDom 的 expanded/note —— 从登记表按 root 反查
+    // （与 foldThinkSeg / appendThinking 上面那段同一手法）。
+    const parts = thinkFolds.get(seg.root);
+    if (parts) paintThinkBody(parts, t('chat.think.thinking'));
   }
   autoscroll(ctx);
   railSync(ctx);
@@ -230,6 +284,7 @@ export {
   ensureAssistant,
   finalizeAssistant,
   flushTextSegment,
+  flushVisible,
   removeAssistant,
   resetMessages,
 } from './messages/assistant';

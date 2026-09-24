@@ -7,10 +7,12 @@
 import { el, fmtNow } from '../../utils/dom';
 import { MarkdownStream } from '../../utils/markdown';
 import type { AssistantView, StreamDom } from '../view';
-import type { SessionPane } from '../viewctx';
+import { activePane, type SessionPane } from '../viewctx';
 import { railAdd, railSync } from '../rail';
 import { runEnhancers } from '../enhance';
 import { htmlToNodes } from './markdown';
+import { buildOmittedNote, clampForRender, MESSAGE_RENDER_LIMIT, setOmittedCount } from './oversize';
+import { prunePaneDom } from './dom-cap'; // W1485：消息容器的 DOM 上限
 import { autoscroll, hideEmptyHint, renderEmptyHint } from './scroll';
 
 // ---- 文本段增量渲染器（W301） ---------------------------------------------------
@@ -24,6 +26,8 @@ function domOf(view: AssistantView): StreamDom {
       stream: new MarkdownStream(),
       boundary: document.createComment('w895-boundary'),
       lastText: '\u0000',
+      expanded: false,
+      note: null,
     };
     doms.set(view, d);
   }
@@ -87,7 +91,10 @@ function renderTextView(ctx: SessionPane, view: AssistantView): void {
     railSync(ctx);
     return;
   }
-  const parts = d.stream.updateParts(view.text);
+  // W1485：单条消息的渲染上限。超长正文只渲染前缀（原文一字不丢，展开按钮用全文
+  // 重渲染一次）—— 这是「后台攒了几百 KB 后一次 parse 卡死主线程」的最后一道闸。
+  const clamped = d.expanded ? { text: view.text, omitted: 0 } : clampForRender(view.text, MESSAGE_RENDER_LIMIT);
+  const parts = d.stream.updateParts(clamped.text);
   d.lastText = view.text;
 
   // 边界必须是 content 的子节点：首次渲染挂上，或在 reset 后（容器被别处清过）重新挂。
@@ -115,14 +122,43 @@ function renderTextView(ctx: SessionPane, view: AssistantView): void {
   for (const n of htmlToNodes(parts.tailHtml)) tailFrag.appendChild(n);
   view.content.appendChild(tailFrag);
 
+  // 超长提示行：节点**跨节拍复用**（尾部区每 tick 重建，新建的话每帧都会造一个
+  // 新按钮）。它在内容之外、作为 .content 的最后一个子节点，不参与稳定/尾部两区。
+  if (clamped.omitted > 0) {
+    if (d.note === null) {
+      d.note = buildOmittedNote(clamped.omitted, () => {
+        // ★ 必须先把 lastText 置回哨兵：renderTextView 开头有「文本没变就短路」的
+        //   快路径，而展开时 view.text 恰恰**没变**（变的是渲染策略）—— 不短路掉
+        //   它，按钮点了什么都不会发生（本门禁的变异负控制抓到的真 bug）。
+        d.expanded = true;
+        d.lastText = '\u0000';
+        renderTextView(ctx, view);
+      });
+    } else {
+      setOmittedCount(d.note, clamped.omitted);
+    }
+    if (d.note.parentNode !== view.content) view.content.appendChild(d.note);
+  } else if (d.note !== null) {
+    d.note.remove();
+    d.note = null;
+  }
+
   // W895：渲染后的增强遍走注册缝（内置 hljs + math 仍在此链上，顺序不变）。
   runEnhancers(view.content);
   autoscrollView(ctx, view); // W867：离屏（历史恢复）不写滚动位
+  // W1485：消息容器的 DOM 上限。**只对已挂载的容器做**（离屏的历史恢复由 restore.ts
+  // 收尾统一裁一次）—— 在离屏容器里逐条数节点是纯浪费，且那时列数还没定型。
+  if (view.root.isConnected !== false) prunePaneDom(ctx);
   railSync(ctx);
 }
 
 function scheduleTextView(ctx: SessionPane, view: AssistantView): void {
   if (ctx.render.timer !== null) return; // 已有一次尾部渲染排队（窗口内的增量都并进它）
+  // W1485：标签页在后台时**不排渲染**，只累积（view.text 继续涨）。
+  // 浏览器对后台标签页的 setTimeout 节流到 ≥1s，而 SSE 事件照常到达 —— 排队的那次
+  // 渲染会在切回时以「几百 KB 全文」的身份落地，正是用户看到的「切回即卡死」。
+  // 后台只累积、变可见时由 flushVisible() 一次性对齐（同一帧内完成，不会空白）。
+  if (document.hidden) return;
   const now = performance.now();
   const wait = Math.max(0, ctx.render.deadline + RENDER_DEBOUNCE - now);
   if (wait === 0) {
@@ -150,6 +186,29 @@ function autoscrollView(ctx: SessionPane, view: AssistantView, force = false): v
 
 /** 立即冲刷（turn 结束 / done 事件 / 最终文本到来时调用）。 */
 function flushTextView(ctx: SessionPane, view: AssistantView): void {
+  if (ctx.render.timer !== null) {
+    window.clearTimeout(ctx.render.timer);
+    ctx.render.timer = null;
+  }
+  ctx.render.deadline = performance.now();
+  renderTextView(ctx, view);
+}
+
+/**
+ * W1485：从后台切回时把「后台累积的正文」一次性渲染到当前状态。
+ *
+ * 为什么必须有这一步（而不是让 scheduleTextView 自己排队）：后台期间我们**故意**
+ * 不排渲染，若不在可见时补一次，正文就会停在切走那一刻的样子，直到下一个 token
+ * 到达才追上 —— 用户看到的是「切回来还是旧内容」。这里同步补一次，且因为渲染上限
+ * 已经生效，这一次的代价有界（≤ MESSAGE_RENDER_LIMIT）。
+ *
+ * 与 grants.ts:217 的 visibilitychange（授权面板刷新）互不干涉：那条走网络，
+ * 这条只碰 DOM；两条都只订阅、都不阻止对方。
+ */
+export function flushVisible(): void {
+  const ctx = activePane();
+  const view = ctx?.assistant;
+  if (!ctx || !view) return;
   if (ctx.render.timer !== null) {
     window.clearTimeout(ctx.render.timer);
     ctx.render.timer = null;

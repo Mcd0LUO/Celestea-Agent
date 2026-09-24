@@ -19,6 +19,12 @@ import type { Enhancer } from "./registry";
 export const CODE_EXTRAS_ID = "display.codeExtras";
 /** 超过这个行数默认折叠。 */
 export const CODE_FOLD_LINES = 30;
+/**
+ * W1485：单个代码块的**渲染上限**（字符）。超过就不做行号切分/行号栏 —— 切分要
+ * 遍历整棵子树并按行建 span，一个 200K 字符的块会产出上万个节点（真实日志里最大
+ * 单条工具结果 196187 字符）。折叠与徽标不受影响，块本身照常渲染。
+ */
+export const CODE_LINES_MAX_CHARS = 20000;
 
 export interface CodeSegment {
   /** 该段文本继承的 class 链（hljs 的 hljs-* 与 language-*）。 */
@@ -82,7 +88,8 @@ function applyCodeExtras(container: Element): void {
     if (pre.dataset["structured"] === "1") continue; // csv 已接管
     const host = ensureWrap(pre);
     addBadge(host, code);
-    renderLineSpans(code);
+    // W1485：超大块跳过「行号切分」这一步（它是唯一按行建节点的增强）。
+    if ((code.textContent ?? "").length <= CODE_LINES_MAX_CHARS) renderLineSpans(code);
     addFold(host, pre, code);
   }
 }

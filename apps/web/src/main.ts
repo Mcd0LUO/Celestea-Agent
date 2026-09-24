@@ -39,6 +39,7 @@ import { initSessionsPanel } from './ui/sessions';
 import { initWorkerStrip } from './ui/worker-strip'; // W866 会话页左上角 worker 快捷条
 import { initGrants } from './ui/grants'; // W701 提权通道（能力位未就绪时入口隐藏）
 import { restoreActiveHistory } from './ui/restore';
+import { flushVisible } from './ui/messages'; // W1485：后台切回时一次性对齐正文
 import { initRail } from './ui/rail';
 import { initEnhancers } from './ui/enhance'; // W895 渲染后增强缝（P0）
 import { initHints } from './ui/hint'; // W790 悬浮提示注册缝（item 4）
@@ -124,6 +125,13 @@ function init(): void {
 
   // 配置保存成功 → 顶栏/statusline 反映新模型
   window.addEventListener('studio:config-saved', () => refreshHealthChip());
+
+  // W1485：从后台切回时把后台累积的正文一次性对齐（后台期间不排渲染，见
+  // ui/messages/assistant.ts 的 scheduleTextView / flushVisible）。
+  // 只订阅可见性，不做任何网络请求 —— 与 grants.ts 的授权刷新互不干涉。
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) flushVisible();
+  });
 
   need<HTMLTextAreaElement>('#input').focus();
 }

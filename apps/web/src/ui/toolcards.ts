@@ -11,6 +11,7 @@
 //         （后端契约 ≤80 字符，前端折叠空白后截断到 60）。
 // ============================================================================
 import { el } from '../utils/dom';
+import { appendOmittedNote, clampForRender, TOOL_RESULT_RENDER_LIMIT } from './messages/oversize';
 import { attachmentViewsOf, refsOfValue, renderAttachmentGrid } from './attachments';
 import { autoscroll } from './messages';
 import type { SessionPane } from './viewctx';
@@ -261,8 +262,21 @@ export function setToolResult(ref: ToolCardRef, resultText: string, failed: bool
   const r = summaryOf(resultText);
   ref.resultPv.textContent = r ? t('chat.tool.result', { text: r }) : '';
   if (r) ref.resultPv.classList.add('has');
-  if (!ref.body.querySelector('.tool-out')) {
-    ref.body.appendChild(el('pre', 'tool-out' + (failed ? ' err-c' : ''), resultText));
+  // W1485：结果正文的渲染上限。真实日志里最大单条工具结果 196187 字符 —— 整段进
+  // <pre> 会让一次布局/绘制吃掉几十毫秒，刷新时同步渲染 200 条就卡死。这里只渲染
+  // 前缀，其余折成一行提示 + 展开按钮（原文没丢：展开时按全文重建这个 <pre>）。
+  const clamp = clampForRender(resultText, TOOL_RESULT_RENDER_LIMIT);
+  const out = ref.body.querySelector('.tool-out');
+  if (!out) {
+    ref.body.appendChild(el('pre', 'tool-out' + (failed ? ' err-c' : ''), clamp.text));
+  } else if (out.textContent !== clamp.text) {
+    out.textContent = clamp.text; // 结果被后续帧覆盖（同一 tool_call_id 重放）
+  }
+  if (clamp.omitted > 0) {
+    appendOmittedNote(ref.body, clamp.omitted, () => {
+      const full = ref.body.querySelector('.tool-out');
+      if (full) full.textContent = resultText; // 展开 = 全文一次到位（用户主动触发）
+    });
   }
   // W805（设计 §6.3）：read_image 的 tool_result.value.attachments → 图片缩略图。
   const refs = refsOfValue(value);

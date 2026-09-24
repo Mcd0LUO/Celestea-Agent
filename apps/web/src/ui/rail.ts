@@ -30,40 +30,7 @@ import {
   RAIL_PAD_Y, RAIL_PITCH_NATURAL, railBarHeight, railBarOpacity, railBarWidth,
   railCardPlacement, railFitsAll, railGrow, railGutterWidth, railHitRadius, railLane, railPitch,
 } from './rail-geom';
-import { railCenterHit, railCenterLabel } from './rail-center';
-import { buildRailCard } from './rail-card';
-import { docCenterY, viewWindow } from './rail-doc';
-// W867：命中半径（hover 命中与点击命中共用同一口径；测试直接断言这个纯函数）。
-export { railHitRadius };
-/** W790：rail 预览卡在提示注册缝里的提供者身份（priority 10 = 压过内置纯文本卡）。 */
-export const RAIL_HINT_ID = 'rail-preview';
-const MAX_ROWS = 20;
-
-/** 一根长条 = 一轮（一问一答合并）。 */
-interface RailItem {
-  startCol: HTMLElement;
-  cols: HTMLElement[];
-  hasReply: boolean;
-  el: HTMLElement;
-  y: number;
-  visible: boolean;
-  fold: number;
-  /** W886：本条常驻的提示文案（切走「居中」态时复位用）。 */
-  hint: string;
-}
-
-/** 单个会话容器的长条集合（会话切换时整组保活）。 */
-interface RailState {
-  items: RailItem[];
-  foldItem: RailItem | null;
-  /** 非当前会话的离屏存放点（当前会话的长条常驻 track） */
-  holder: HTMLElement;
-}
-
-const rails = new WeakMap<SessionPane, RailState>();
-/** W790：长条元素 → 条目（提示提供者拿元素反查内容；WeakMap 随节点回收）。 */
-const itemByEl = new WeakMap<HTMLElement, RailItem>();
-
+/** W1485：记账层变量（轨道 DOM 与几何仍归本模块）。 */
 let mainEl: HTMLElement | null = null;
 /** 轨道当前绑定的会话容器（= 视觉上正在显示的那个）。 */
 let cur: SessionPane | null = null;
@@ -85,25 +52,19 @@ let railW = 110; // W867：缺省 = rail-geom 的 RAIL_MAX_W（此处不再单�
 let pitch = RAIL_PITCH_NATURAL;
 let modeAll = true;
 
-function stateOf(ctx: SessionPane): RailState {
-  let st = rails.get(ctx);
-  if (!st) {
-    const holder = document.createElement('div');
-    holder.className = 'railv3-holder';
-    st = { items: [], foldItem: null, holder };
-    rails.set(ctx, st);
-  }
-  return st;
-}
-
-function curState(): RailState | null {
+function curState(): ReturnType<typeof stateOf> | null {
   return cur ? stateOf(cur) : null;
 }
-
-/** 参与布局/交互的全部条目（含折叠条）。 */
-function allItems(st: RailState): RailItem[] {
-  return st.foldItem ? [st.foldItem, ...st.items] : st.items;
-}
+import { railCenterHit, railCenterLabel } from './rail-center';
+import { buildRailCard } from './rail-card';
+import { docCenterY, viewWindow } from './rail-doc';
+// W1485：长条记账搬到 ./rail-state.ts（模块体积棘轮；纯搬家 + 一个摘除手术）
+import { allItems, bindItem, dropColsInState, itemOf, stateOf, stateOfOnly, type RailItem } from './rail-state';
+// W867：命中半径（hover 命中与点击命中共用同一口径；测试直接断言这个纯函数）。
+export { railHitRadius };
+/** W790：rail 预览卡在提示注册缝里的提供者身份（priority 10 = 压过内置纯文本卡）。 */
+export const RAIL_HINT_ID = 'rail-preview';
+const MAX_ROWS = 20;
 
 // ---- 轨道与几何 ---------------------------------------------------------------
 
@@ -196,7 +157,7 @@ function layout(): void {
       fresh.el.className = 'railv3-item railv3-fold';
       fresh.el.textContent = '⋯';
       track.appendChild(fresh.el);
-      itemByEl.set(fresh.el, fresh);
+      bindItem(fresh.el, fresh);
       st.foldItem = fresh;
       if (stale && stale.parentNode) stale.remove();
     } else {
@@ -260,7 +221,7 @@ export function railHintPlugin(): HintPlugin {
     id: RAIL_HINT_ID,
     priority: 10,
     claim(target: HTMLElement): HintHandle | null {
-      const it = itemByEl.get(target);
+      const it = itemOf(target);
       if (!it) return null;
       return { build: () => buildRailCard(it), position: (box) => positionCard(box, target) };
     },
@@ -411,7 +372,7 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
       fold: 0,
       hint,
     });
-    itemByEl.set(bar, st.items[st.items.length - 1]!);
+    bindItem(bar, st.items[st.items.length - 1]!);
   } else {
     last.cols.push(col);
     if (role === 'assistant' && !last.hasReply) {
@@ -420,6 +381,27 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
     }
   }
   if (live) layout();
+}
+
+/**
+ * W1485：把若干**已被回收**的消息列从长条记账里摘掉（DOM 裁剪时调用）。
+ * 长条按 `startCol` 的文档坐标定位（rail-doc.ts 的 docCenterY），列被裁剪后 rect
+ * 恒为 0 → 长条会缩到轨道顶端集体重叠，那不是「少了几根条」而是一个骗人的界面。
+ * 记账手术在 rail-state.dropColsInState，这里额外复位可能指着被摘条的悬停/居中态。
+ */
+export function railDropCols(ctx: SessionPane, cols: readonly HTMLElement[]): number {
+  if (cols.length === 0) return 0;
+  const st = stateOfOnly(ctx);
+  if (!st) return 0;
+  const dropped = dropColsInState(st, cols);
+  if (dropped > 0 && ctx === cur) {
+    // 悬停/居中态可能正指着刚被摘掉的那根 → 一并复位（否则下一次 layout 会读到
+    // 一个已脱离文档的节点，长条与高亮对不上）。
+    clearHover();
+    centerItem = null;
+    queueSync();
+  }
+  return dropped;
 }
 
 /** 清空某会话的长条并复位交互状态（resetMessages / 历史重载时调用）。 */
@@ -492,6 +474,8 @@ export function initRail(): void {
 export function railBoundPane(): SessionPane | null {
   return cur;
 }
+
+
 
 /** 滚动监听随激活容器切换（scroll 事件不冒泡，必须绑在滚动元素上）。 */
 let scrollBound: HTMLElement | null = null;

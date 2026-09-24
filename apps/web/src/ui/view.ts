@@ -63,6 +63,13 @@ export interface StreamDom {
   /** 稳定区与尾部区的分界（`content` 的子节点；注释节点）。 */
   boundary: Comment;
   lastText: string;
+  /**
+   * W1485：用户已点过「展开全部」——本段不再按 MESSAGE_RENDER_LIMIT 截断。
+   * 只对**本条**消息生效（每段一份 StreamDom），新一轮/新段重新从上限开始。
+   */
+  expanded: boolean;
+  /** W1485：超长提示行（跨节拍复用的同一个节点；null = 当前未截断）。 */
+  note: HTMLElement | null;
 }
 
 /** W514：已构建的工具卡引用（供结果回填 / 复制）。 */
