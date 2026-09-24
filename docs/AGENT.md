@@ -16,7 +16,7 @@
 | 4 | 不许相信 worker 的自述报告；关键结论**自己重跑** | 真实案例：worker 报 `CHECK_EXIT=0`，但用的是不重建的入口，量的是旧产物 |
 | 5 | 契约数字**三处一致**：`API_ENDPOINT_COUNT` == `contracts/endpoints.json` == `FROZEN_COUNTS` | 只改一处会静默漂移 |
 | 6 | 不许提交派生产物（`dist/`、`apps/studio/webdist/`、`packages/core/contracts/`） | 它们是构建产物，已 gitignore，并由 release 门禁机械兜底 |
-| 7 | 同一时间**只允许一个 builder**（构建 / 测试 / benchmark） | 并发会让时序敏感用例 flaky、让 benchmark 数字失真 |
+| 7 | 同一时间**只允许一个 builder**（构建 / 测试 / benchmark） | 并发会让时序敏感用例 flaky、让 benchmark 数字失真。**只读门禁不是 builder**：`check:fast`（两个 typecheck + lint + lint:arch，约 34s、零产物、确定性）任何时刻都可以跑，**worker 交付前必须跑** |
 | 8 | 不跑 `--no-verify`，不绕过任何门禁 | 门禁存在的唯一理由就是它不给人情 |
 | 9 | **npm 发布必须有人类显式授权**：没有授权绝不推 npm | 发布不可逆（版本不能再发、tarball 永久公开），不能是「走完发布清单」的副作用。机械实现：`pnpm run publish` 在 `CELESTEA_PUBLISH_AUTHORIZED=1` 缺失时 fail-closed |
 
@@ -27,6 +27,15 @@
 1. **聚焦测试**：新行为有测试；纯函数优先，DOM 用 jsdom，跨平台用可注入 seam。
 2. **变异负控制**：把实现改坏一次，确认测试**真的**变红（不是「我觉得会红」）。
 3. **全量 `pnpm check` 绿**：`typecheck → lint → lint:arch → test → check:web`。
+   **派工场景**：worker 交付前**必须**跑 `pnpm check:fast`（`typecheck` + `typecheck:web` +
+   `lint` + `lint:arch`，约 34s、只读、可与别的 builder 并发）；全量 `pnpm check` 由**派工者**
+   在收口时统一跑（铁律 7 只约束 builder）。
+   ⚠️ **`typecheck:web` 不能省**：根 `tsc` 的 `include` **不含** `apps/web/**`（前端有自己的
+   `apps/web/tsconfig.json`），所以只跑根 `typecheck` 会漏掉全部前端类型错误 —— 这正是
+   W1485 那 3 个错误的藏身处。
+   **为什么单独有这一条**：本仓真实事故 —— 派工简报只写了「不要跑全量 `pnpm check`」，
+   worker 于是只跑了自己的目标文件；结果一个交付带 3 个 `tsc` 错误、另一个引入 3 处循环
+   依赖，两者都自述「全绿」。这 3 道门禁只读、零产物、约 28s，跑它们不违反「一个 builder」。
 4. **棘轮按真实测量调整**：产物体积 / 模块体积只按实测上调，并在文件里**写明增量构成**。
 5. **文档同步**：新增文档必须登记进 `docs/README.md` 的文档地图。
 6. **归属干净**：`find . -user root -type f`（排除 `node_modules`/`.git`/`dist`）应为空。
