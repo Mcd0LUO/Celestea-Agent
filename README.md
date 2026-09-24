@@ -81,8 +81,8 @@ export CELESTEA_MODEL="your-model-id"                   # 可选
 ### 3. 从源码运行（开发）
 
 ```bash
-git clone https://github.com/Mcd0LUO/Celestea-Agent.git
-cd Celestea-Agent && pnpm install --frozen-lockfile
+git clone https://github.com/Mcd0LUO/Celestea-Harness-Studio.git
+cd Celestea-Harness-Studio && pnpm install --frozen-lockfile
 pnpm --dir apps/web run build          # 前端产物（后端从磁盘静态服务）
 pnpm --filter @celestea/studio start   # 默认 127.0.0.1:3778
 ```
