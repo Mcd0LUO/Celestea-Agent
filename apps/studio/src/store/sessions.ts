@@ -18,11 +18,10 @@
  * unparsable line so a torn tail is dropped rather than reported.
  */
 
-import { readFileSync } from "node:fs";
-import { parseSessionJsonl, projectMessages } from "@celestea/session";
 import type { StudioMessage } from "@celestea/core";
 import type { SessionWorkspace } from "@celestea/runtime";
 import { isDirectory, isFile, listEntries, statOf, writeFileRaw, removeDir, ensureDir } from "./fs-json.js";
+import { TranscriptMemo } from "./session-log-memo.js";
 import { badRequest, errText, fail, notFound, ok, type StoreResult } from "./result.js";
 import { DEFAULT_SESSION_MODE, parseMode, validateMode, type SessionMode } from "./mode.js";
 import { readSessionMeta, writeSessionMeta, type SessionMeta } from "./session-meta.js";
@@ -112,6 +111,12 @@ export interface SessionCreateRequest {
 }
 
 export class SessionsStore {
+  /**
+   * W1504: the transcript projection memo. Process-wide because the store is
+   * (one instance per process, `plugins.ts`), and bounded (see the module).
+   */
+  private readonly transcripts = new TranscriptMemo();
+
   constructor(private readonly ws: WorkspacesStore, private readonly now: () => number = Date.now) {}
 
   /**
@@ -330,16 +335,29 @@ export class SessionsStore {
     return `${writeRoot}/${name}`;
   }
 
-  /** Transcript projection: torn tail dropped, no pairing logic. */
+  /**
+   * Transcript projection: torn tail dropped, no pairing logic.
+   *
+   * W1504: memoized on `(mtimeMs, size)` (see `session-log-memo.ts`). The
+   * RESULT is byte-for-byte what the unmemoized read produced — same function,
+   * same input — so this is a pure cache, not a semantic change.
+   */
   messages(resolved: ResolvedSession): StudioMessage[] {
-    const text = readFileSync(`${resolved.dir}/${SESSION_FILE}`, "utf8");
-    return projectMessages(parseSessionJsonl(text).events);
+    return this.transcripts.read(`${resolved.dir}/${SESSION_FILE}`);
   }
 
   /** POST /api/clear — truncate the log (no backup, no 409 guard). */
   truncate(resolved: ResolvedSession): StoreResult<void> {
     try {
       writeFileRaw(`${resolved.dir}/${SESSION_FILE}`, "");
+      // W1504: drop the entry instead of trusting the revision guard to notice.
+      // `truncate` always SHRINKS the file, so today the guard does catch every
+      // observable clear (mutation M10: deleting this line keeps the integration
+      // test green) — but that is an argument about size arithmetic, not a
+      // property of the cache, and the entry (up to a whole projection) would
+      // otherwise occupy an LRU slot until the cleared session is read again,
+      // which may be never.
+      this.transcripts.forget(`${resolved.dir}/${SESSION_FILE}`);
       return ok(undefined);
     } catch (e) {
       return fail(500, errText(e));
