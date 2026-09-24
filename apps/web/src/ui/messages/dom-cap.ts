@@ -18,6 +18,17 @@
 //     从服务端拉的最近 200 条）—— 所以「回收」不是数据丢失，只是视口外的 DOM；
 //   · 若某条被回收的消息属于 rail 上的一轮，对应长条必须一起摘掉（否则它按空 rect
 //     定位、缩在轨道顶端骗人）—— 见 railDropCols。
+//
+// ★ W1502 复核补的缺口（重要）：摘 DOM **不等于**释放内存。`ctx.ops` 是
+//   `Map<toolCallId, ToolCardRef>`，而 ToolCardRef 持有卡片的 DOM 节点；原先
+//   `prunePaneDom` 只 removeChild、从不碰 ops，于是被摘掉的卡片树仍被 Map 强引用
+//   —— 绘制有界了，堆没有。更糟的是唯一会清 ops 的两个函数
+//   （`resetMessages` / `resetToolCards`）在本仓**零调用者**（死代码），
+//   所以 ops 只增不减。主会话独立复现（jsdom，每轮 100 条）：
+//       r5: doc=600, ops=600      ← 到达上限
+//       r6: doc=600, ops=700      ← DOM 不再增长
+//       r11: doc=600, ops=1200    ← 但 ops 持续增长（堆泄漏）
+//   修法：裁剪时同步删除「卡片已不在文档里」的 ops 条目（见 pruneToolCards）。
 // ============================================================================
 import type { SessionPane } from '../viewctx';
 import { railDropCols } from '../rail';
@@ -64,5 +75,37 @@ export function prunePaneDom(ctx: SessionPane, force = false): number {
     parent.removeChild(node);
     node = next;
   }
-  return doomed.length;
+  // W1502：**堆也要一起放**。ops 持有卡片的 DOM 节点，只 removeChild 不删 ops 会让
+  // 被摘掉的卡片树继续被 Map 强引用（绘制有界、堆无界）。
+  // ★ 必须在**摘完节点之后**调用：pruneToolCards 的判据是 `ctx.el.contains(anchor)`，
+  //   节点还在容器里时它永远为真，提前调用等于空转（主会话写这段时先踩了一次）。
+  const dropped = pruneToolCards(ctx);
+  return doomed.length + dropped;
+}
+
+/**
+ * W1502：摘掉「卡片已落在被回收区间里」的 ops 条目，返回删除数。
+ *
+ * 判定用**节点归属**而不是 id 记账：一个 ops 条目的 ref 可能挂在子卡片
+ * （`.toolcard-subs`）上，用 id 反查列需要额外的父子映射；而「这个 ref 的任何一个
+ * 节点是否还在文档里」是唯一准确的判据 —— 它在文档里就绝不能删（迟到 result 还要
+ * 按 id 回填），不在就一定是本次（或更早）被摘掉的。
+ *
+ * 只增不删的 ops 是本仓 W1502 实测的堆泄漏来源（见文件头），这里给它配上删除路径。
+ */
+function pruneToolCards(ctx: SessionPane): number {
+  if (ctx.ops.size === 0) return 0;
+  let removed = 0;
+  for (const [id, ref] of ctx.ops) {
+    // ★ 判据必须是 `ctx.el.contains(anchor)`，**不能**用 `anchor.isConnected`：
+    //   离屏会话（后台标签）的 pane.el 本身就不在文档里，isConnected 全为 false，
+    //   用它会把后台会话的 ops 整批误删 —— 迟到 result 就再也回填不上了。
+    //   `contains` 只问「还在不在这个会话容器里」，与 pane 是否离屏无关。
+    const anchor = ref.card as unknown as Node;
+    if (!ctx.el.contains(anchor)) {
+      ctx.ops.delete(id);
+      removed += 1;
+    }
+  }
+  return removed;
 }
