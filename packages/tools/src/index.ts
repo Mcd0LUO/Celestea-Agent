@@ -79,7 +79,20 @@ export {
 export { validateArgs } from "./schema.js";
 
 // --- errors: the structured contract ------------------------------------------
-export { contractError, contractFailure, errorCode, errorText, GUARD_ERROR_PREFIX, quoteMessage, TOOLARG_ERROR_PREFIX } from "./errors.js";
+export {
+  contractError,
+  contractFailure,
+  DENIAL_PREFIXES,
+  denialFamily,
+  errorCode,
+  errorText,
+  GUARD_ERROR_PREFIX,
+  isDenialText,
+  quoteMessage,
+  SANDBOX_ERROR_PREFIX,
+  TOOLARG_ERROR_PREFIX,
+  type DenialFamily,
+} from "./errors.js";
 export { isToolFailure, ToolFailure } from "./tool-failure.js";
 export { fnTool } from "./fn-tool.js";
 
@@ -276,12 +289,11 @@ export {
   BWRAP_PROVIDER,
   buildBwrapArgv,
   buildBwrapCommand,
-  bwrapMeta,
   DEFAULT_BWRAP_OPTIONS,
   SECCOMP_FD,
   type BwrapOptions,
 } from "./sandbox/bwrap-argv.js";
-export { BwrapSandbox, bwrapSandbox, bwrapSandboxWith, rlimitVia, type BwrapMeta, type BwrapSandboxOptions } from "./sandbox/bwrap.js";
+export { BwrapSandbox, bwrapMeta, bwrapSandbox, bwrapSandboxWith, rlimitVia, type BwrapMeta, type BwrapSandboxOptions } from "./sandbox/bwrap.js";
 export {
   ENV_SANDBOX_FALLBACK,
   ENV_SANDBOX_MASK,
@@ -309,7 +321,8 @@ export {
   rlimitsEnabled,
   type SandboxLimits,
 } from "./sandbox/limits.js";
-export { ENV_SANDBOX_BWRAP, probeHost, resetProbeCache, whichSync, type HostProbe } from "./sandbox/probe.js";
+export { ENV_SANDBOX_BWRAP, probeHost, resetProbeCache, smokeEvidence, whichSync, type HostProbe } from "./sandbox/probe.js";
+export { BWRAP_PROMISES, bwrapEnforcement, userspaceEnforcement } from "./sandbox/enforcement.js";
 export { applyLimits, ulimitScript, type RlimitPlan, type RlimitVia } from "./sandbox/rlimit.js";
 export { buildSeccompFilter, instructionCount, openSeccompBlob, toBlobBytes, type BpfInstruction } from "./sandbox/seccomp.js";
 

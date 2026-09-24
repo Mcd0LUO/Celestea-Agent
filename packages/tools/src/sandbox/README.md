@@ -11,9 +11,10 @@
 | `workdir.ts` | workdir 解析：规范化 + 必须落在 `root` 内（**词法**校验，见 §7） |
 | `launch.ts` | provider 共用的进程管线：`detached` 进程组 → 流式限量捕获 → 超时 SIGKILL 整组 |
 | `bwrap-argv.ts` | **argv 顺序真源**（`--unshare-all → --ro-bind / / → --dev /dev → --proc /proc`）+ `SandboxMeta` 映射 |
+| `enforcement.ts` | **每个 provider 自报 completeness**（`full`/`partial` + `promise_gaps`），证据来自 `probe.ts` |
 | `bwrap.ts` | `BwrapSandbox`：探测门禁 + 组命令 + 上报真实隔离度（`BwrapMeta`） |
 | `provider.ts` | provider 选择策略（bwrap 探测 → userspace）与 `CELESTEA_SANDBOX_FALLBACK` |
-| `probe.ts` | 宿主自检：bwrap 存在性 + **按正确顺序**的设备冒烟；结果进程内缓存、可注入 |
+| `probe.ts` | 宿主自检：bwrap 存在性 + **按正确顺序**的设备冒烟 + **隔离证据实测**（命名空间 token / 只读根 / 私有 tmp）；结果进程内缓存、可注入 |
 | `limits.ts` | 6 类 rlimit 的类型/默认值 + **按 UID 全机线程数推导 `RLIMIT_NPROC`** |
 | `rlimit.ts` | rlimit 施加层：`prlimit` 优先，缺失时退 `/bin/sh` 的 `ulimit` 内建 |
 | `seccomp.ts` | 纯 TS 的 cBPF 白名单（322 条指令 / 2576 字节），交给 `bwrap --seccomp FD` |
@@ -129,5 +130,32 @@ pnpm check                                            # typecheck + lint + lint:
 - workdir 越界是**词法**校验（宿主无 `CAP_SYS_CHROOT`，raw `unshare+chroot` provider 在本机与引擎侧同样不可用）。
 - userspace 回退无法提供 netns / 私有 tmp / 只读根 / seccomp，且 `setsid()` 逃逸与父死孤儿都会泄漏（W274 §6）。
   这正是默认策略要「可见降级」而不是静默降级的原因：`selectSandboxDetailed()` 的 `degraded` / `reason` 应进启动日志。
-- `SandboxMeta` 仍是 core 契约的 4 字段；额外观测（`readonly_root` / `rlimit_via` / `nproc` / `uid_threads` / `bwrap_version`）
+- `SandboxMeta` 仍是 core 契约的字段；额外观测（`readonly_root` / `rlimit_via` / `nproc` / `uid_threads` / `bwrap_version`）
   以 `BwrapMeta` 形式附加在结果里，core 契约未改动。
+
+## 8. enforcement（W1483）：事实之外的那一层
+
+`SandboxMeta` 的 `net_isolated` / `tmp_private` / `seccomp` 报告**事实**；`enforcement: "full" | "partial"`
+报告**这份事实是否覆盖了该模式承诺的每一个效果**，`promise_gaps` 逐项列出缺了什么。
+
+- **provider 自报**：`bwrapEnforcement()` / `userspaceEnforcement()` 分别在构造 meta 的地方调用，
+  消费方不得从一堆 boolean 自己拼。
+- **证据说话**：bwrap 的命名空间承诺由冒烟子进程实测（`/proc/self/ns/*` 是否与宿主不同），
+  只读根与私有 tmp 同批测出；**没测到 = gap**，绝不因为「参数写了」就报 `full`。
+  这条正是「bwrap 起来了但某个隔离没生效」的兜底。
+- **绝对承诺的消费方**：`CELESTEA_SANDBOX_FALLBACK=fail` 在 `partial` 时于选择阶段拒绝
+  （复用既有 `sandbox_unavailable:` 词汇，不新造机制）；`unsandboxed` 会话授权仍是唯一的显式豁免。
+  默认模式则**显式降级**并把 `enforcement` / `promiseGaps` 放进 `SandboxSelection`。
+
+### denial 词汇（W1483）
+
+三个前缀是**冻结契约**（Rust parity + 多套测试逐字钉住），W1483 不改名，改的是「只有一个声明点」：
+
+| family | prefix | 产生者 |
+|---|---|---|
+| `args` | `toolargs` | `registry.ts` 的 schema 阶段 |
+| `guard` | `toolguard` | `registry.ts` + `guard/path-guard.ts` |
+| `sandbox` | `run_shell-sandbox` | `core` 的 `SandboxError` |
+
+`packages/tools/src/errors.ts` 的 `DENIAL_PREFIXES` 是唯一真源，`denialFamily()` 让消费方按家族
+分支而不是自己 string-match 三个字面量；渲染统一走 `contractDenial()`（core）→ `contractError()`（tools）。

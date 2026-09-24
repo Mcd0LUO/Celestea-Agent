@@ -78,7 +78,7 @@ class FakeSandbox implements Sandbox {
   readonly config = CONFIG;
   readonly spawns: SandboxSpawnRequest[] = [];
   readonly children: FakeChild[] = [];
-  meta: SandboxMeta = { provider: "userspace", net_isolated: false, tmp_private: false, seccomp: false };
+  meta: SandboxMeta = { provider: "userspace", net_isolated: false, tmp_private: false, seccomp: false, enforcement: "partial", promise_gaps: ["no_os_isolation"] };
 
   async run(_request: SandboxRunRequest): Promise<SandboxRunResult> {
     throw new Error("run is not used by the browser tools");
@@ -170,7 +170,7 @@ describe("F4b · BrowserManager spawn contract", () => {
 
   it("refuses a network-isolated sandbox with a structured error and no orphan", async () => {
     const sandbox = new FakeSandbox();
-    sandbox.meta = { provider: "bwrap", net_isolated: true, tmp_private: true, seccomp: false };
+    sandbox.meta = { provider: "bwrap", net_isolated: true, tmp_private: true, seccomp: false, enforcement: "full" };
     const { manager } = makeManager({ sandbox });
     await expect(manager.open("https://example.com/")).rejects.toThrow(/code=network_required/);
     expect(sandbox.children[0]!.signals).toContain("kill");

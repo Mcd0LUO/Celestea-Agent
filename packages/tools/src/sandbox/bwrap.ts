@@ -24,7 +24,17 @@
 import type { ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 
-import type { Sandbox, SandboxConfig, SandboxMeta, SandboxRunRequest, SandboxRunResult, SandboxShellLookup, SandboxSpawnRequest, SandboxSpawned } from "@celestea/core";
+import type {
+  Sandbox,
+  SandboxConfig,
+  SandboxEnforcementReport,
+  SandboxMeta,
+  SandboxRunRequest,
+  SandboxRunResult,
+  SandboxShellLookup,
+  SandboxSpawnRequest,
+  SandboxSpawned,
+} from "@celestea/core";
 import { SandboxError } from "@celestea/core";
 
 import { wrapChild } from "./child.js";
@@ -36,6 +46,7 @@ import {
   DEFAULT_BWRAP_OPTIONS,
   type BwrapOptions,
 } from "./bwrap-argv.js";
+import { bwrapEnforcement } from "./enforcement.js";
 import { captureRun, preview, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
 import { limitsForCpu, limitsFromEnv, refreshNproc, resolveCpuSec, type SandboxLimits } from "./limits.js";
 import { probeHost, type HostProbe } from "./probe.js";
@@ -43,8 +54,8 @@ import { applyLimits, rlimitDiagnostics, rlimitVia, type RlimitDescribeOptions, 
 import { openSeccompBlob } from "./seccomp.js";
 import { resolveWorkdir } from "./workdir.js";
 
-/** `SandboxMeta` plus the observability the 4-field contract cannot carry. */
-export interface BwrapMeta {
+/** `SandboxMeta` plus the observability the contract fields cannot carry. */
+export interface BwrapMeta extends SandboxMeta {
   provider: string;
   net_isolated: boolean;
   tmp_private: boolean;
@@ -154,6 +165,18 @@ export class BwrapSandbox implements Sandbox {
     return runtimeMeta(this.options, this.limits, this.probe, diag.via, diag.address_space_limited);
   }
 
+  /**
+   * W1483: this provider's own completeness answer for the current host.
+   *
+   * Declared HERE, where the isolation is built, so no caller has to reconstruct
+   * it from `net_isolated` / `tmp_private` / `seccomp`. The policy layer reads
+   * it to decide whether an absolute-promise request may run at all
+   * (`provider.ts`), and every result carries it back to the model.
+   */
+  enforcement(): SandboxEnforcementReport {
+    return bwrapEnforcement(this.options, this.probe);
+  }
+
   private async launch(
     command: string,
     requestedWorkdir: string | undefined,
@@ -186,7 +209,8 @@ export class BwrapSandbox implements Sandbox {
         label: `${bwrapLabel(this.options)} ${preview(command, 128)}`,
       });
       const diag = rlimitDiagnostics(this.probe, this.rlimits, noAddressSpaceLimit);
-      return { child, meta: resultMeta(runtimeMeta(this.options, limits, this.probe, limited.via, diag.address_space_limited)) };
+      const meta = resultMeta(runtimeMeta(this.options, limits, this.probe, limited.via, diag.address_space_limited));
+      return { child, meta };
     } finally {
       blob?.dispose();
     }
@@ -211,13 +235,38 @@ export class BwrapSandbox implements Sandbox {
  */
 export { rlimitVia } from "./rlimit.js";
 
-function runtimeMeta(options: BwrapOptions, limits: SandboxLimits, probe: HostProbe, via: RlimitVia, addressSpaceLimited: boolean): BwrapMeta {
+/**
+ * The isolation actually in force — reported, never inferred by the caller.
+ *
+ * W1483: the facts come from the options, the completeness comes from THIS
+ * provider's own declaration (`bwrapEnforcement`), and the probe supplies the
+ * evidence that backs it. A caller reads `enforcement` / `promise_gaps`; it never
+ * reconstructs completeness from the three booleans.
+ *
+ * W1485: lives HERE, not in `bwrap-argv.ts`. The argv builder is the lowest layer
+ * of this family (pure argv, no probe); composing a meta needs both the argv
+ * options and the probe, and keeping it in the leaf made
+ * `bwrap-argv -> enforcement -> bwrap-argv` and `bwrap-argv -> probe -> bwrap-argv`
+ * circular (caught by `pnpm lint:arch`, not by `tsc`).
+ */
+export function bwrapMeta(options: BwrapOptions, probe: HostProbe): SandboxMeta {
   return {
     provider: BWRAP_PROVIDER,
     net_isolated: !options.shareNet,
     tmp_private: !options.shareTmp,
     seccomp: options.seccomp,
-    readonly_root: true,
+    ...bwrapEnforcement(options, probe),
+  };
+}
+
+function runtimeMeta(options: BwrapOptions, limits: SandboxLimits, probe: HostProbe, via: RlimitVia, addressSpaceLimited: boolean): BwrapMeta {
+  return {
+    ...bwrapMeta(options, probe),
+    provider: BWRAP_PROVIDER,
+    net_isolated: !options.shareNet,
+    tmp_private: !options.shareTmp,
+    seccomp: options.seccomp,
+    readonly_root: probe.readonlyRootObserved === true,
     address_space_limited: addressSpaceLimited,
     rlimit_via: via,
     cpu_sec: limits.cpuSec,
@@ -244,6 +293,9 @@ function resultMeta(meta: BwrapMeta): SandboxMeta {
     net_isolated: meta.net_isolated,
     tmp_private: meta.tmp_private,
     seccomp: meta.seccomp,
+    // W1483: the provider's OWN completeness verdict travels with every result.
+    enforcement: meta.enforcement,
+    ...(meta.promise_gaps === undefined ? {} : { promise_gaps: meta.promise_gaps }),
     ...(meta.cpu_sec === undefined ? {} : { cpu_sec: meta.cpu_sec }),
   };
 }

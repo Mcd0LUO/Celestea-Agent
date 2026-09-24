@@ -16,14 +16,26 @@
  * Same env vocabulary as the engine contract (`contracts/tools.json`):
  * `CELESTEA_SANDBOX_NET=1`, `CELESTEA_SANDBOX_SHARE_TMP=1`,
  * `CELESTEA_SANDBOX_SECCOMP=1`, plus `CELESTEA_SANDBOX_MASK=<abs dirs>`.
+ *
+ * W1483 — `fail` now also covers PARTIAL enforcement, not just "bwrap is
+ * unusable". The provider declares its own completeness (`enforcement.ts`);
+ * when that declaration is `partial` and the policy is `fail`, the policy
+ * refuses HERE, at selection time, with the same `SandboxError("config", …)` and
+ * `sandbox_unavailable:` vocabulary it already used. That is the whole point of
+ * the field: a deployment that demands an absolute boundary gets a refusal
+ * instead of a run that quietly delivered less than it promised. No new
+ * mechanism, no new env var — the existing `unsandboxed` grant remains the one
+ * documented override, and `selectSandboxDetailed` reports `enforcement` so the
+ * host can log which posture it got.
  */
 
 import { isAbsolute } from "node:path";
 
-import type { Sandbox, SandboxConfig } from "@celestea/core";
+import type { Sandbox, SandboxConfig, SandboxEnforcement, SandboxPromiseGap } from "@celestea/core";
 import { SandboxError } from "@celestea/core";
 
 import { BWRAP_PROVIDER, DEFAULT_BWRAP_OPTIONS, type BwrapOptions } from "./bwrap-argv.js";
+import { bwrapEnforcement } from "./enforcement.js";
 import { BwrapSandbox } from "./bwrap.js";
 import { sandboxConfigFromEnv } from "./config.js";
 import { envFlag, envString } from "../env.js";
@@ -83,6 +95,14 @@ export interface SandboxSelection {
    * record a `degraded_by_grant` audit line when it sees this (`§4.4`).
    */
   degradedByGrant: boolean;
+  /**
+   * W1483: the selected provider's own completeness verdict (`full`/`partial`).
+   * Read it from here for startup logs / health instead of re-deriving it from
+   * the provider's booleans.
+   */
+  enforcement: SandboxEnforcement;
+  /** W1483: what the selected provider could not deliver (`partial` only). */
+  promiseGaps: readonly SandboxPromiseGap[];
 }
 
 /** The selected sandbox, ready to inject (`builtinTools`, plugin service). */
@@ -97,51 +117,90 @@ export function selectSandboxDetailed(options: SelectOptions = {}): SandboxSelec
   const grants = options.grants ?? {};
   const probe = options.probe ?? probeHost({ env });
   const config = options.config ?? sandboxConfigFromEnv(env);
-  if (probe.bwrapUsable && probe.bwrapPath !== null) {
-    const sandbox = new BwrapSandbox(config, {
-      probe,
-      env,
-      // W1465: RLIMIT_NPROC counts the whole real UID host-wide, so a cap derived
-      // once here is a time bomb — the UID's thread count grows and the frozen
-      // value eventually makes bwrap fail to create its namespace at all
-      // (EAGAIN, "Resource temporarily unavailable"). Re-derive per call.
-      refreshNprocPerCall: true,
-      limits: limitsFromEnv(env, probe.uidThreads),
-      // W516 §4.3.5: `unsandboxed` is IGNORED when bwrap works — isolation is
-      // already in effect and grants only ever add an escape when a policy
-      // refuses, never "less isolation than the host already provides".
-      run: bwrapOptionsFromEnv(env, grants),
-      rlimits: rlimitsEnabled(env),
-    });
-    return { sandbox, provider: BWRAP_PROVIDER, degraded: false, reason: null, mode, degradedByGrant: false };
-  }
+  if (probe.bwrapUsable && probe.bwrapPath !== null) return selectBwrap({ env, mode, grants, probe, config });
   const reason = probe.bwrapRejectReason ?? "bwrap reported unusable by the host probe";
-  if (mode === "fail") {
-    // §4.3.5: the ONE case `unsandboxed` is for — the policy would refuse, and
-    // the user explicitly asked (by clicking) for this session to run anyway.
-    if (grants.unsandboxed === true) {
-      return {
-        sandbox: new UserspaceSandbox(config, { probe, env, refreshNprocPerCall: true, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
-        provider: "userspace",
-        degraded: true,
-        reason: `${reason} — degraded by the 'unsandboxed' session grant`,
-        mode,
-        degradedByGrant: true,
-      };
-    }
+  if (mode === "fail" && grants.unsandboxed !== true) {
     throw new SandboxError(
       "config",
       `sandbox_unavailable: ${reason} and ${ENV_SANDBOX_FALLBACK}=fail refuses to degrade to the userspace sandbox`,
       { provider: BWRAP_PROVIDER, reason, mode },
     );
   }
+  // §4.3.5: `unsandboxed` is the ONE grant that accepts the userspace provider
+  // under `fail` — the policy would refuse, and the user explicitly asked for
+  // this session to run anyway.
+  return selectUserspace({ env, mode, probe, config, reason, degradedByGrant: mode === "fail" });
+}
+
+interface SelectionInput {
+  env: NodeJS.ProcessEnv;
+  mode: SandboxFallbackMode;
+  probe: HostProbe;
+  config: SandboxConfig;
+}
+
+/**
+ * W1483: the bwrap branch, including the absolute-promise gate.
+ *
+ * The provider declares what it can actually deliver on THIS host, and the
+ * EXISTING `fail` policy refuses a partial boundary instead of silently shipping
+ * one. The declaration is the provider's, never ours.
+ */
+function selectBwrap(input: SelectionInput & { grants: SandboxGrantView }): SandboxSelection {
+  const { env, mode, grants, probe, config } = input;
+  const run = bwrapOptionsFromEnv(env, grants);
+  const declared = bwrapEnforcement(run, probe);
+  const gaps = declared.promise_gaps ?? [];
+  if (declared.enforcement === "partial" && mode === "fail" && grants.unsandboxed !== true) {
+    const missing = gaps.join(", ") || "unspecified";
+    throw new SandboxError(
+      "config",
+      "sandbox_unavailable: the bwrap provider reports partial enforcement (missing: " +
+        `${missing}) and ${ENV_SANDBOX_FALLBACK}=fail requires every promised effect; ` +
+        `fix the host or set ${ENV_SANDBOX_FALLBACK}=userspace to accept the degraded boundary explicitly`,
+      { provider: BWRAP_PROVIDER, enforcement: declared.enforcement, promise_gaps: [...gaps], mode },
+    );
+  }
+  const sandbox = new BwrapSandbox(config, {
+    probe,
+    env,
+    // W1465: RLIMIT_NPROC counts the whole real UID host-wide, so a cap derived
+    // once here is a time bomb — the UID's thread count grows and the frozen
+    // value eventually makes bwrap fail to create its namespace at all
+    // (EAGAIN, "Resource temporarily unavailable"). Re-derive per call.
+    refreshNprocPerCall: true,
+    limits: limitsFromEnv(env, probe.uidThreads),
+    // W516 §4.3.5: `unsandboxed` is IGNORED when bwrap works — isolation is
+    // already in effect and grants only ever add an escape when a policy
+    // refuses, never "less isolation than the host already provides".
+    run,
+    rlimits: rlimitsEnabled(env),
+  });
+  return { sandbox, provider: BWRAP_PROVIDER, degraded: false, reason: null, mode, degradedByGrant: false, enforcement: declared.enforcement, promiseGaps: [...gaps] };
+}
+
+/** The userspace branch — the explicit, VISIBLE degradation (or its grant override). */
+function selectUserspace(
+  input: SelectionInput & { reason: string; degradedByGrant: boolean },
+): SandboxSelection {
+  const { env, mode, probe, config, reason, degradedByGrant } = input;
+  const sandbox = new UserspaceSandbox(config, {
+    probe,
+    env,
+    refreshNprocPerCall: true,
+    limits: limitsFromEnv(env, probe.uidThreads),
+    rlimits: rlimitsEnabled(env),
+  });
+  const declared = sandbox.enforcement();
   return {
-    sandbox: new UserspaceSandbox(config, { probe, env, refreshNprocPerCall: true, limits: limitsFromEnv(env, probe.uidThreads), rlimits: rlimitsEnabled(env) }),
+    sandbox,
     provider: "userspace",
     degraded: true,
-    reason,
+    reason: degradedByGrant ? `${reason} — degraded by the 'unsandboxed' session grant` : reason,
     mode,
-    degradedByGrant: false,
+    degradedByGrant,
+    enforcement: declared.enforcement,
+    promiseGaps: declared.promise_gaps ?? [],
   };
 }
 

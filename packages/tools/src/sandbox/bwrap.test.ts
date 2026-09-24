@@ -14,13 +14,13 @@ import {
   buildBwrapArgv,
   buildBwrapCommand,
   bwrapLabel,
-  bwrapMeta,
   DEFAULT_BWRAP_OPTIONS,
   SECCOMP_FD,
   type BwrapOptions,
 } from "./bwrap-argv.js";
-import { BwrapSandbox } from "./bwrap.js";
+import { BwrapSandbox, bwrapMeta } from "./bwrap.js";
 import { buildSandboxConfig } from "./config.js";
+import { bwrapEnforcement, userspaceEnforcement } from "./enforcement.js";
 import { BwrapSandbox as SandboxClass } from "./bwrap.js";
 import { ENV_SANDBOX_FALLBACK, bwrapOptionsFromEnv, fallbackMode, selectSandboxDetailed } from "./provider.js";
 import { UserspaceSandbox } from "./userspace.js";
@@ -36,6 +36,12 @@ function opts(overrides: Partial<BwrapOptions> = {}): BwrapOptions {
   return { ...DEFAULT_BWRAP_OPTIONS, ...overrides };
 }
 
+/**
+ * A host probe whose SMOKE MEASURED every promised namespace (the shape
+ * `probeHost()` produces on this host). W1483: the evidence fields are part of
+ * the enforcement declaration, so a test probe must state them too — omitting
+ * them is the "unprobed host" case and degrades to `partial` on purpose.
+ */
 function probeWith(overrides: Partial<HostProbe> = {}): HostProbe {
   return {
     platform: "linux",
@@ -46,6 +52,9 @@ function probeWith(overrides: Partial<HostProbe> = {}): HostProbe {
     prlimitPath: "/usr/bin/prlimit",
     shellUlimitWorks: true,
     uidThreads: 347,
+    namespaceEvidence: ["mnt", "pid", "net", "ipc", "uts", "user", "cgroup"],
+    readonlyRootObserved: true,
+    tmpPrivateObserved: true,
     ...overrides,
   };
 }
@@ -134,18 +143,53 @@ describe("buildBwrapArgv — mount order is the W274 fix", () => {
 
 describe("bwrapMeta", () => {
   it("reports the effective isolation instead of the requested one", () => {
-    expect(bwrapMeta(opts())).toEqual({
+    expect(bwrapMeta(opts(), probeWith())).toEqual({
       provider: BWRAP_PROVIDER,
       net_isolated: true,
       tmp_private: true,
       seccomp: false,
+      enforcement: "full",
     });
-    expect(bwrapMeta(opts({ shareNet: true, shareTmp: true, seccomp: true }))).toEqual({
+    expect(bwrapMeta(opts({ shareNet: true, shareTmp: true, seccomp: true }), probeWith())).toEqual({
       provider: "bwrap",
       net_isolated: false,
       tmp_private: false,
       seccomp: true,
+      enforcement: "full",
     });
+  });
+
+  /**
+   * W1483: the provider declares its OWN completeness. A probe that measured
+   * every promised namespace reports `full`; a probe that observed nothing (an
+   * injected test probe, or a host whose bwrap silently dropped a namespace)
+   * must NOT be able to report `full` — that is the "bwrap started but an
+   * isolation did not take effect" case the field exists for.
+   */
+  it("is `full` only when the probe observed every promised namespace", () => {
+    const measured = probeWith();
+    expect(bwrapEnforcement(opts(), measured)).toEqual({ enforcement: "full" });
+    // shareTmp keeps /tmp shared on purpose: that is a mode choice, not a gap.
+    expect(bwrapEnforcement(opts({ shareTmp: true }), measured).enforcement).toBe("full");
+    // ...but a shared network namespace IS a deliberate non-promise too.
+    expect(bwrapEnforcement(opts({ shareNet: true }), measured).enforcement).toBe("full");
+  });
+
+  it("names the exact promise that was not delivered, per namespace", () => {
+    const partial = probeWith({ namespaceEvidence: ["mnt", "pid", "ipc", "uts", "user", "cgroup"] });
+    expect(bwrapEnforcement(opts(), partial)).toEqual({ enforcement: "partial", promise_gaps: ["network_namespace"] });
+    const noRoot = probeWith({ readonlyRootObserved: false });
+    expect(bwrapEnforcement(opts(), noRoot).promise_gaps).toEqual(["readonly_root"]);
+    const noTmp = probeWith({ tmpPrivateObserved: false });
+    expect(bwrapEnforcement(opts(), noTmp).promise_gaps).toEqual(["private_tmp"]);
+  });
+
+  it("never claims `full` without evidence (an unprobed host degrades honestly)", () => {
+    const silent = probeWith({ namespaceEvidence: [], readonlyRootObserved: false, tmpPrivateObserved: false });
+    const declared = bwrapEnforcement(opts(), silent);
+    expect(declared.enforcement).toBe("partial");
+    expect(declared.promise_gaps).toContain("mount_namespace");
+    expect(declared.promise_gaps).toContain("network_namespace");
   });
 
   it("labels the isolation for spawn failures", () => {
@@ -282,7 +326,7 @@ describe("session grants and the provider policy", () => {
     const selection = selectSandboxDetailed({ env: {}, config: config(), probe: probeWith(), grants: { network: true } });
     expect(selection.provider).toBe("bwrap");
     expect(selection.degradedByGrant).toBe(false);
-    expect(bwrapMeta((selection.sandbox as BwrapSandbox).options).net_isolated).toBe(false);
+    expect(bwrapMeta((selection.sandbox as BwrapSandbox).options, probeWith()).net_isolated).toBe(false);
   });
 
   it("ignores `unsandboxed` while bwrap works (§4.3.5: never less than the host gives)", () => {

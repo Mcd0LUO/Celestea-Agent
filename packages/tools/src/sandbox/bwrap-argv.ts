@@ -14,8 +14,6 @@
  * regression test (`bwrap.test.ts`) rather than trusted to reviewers.
  */
 
-import type { SandboxMeta } from "@celestea/core";
-
 import { resolveShell, type ShellResolveInput } from "../platform/exec.js";
 
 /** Provider name reported in every `SandboxMeta` from this layer. */
@@ -111,16 +109,6 @@ export function buildBwrapArgv(workdir: string | null, options: BwrapOptions): s
 export function buildBwrapCommand(workdir: string, options: BwrapOptions, command: string, input: ShellResolveInput = {}): string[] {
   const shell = resolveShell(command, input);
   return [...buildBwrapArgv(workdir, options), "--", shell.path, ...shell.argv];
-}
-
-/** The isolation actually in force — reported, never inferred by the caller. */
-export function bwrapMeta(options: BwrapOptions): SandboxMeta {
-  return {
-    provider: BWRAP_PROVIDER,
-    net_isolated: !options.shareNet,
-    tmp_private: !options.shareTmp,
-    seccomp: options.seccomp,
-  };
 }
 
 /** Human-readable label for spawn failures (never contains the command body). */

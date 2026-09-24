@@ -29,7 +29,7 @@ function stubSandbox(result: Partial<SandboxRunResult>): Sandbox {
     signal: null,
     stdout_truncated: false,
     stderr_truncated: false,
-    sandbox: { provider: "raw", net_isolated: false, tmp_private: false, seccomp: false, cpu_sec: 20 },
+    sandbox: { provider: "raw", net_isolated: false, tmp_private: false, seccomp: false, enforcement: "partial", promise_gaps: ["no_os_isolation"], cpu_sec: 20 },
   };
   return {
     config,
@@ -45,7 +45,7 @@ describe("W6 run_shell foreground cpu marker", () => {
     const sandbox = stubSandbox({
       exit_code: null,
       signal: "SIGXCPU",
-      sandbox: { provider: "raw", net_isolated: false, tmp_private: false, seccomp: false, cpu_sec: 3 },
+      sandbox: { provider: "raw", net_isolated: false, tmp_private: false, seccomp: false, enforcement: "partial", promise_gaps: ["no_os_isolation"], cpu_sec: 3 },
     });
     const tool = runShellTool({ sandbox, processes: new ProcessRegistry() });
 

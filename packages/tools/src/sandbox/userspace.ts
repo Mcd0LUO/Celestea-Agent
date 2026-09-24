@@ -21,6 +21,7 @@ import type { ChildProcess } from "node:child_process";
 import type {
   Sandbox,
   SandboxConfig,
+  SandboxEnforcementReport,
   SandboxMeta,
   SandboxRunRequest,
   SandboxRunResult,
@@ -32,8 +33,10 @@ import { USERSPACE_SANDBOX_META } from "@celestea/core";
 
 import { wrapChild } from "./child.js";
 import { shellInvocation, sanitizedEnv, buildSandboxConfig, sandboxConfigFromEnv, type SandboxConfigOverrides } from "./config.js";
+import { userspaceEnforcement } from "./enforcement.js";
 import { captureRun, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
 import { limitsForCpu, limitsFromEnv, refreshNproc, resolveCpuSec, rlimitsEnabled, type SandboxLimits } from "./limits.js";
+import { rlimitVia } from "./rlimit.js";
 import { probeHost, type HostProbe } from "./probe.js";
 import { applyLimits, rlimitDiagnostics, type RlimitDescribeOptions, type RlimitVia } from "./rlimit.js";
 import { resolveWorkdir } from "./workdir.js";
@@ -128,11 +131,21 @@ export class UserspaceSandbox implements Sandbox {
     return limitsForCpu(base, resolveCpuSec(base.cpuSec, cpuSec, this.config.maxCpuSec));
   }
 
+  /**
+   * W1483: this provider's own completeness answer, from the SAME probe facts
+   * `describe()` reports — declared here, where the limits are decided, so a
+   * caller never infers "no OS isolation" from three false booleans.
+   */
+  enforcement(): SandboxEnforcementReport {
+    return userspaceEnforcement(this.rlimits && rlimitVia(this.probe) !== "none");
+  }
+
   /** F4: diagnostic view of what would be enforced (never SandboxMeta). */
   describe(options: RlimitDescribeOptions = {}): UserspaceMeta {
     const diag = rlimitDiagnostics(this.probe, this.rlimits, options.noAddressSpaceLimit === true);
     return {
       ...USERSPACE_META,
+      ...this.enforcement(),
       cpu_sec: this.limits.cpuSec,
       rlimit_via: diag.via,
       address_space_limited: diag.address_space_limited,
@@ -172,7 +185,7 @@ export class UserspaceSandbox implements Sandbox {
       withStdin,
       label: command,
     });
-    return { child, meta: { ...USERSPACE_META, cpu_sec: limits.cpuSec } };
+    return { child, meta: { ...USERSPACE_META, ...this.enforcement(), cpu_sec: limits.cpuSec } };
   }
 }
 
