@@ -54,8 +54,15 @@ export function hintPlugins(): readonly HintPlugin[] {
 /** 首个认领该目标的提供者（null = 无人认领 → 调用方退回原生 title）。 */
 export function resolveHint(target: HTMLElement, text: string): HintHandle | null {
   for (const p of plugins) {
-    const h = p.claim(target, text);
-    if (h) return h;
+    // W1479: a provider that throws must not kill the whole chain — the next
+    // candidate still gets its turn (DSH's "abdicate" semantics: the failed entry
+    // steps aside, the rest keeps working). Reported WITH the id.
+    try {
+      const h = p.claim(target, text);
+      if (h) return h;
+    } catch (err) {
+      console.warn('[hint] provider "' + p.id + '" threw', err);
+    }
   }
   return null;
 }

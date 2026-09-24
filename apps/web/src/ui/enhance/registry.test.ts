@@ -1,7 +1,7 @@
 // ============================================================================
 // W895 · P0 验收 A2/A3/A4：增强缝的注册语义。纯逻辑，不需要 DOM。
 // ============================================================================
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { enhancerIds, registerEnhancer, runEnhancers } from "./registry";
 import type { Enhancer } from "./registry";
 
@@ -55,12 +55,33 @@ describe("W895 enhance seam", () => {
     } finally { offFirst(); offSecond(); }
   });
 
-  it("A4: a throwing enhancer surfaces the error (caller can roll back), never half-runs silently", () => {
+  // W1479 修订 A4。原契约是「抛出去，让 caller 回滚」，但复核发现它的前提不成立：
+  //   · 两个调用点（assistant.ts / preview/panel.ts）**都没有 try/catch**，没人回滚；
+  //   · 抛错反而跳过了调用点之后的**无关代码** —— assistant 的 autoscrollView /
+  //     railSync（消息不跟随、rail 不同步），preview 的 is-degraded 与截断提示；
+  //   · 上游 SSE handler 反正会 console.warn 兜住，所以「surface」并没有多给谁信息。
+  // 新契约：**逐条隔离 + 具名上报**。一个坏组件不再禁用其余组件、不再弄坏下游，
+  // 且失败带 id 报出来（不静默）。这正是 DSH 的「退位」语义。
+  it("A4: a throwing enhancer is ISOLATED — the chain continues and the failure is named", () => {
+    const calls: string[] = [];
     const boom: Enhancer = { id: "t.boom", enhance: () => { throw new Error("boom"); } };
-    const off = registerEnhancer(boom);
+    const after: Enhancer = { id: "t.after", enhance: () => { calls.push("t.after"); } };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const offBoom = registerEnhancer(boom);
+    const offAfter = registerEnhancer(after);
     try {
-      expect(() => runEnhancers(FAKE_CONTAINER)).toThrow("boom");
-    } finally { off(); }
+      // 不抛：runEnhancers 本身不失败，调用点的后续代码照常执行。
+      expect(() => runEnhancers(FAKE_CONTAINER)).not.toThrow();
+      // 抛错的那条之后的增强遍仍然跑。
+      expect(calls).toEqual(["t.after"]);
+      // 失败不是静默的：带 id 报到 console。
+      const said = warn.mock.calls.map((c) => c.map(String).join(" ")).join(" | ");
+      expect(said).toContain("t.boom");
+    } finally {
+      warn.mockRestore();
+      offBoom();
+      offAfter();
+    }
   });
 
   it("a disposer from a REPLACED registration does not remove the replacement", () => {

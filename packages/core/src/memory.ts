@@ -115,7 +115,12 @@ function blockFor(file: MemoryFile, budget: number): string {
   const sourceLine = "Source: " + file.source + " layer — " + file.file;
   const bodyBudget = Math.max(0, budget - Buffer.byteLength(sourceLine, "utf8") - 1);
   const { text, omitted } = clipToBytes(file.text, bodyBudget);
-  const tail = omitted > 0 ? "\n\n" + MEMORY_TRUNCATION_PREFIX + omitted + " bytes omitted; read the file yourself for the rest]" : "";
+  // W1479: the tail must NOT say "read the file yourself". The clipped file can be
+  // the GLOBAL layer (<CELESTEA_HOME>/workspaces/<ws>/memory), which sits OUTSIDE
+  // the guard's read roots under a restricted preset (read-only / write-read, i.e.
+  // allPaths=false) — so that instruction names an action the tool guard is
+  // guaranteed to refuse. A prompt must not order what the product will reject.
+  const tail = omitted > 0 ? "\n\n" + MEMORY_TRUNCATION_PREFIX + omitted + " bytes omitted; the rest is not shown in this turn's context]" : "";
   return sourceLine + "\n" + text + tail;
 }
 

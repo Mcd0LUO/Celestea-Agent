@@ -92,6 +92,12 @@ describe("F3 · workspace memory injection (P0)", () => {
     expect(text).toContain("bytes omitted");
     expect(text.length).toBeLessThan(long.length);
     expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(MEMORY_CONTEXT_MAX_BYTES + 256);
+    // W1479: the marker must NOT tell the model to go read the file. The clipped
+    // file can be the GLOBAL layer (<CELESTEA_HOME>/workspaces/<ws>/memory), which
+    // lies OUTSIDE the guard's read roots under a restricted permission preset —
+    // so that sentence orders an action the product is guaranteed to refuse.
+    // A prompt must not lie about what the model can do.
+    expect(text).not.toContain("read the file yourself");
   });
 
   it("clips multi-byte text on a code-point boundary (no U+FFFD)", () => {

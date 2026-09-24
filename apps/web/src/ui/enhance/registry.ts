@@ -50,7 +50,17 @@ export function registerEnhancer(e: Enhancer): () => void {
  * 选择器的增强遍都会**静默跳过** —— 实测踩过：高亮正常但复制按钮/行号/徽标全没有。
  */
 export function runEnhancers(container: Element): void {
-  for (const e of enhancers.slice()) e.enhance(container);
+  for (const e of enhancers.slice()) {
+    // W1479: isolate each enhancer. Without this, ONE throwing enhancer silently
+    // disables every enhancer after it in registration order — a bad plugin would
+    // look like "the other features just stopped working". Reported WITH the id
+    // so the culprit is identifiable; never swallowed.
+    try {
+      e.enhance(container);
+    } catch (err) {
+      console.warn('[enhance] enhancer "' + e.id + '" threw', err);
+    }
+  }
 }
 
 /** 当前注册的增强遍 id（注册顺序；诊断/测试用只读快照）。 */
