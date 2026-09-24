@@ -30,8 +30,16 @@
 | `celestea.toml` | `<cwd>/celestea.toml` | —（引擎解析链） | 普通，**不含 key** | 人 | 启动 `resolve_profile` |
 | 会话目录 | `<CELESTEA_HOME>/workspaces/<ws>/sessions/<session>/`（legacy `<workspace path>/<session>/`） | `CELESTEA_SESSION_DIR`（指向**会话目录**） | 普通 | 引擎 `PersistentSessionLog` + Studio | 引擎回放 / messages 端点 |
 | `cli-main.jsonl` | 会话目录内 | — | 普通 | 引擎（每事件一行） | 引擎回放 / messages / compact |
+| `cli-main.jsonl.<n>` | 会话目录内（`n` = 1,2,…） | — | 普通 | 引擎**轮转**（写入前 size ≥ 16 MiB） | 引擎回放 / messages（**跨段**读取） |
 | `session.json` | 会话目录内（可选） | — | 普通 | `POST /api/sessions` | activate / compact / prompts 装配 |
 | `cli-main.jsonl.precompact` | 会话目录内 | — | 普通 | `compact::rewrite_atomic` | 人工回滚 |
+
+**会话日志的轮转（W1503）**：`cli-main.jsonl` 达到 16 MiB 时，**下一次写入前**把它整体改名成
+`cli-main.jsonl.1`（再满则是 `.2`，**代际递增、从不覆盖旧段** —— 会话日志是模型可见历史的
+来源，替换旧段会删历史，这是它与 `USAGE_LEDGER_MAX_BYTES` 那个审计日志先例的关键差别）。
+所有读取路径（引擎 `events()` / `deriveMessages()` / `open()`、Studio `messages()`）都按
+`[.1, .2, …, 当前段]` 顺序**跨段**拼接，因此投影与从未轮转**逐字节等价**。
+`compact` 的 `.precompact` 备份与轮转**无关**（前者是压缩备份，后者是容量分段）。
 
 `.gitignore` 排除：`providers.json`、`workspaces.json`、`sessions/`、`frontend/dist/`、`target/`、`*.log`、`.env`。
 
