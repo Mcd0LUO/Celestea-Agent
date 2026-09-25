@@ -171,16 +171,56 @@ export class TerminalRegistry {
 export const TERMINAL_IDLE_MS = 30 * 60 * 1000;
 
 /**
- * Terminate a pty tree, gracefully first.
+ * Grace allowed for a SIGTERM'd pty tree to be reaped before SIGKILL is sent.
+ * Mirrors `launch.ts`'s REAP_GRACE_MS: the same 5s budget the timeout path uses.
+ */
+export const TERMINATE_GRACE_MS = 5_000;
+
+/**
+ * Terminate a pty tree, gracefully first and **bounded**.
  *
  * `script` and the shell it execs share ONE process group (the sandbox spawns
  * detached), so the group signal reaches every descendant — a `python3` REPL or
- * a `top` started inside the terminal dies with it. SIGTERM is tried first so
- * the shell can run its exit trap; the caller escalates to SIGKILL on the
- * deadline. Returns the promise that settles when the child is reaped.
+ * a `top` started inside the terminal dies with it.
+ *
+ * W1528 fix: SIGTERM first (so the shell can run its exit trap), then **escalate
+ * to SIGKILL on a deadline**. The earlier version awaited `wait()` with no
+ * deadline while its own comment claimed "the caller escalates to SIGKILL" — but
+ * no caller did. A shell that ignores SIGTERM (or a `script` that will not
+ * release its pty) therefore hung the close request **forever**: the handler
+ * never returned, the id was never dropped, and the panel could not be reopened
+ * (observed as a 30s test timeout under load). Escalation is what makes the
+ * function's contract true; `launch.ts:108-109` is the same two-step pattern.
  */
 export function terminateTree(entry: TerminalEntry): Promise<void> {
   entry.closed = true;
   entry.child.terminate();
-  return entry.child.wait().then(() => undefined);
+  return reapBounded(entry);
+}
+
+/** Wait for the child, SIGKILL the tree if it outlives the grace, wait again. */
+async function reapBounded(entry: TerminalEntry): Promise<void> {
+  if (await settlesWithin(entry.child.wait(), TERMINATE_GRACE_MS)) return;
+  entry.child.kill();
+  await settlesWithin(entry.child.wait(), TERMINATE_GRACE_MS);
+}
+
+/**
+ * Race `promise` against a deadline; `true` when it settled in time.
+ *
+ * Local on purpose: `@celestea/tools` does not export its `withTimeout`, and the
+ * alternative — widening that package's public surface for one call site — is
+ * worse than these few lines. The timer is always cleared, so an already-settled
+ * child never leaves a stray handle that would keep the process alive.
+ */
+function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  const settled = promise.then(
+    () => true,
+    () => true,
+  );
+  return Promise.race([settled, deadline]).finally(() => clearTimeout(timer));
 }
