@@ -15,6 +15,9 @@
 | [`feature-multimodal-attachments/`](./feature-multimodal-attachments/README.md) | 设计（已实现 P0） | **多模态附件**设计（分册）：图片/文本附件的三入口、能力位探测、降级提示、objectURL 生命周期 | [`README.md`](./feature-multimodal-attachments/README.md)；`apps/web/src/ui/attachments.ts` |
 | [`feature-display-components.md`](./feature-display-components.md) | 设计（**P0 已实现**，W895） | **可选显示组件**：把「渲染后增强」与「markdown 扩展」变成可注册的缝，显示能力做成可开关组件（构建期装配，不做运行时下载） | 本文；缝的现有先例见 `apps/web/src/ui/hint/registry.ts` 的取舍注释 |
 | [`feature-dynamic-tool-disclosure.md`](./feature-dynamic-tool-disclosure.md) | 设计（只调研与设计，W802） | **动态工具披露**的调研与设计：工具面随任务收窄的方案与取舍；本文不落地代码 | 本文 |
+| [`feature-sandbox-time-semantics.md`](./feature-sandbox-time-semantics.md) | 设计 | **沙箱时间语义**：把固定的 20s `RLIMIT_CPU` 改成「跟随该次调用墙钟」的推导值，模型仍可用参数覆盖且被部署方上限夹紧；含 `run_code` 子进程与可配硬顶的补齐 | 本文；落点 `packages/tools/src/sandbox/limits.ts` |
+| [`feature-permission-entry-merge.md`](./feature-permission-entry-merge.md) | 设计 | **权限入口合并**：状态栏右端只留一个盾牌入口（用已有图标），面板内同时给出会话档位与精细授权；窄屏不再挤掉停止键 | 本文；落点 `apps/web/src/statusline/permission.ts`、`apps/web/src/ui/grants/` |
+| [`feature-docs-drift-cleanup.md`](./feature-docs-drift-cleanup.md) | 设计 | **文档漂移清理与归档**：把不再描述现状的文档按规范归档、把可机械发现的漂移变成断言；含本次实读的四条漂移与处置 | 本文；门禁 `tests/doc-conventions.test.ts` |
 | [`iteration-e/`](./iteration-e/README.md) | 设计 | 迭代方向 E（能力深水区，分册）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | [`README.md`](./iteration-e/README.md)；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见归档的 DSH 评估（W253/W254，已于 W881 清理出公开仓） |
 | [`deployment.md`](./deployment.md) | 当前 | **部署与安全模型**：生产 systemd + nginx、隧道访问、安全模型（含 Windows 差异表） | 本文；登录门见 [`archive/decisions/feature-studio-auth.md`](./archive/decisions/feature-studio-auth.md) |
@@ -35,11 +38,15 @@
 
 | 文件 | 状态 | 一句话 |
 | --- | --- | --- |
-| [`archive/DEVELOPMENT.md`](./archive/DEVELOPMENT.md) | 历史参考 | 旧后端（Rust）的开发者入口；文中路径以并入前旧布局为准 |
-| [`archive/README-frontend.md`](./archive/README-frontend.md) | 历史参考 | 并入前前端仓的 docs 索引，原样保留 |
 | [`archive/research/`](./archive/research/) | 历史参考 | 调研报告：memory-store / selection-and-preview / computer-use 等 |
 | [`archive/decisions/`](./archive/decisions/) | 历史参考 | **已实现决策的归档**（10 篇：特性设计 + 迭代方向的决策依据与验收标准；现行口径见 `contracts/` 与 `ARCHITECTURE.md`） |
 | [`archive/migration/`](./archive/migration/) | 历史参考 | 迁移留痕：W781 两仓合并对照表 |
+
+> **W1518 清理**：原先归档在 `archive/DEVELOPMENT.md`（旧 Rust 后端的开发者入口）与
+> `archive/README-frontend.md`（并入前前端仓的 docs 索引）的两篇**已删除** —— 它们整篇只描述
+> 已退役的 Rust 后端与并入前的旧两仓布局，属「退役后端的历史文档」，与 W881 已清理的那批同类。
+> 正文可从 git 历史取回。`archive/decisions/`（已实现决策）与 `archive/research/`（调研留痕）
+> **保留**：它们记录的是「为什么这样定」，仍被现役文档引用。
 
 ## 仓库角色与互链
 
@@ -62,3 +69,8 @@
 - 单篇 **≤ 700 行**（硬上限）→ 超了按章节拆进同名子目录（`docs/<名字>/README.md` 作索引并登记，分册不登记）。
 - 文档过时 → `git mv` 进 [`archive/`](./archive/)（**指定归档目录**）+ 顶部 `📦 历史文档` 横幅 + `历史参考` 状态 + 更新全仓引用路径；**不删除正文**。
   公开仓不再保留退役后端/引擎的历史文档（W881 已清理）。
+- **会话接续手册不放 `docs/`**：那种「每完成一个可提交单元就更新」的活文档（原先的 `docs/HANDOVER.md`）
+  属于**过程留痕**，不是描述现状的现行文档 —— 它既没有稳定的「现状」可写，又会随每次更新让
+  `tests/doc-conventions.test.ts` 的 ①（未登记）/②（无状态行）/⑤（本机路径）变红。
+  按「一个事实一个家」放在**仓外**（系统 `/tmp`）或 `results/`（已被 `.gitignore` 忽略，
+  不入库、不受文档门禁约束）。**不要再往 `docs/` 放接续手册。**

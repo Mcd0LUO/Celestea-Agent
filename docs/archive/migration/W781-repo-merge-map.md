@@ -11,7 +11,7 @@
 | 原位置（本仓） | 新位置（Celestea-Agent） |
 | --- | --- |
 | `frontend/` | `apps/web/` |
-| `docs/DEVELOPMENT.md`、`data-files.md`、`pitfalls.md` | `docs/`（README 并入 `docs/archive/README-frontend.md`） |
+| `docs/DEVELOPMENT.md`、`data-files.md`、`pitfalls.md` | `docs/`（README 并入 `docs/archive/README-frontend.md`；**W1518 后注**：`DEVELOPMENT.md` 与 `README-frontend.md` 两篇因整篇只描述已退役的 Rust 后端，已随 W1518 清理删除，正文见 git 历史） |
 | `docs/archive/**` | `docs/archive/frontend/`（W881 清理：退役历史文档已移出公开仓） |
 | `tools/**` | `scripts/model-sync/`（本次起被 git 真正跟踪） |
 | `notes/**` | `docs/notes/`（仅一篇 3 行插话测试残留，2026-09-15 清理时删除；内容为 `插话测试：立刻记下这条`） |
