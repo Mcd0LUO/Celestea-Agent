@@ -3,4 +3,115 @@
    ----------------------------------------------------------------------------
    W-C **独占** components.css 的 `.rendered .code-*` / `.rendered pre` 区块；
    本文件用于新增规则（覆盖或补充），避免与其它 worker 争同一文件。
+
+   W1526（用户原话：「代码块优化（避免挡文字，+颜色)」）两项：
+     ① 不挡文字 —— 装饰元素从**绝对定位浮层**改为**占位工具条**（见下）；
+     ② 颜色     —— `--hl-*` 对齐 VSCode Light+ / Dark+。
    ============================================================================ */
+
+/* ============================================================================
+   ① 不挡文字：装饰元素不再压在正文上
+   ----------------------------------------------------------------------------
+   改动前（components.css 的既有规则，本文件不改它们，只在此处覆盖）：
+
+     .rendered .code-wrap   { position: relative }                       ← 定位上下文
+     .rendered .code-copy   { position:absolute; top:6px;  right:6px }   ← 浮层
+     .rendered .code-badge  { position:absolute; top:6px;  left:8px  }   ← 浮层
+     .rendered .code-fold   { position:absolute; bottom:6px; right:6px } ← 浮层
+     .rendered pre          { padding: 10px 12px }                       ← 装不下它们
+
+   于是**短代码块的首行/末行被盖住**。真机实测（CDP，chrome-headless-shell）：
+     1 行块 pre 高 42.63px，首行文本框 top=-69.09 bottom=-48.47，
+     而徽标 bottom=-56.09 ⇒ **相交 7.62px**（1/3/长行/折叠/无语言 5 个块共 8 处重叠）。
+
+   为什么选「工具条」而不是「加大 pre 留白」：
+     留白方案只是把浮层往下推，仍然要靠一个**经验性**的留白值去够「不重叠」；
+     而且复制按钮的 `right:6px` 是相对**滚动容器**定位的 —— 长行横向滚动时
+     （真机实测长行块 scrollWidth=2127 > clientWidth=636）它始终贴在可视区右缘，
+     长行滚到右侧仍会与文字相交。工具条是**正常流**里的独立一行：
+     `pre` 与工具条是上下相邻的两个块 ⇒ 二者几何上不可能相交，与行数/行宽无关。
+   代价：短块变高（1 行块 42.63 → 72.02px）。这是「不挡文字」的直接成本，接受。
+
+   工具条为什么在 `pre` **外面**（而不是像 GitHub 那样在代码块内部）：
+     `pre` 自己 `overflow-x:auto`，放进去的控件会**随长行一起横向滚走** ——
+     这正是 W895 把复制按钮放在 `.code-wrap`（pre 的兄弟）上的原因
+     （`code-copy.test.ts`「按钮是 pre 的兄弟，不是子节点」守的就是这条）。
+     沿用同一归属：控件永远在可视区内，且仍不与正文相交。
+   ============================================================================ */
+
+/* 工具条：`.code-wrap` 里 `pre` 前面的一行（正常流，占位）。 */
+.rendered .code-head {
+  display: flex; align-items: center; gap: 6px;
+  /* 与 pre 的边框对齐（pre 是 border-box，左右各 1px 边框）。 */
+  padding: 0 2px 4px;
+  /* 装饰不该被拖选进复制内容（复制读的是 code.textContent，不受影响）。 */
+  user-select: none; -webkit-user-select: none;
+}
+/* 徽标与按钮都是普通流内盒 —— 覆盖 components.css 的 position:absolute。
+   这一条是「不挡文字」的机械保证：`position:static` ⇒ 不脱离文档流 ⇒ 不重叠。 */
+.rendered .code-head .code-badge,
+.rendered .code-head .code-copy,
+.rendered .code-head .code-fold {
+  position: static;
+  inset: auto;
+  opacity: 1;
+}
+/* 复制按钮推到最右（左边是语言徽标）。 */
+.rendered .code-head .code-copy { margin-left: auto; }
+.rendered .code-head .code-fold { margin-left: 6px; }
+
+/* 复制按钮此前是「悬停才显形」的浮层（opacity:0，:hover 才 1）。它现在是**占位**：
+   隐藏会留下空洞，且「看得见才点得到」对触屏是硬要求（响应式层 §4 同一口径）。
+   ⇒ 常显但压低对比度，悬停/聚焦提亮。 */
+.rendered .code-head .code-copy { color: var(--c-text-3); }
+.rendered .code-head .code-copy:hover,
+.rendered .code-head .code-copy:focus-visible { color: var(--c-text-1); }
+
+/* 没有工具条时（两个组件都关掉）不留空隙：上面这条 padding 只作用于存在的工具条。 */
+
+/* ============================================================================
+   ② 颜色：`--hl-*` 对齐 VSCode
+   ----------------------------------------------------------------------------
+   取值来源 = 仓库内**已 vendored** 的 highlight.js 官方 VSCode 主题
+   （`node_modules/highlight.js/styles/vs.css` = Light+，`vs2015.css` = Dark+）。
+   用它们而不是自己读 VSCode 主题 JSON 的 textmate scope：scope 与 hljs class
+   不是一一对应（例如 `entity.name.function` 在 hljs 里落到 `hljs-title`），
+   自己映射会漏 class；hljs 官方主题就是那份权威映射。
+
+   为什么写在 codeblock.css 而不是 tokens.css：tokens.css 是共享文件，W1524
+   四波并行时改它会四路冲突（架构师的 seam 约定）。`--hl-*` 的消费点全在
+   `.rendered .hljs-*` 上，这里重新声明同名变量即可覆盖，并**跟随现有主题机制**：
+   浅色写 `:root`，深色写 `[data-theme="dark"]`（与 tokens.css 同一套选择器）。
+   ============================================================================ */
+
+/* ---- Light+（highlight.js styles/vs.css）→ --hl-* ---- */
+:root {
+  --hl-comment: #008000;   /* vs: .hljs-comment, .hljs-quote            */
+  --hl-keyword: #0000ff;   /* vs: .hljs-keyword, .hljs-selector-tag     */
+  --hl-string: #a31515;    /* vs: .hljs-string, .hljs-title             */
+  --hl-number: #098658;    /* VSCode Light+ constant.numeric（见文末注）*/
+  --hl-title: #795e26;     /* Light+ JSON: entity.name.function         */
+  --hl-attr: #ff0000;      /* vs: .hljs-attr                            */
+  --hl-builtin: #267f99;   /* Light+ JSON: support.class / support.type */
+  --hl-literal: #0000ff;   /* vs: .hljs-literal（与 keyword 同组）      */
+  --hl-meta: #2b91af;      /* vs: .hljs-meta                            */
+  --hl-type: #267f99;      /* Light+ JSON: entity.name.type             */
+}
+/* ---- Dark+（highlight.js styles/vs2015.css）→ --hl-* ---- */
+[data-theme="dark"] {
+  --hl-comment: #57a64a;   /* vs2015: .hljs-comment, .hljs-quote         */
+  --hl-keyword: #569cd6;   /* vs2015: .hljs-keyword, .hljs-literal, name */
+  --hl-string: #d69d85;    /* vs2015: .hljs-string                       */
+  --hl-number: #b8d7a3;    /* vs2015: .hljs-number, .hljs-class          */
+  --hl-title: #dcdcdc;     /* vs2015: .hljs-function, .hljs-title        */
+  --hl-attr: #9cdcfe;      /* vs2015: .hljs-attr, .hljs-attribute        */
+  --hl-builtin: #4ec9b0;   /* vs2015: .hljs-built_in, .hljs-type         */
+  --hl-literal: #569cd6;   /* vs2015: .hljs-literal                      */
+  --hl-meta: #9b9b9b;      /* vs2015: .hljs-meta, .hljs-tag              */
+  --hl-type: #4ec9b0;      /* vs2015: .hljs-type                         */
+}
+
+/* 注：Light+ 的 `constant.numeric` 在 VSCode 默认浅色主题里是 #098658
+   （`light_vs.json` 的 "constant.numeric"）。highlight.js 的 vs.css 把 number
+   与 string 同色（#a31515）是那份主题自己的简化；VSCode 真机上数字与字符串是
+   **可区分**的，本项目按 VSCode 取值。 */

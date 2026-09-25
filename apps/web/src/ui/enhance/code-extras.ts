@@ -11,8 +11,13 @@
 // 把节点拍平成 `{classes,text}` 段再回填 —— 不用 innerHTML 重拼（会丢 hljs 标记）。
 // 幂等：`code.dataset.linesDone` / `pre` 上的宿主与徽标/按钮只加一次。
 // 与 code-copy 协调：**复用**已有 `.code-wrap`，绝不再包一层。
+//
+// W1526（代码块优化）：徽标与折叠按钮也从**绝对定位浮层**改为住进 `.code-head`
+// 工具条（见 code-chrome.ts；工具条在 `.code-wrap` 里、`pre` 上面）—— 此前它们
+// 分别压在首行左侧与末行右下角（用户原话「挡文字」）。
 // ============================================================================
 import { t } from "../../i18n";
+import { ensureHead } from "./code-chrome";
 import type { Enhancer } from "./registry";
 
 /** 登记表 / 设置页 / 测试共用的身份。 */
@@ -86,11 +91,11 @@ function applyCodeExtras(container: Element): void {
     const code = pre.querySelector("code");
     if (!code) continue;
     if (pre.dataset["structured"] === "1") continue; // csv 已接管
-    const host = ensureWrap(pre);
-    addBadge(host, code);
+    const wrap = ensureWrap(pre);
+    addBadge(wrap, code);
     // W1485：超大块跳过「行号切分」这一步（它是唯一按行建节点的增强）。
     if ((code.textContent ?? "").length <= CODE_LINES_MAX_CHARS) renderLineSpans(code);
-    addFold(host, pre, code);
+    addFold(wrap, pre, code);
   }
 }
 
@@ -106,14 +111,16 @@ function ensureWrap(pre: HTMLElement): HTMLElement {
 }
 
 /** 语言徽标：取 language-xxx；没有语言就不显示（不写 plaintext）。 */
-function addBadge(host: HTMLElement, code: Element): void {
-  if (childWithClass(host, "code-badge") !== null) return;
+function addBadge(wrap: HTMLElement, code: Element): void {
   const lang = languageOf(code);
   if (lang === "") return;
+  const head = ensureHead(wrap);
+  if (childWithClass(head, "code-badge") !== null) return;
   const badge = document.createElement("span");
   badge.className = "code-badge";
   badge.textContent = lang;
-  host.appendChild(badge);
+  // W1526：徽标是工具条的**首个子节点**（正常流），不再是压在首行上的浮层。
+  head.insertBefore(badge, head.firstChild);
 }
 
 /** 把 code 子树按行切成 .cl（幂等：dataset.linesDone）。 */
@@ -154,21 +161,24 @@ function renderLineSpans(code: Element): void {
   el.dataset["linesDone"] = "1";
 }
 
-/** 行数超过阈值时默认折叠 + 展开/收起按钮（幂等：宿主里只加一次）。 */
-function addFold(host: HTMLElement, pre: HTMLElement, code: Element): void {
-  if (childWithClass(host, "code-fold") !== null) return;
+/** 行数超过阈值时默认折叠 + 展开/收起按钮（幂等：工具条里只加一次）。 */
+function addFold(wrap: HTMLElement, pre: HTMLElement, code: Element): void {
+  // 先判「要不要折叠」再建工具条：没东西可放时不留空工具条（DOM 里不留空节点）。
   const count = code.querySelectorAll(".cl").length;
   if (count <= CODE_FOLD_LINES) return;
+  const head = ensureHead(wrap);
+  if (childWithClass(head, "code-fold") !== null) return;
   pre.classList.add("code-folded");
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn code-fold";
   btn.textContent = t("chat.codeExtras.expand");
   btn.addEventListener("click", () => {
+    // 文案由**这一处**更新（不交给 CSS content：读屏要读到真文本）。
     const folded = pre.classList.toggle("code-folded");
     btn.textContent = folded ? t("chat.codeExtras.expand") : t("chat.codeExtras.collapse");
   });
-  host.appendChild(btn);
+  head.appendChild(btn);
 }
 
 /** 直接子元素里按 class 找（避免 :scope，jsdom 支持参差）。 */
