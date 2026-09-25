@@ -29,6 +29,12 @@ function buildPayload(e: EditorRefs): ProviderPayload {
       reasoning_efforts: r.efforts.values(),
       context_window: numOrNull(r.ctx),
       max_output_tokens: numOrNull(r.maxOut),
+      // W1536：输入/输出类型。**未触碰 = 不写这个键**（保持乐观默认，providers.json
+      // 与 schema default 一致）；一旦用户点过，写回的就是他勾的集合本身（可为 []）。
+      // 后端 parseModel/modalityList 对空数组返回 undefined ⇒ 空集会被归一成缺省，
+      // 见报告「已知边界」。
+      ...spreadModalities('input_modalities', r.inputModalities.values()),
+      ...spreadModalities('output_modalities', r.outputModalities.values()),
     }));
   const key = e.key.value.trim();
   return {
@@ -41,6 +47,14 @@ function buildPayload(e: EditorRefs): ProviderPayload {
     ...(key !== '' ? { api_key: key } : {}),
     models,
   };
+}
+
+/** W1536：undefined（未触碰）⇒ 不带该键；数组 ⇒ 原样带上。 */
+function spreadModalities(
+  key: 'input_modalities' | 'output_modalities',
+  values: string[] | undefined,
+): Partial<ProviderModelSpec> {
+  return values === undefined ? {} : { [key]: values };
 }
 
 function numOrNull(i: HTMLInputElement): number | null {
@@ -135,6 +149,10 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
     const r = e.rows[e.rows.length - 1]!;
     // W258 任务 3：已有模型的 reasoning_efforts 映射到对应档位片选中
     r.efforts.set(m.reasoning_efforts ?? []);
+    // W1536：能力位回填。undefined（providers.json 里没有这个键）= 乐观默认态，
+    // 组件会显示默认勾选并打上 is-default 标记；显式数组 = 用户配置态。
+    r.inputModalities.set(m.input_modalities);
+    r.outputModalities.set(m.output_modalities);
     if (m.context_window != null) r.ctx.value = String(m.context_window);
     // W258 任务 2：max_output_tokens（最大输出 tokens）不回填 —— 留空即可，
     // 留空保存即写 null（后端 numOrNull），这是期望行为。

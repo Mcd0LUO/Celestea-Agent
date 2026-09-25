@@ -1,5 +1,41 @@
 /* ============================================================================
-   styles/provider-edit.css — W1529 提供商「模型输入输出类型」编辑
+   styles/provider-edit.css — W1529 提供商「模型输入输出类型」编辑（W1536 落内容）
    ----------------------------------------------------------------------------
    见 taskpanel.css 顶部说明：共享 CSS 文件谁都不改，新能力一律新文件。
+   宿主 .prov-model-adv-body 是两列网格（120px 标签 + 1fr 控件）。新组**横跨两列**
+   并自带同样的两列内网格 —— 否则它会以「第 7/8 个网格项」的身份被塞进 120px 的
+   标签列，类型片被迫竖排（真机实测踩到，见报告）。
    ============================================================================ */
+
+/* ---- 输入/输出类型多选组（W1536） ---- */
+.prov-modalities {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 10px;
+  align-items: center;
+}
+.prov-modality-body {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  min-height: 30px;
+}
+.prov-modality-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* 与既有 .prov-effort-chip 同几何，但**不**复用其类名：档位片将来若改版，
+   能力位多选不应被连带改掉。 */
+.prov-modality-chip {
+  background: transparent; border: 1px solid var(--c-border-strong);
+  border-radius: 999px; color: var(--c-text-2);
+  font-family: var(--mono); font-size: 11.5px;
+  padding: 4px 14px; cursor: pointer;
+}
+.prov-modality-chip:hover { border-color: var(--c-accent-ring); color: var(--c-text-1); }
+.prov-modality-chip:focus-visible { outline: 2px solid var(--c-accent-ring); outline-offset: 1px; }
+/* 「支持」= 实心强调 + 对勾，不让颜色单独承载语义（可访问性）。 */
+.prov-modality-chip.on {
+  background: var(--c-accent-soft); border-color: var(--c-accent-ring);
+  color: var(--c-text-1); font-weight: 600;
+}
+.prov-modality-chip.on::before { content: '✓ '; }
+/* 未写盘的乐观默认态：点线描边 + 说明文字，与「已显式固定」明确可辨。
+   （本仓禁 dashed，见 W847 W8；用 dotted。） */
+.prov-modalities.is-default .prov-modality-chip { border-style: dotted; }
+.prov-modality-note { font-size: 11px; color: var(--c-text-3); }
+.prov-modality-note[hidden] { display: none; }
