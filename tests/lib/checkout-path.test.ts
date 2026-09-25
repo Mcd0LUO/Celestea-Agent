@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { ownCheckoutPath, repoDirName, repoDirNameFrom } from './checkout-path.js';
+import { ownCheckoutPath, repoDirName, repoDirNameFrom, WIN32_FLAVOR } from './checkout-path.js';
 
 const made: string[] = [];
 
@@ -50,6 +50,54 @@ describe('repoDirNameFrom（纯函数：.git 形态 → 仓库名）', () => {
   it('畸形内容 / 无 gitdir 行 ⇒ null（由调用方回落，不假装成功）', () => {
     expect(repoDirNameFrom(false, 'not a gitdir file\n', '/x')).toBeNull();
     expect(repoDirNameFrom(false, 'gitdir: /no/git/component\n', '/x')).toBeNull();
+  });
+});
+
+/**
+ * Windows 分隔符回归（CI windows-latest 当场抓到的真 bug）。
+ *
+ * 第一版按 `'/'` 手工切分 gitdir，在 `C:\repo\.git\worktrees\x` 上一个 `/` 都没有 ⇒
+ * 切出来是整串 ⇒ 找不到 `.git` 组件 ⇒ `null` ⇒ 回落 cwd 的 basename ⇒ **假绿又回来了**。
+ * 现在走 `node:path` 的 `dirname`/`basename`，它们按运行平台的分隔符工作。
+ *
+ * 这两条用例在 Linux 上跑时用的是 posix 语义，因此**不能**证明 win32 行为 ——
+ * 但它们能钉住「不退回手工 `split('/')`」这件事；真正的 win32 证明由 CI 的
+ * windows-latest 矩阵承担（本仓 CI 是 ubuntu + windows 双平台，见 AGENT.md §8）。
+ */
+describe('平台缝：win32 语义在 Linux 上就能测（AGENT.md §8）', () => {
+  // 这一组是 CI windows-latest 那次红的**回归测试**：第一版按 '/' 手工切分，Windows 的
+  // gitdir 上一个 '/' 都没有 ⇒ null ⇒ 回落 cwd ⇒ 假绿复发。现在注入 WIN32_FLAVOR，
+  // 同一条 Windows 分支不必等 CI 就能在 Linux 上断言。
+  const REPO = 'C:\\repo\\celestea_studio-ts';
+  const GITDIR = 'C:\\repo\\celestea_studio-ts\\.git\\worktrees\\w1516-cpu-sync';
+
+  it('反斜杠 gitdir ⇒ 反推出主仓库名（旧实现返回 null）', () => {
+    expect(repoDirNameFrom(false, `gitdir: ${GITDIR}\n`, 'C:\\trees\\w1516', WIN32_FLAVOR)).toBe('celestea_studio-ts');
+  });
+
+  it('正斜杠的 Windows 路径也认（win32 两种分隔符都收）', () => {
+    const fwd = 'C:/repo/celestea_studio-ts/.git/worktrees/w1516';
+    expect(repoDirNameFrom(false, `gitdir: ${fwd}\n`, 'C:/trees/w1516', WIN32_FLAVOR)).toBe('celestea_studio-ts');
+  });
+
+  it('嵌套 modules 取**最近**的 .git 组件（win32）', () => {
+    const nested = 'C:\\a\\.git\\modules\\b\\.git\\worktrees\\c';
+    expect(repoDirNameFrom(false, `gitdir: ${nested}\n`, 'C:\\trees\\c', WIN32_FLAVOR)).toBe('b');
+  });
+
+  it('.git 是目录时取 repo 的 basename（win32）', () => {
+    expect(repoDirNameFrom(true, '', REPO, WIN32_FLAVOR)).toBe('celestea_studio-ts');
+  });
+
+  it('win32 语义下路径不存在时如实回落（不编造仓库名）', () => {
+    // `ownCheckoutPath` 会**读文件系统**，所以在 Linux 上给一个不存在的 Windows 路径，
+    // 它只能走回落分支 —— 这是诚实的降级，不是失败。win32 的端到端由 CI 的
+    // windows-latest 矩阵断言（本仓 CI 是 ubuntu + windows 双平台）。
+    expect(ownCheckoutPath('C:\\trees\\w1516', WIN32_FLAVOR)).toBe('/src/w1516');
+  });
+
+  it('没有 .git 组件 ⇒ null（不编造仓库名）', () => {
+    expect(repoDirNameFrom(false, 'gitdir: C:\\no\\git\\component\n', 'C:\\trees\\x', WIN32_FLAVOR)).toBeNull();
   });
 });
 
