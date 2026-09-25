@@ -11,14 +11,8 @@ import { applyPreviewPolicy, HTML_FRAME_CLASS } from './sandbox';
 import type { PreviewView } from './modes';
 import { t } from '../../i18n';
 
-/** 扩展名 → highlight.js 已注册语言（未登记的语言不调 hljs，渲染为纯文本）。 */
-const LANG_BY_EXT: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  json: 'json', jsonl: 'json', md: 'markdown', markdown: 'markdown', mdx: 'markdown',
-  py: 'python', go: 'go', java: 'java', c: 'cpp', h: 'cpp', cc: 'cpp', cpp: 'cpp', hpp: 'cpp',
-  sh: 'bash', bash: 'bash', zsh: 'bash', sql: 'sql', html: 'xml', htm: 'xml', xml: 'xml',
-  css: 'css', scss: 'css', less: 'css', yaml: 'yaml', yml: 'yaml',
-};
+// W1545：扩展名表搬到 ./lang（流式分段块与整篇预览必须用同一份，见其头注）。
+import { LANG_BY_EXT } from './lang';
 
 /** 预览内容渲染结果（degraded 非空 = 降级态，panel 据此加类）。 */
 export interface PreviewContent {
@@ -41,8 +35,16 @@ export interface PreviewInput {
   view?: PreviewView;
 }
 
-/** 单文件预览上限（字符）：超过只给可读原因，不硬塞进 DOM。 */
-export const PREVIEW_MAX_CHARS = 256 * 1024;
+/**
+ * 单文件预览的**硬上限**（字符）：不是「渲染预算」，而是防跑飞的绝对闸门。
+ *
+ * ★ W1545：此前是 256 KiB，超过就整篇降级成「文件过大」—— 用户报的「文件管理器里
+ *   打开大文件看不到内容」正是它。现在巨文件走**分段流式追加**（见 panel.ts 的
+ *   streamInto / workbench/files-open.ts 的分段 provider），这个常量退化为
+ *   「一次会话里最多往 DOM 里放多少字符」的兜底：正常 5000 行 / 700 KiB 的文件
+ *   根本碰不到它。撞到它是**显式告知**（面板脚注 + 可读降级），不是静默截断。
+ */
+export const PREVIEW_MAX_CHARS = 8 * 1024 * 1024;
 
 function codeNode(text: string, path: string): HTMLElement {
   const pre = el('pre', 'preview-code');

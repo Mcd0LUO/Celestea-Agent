@@ -63,6 +63,56 @@
 }
 .preview-close:hover { color: var(--c-text-1); }
 .preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px; }
+
+/* ---- W1545：流式打开（巨文件分段追加） --------------------------------------
+ * 三个东西，三种角色，别混：
+ *   · .preview-skeleton    —— 壳的占位（面板当帧出现，此时**还没有**任何文件内容）。
+ *     它存在的唯一理由是让「点击 → 面板可见」与「文件读完」解耦：壳先出，内容随后填。
+ *   · .preview-stream-note —— 进度（「已读 N/M 行」）。住在**动作行**里，不在正文里：
+ *     .preview-body 的顶层子节点是双视图标记（markDual 按 '> .preview-view' 匹配），
+ *     往正文里插状态行会让 html 预览的视图标记错位。
+ *   · .preview-code       —— 每一段一个块（追加，不重建）。段与段之间不留缝：
+ *     正文行高不变，读者看不出「这里换了个块」（除非跨段的词法着色断了，见 stream.ts 取舍）。
+ * ------------------------------------------------------------------------- */
+.preview-skeleton { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.preview-skeleton-line {
+  height: 10px;
+  border-radius: var(--r-sm);
+  background: var(--c-layer-2);
+  /* 骨架只表示「这里马上有内容」，不做动画：动画在慢机器上会变成持续的噪声，
+     而本波的验收口径是「面板几乎瞬时出现」，不是「加载动画好看」。 */
+  opacity: .55;
+}
+.preview-skeleton-line:nth-child(1) { width: 72%; }
+.preview-skeleton-line:nth-child(2) { width: 88%; }
+.preview-skeleton-line:nth-child(3) { width: 54%; }
+.preview-stream-note {
+  margin-left: auto; /* 推到动作行右侧（复制/在文件管理器中打开之后） */
+  align-self: center;
+  font-size: 11px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+}
+/* 每段一个作用域容器（stream.ts 的 append）。它同时干两件事，缺一不可：
+ *
+ * ① **增强缝的作用域**：只对「本段新增」跑 runEnhancers。传整个 body 的话第 k 段
+ *    要遍历 k 段那么大的树 ⇒ O(段数²)。
+ *
+ * ② **跳过失灵内容的排版**：content-visibility:auto 让浏览器**跳过视口外**分段的
+ *    布局与绘制。这一条是 W1545 真机实测逼出来的 —— 逐段埋点显示：
+ *      append（插 DOM）  0.4–4.5 ms   ← 便宜
+ *      hl（本段高亮）    ~150 ms       ← 常数，不随段数涨
+ *      frame（浏览器排版）9.8 → 47 → 145 → 278 → … → 1301 ms  ← **线性增长**
+ *    ⇒ 总耗时 O(段数²) 的**不是**我们的 JS，而是浏览器对「越积越长的那一篇文档」
+ *      反复排版。20k 行 / 2 MB 的实测总耗时 30.5s，其中 90% 的采样落在 JS 之外。
+ *      content-visibility 把视口外的段整体跳过 ⇒ 每帧只排「看得见的那几段」。
+ *
+ * contain-intrinsic-size 给跳过的段一个**占位高度**，否则滚动条会随着段被跳过/恢复
+ * 而跳动；auto 前缀让浏览器记住上次量到的真实高度，滚过一次就稳定。
+ */
+.preview-seg { content-visibility: auto; contain-intrinsic-size: auto 640px; }
+/* 分段块之间不额外留白：它们拼起来**就是**一个文件，视觉上必须连续。 */
+.preview-body .preview-code + .preview-code { margin-top: 0; }
 .preview-actions {
   display: flex;
   gap: 8px;

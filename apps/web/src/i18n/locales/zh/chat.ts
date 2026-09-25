@@ -65,6 +65,9 @@ export const chat = {
   'chat.preview.badgeUnsupported': '类型不支持',
   'chat.preview.truncated': '已截断（只显示前一部分）',
   'chat.preview.degradeReadFailed': '这个文件暂时读不出来，请稍后再试',
+  // W1545：流式打开（分段追加）的状态与「撞到硬上限」的如实告知
+  'chat.preview.streamRead': '已读 {loaded}/{total} 行',
+  'chat.preview.streamLimit': '文件超过 {mb} MB 的预览上限，只显示了前一部分',
   // W1534：HTML 预览的「预览 / 源码」切换（kind=html 时显示）
   'chat.preview.modeAria': '查看方式',
   'chat.preview.modePreview': '预览',
@@ -227,7 +230,6 @@ export const chat = {
   'chat.wb.term.limit': '同时打开的终端数量已达上限，请先关闭一个。',
   'chat.wb.term.notStarted': '终端没有打开',
   'chat.wb.term.retry': '重试',
-  'chat.wb.file.loading': '读取文件…',
   'chat.input.placeholderIdle': '输入消息，Enter 发送，Shift+Enter 换行',
   'chat.input.placeholderSteer': 'Enter 插话（下一步送达）· Ctrl/Cmd+Enter 排队（下一回合送达）',
   'chat.input.placeholderQueue': 'Enter 排队（本轮结束后送达）· Ctrl/Cmd+Enter 插话（下一步送达）',
