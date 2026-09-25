@@ -1,9 +1,25 @@
 # 特性设计 · 沙箱时间语义（RLIMIT_CPU ↔ 墙钟超时）
 
-> 状态：**设计**。本文是目标契约与验收标准的记录；落地后回填「实现状态」并改状态行。
+> 状态：**已实现（P0，W1516）**。§3.1/§3.3 已落地，§5/§6 已回填；§3.2 第 2 条按派工方追加指令修订（见 §0）。
 > ⚠️ 状态行**只能出现一个类别词**：这里刻意不写「改为已实现」之类的话 —— `classifyStatus` 先命中就先归类，
 > 解释文字里的「已实现」会把整篇判成已实现（`AGENT.md` §7 第 2 条的真实陷阱，W1517 交付时被 `tests/doc-conventions.test.ts` ② 抓到）。
 > 依赖：[ARCHITECTURE.md](./ARCHITECTURE.md) 的分层与 seam 纪律、[data-files.md](./data-files.md) 的契约计数口径。
+
+## 0. 落地回填（W1516，P0）
+
+| 落点 | 实现 |
+|---|---|
+| `packages/tools/src/sandbox/limits.ts` | `CPU_GRACE_SEC = 5`、`deriveCpuSecFromWallClock()`、`resolveCallCpuSec()`（三种来源的唯一判定点） |
+| `packages/tools/src/sandbox/bwrap.ts` / `userspace.ts` | `run()` 按 `resolveTimeout()` 的**生效**墙钟推导；`spawn()` 走 `maxCpuSec` |
+| `packages/tools/src/run-code/broker.ts` | `spawnProgram` 带推导出的 `cpuSec`；CPU 被杀 → `code=cpu_exceeded` 且指名上限 |
+| `packages/tools/src/run-code/limits.ts` | `CELAESTEA_RUN_CODE_MAX_TIMEOUT_MS`（默认 120000）+ `RunCodeConfig.maxTimeoutMs` |
+| 契约 | `run_shell` / `run_code` 的 DESC 与参数描述、`contracts/tools.json` 逐字同步 |
+| 文档 | `packages/tools/src/sandbox/README.md` 环境变量表 + rlimit 一节 |
+
+**对 §3.2 第 2 条的修订（派工方追加指令，作废原文的「后台保持 20s」）**：`background:true` 的缺省
+`cpuSec` 改为 `config.maxCpuSec`（`CELESTEA_SHELL_MAX_CPU_SEC`，默认 600），显式 `cpu_sec` 仍优先且仍被夹紧。
+理由：后台进程没有调用级墙钟可跟随，而部署方已明确要求把长期驻留进程的上限一并放宽；硬边界仍由
+`maxCpuSec` 给出。`DEFAULT_LIMITS.cpuSec = 20` 仅保留为「无调用上下文」的兜底。
 
 ## 1. 一句话目标
 
@@ -66,25 +82,25 @@
 
 ## 5. 契约与文档影响
 
-| 文件 | 变更 |
-|---|---|
-| `contracts/tools.json` | `run_shell` / `run_code` 的 `description` 与 `timeout_ms` / `cpu_sec` 的参数描述必须与源码 DESC **逐字一致**（`packages/tools/src/run-code/sdk.test.ts` 与契约测试对拍） |
-| `packages/tools/src/sandbox/README.md` | §「环境变量」表补 `CELESTEA_RUN_CODE_MAX_TIMEOUT_MS`；§rlimit 说明补「CPU 跟随墙钟」 |
-| `contracts/endpoints.json` | **不变**（端点数不增） |
-| `docs/data-files.md` | **不变**（不涉及数据文件） |
+| 文件 | 变更 | 落地结果（W1516） |
+|---|---|---|
+| `contracts/tools.json` | `run_shell` / `run_code` 的 `description` 与 `timeout_ms` / `cpu_sec` 的参数描述必须与源码 DESC **逐字一致**（`packages/tools/src/run-code/sdk.test.ts` 与契约测试对拍） | ✅ 已同步：契约 JSON 由源码 spec **机械生成**（8 行描述变更；`count` 仍 18）；`sdk.test.ts` / `tests/contract-parity.test.ts` 全绿 |
+| `packages/tools/src/sandbox/README.md` | §「环境变量」表补 `CELESTEA_RUN_CODE_MAX_TIMEOUT_MS`；§rlimit 说明补「CPU 跟随墙钟」 | ✅ 已补；另加 `CELESTEA_SHELL_MAX_CPU_SEC` 一行与「三种取值来源」表 |
+| `contracts/endpoints.json` | **不变**（端点数不增） | ✅ 未改 |
+| `docs/data-files.md` | **不变**（不涉及数据文件） | ✅ 未改 |
 
 ## 6. 验收标准（机械可检验）
 
-| # | 标准 | 怎么验 |
-|---|---|---|
-| A1 | 不给 `cpu_sec` 时，`RLIMIT_CPU` 等于按 §3.1 推导的值 | 纯单测：注入假 `prlimit`，断言 argv 里的 `--cpu=` |
-| A2 | 给了 `cpu_sec` 时，显式值胜出且仍被 `maxCpuSec` 夹紧 | 纯单测（现有 `w6-cpu.test.ts` 的用例扩展） |
-| A3 | 墙钟先到：`timeout_ms` 到点仍是 `code=timeout`，不因 CPU 上限变大而改变 | 真机用例（bwrap 可用时）：`sleep` 超时仍是 timeout |
-| A4 | `run_code` 的子进程带上推导出的 CPU 上限 | 单测：假 sandbox 记录 `spawn` 收到的 `cpuSec` |
-| A5 | `run_code` 的硬顶可配、默认不变 | 单测：env 缺失 → 120000；`=600000` → 600000；非法值 → 回落默认 |
-| A6 | 契约文本与源码 DESC 逐字一致 | 现有对拍测试（改文本必须两边同改） |
-| A8 | `background: true` 且不给 `cpu_sec` 时，spawn 收到的 `cpuSec === config.maxCpuSec` | 单测：假 sandbox 记录 `spawn` 参数；变异：改回 20 → A8 红 |
-| A7 | 变异负控制 | 把推导改回常量 20 → A1 必须红；把显式覆盖去掉 → A2 必须红；把后台缺省改回 20 → A8 必须红 |
+| # | 标准 | 怎么验 | 结果（W1516） |
+|---|---|---|---|
+| A1 | 不给 `cpu_sec` 时，`RLIMIT_CPU` 等于按 §3.1 推导的值 | 纯单测：注入假 `prlimit`，断言 argv 里的 `--cpu=` | ✅ 30s→`--cpu=35`、90s→`--cpu=95`；变异红（见 A7） |
+| A2 | 给了 `cpu_sec` 时，显式值胜出且仍被 `maxCpuSec` 夹紧 | 纯单测（现有 `w6-cpu.test.ts` 的用例扩展） | ✅ 显式 7 胜出推导 125；9999→600 且 `clamped:true`；变异红 |
+| A3 | 墙钟先到：`timeout_ms` 到点仍是 `code=timeout`，不因 CPU 上限变大而改变 | 真机用例（bwrap 可用时）：`sleep` 超时仍是 timeout | ✅ userspace 与 bwrap 均 `code=timeout`；**含烧 CPU 的忙循环**仍是 timeout |
+| A4 | `run_code` 的子进程带上推导出的 CPU 上限 | 单测：假 sandbox 记录 `spawn` 收到的 `cpuSec` | ✅ 120s→`cpuSec=125`、30s→35、上限 60 时夹到 60 |
+| A5 | `run_code` 的硬顶可配、默认不变 | 单测：env 缺失 → 120000；`=600000` → 600000；非法值 → 回落默认 | ✅ 缺失/`soon`/`0`/`-5` → 120000；`600000` → 600000；默认墙钟仍 120000 |
+| A6 | 契约文本与源码 DESC 逐字一致 | 现有对拍测试（改文本必须两边同改） | ✅ `sdk.test.ts` + `tests/contract-parity.test.ts` 全绿 |
+| A8 | `background: true` 且不给 `cpu_sec` 时，spawn 收到的 `cpuSec === config.maxCpuSec` | 单测：假 sandbox 记录 `spawn` 参数；变异：改回 20 → A8 红 | ✅ 两个 provider：`spawn` → `--cpu=600`；显式 9 仍胜出、9999 夹到 60；变异红 |
+| A7 | 变异负控制 | 把推导改回常量 20 → A1 必须红；把显式覆盖去掉 → A2 必须红；把后台缺省改回 20 → A8 必须红 | ✅ 三处变异各自见红后还原变绿（逐条证据见 `results/W1516-CPU跟随墙钟.md`） |
 
 ## 7. 风险与未验证假设
 

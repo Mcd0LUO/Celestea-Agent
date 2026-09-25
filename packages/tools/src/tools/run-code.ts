@@ -22,11 +22,11 @@ import { descParam } from "../desc.js";
 import { ToolFailure } from "../tool-failure.js";
 import { brokerRun, type BrokerContext, type RunCodeEventSink } from "../run-code/broker.js";
 import {
+  DEFAULT_MAX_TIMEOUT_MS,
   DEFAULT_TIMEOUT_MS,
   MAX_LOG_BYTES,
   MAX_SUB_CALLS,
   MAX_SUB_OUTPUT_BYTES,
-  MAX_TIMEOUT_MS,
   RUN_CODE_ERROR_PREFIX,
   runCodeConfigFromEnv,
   type RunCodeConfig,
@@ -71,8 +71,10 @@ export function runCodeToolWithHandle(options: Omit<RunCodeToolOptions, "handle"
 }
 
 export function runCodeTool(options: RunCodeToolOptions): Tool {
-  const spec = runCodeSpec();
   const config = options.config ?? runCodeConfigFromEnv();
+  // §3.3: the advertised ceiling must be the one THIS host enforces, so the spec
+  // is built from the effective config rather than from the module constant.
+  const spec = runCodeSpec(config.maxTimeoutMs);
   return {
     spec: () => spec,
     execute: async (): Promise<unknown> => {
@@ -102,28 +104,42 @@ export function runCodeTool(options: RunCodeToolOptions): Tool {
 /**
  * The human/model-facing contract text. Kept as one block because it is diffed
  * byte-for-byte against `contracts/tools.json` (`sdk.test.ts`).
+ *
+ * `maxTimeoutMs` is a parameter because the ceiling became deployer-configurable
+ * (§3.3, `CELAESTEA_RUN_CODE_MAX_TIMEOUT_MS`); the frozen contract records the
+ * DEFAULT posture (no env), which is exactly [DEFAULT_MAX_TIMEOUT_MS].
  */
-const DESC =
-  "Execute a program in the sandbox and get its final value in ONE round trip (parent-broker). " +
-  "DEFAULT LANGUAGE: TypeScript, run by Node with native type stripping (no build step) — only ERASABLE TypeScript is allowed: " +
-  "no `enum`, no `namespace`, no parameter properties, no `declare`; plain JavaScript always works. " +
-  'Pass language: "python" for Python instead. ' +
-  "Write the program as a `function main()` body (an indented body is wrapped for you), or as a complete script that defines main; " +
-  "main() MAY be async and its resolved value (lossless JSON) is the final result. " +
-  "Inside the program the SDK exposes four synchronous bridges dispatched through the normal guarded tool pipeline: " +
-  "tools.read_file({path}) / tools.write_file({path, content}) / tools.list_dir({path}) / tools.run_shell({command}) " +
-  "(Python: tools.read_file(path=...) etc.); a denied or failed sub-call raises ToolCallError (catch it and continue). " +
-  "Bridge tools resolve relative paths against the TOOL workdir, not the program's cwd — pass absolute paths from inside the program. " +
-  "Only log what the model needs: a non-protocol stdout line becomes a log line (≤" + MAX_LOG_BYTES + " bytes, UI render only); " +
-  "intermediate sub-call results are recorded in the session log but context-retained (the model sees only the final value). " +
-  "Hard limits: ≤" + MAX_SUB_CALLS + " sub-calls (the next one errors), wall clock ≤" + MAX_TIMEOUT_MS + "ms (timeout_ms, default " + DEFAULT_TIMEOUT_MS + "), " +
-  "sub-call output ledger ≤" + MAX_SUB_OUTPUT_BYTES + " bytes (truncated with a warning). " +
-  "No network; the same sandbox as run_shell (bwrap/raw/userspace + rlimits).";
+function runCodeDesc(maxTimeoutMs: number): string {
+  return (
+    "Execute a program in the sandbox and get its final value in ONE round trip (parent-broker). " +
+    "DEFAULT LANGUAGE: TypeScript, run by Node with native type stripping (no build step) — only ERASABLE TypeScript is allowed: " +
+    "no `enum`, no `namespace`, no parameter properties, no `declare`; plain JavaScript always works. " +
+    'Pass language: "python" for Python instead. ' +
+    "Write the program as a `function main()` body (an indented body is wrapped for you), or as a complete script that defines main; " +
+    "main() MAY be async and its resolved value (lossless JSON) is the final result. " +
+    "Inside the program the SDK exposes four synchronous bridges dispatched through the normal guarded tool pipeline: " +
+    "tools.read_file({path}) / tools.write_file({path, content}) / tools.list_dir({path}) / tools.run_shell({command}) " +
+    "(Python: tools.read_file(path=...) etc.); a denied or failed sub-call raises ToolCallError (catch it and continue). " +
+    "Bridge tools resolve relative paths against the TOOL workdir, not the program's cwd — pass absolute paths from inside the program. " +
+    "Only log what the model needs: a non-protocol stdout line becomes a log line (≤" + MAX_LOG_BYTES + " bytes, UI render only); " +
+    "intermediate sub-call results are recorded in the session log but context-retained (the model sees only the final value). " +
+    "Hard limits: ≤" + MAX_SUB_CALLS + " sub-calls (the next one errors), wall clock ≤" + maxTimeoutMs + "ms (timeout_ms, default " + DEFAULT_TIMEOUT_MS + "; the ceiling is CELAESTEA_RUN_CODE_MAX_TIMEOUT_MS), " +
+    "sub-call output ledger ≤" + MAX_SUB_OUTPUT_BYTES + " bytes (truncated with a warning). " +
+    "The child's CPU limit (RLIMIT_CPU) follows this run's wall clock, so raising timeout_ms raises the CPU budget with it; a CPU-cap kill is reported as cpu_exceeded. " +
+    "No network; the same sandbox as run_shell (bwrap/raw/userspace + rlimits)."
+  );
+}
 
-export function runCodeSpec(): ToolSpec {
+/**
+ * `maxTimeoutMs` defaults to [DEFAULT_MAX_TIMEOUT_MS], so the frozen-contract
+ * comparison (`runCodeSpec()` with no arguments) sees the shipped default; the
+ * mounted tool passes its effective config, so `GET /api/tools` advertises the
+ * ceiling that actually applies on that host.
+ */
+export function runCodeSpec(maxTimeoutMs: number = DEFAULT_MAX_TIMEOUT_MS): ToolSpec {
   return {
     name: "run_code",
-    description: DESC,
+    description: runCodeDesc(maxTimeoutMs),
     parameters: {
       type: "object",
       properties: {
@@ -141,8 +157,9 @@ export function runCodeSpec(): ToolSpec {
         timeout_ms: {
           type: "integer",
           minimum: 1,
-          maximum: 120000,
-          description: "Optional whole-run wall clock in ms. Default 120000; hard cap 120000 (CELAESTEA_RUN_CODE_TIMEOUT_MS tunes the default, never the cap).",
+          maximum: maxTimeoutMs,
+          description:
+            "Optional whole-run wall clock in ms. Default 120000; the hard cap is CELAESTEA_RUN_CODE_MAX_TIMEOUT_MS (default 120000, so it is unchanged unless the deployer raises it). CELAESTEA_RUN_CODE_TIMEOUT_MS tunes the default, never the cap. The child's CPU limit follows this value.",
         },
         desc: descParam(),
       },
