@@ -83,8 +83,8 @@ describe("apps/studio contract surface", () => {
     expect(Array.isArray(tools.tools)).toBe(true);
     // W783: 10 -> 11 (`ask_user_question`); W804: 11 -> 12 (`read_image`);
     // W7: 12 -> 13 (`stop_worker`); W884: 13 -> 14 (`load_skill`);
-    // F4: 14 -> 16 (`browser_open` + `browser_act`).
-    expect(loadTools().tools).toHaveLength(18);
+    // F4: 14 -> 16 (`browser_open` + `browser_act`); W1533: 18 -> 19 (`update_tasks`).
+    expect(loadTools().tools).toHaveLength(19);
   });
 
   it("404s unknown /api/* paths with the JSON envelope (never the SPA)", async () => {

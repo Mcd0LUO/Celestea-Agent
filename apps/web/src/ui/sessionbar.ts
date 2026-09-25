@@ -14,6 +14,7 @@ import { el, need } from '../utils/dom';
 import { activePane, allPanes, paneBusy, type SessionPane } from './viewctx';
 import { openSession } from './restore';
 import { lineageOf, type LineageLink } from './worker-lineage';
+import { installTaskPanel } from './taskpanel'; // W1533：会话页顶部的任务面板（todo list）
 import { t } from '../i18n';
 
 let nameEl: HTMLElement | null = null;
@@ -33,6 +34,11 @@ function labelOf(pane: SessionPane): string {
 }
 
 export function initSessionBar(): void {
+  // W1533：任务面板的装配点。
+  // 为什么落在这里：main.ts（架构师独占）在 initViewCtx() 之后紧接着调本函数，
+  // 此刻每个会话视图容器 .sess-pane 都已存在 —— 面板正是挂进这些容器（见
+  // ui/taskpanel/panel.ts 的位置决策）。装配是幂等的，重复调用无副作用。
+  installTaskPanel();
   const bar = need<HTMLElement>('#sessionBar');
   nameEl = el('span', 'sess-bar-name', '—');
   kindEl = el('span', 'sess-bar-kind hidden', 'WORKER');

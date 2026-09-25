@@ -39,6 +39,7 @@ import { prunePaneDom } from './messages/dom-cap'; // W1485：消息容器的 DO
 // W784：转录里的提问行（§7.2）+ 未决列表重建（刷新 / 重连 / 切会话后）。
 import { historyQuestionsOf, type HistoryQuestion } from './question/format';
 import { recoverQuestions, renderHistoryQuestionCard } from './question';
+import { mountTaskPanel } from './taskpanel'; // W1533：历史恢复会 replaceChildren，面板要归位
 
 const MAX_RESTORE = 200;
 
@@ -274,6 +275,10 @@ export async function restoreSessionHistory(
   // W1485：恢复收尾统一裁一次 DOM（force：不参与 assistant 那条时间窗节流）。
   // 历史本身已按 MAX_RESTORE 条截断，这一步兜的是「服务端一次给回上千条」的情形。
   prunePaneDom(ctx, true);
+  // W1533：上面的 replaceChildren 把任务面板（.sess-pane 的第一个子节点）一起换掉了
+  // —— 恢复期间到达的清单已经写进 store，这里只把面板节点重新插回最前面即可
+  // （句柄与列表 DOM 都复用，见 ui/taskpanel/wire.ts 的 place()）。
+  mountTaskPanel(ctx);
   railSync(ctx);
   autoscroll(ctx, true);
   // 历史就位后再问服务端「还有哪些提问没结算」：进程没重启的刷新靠这一步把卡片
