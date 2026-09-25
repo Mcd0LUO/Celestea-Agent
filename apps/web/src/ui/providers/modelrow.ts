@@ -4,6 +4,7 @@
 // ============================================================================
 import { el } from '../../utils/dom';
 import type { EditorRefs, EffortChips } from './types';
+import { addModalityGroup, INPUT_DEFAULT, INPUT_MODALITIES, OUTPUT_DEFAULT, OUTPUT_MODALITIES } from './modalities';
 import { t } from '../../i18n';
 
 /**
@@ -170,6 +171,24 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   adv.appendChild(ctx);
   adv.appendChild(el('label', 'prov-adv-label', t('settings.field.maxOutputTokens')));
   adv.appendChild(maxOut);
+  // W1536：输入 / 输出类型多选（用户点名要的「是否支持文字图片」）。
+  // 语义：缺省 = 乐观默认（不写盘）；点一下即变显式配置并写盘。
+  const inputModalities = addModalityGroup(
+    t('settings.providers.inputModalities'),
+    INPUT_MODALITIES,
+    INPUT_DEFAULT,
+    () => e.onLayout?.(),
+  );
+  inputModalities.set(undefined); // 新建模型行 = 乐观默认态
+  adv.appendChild(inputModalities.root);
+  const outputModalities = addModalityGroup(
+    t('settings.providers.outputModalities'),
+    OUTPUT_MODALITIES,
+    OUTPUT_DEFAULT,
+    () => e.onLayout?.(),
+  );
+  outputModalities.set(undefined);
+  adv.appendChild(outputModalities.root);
   det.appendChild(adv);
   // 高级区展开/收起会改变内容高度：通知内联面板重算 max-height
   det.addEventListener('toggle', () => e.onLayout?.());
@@ -185,6 +204,6 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   li.appendChild(det);
   li.appendChild(del);
   e.modelsBox.appendChild(li);
-  e.rows.push({ id: rid, name: rname, efforts: chips, ctx, maxOut, li });
+  e.rows.push({ id: rid, name: rname, efforts: chips, ctx, maxOut, inputModalities, outputModalities, li });
   e.onLayout?.();
 }

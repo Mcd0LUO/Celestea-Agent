@@ -3,6 +3,7 @@
 //   （W748 从 ui/providers.ts 拆出；纯搬运，字段/语义未改）。
 // ============================================================================
 import type { ProviderModelSpec } from '../../types';
+import type { ModalityGroup } from './modalities';
 
 /** 可点击多选档位片（toggle chips）：选中只切 class，不重建 DOM（铁律 4/8）。 */
 export interface EffortChips {
@@ -21,6 +22,10 @@ export interface ModelRow {
   efforts: EffortChips;
   ctx: HTMLInputElement;
   maxOut: HTMLInputElement;
+  /** W1536：该模型支持哪些**输入**类型（text / image / …）；未写盘 = 乐观默认。 */
+  inputModalities: ModalityGroup;
+  /** W1536：该模型支持哪些**输出**类型。 */
+  outputModalities: ModalityGroup;
   li: HTMLElement;
 }
 
