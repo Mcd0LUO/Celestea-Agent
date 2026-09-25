@@ -3,4 +3,89 @@
    ----------------------------------------------------------------------------
    为什么单独成文件：tokens.css / workbench.css / settings.css 各由别的 worker
    独占（色卡 / 工作台 / 提供商编辑），本波一律「谁的能力谁的文件」。
-   ============================================================================ */
+
+   W1533（实现）：面板是 .sess-pane 的**第一个子节点**，因此随会话切换、不随
+   消息滚动；可折叠（只切 .collapsed + CSS transition，绝不重建 DOM，铁律 4）；
+   完成项用对勾 + 删除线 + 弱化色三重表达（不只靠颜色，见 §状态）。
+   颜色/圆角/发丝线一律走 tokens.css 的 W12 令牌（--c-* / --r-* / --hairline）。
+   ========================================================================== */
+.tp-panel {
+  flex: 0 0 auto; /* 不参与伸缩：面板高度只由自己的内容决定 */
+  /* 钉在滚动视口顶端：.sess-pane 是唯一滚动容器，清单滚走就失去「边做边看」的意义。
+     sticky **不脱离文档流**（不改变 scrollHeight / 列几何，autoscroll 与 rail 的
+     坐标口径逐像素不变），只是把这一条钉住；不透明底色 + z-index 保证它盖住
+     下方滚过的正文。 */
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 0 6px;
+  padding: 6px 10px 5px;
+  border: var(--hairline) solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  font-size: 12px;
+  color: var(--c-text-2);
+}
+.tp-panel[hidden] { display: none; }
+
+/* ---- 头部（可点：折叠/展开） ---- */
+.tp-head {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%;
+  border: none; background: none; padding: 0;
+  color: var(--c-text-2); font: inherit; text-align: left; cursor: pointer;
+}
+.tp-head:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--c-accent-ring); border-radius: var(--r-sm); }
+.tp-chev {
+  flex: 0 0 auto; color: var(--c-text-3); font-size: 9px; line-height: 1;
+  transition: transform .12s ease;
+}
+.tp-panel.collapsed .tp-chev { transform: rotate(90deg); }
+.tp-title {
+  flex: 0 0 auto; font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase;
+  color: var(--c-text-3);
+}
+.tp-count {
+  flex: 0 0 auto; margin-left: auto; font-family: var(--mono); font-size: 10.5px;
+  color: var(--c-text-3);
+}
+
+/* ---- 主体：折叠只改 max-height（CSS transition，DOM 不重建） ---- */
+.tp-body {
+  overflow: hidden;
+  max-height: 320px;
+  transition: max-height .16s ease;
+}
+.tp-panel.collapsed .tp-body { max-height: 0; }
+
+.tp-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tp-row { display: flex; align-items: baseline; gap: 6px; line-height: 17px; }
+.tp-check {
+  flex: 0 0 auto; width: 12px; text-align: center;
+  font-family: var(--mono); font-size: 11px; line-height: 1;
+  color: var(--c-text-3);
+}
+.tp-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tp-status {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 10px; color: var(--c-text-3);
+}
+
+/* ---- 状态：三态各自独立（对勾 / 箭头 / 空），颜色只是**加强**不是唯一线索 ---- */
+.tp-row.is-completed .tp-check { color: var(--c-ok); }
+.tp-row.is-completed .tp-text { color: var(--c-text-3); text-decoration: line-through; }
+.tp-row.is-completed .tp-status { color: var(--c-ok); }
+.tp-row.is-in_progress .tp-check { color: var(--c-accent); }
+.tp-row.is-in_progress .tp-text { color: var(--c-text-1); font-weight: 600; }
+.tp-row.is-in_progress .tp-status { color: var(--c-accent); }
+.tp-row.is-pending .tp-check::after { content: '\00b7'; }
+
+/* ---- 底部说明：空态 / 全完成态 / 剩余数 ---- */
+.tp-note { margin-top: 5px; font-size: 10.5px; color: var(--c-text-3); }
+.tp-note.is-done { color: var(--c-ok); }
+.tp-note.is-empty { font-style: italic; }
+
+/* 窄屏：面板让位给正文（正文优先是本仓一贯取舍）。 */
+@media (max-width: 640px) {
+  .tp-panel { padding: 5px 8px 4px; font-size: 11.5px; }
+  .tp-status { display: none; }
+}

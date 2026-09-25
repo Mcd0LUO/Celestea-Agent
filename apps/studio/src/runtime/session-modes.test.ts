@@ -125,8 +125,8 @@ describe("W729 per-session mode prompts (real engine, one process)", () => {
     // W783: 10 -> 11 (ask_user_question); W804: 11 -> 12 (read_image, mounted
     // because the session has an attachment store); W791: execution = the 6 kept
     // names (read_image is folded there, like every non-keep tool).
-    expect(faceOf("sample-ws/std")).toEqual(["ask_user_question", "browser_act", "browser_open", "forget", "http_request", "list_dir", "load_skill", "process_control", "read_file", "read_image", "remember", "run_code", "run_shell", "send_message", "spawn_worker", "stop_worker", "worker_status", "write_file"]);
-    expect(faceOf("sample-ws/exec")).toEqual(["browser_act", "browser_open", "forget", "http_request", "load_skill", "process_control", "remember", "run_code", "send_message", "spawn_worker", "stop_worker", "worker_status"]);
+    expect(faceOf("sample-ws/std")).toEqual(["ask_user_question", "browser_act", "browser_open", "forget", "http_request", "list_dir", "load_skill", "process_control", "read_file", "read_image", "remember", "run_code", "run_shell", "send_message", "spawn_worker", "stop_worker", "update_tasks", "worker_status", "write_file"]);
+    expect(faceOf("sample-ws/exec")).toEqual(["browser_act", "browser_open", "forget", "http_request", "load_skill", "process_control", "remember", "run_code", "send_message", "spawn_worker", "stop_worker", "update_tasks", "worker_status"]);
   });
 
   it("P0 invariant ①: a session WITHOUT session.json.mode keeps the DEFAULT mode prompt", async () => {

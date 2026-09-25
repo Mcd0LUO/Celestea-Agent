@@ -60,7 +60,7 @@ const CONTRACT = loadTools();
  * store, and W884's `load_skill` is always mounted). F4's browser tools ride
  * that same attachment store, so they are conditional too.
  */
-const REGISTRY_TOOLS = ["forget", "http_request", "list_dir", "load_skill", "process_control", "read_file", "remember", "run_code", "run_shell", "write_file"];
+const REGISTRY_TOOLS = ["forget", "http_request", "list_dir", "load_skill", "process_control", "read_file", "remember", "run_code", "run_shell", "update_tasks", "write_file"];
 /** F4 step 2b: mounted with the attachment store (screenshots ride its chain). */
 const BROWSER_TOOLS = ["browser_act", "browser_open"];
 const WORKER_TOOLS = ["send_message", "spawn_worker", "stop_worker", "worker_status"];
@@ -208,10 +208,10 @@ describe("W744 · all 8 builtin tool specs match the implementation registry", (
 
   it("leaves no contract tool uncovered (worker trio + W783 question tool come from elsewhere)", () => {
     // W783: 10 -> 11; W804: 11 -> 12; W7: 12 -> 13; W884: 13 -> 14; F4: 14 -> 16;
-    // B2: 16 -> 18. ask_user_question, read_image, the browser pair and the W7
-    // worker tools are each covered by their own check below; remember/forget are
-    // in REGISTRY_TOOLS (always mounted like load_skill).
-    expect(CONTRACT.tools).toHaveLength(18);
+    // B2: 16 -> 18; W1533: 18 -> 19. ask_user_question, read_image, the browser
+    // pair and the W7 worker tools are each covered by their own check below;
+    // remember/forget/update_tasks are in REGISTRY_TOOLS (always mounted).
+    expect(CONTRACT.tools).toHaveLength(19);
     expect(uncoveredTools(CONTRACT, specs, [...WORKER_TOOLS, ...QUESTION_TOOLS, READ_IMAGE_TOOL, ...BROWSER_TOOLS])).toEqual([]);
   });
 

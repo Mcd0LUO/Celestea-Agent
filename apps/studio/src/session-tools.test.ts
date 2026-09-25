@@ -29,7 +29,7 @@ const S1_URL = "/api/sessions/" + encodeURIComponent(S1) + "/tools";
  */
 const ENV: NodeJS.ProcessEnv = { CELESTEA_PERMISSION_DEFAULT: "", CELESTEA_PERMISSION_MAX: "" };
 
-/** The frozen standard face of the production registry (W791/W804/W7/W884/F4/B2: 18). */
+/** The frozen standard face of the production registry (W791/W804/W7/W884/F4/B2: 18; W1533: 19). */
 const STANDARD_FACE: readonly string[] = [
   "ask_user_question",
   "browser_act",
@@ -47,6 +47,7 @@ const STANDARD_FACE: readonly string[] = [
   "send_message",
   "spawn_worker",
   "stop_worker",
+  "update_tasks",
   "worker_status",
   "write_file",
 ].sort();
@@ -64,6 +65,7 @@ const EXECUTION_FACE: readonly string[] = [
   "send_message",
   "spawn_worker",
   "stop_worker",
+  "update_tasks",
   "worker_status",
 ].sort();
 

@@ -28,6 +28,7 @@ import { browserActTool, browserOpenTool } from "./tools/browser.js";
 import { BrowserManager } from "./browser/session.js";
 import type { AttachmentStore } from "./attachments/store.js";
 import { runShellTool } from "./tools/run-shell.js";
+import { updateTasksTool } from "./tools/tasks.js";
 import { writeFileTool } from "./tools/write-file.js";
 import { ProcessRegistry } from "./process/registry.js";
 import { selectSandbox } from "./sandbox/provider.js";
@@ -95,6 +96,11 @@ export function builtinTools(options: BuiltinToolsOptions = {}): Tool[] {
       workspace: options.workspace ?? null,
       ...(options.env === undefined ? {} : { env: options.env }),
     }),
+    // W1533: the model's todo list. It has no service to inject -- the tool's
+    // result IS the list -- so it is mounted UNCONDITIONALLY (like load_skill):
+    // every face advertises the same name and the panel can rely on the tool
+    // existing wherever a turn can run.
+    updateTasksTool(),
   ];
   // W783: only when a human answerer actually exists in this host.
   if (options.questions !== undefined && options.questions !== null) tools.push(askUserTool({ questions: options.questions }));

@@ -318,4 +318,13 @@ export const chat = {
   'chat.structured.raw': 'Raw',
   'chat.imageZoom.view': 'View full size',
   'chat.imageZoom.close': 'Close',
+  // W1533: the task panel (the todo list the model publishes with update_tasks)
+  'chat.tasks.title': 'Tasks',
+  'chat.tasks.count': '{done}/{total} done',
+  'chat.tasks.status.pending': 'To do',
+  'chat.tasks.status.inProgress': 'In progress',
+  'chat.tasks.status.completed': 'Done',
+  'chat.tasks.remaining': '{n} left',
+  'chat.tasks.allDone': 'All done',
+  'chat.tasks.empty': 'No tasks yet',
 } as const;

@@ -124,6 +124,23 @@ export { httpRequestSpec, httpRequestTool, type HttpRequestToolOptions } from ".
 export { ASK_USER_DESCRIPTION, askUserSpec, askUserTool, type AskUserToolOptions } from "./tools/ask-user.js";
 export { READ_IMAGE_DESCRIPTION, readImageSpec, readImageTool, type ReadImageToolOptions } from "./tools/read-image.js";
 export { LOAD_SKILL_DESCRIPTION, LOAD_SKILL_ERROR_PREFIX, loadSkillSpec, loadSkillTool, type LoadSkillToolOptions } from "./tools/load-skill.js";
+// W1533: the model's todo list (the panel reads it back off the tool frames).
+export {
+  countTasks,
+  isTaskStatus,
+  MAX_TASKS,
+  normalizeTasks,
+  runUpdateTasks,
+  TASK_STATUSES,
+  UPDATE_TASKS_DESCRIPTION,
+  UPDATE_TASKS_ERROR_PREFIX,
+  updateTasksSpec,
+  updateTasksTool,
+  type TaskCounts,
+  type TaskItem,
+  type TaskStatus,
+  type UpdateTasksOutput,
+} from "./tools/tasks.js";
 export {
   FORGET_DESCRIPTION,
   MEMORY_ERROR_PREFIX,

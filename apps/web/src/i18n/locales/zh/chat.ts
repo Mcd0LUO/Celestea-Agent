@@ -318,4 +318,13 @@ export const chat = {
   'chat.structured.raw': '原文',
   'chat.imageZoom.view': '查看大图',
   'chat.imageZoom.close': '关闭',
+  // W1533：任务面板（模型用 update_tasks 工具发布的待办清单；完成的打勾）
+  'chat.tasks.title': '任务',
+  'chat.tasks.count': '{done}/{total} 已完成',
+  'chat.tasks.status.pending': '待办',
+  'chat.tasks.status.inProgress': '进行中',
+  'chat.tasks.status.completed': '已完成',
+  'chat.tasks.remaining': '还有 {n} 项待办',
+  'chat.tasks.allDone': '全部完成',
+  'chat.tasks.empty': '暂无任务',
 } as const;

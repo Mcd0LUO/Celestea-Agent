@@ -16,6 +16,7 @@ import type { HistoryMsg } from '../types';
 import type { SessionPane } from './viewctx';
 import { t } from '../i18n';
 import { buildToolCard, descFromArgs, mountToolCard, setToolResult, subCallIndex } from './toolcards';
+import { noteTaskHistory } from './taskpanel'; // W1533：历史里的 update_tasks 行 → 任务面板
 
 /** 值 → 展示文本（对象走 2 空格缩进 JSON；stringify 失败回落 String）。 */
 export function toJsonText(v: unknown): string {
@@ -52,6 +53,10 @@ function appendToolLine(text: string, container: HTMLElement): void {
  * 否则刷新后的「第 N 步」会比实时多出子调用的数量。
  */
 export function renderToolMessage(ctx: SessionPane, m: HistoryMsg, container: HTMLElement): void {
+  // W1533：刷新 / 切会话后，任务面板要从**同一条历史行**重建（live 与恢复共用
+  // 一个读取口径，见 ui/taskpanel/wire.ts 的 noteTaskHistory）。非 update_tasks 行
+  // 立刻返回，调用成本是两次字段比较。
+  noteTaskHistory(ctx, m);
   if (m.kind === 'call') {
     const parentId = typeof m.tool_parent_id === 'string' ? m.tool_parent_id : undefined;
     const id = m.tool_call_id ?? 'call_' + (ctx.histToolStep + 1);

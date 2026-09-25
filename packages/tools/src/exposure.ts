@@ -78,6 +78,11 @@ export const EXECUTION_TOOL_NAMES: readonly string[] = [
   // must not lie" rule that kept load_skill (W884) and the browser tools (F4).
   "remember",
   "forget",
+  // W1533: `update_tasks` publishes the session's own todo list. It is NOT in
+  // SDK_TOOLS, so folding it would make the plan unreachable in execution mode
+  // while the user still expects to watch it -- the same "prompt must not lie"
+  // rule that kept load_skill (W884), the browser tools (F4) and memory (B2).
+  "update_tasks",
 ];
 
 /**

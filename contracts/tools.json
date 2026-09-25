@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea engine tool specs (14 tools)",
+  "title": "Celestea engine tool specs (19 tools)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "source": {
     "liveEndpoint": "http://127.0.0.1:3777/api/tools (descriptions taken verbatim from the running engine)",
@@ -53,9 +53,18 @@
       "why": "Progressive disclosure for skills (W882 discovery + the W874/W879 non-system-prompt decision): the model must be able to load ONE skill's SKILL.md body on demand. The catalog (name + description only) is injected as durable user-role history at every turn start; the body enters the conversation only when this tool is called. Read-only: no writes, no process, no network; the name goes through W882's name contract (no path traversal).",
       "executionKeepList": "W884 also adds load_skill to EXECUTION_TOOL_NAMES: it is a pure read and is NOT in SDK_TOOLS, so folding it would make skills unreachable in execution mode while the catalog still advertises them.",
       "endpoints": "W884 adds ZERO endpoints: the catalog rides the existing turn-start context lane and the tool rides the existing dispatch, so API_ENDPOINT_COUNT stays 61."
+    },
+    "w1533Delta": {
+      "addedTool": "update_tasks",
+      "count": "18 -> 19",
+      "sourceRef": "packages/tools/src/tools/tasks.ts (W1533; no Rust counterpart)",
+      "why": "The model needs a todo list the user can watch. Publishing it as a TOOL puts the list in the session log twice (the call's args and the result's tasks), so the panel restores it on refresh with no new data file, no new endpoint and no new service.",
+      "semantics": "REPLACE, not patch: every call carries the COMPLETE list, so two concurrent updates cannot merge into a state neither author intended. The result is {ok, tasks, counts:{pending,inProgress,completed}}.",
+      "executionKeepList": "W1533 also adds update_tasks to EXECUTION_TOOL_NAMES: it is not in SDK_TOOLS, so folding it would make the plan unreachable in execution mode while the user still expects to watch it (the same rule as W884 load_skill / F4 browser / B2 memory).",
+      "endpoints": "W1533 adds ZERO endpoints: the list rides the existing tool dispatch and the existing tool/tool_result SSE frames, so API_ENDPOINT_COUNT stays 69."
     }
   },
-  "count": 18,
+  "count": 19,
   "tools": [
     {
       "name": "ask_user_question",
@@ -725,6 +734,51 @@
         "additionalProperties": false
       },
       "sourceRef": "crates/tools/src/builtin.rs:201-215"
+    },
+    {
+      "name": "update_tasks",
+      "description": "Publish the CURRENT task list for this session (a todo list the user watches). Send the COMPLETE list every time: it REPLACES the previous one, so never send a diff or a single changed row. Each item is {content, status}, where status is 'pending' (not started), 'in_progress' (being worked on now) or 'completed' (finished and verified) — mark an item completed only when the work is actually done. Use it when a request needs several steps: write the list first, keep at most ONE item in_progress, and re-send the whole list as you go. The result echoes the normalized list and its counts as {ok, tasks, counts:{pending,inProgress,completed}}; an empty tasks array clears the list. An item with a blank content or an unknown status fails with a structured `update_tasks: code=... msg=\"...\"` error and changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "description": "The COMPLETE task list, in display order. Replaces the previous list; an empty array clears it.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "description": "One-line description of the task, in the user's language."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed"
+                  ],
+                  "description": "pending = not started, in_progress = being worked on now, completed = finished and verified."
+                }
+              },
+              "required": [
+                "content",
+                "status"
+              ]
+            }
+          },
+          "desc": {
+            "type": "string",
+            "description": "Optional one-line label (max 80 chars) describing what this call is doing; shown on the tool card in the UI. Keep it short."
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "additionalProperties": false
+      },
+      "sourceRef": "packages/tools/src/tools/tasks.ts (W1533; no Rust counterpart)"
     }
   ]
 }

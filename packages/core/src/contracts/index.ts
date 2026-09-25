@@ -181,7 +181,9 @@ export const FROZEN_COUNTS = {
   // disclosure; the catalog half adds no tool).
   // F4: 14 -> 16 (`browser_open` + `browser_act`, the session browser tools).
   // B2 (F3 P1): 16 -> 18 (`remember` + `forget`, the workspace-memory write pair).
-  tools: 18,
+  // W1533: 18 -> 19 (`update_tasks`, the model's todo list -- the panel reads it
+  // back off the existing tool/tool_result frames, so no endpoint is added).
+  tools: 19,
 } as const;
 
 /** One frozen-count divergence, with everything an operator needs to act. */
