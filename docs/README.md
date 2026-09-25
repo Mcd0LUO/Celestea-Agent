@@ -38,11 +38,15 @@
 
 | 文件 | 状态 | 一句话 |
 | --- | --- | --- |
-| [`archive/DEVELOPMENT.md`](./archive/DEVELOPMENT.md) | 历史参考 | 旧后端（Rust）的开发者入口；文中路径以并入前旧布局为准 |
-| [`archive/README-frontend.md`](./archive/README-frontend.md) | 历史参考 | 并入前前端仓的 docs 索引，原样保留 |
 | [`archive/research/`](./archive/research/) | 历史参考 | 调研报告：memory-store / selection-and-preview / computer-use 等 |
 | [`archive/decisions/`](./archive/decisions/) | 历史参考 | **已实现决策的归档**（10 篇：特性设计 + 迭代方向的决策依据与验收标准；现行口径见 `contracts/` 与 `ARCHITECTURE.md`） |
 | [`archive/migration/`](./archive/migration/) | 历史参考 | 迁移留痕：W781 两仓合并对照表 |
+
+> **W1518 清理**：原先归档在 `archive/DEVELOPMENT.md`（旧 Rust 后端的开发者入口）与
+> `archive/README-frontend.md`（并入前前端仓的 docs 索引）的两篇**已删除** —— 它们整篇只描述
+> 已退役的 Rust 后端与并入前的旧两仓布局，属「退役后端的历史文档」，与 W881 已清理的那批同类。
+> 正文可从 git 历史取回。`archive/decisions/`（已实现决策）与 `archive/research/`（调研留痕）
+> **保留**：它们记录的是「为什么这样定」，仍被现役文档引用。
 
 ## 仓库角色与互链
 
@@ -65,3 +69,8 @@
 - 单篇 **≤ 700 行**（硬上限）→ 超了按章节拆进同名子目录（`docs/<名字>/README.md` 作索引并登记，分册不登记）。
 - 文档过时 → `git mv` 进 [`archive/`](./archive/)（**指定归档目录**）+ 顶部 `📦 历史文档` 横幅 + `历史参考` 状态 + 更新全仓引用路径；**不删除正文**。
   公开仓不再保留退役后端/引擎的历史文档（W881 已清理）。
+- **会话接续手册不放 `docs/`**：那种「每完成一个可提交单元就更新」的活文档（原先的 `docs/HANDOVER.md`）
+  属于**过程留痕**，不是描述现状的现行文档 —— 它既没有稳定的「现状」可写，又会随每次更新让
+  `tests/doc-conventions.test.ts` 的 ①（未登记）/②（无状态行）/⑤（本机路径）变红。
+  按「一个事实一个家」放在**仓外**（系统 `/tmp`）或 `results/`（已被 `.gitignore` 忽略，
+  不入库、不受文档门禁约束）。**不要再往 `docs/` 放接续手册。**

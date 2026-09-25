@@ -3,7 +3,7 @@
   "title": "/tmp/celestea-workers-registry.tsv (worker registry)",
   "source": {
     "legacy": "frozen from the retired implementation (original source file deleted 2026-09-15): /src/celestea_harness/crates/workers/src/types.rs:50-97, registry.rs:158-230",
-    "doc": "docs/archive/DEVELOPMENT.md §2.6"
+    "doc": "contracts/data-files/registry-tsv.schema.json (this file; its own frozen entry — the doc it referenced, docs/archive/DEVELOPMENT.md, was deleted in W1518)"
   },
   "path": {
     "default": "/tmp/celestea-workers-registry.tsv",
