@@ -12,7 +12,7 @@
  * maps onto HTTP 503, so the adapter itself stays about the HTTP contract.
  */
 
-import { createUsageTracker, DefaultAgentLoop } from "@celestea/agent-loop";
+import { createUsageTracker, DefaultAgentLoop, withRepetitionPerturbation } from "@celestea/agent-loop";
 import { listSkills, memoryContextOf, readLayers, renderSkillCatalog, type Llm, type PendingInjection, type Sandbox, type SessionEvent, type SessionLog, type Tool, type ToolGuard } from "@celestea/core";
 import { createSessionInbox, type SessionInbox, type TurnContextRow } from "@celestea/runtime";
 import {
@@ -441,6 +441,19 @@ export class SessionComposer {
    * row per ATTEMPT and hands the switch to the next target.
    */
   private engineLlm(sessionId: string | null, profile: Profile, ledger: UsageLedger | null, attachments: AttachmentStore | null): Llm {
+    // W1510: the perturbation must be the OUTERMOST wrapper, because it is the
+    // seam the loop asks (isPerturbable) before re-issuing a collapsed attempt.
+    // Wrapping it deeper would make that retry silently unperturbed; wrapping it
+    // here means apply() rebuilds the WHOLE chain on the new effort, so the
+    // ledger, fallback and attachment layers survive the re-issue.
+    return withRepetitionPerturbation(this.llmChain(sessionId, profile, ledger, attachments), {
+      currentEffort: profile.reasoning_effort,
+      apply: (effort) => this.llmChain(sessionId, { ...profile, reasoning_effort: effort }, ledger, attachments),
+    });
+  }
+
+  /** The decorated LLM chain for one route (everything except perturbation). */
+  private llmChain(sessionId: string | null, profile: Profile, ledger: UsageLedger | null, attachments: AttachmentStore | null): Llm {
     const inner = this.llmFactory()(profile);
     const wrapped =
       this.opts.fallback?.wrap({

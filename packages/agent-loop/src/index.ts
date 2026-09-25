@@ -16,6 +16,11 @@
  *   usage.ts         UsageTracker                               (loop.rs:49-89)
  *   events.ts        LoopEvent builders + EventSink             (events.rs)
  *   thinking.ts      W252 thinking-burst aggregation            (loop.rs:165-171)
+ *   repetition.ts    W1510 online degenerate-repetition detector (new)
+ *   repetition-recovery.ts W1510 plan, instructions, diagnostics (new)
+ *   repetition-cut.ts W1510 what happens to a convicted attempt  (new)
+ *   repetition-run.ts W1510 the wrap-up round trip              (new)
+ *   perturbation.ts  W1510 the re-issue route perturbation seam  (new)
  *   plugin.ts        AGENT_LOOP_SERVICE registration            (runtime/src/compose.rs)
  *   sse.ts           LoopEvent -> SSE frame mapping             (studio/src/main.rs:667)
  *
@@ -28,5 +33,9 @@ export * from "./context-trim.js";
 export * from "./usage.js";
 export * from "./events.js";
 export * from "./retention.js";
+export * from "./repetition.js";
+export * from "./repetition-recovery.js";
+export * from "./repetition-run.js";
+export * from "./perturbation.js";
 export * from "./plugin.js";
 export * from "./sse.js";
