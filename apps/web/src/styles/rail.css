@@ -57,6 +57,14 @@
   color: var(--c-text-1);
 }
 
+/* W1546 · 最近条（指针落在两条之间的死区里）—— **只改描边**，几何一字不动。
+   与 .is-hover 的分工：它不吸附（宽度保持静止刻度）、不弹预览卡；它回答的是
+   「此刻点下去会命中谁」（点击归属 = 带内最近的一根条，见 ui/rail-geom.ts 的 railHit）。
+   声明在 .is-hover 之前：同一条既最近又被悬停时，悬停态仍然胜出。 */
+.railv3-item.is-near {
+  border-color: var(--c-accent-ring);
+}
+
 /* 命中条：仅变色/微亮 + 高亮描边（不改变尺寸） */
 .railv3-item.is-hover {
   opacity: 1;
@@ -82,6 +90,10 @@
   border-style: solid;
   border-color: var(--c-accent-ring);
   color: var(--c-text-1);
+}
+/* W1546：折叠条也可能成为「最近条」（死区里），同样只换描边色 */
+.railv3-item.railv3-fold.is-near {
+  border-color: var(--c-accent-ring);
 }
 
 /* 细条化档（留白 24–64px）：更低调 */
