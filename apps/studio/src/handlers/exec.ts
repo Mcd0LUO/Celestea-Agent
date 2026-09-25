@@ -42,8 +42,15 @@ function readCommand(body: Record<string, unknown>): string | { error: string } 
   return value;
 }
 
-/** Resolve the target session (explicit id, else the detached/default scope). */
-function targetSession(deps: Deps, id: string | undefined): { resolved: ResolvedSession | null; status: number; error: string } {
+/**
+ * Resolve the target session (explicit id, else the detached/default scope).
+ *
+ * W1528: exported because the terminal handler resolves its target through the
+ * SAME function — a second implementation would be a second answer to "which
+ * session's permissions apply", which is exactly the drift this file exists to
+ * prevent.
+ */
+export function targetSession(deps: Deps, id: string | undefined): { resolved: ResolvedSession | null; status: number; error: string } {
   if (id === undefined || id === "") return { resolved: null, status: 0, error: "" };
   const resolved = deps.sessions.require(id);
   if (resolved.ok) return { resolved: resolved.value, status: 0, error: "" };
@@ -55,7 +62,7 @@ function targetSession(deps: Deps, id: string | undefined): { resolved: Resolved
  * contains `run_shell`. Read through the SAME grant reader the tool face uses,
  * so the UI cannot disagree with what a turn would allow.
  */
-function shellDeniedReason(deps: Deps, resolved: ResolvedSession | null): string | null {
+export function shellDeniedReason(deps: Deps, resolved: ResolvedSession | null): string | null {
   const dir = resolved?.dir ?? null;
   const sessionId = resolved?.id ?? null;
   const grants = effectiveGrantsOf(dir, sessionId, deps.grants.env, nowSec(deps.grants));
@@ -70,7 +77,7 @@ function shellDeniedReason(deps: Deps, resolved: ResolvedSession | null): string
  * it: provider policy + session scope + grants. Denied -> `{sandbox}` is a
  * RefusingSandbox whose `run` throws the structured policy error.
  */
-function sandboxFor(deps: Deps, resolved: ResolvedSession | null): Sandbox {
+export function sandboxFor(deps: Deps, resolved: ResolvedSession | null): Sandbox {
   const env = deps.grants.env;
   const sessionId = resolved?.id ?? null;
   const dir = resolved?.dir ?? null;

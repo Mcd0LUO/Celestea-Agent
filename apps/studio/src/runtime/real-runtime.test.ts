@@ -212,14 +212,14 @@ describe("POST /api/turn over the real engine", () => {
   });
 });
 
-// W783: 8 -> 9 (`question`).
-describe("GET /api/events — the frozen 9 event names", () => {
+// W783: 8 -> 9 (`question`); W1528: 9 -> 10 (`terminal`).
+describe("GET /api/events — the frozen 10 event names", () => {
   it("streams every contract event in the frozen envelope", async () => {
     const h = make();
     const res = await h.app.request("/api/events");
     expect(res.headers.get("content-type")).toContain("text/event-stream");
     const reader = res.body?.getReader();
-    const names = ["text", "thinking", "tool", "tool_result", "done", "turn_end", "status", "compact", "question"];
+    const names = ["text", "thinking", "tool", "tool_result", "done", "turn_end", "status", "compact", "question", "terminal"];
     expect([...SSE_EVENT_NAMES].sort()).toEqual([...names].sort());
     const first = reader?.read();
     for (const [i, name] of names.entries()) {

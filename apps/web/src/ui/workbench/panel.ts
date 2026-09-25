@@ -15,7 +15,7 @@ import {
   setPanelDock, setPanelSize, type DockSide, type PanelState,
 } from './state';
 import { renderFilesPanel } from './files';
-import { renderTerminalPanel } from './terminal';
+import { disposeTerminalPanel, renderTerminalPanel } from './terminal';
 import { renderBrowserPanel } from './browser';
 import { t } from '../../i18n';
 
@@ -24,6 +24,8 @@ let dock: HTMLElement | null = null;
 /** 面板内容根（.chat-shell 的兄弟；重建时只动它）。 */
 let installed = false;
 let dragQueued = false;
+/** W1528：上一帧的终端面板（id → 面板对象；见 reapClosedTerminals）。 */
+let lastTerminals = new Map<string, PanelState>();
 let dragState: { id: string; startX: number; startY: number; startSize: number; dock: DockSide } | null = null;
 
 /** 面板头部（标题 + 停靠切换 + 关闭）。 */
@@ -137,17 +139,44 @@ function panelBox(panel: PanelState): HTMLElement {
   box.appendChild(head(panel));
   const body = el('div', 'wb-body');
   if (panel.kind === 'files') void renderFilesPanel(body, panel, nextSeq(panel.id), isCurrentSeq);
-  else if (panel.kind === 'terminal') renderTerminalPanel(body, panel, isCurrentSeq);
+  // W1528：终端持有真 pty（进程）。重建时**不杀**（切 dock / 点面板聚焦都会
+  // 重建，杀一次终端就断一次）；xterm 的 DOM 被摘下来过，renderTerminalPanel
+  // 会把它重新 open 回新宿主。真正的关闭在 renderWorkbench 的集合差里。
+  else if (panel.kind === 'terminal') renderTerminalPanel(body, panel);
   else if (panel.kind === 'browser') renderBrowserPanel(body, panel, isCurrentSeq);
   box.appendChild(body);
   box.addEventListener('mousedown', () => focusPanel(panel.id));
   return box;
 }
 
+/**
+ * W1528：上一帧存在、这一帧已消失的**终端**面板 —— 它们持有的真 pty 必须在这里
+ * 被杀掉。
+ *
+ * 为什么用集合差而不是在 closePanel 里回调：state.ts 是**纯数据层**（它自己的
+ * 头注释写着「零 DOM」），让状态层认识 xterm 会把两层的边界弄反。集合差让
+ * 「面板没了 ⇒ 进程没了」成为渲染层的一条不变量，且**任何**移除路径（关闭按钮、
+ * resetPanels、未来的批量关闭）都自动覆盖 —— 不必逐个调用点记得去杀。
+ *
+ * 刻意保存**面板对象本身**（而不是 id）：closePanel 会把它从列表里摘掉，之后
+ * panelOf(id) 再也查不到，而 pty 句柄挂在它自己的 \`data\` 上。用 id 重建一个
+ * 空壳会读到 \`session: null\` ⇒ **静默漏进程**（本实现的第一版正是这么错的）。
+ */
+function reapClosedTerminals(before: ReadonlyMap<string, PanelState>, after: ReadonlySet<string>): void {
+  for (const [id, panel] of before) {
+    if (after.has(id)) continue;
+    void disposeTerminalPanel(panel);
+  }
+}
+
 /** 重建整个面板区（离屏构建 + 单次 replaceChildren；只动本容器）。 */
 export function renderWorkbench(): void {
   if (!host || !dock) return; // host/dock 同建同销；TS 不跨函数推断，显式守卫
   const all = listPanels();
+  const live = new Map<string, PanelState>();
+  for (const p of all) if (p.kind === 'terminal') live.set(p.id, p);
+  reapClosedTerminals(lastTerminals, new Set(live.keys()));
+  lastTerminals = live;
   const bottoms = all.filter((p) => p.dock === 'bottom');
   const rights = all.filter((p) => p.dock === 'right');
   const off = document.createElement('div');

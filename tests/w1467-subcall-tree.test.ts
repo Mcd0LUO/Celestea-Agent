@@ -99,9 +99,9 @@ describe("W1467 B · contracts/sse-events.json declares the two payload extensio
     expect(contract.payloadExtensions["tool_result"]?.["parent_id"]).toBeTypeOf("string");
   });
 
-  it("does not add an event name (the count stays 9)", () => {
-    expect(contract.count).toBe(9);
-    expect(contract.events).toHaveLength(9);
+  it("does not add an event name (W1467 added none; the count is W1528's 10)", () => {
+    expect(contract.count).toBe(10);
+    expect(contract.events).toHaveLength(10);
   });
 });
 

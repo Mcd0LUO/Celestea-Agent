@@ -152,36 +152,36 @@
 .wb-drop-hint.right { top: 0; right: 0; bottom: 0; width: 40%; }
 .wb-drop-hint.bottom { left: 0; right: 0; bottom: 0; height: 40%; }
 
-/* ---- 终端面板（一次性执行，不是交互式 TTY） ---- */
-.wb-term-note { font-size: 11px; color: var(--c-text-3); padding: 2px 2px 6px; }
-.wb-term-row { display: flex; gap: 6px; margin-bottom: 6px; }
-.wb-term-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 4px 8px;
-  border: 1px solid var(--c-border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--c-code-bg);
-  color: var(--c-text-1);
-}
-.wb-term-run { border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); padding: 3px 10px; color: var(--c-text-1); }
-.wb-term-outwrap { display: flex; flex-direction: column; gap: 8px; }
-.wb-term-line { border-top: 1px solid var(--c-border-subtle); padding-top: 4px; }
-.wb-term-cmd { display: flex; gap: 6px; font-family: var(--mono); font-size: 12px; color: var(--c-text-1); }
-.wb-term-prompt { color: var(--c-accent); }
-.wb-term-out {
-  margin: 2px 0 0;
-  font-family: var(--mono);
+/* ---- 终端面板（W1528：真 PTY；xterm 承载，输出经 SSE terminal 事件下行） ----
+   几何：.wb-term 是 .wb-body（flex:1 / overflow:auto）的整块内容；xterm 需要一个
+   **有确定高度**的宿主，所以 .wb-term-xterm 用 flex:1 + min-height:0 撑满剩余空间
+   （min-height:0 是必需的：flex 子项默认 min-height:auto 会把宿主撑到内容高，
+   xterm 的滚动区就永远算不对高度）。 */
+.wb-term { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.wb-term-note { font-size: 11px; color: var(--c-text-3); padding: 2px 2px 6px; flex: 0 0 auto; }
+.wb-term-hint { font-size: 11.5px; color: var(--c-text-3); padding: 2px 2px 8px; }
+.wb-term-refusal {
   font-size: 11.5px;
   color: var(--c-text-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  background: var(--c-code-bg);
 }
-.wb-term-out.err { color: var(--c-err); }
-.wb-term-meta { font-family: var(--mono); font-size: 10.5px; color: var(--c-text-3); }
-.wb-term-meta.err { color: var(--c-err); }
+.wb-term-open {
+  align-self: flex-start;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-sm);
+  padding: 4px 12px;
+  color: var(--c-text-1);
+}
+.wb-term-xterm { flex: 1 1 auto; min-height: 0; overflow: hidden; background: var(--c-code-bg); }
+/* xterm 自绘的滚动区跟随宿主高度（它的 .xterm-viewport 默认 height:100%）。 */
+.wb-term-xterm .xterm { height: 100%; }
+/* W1528：viewport 必须是**不透明**的代码底色 —— xterm 的默认前景是白色（为深色
+   终端设计），若底色透明，浅色主题下白字落在白底上等于什么都看不见。前景/底色
+   由 Terminal 的 theme 选项显式给死，这里再兜一层，避免首帧未上色时的空窗。 */
+.wb-term-xterm .xterm-viewport { background: var(--c-code-bg) !important; }
 
 /* ---- 浏览器面板 ---- */
 .wb-url-row { display: flex; gap: 6px; margin-bottom: 6px; }

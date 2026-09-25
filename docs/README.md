@@ -31,7 +31,7 @@
 另有子目录不逐篇登记：[`archive/`](./archive/)（**历史文档**：调研、迁移留痕、退役文档；每篇顶部有 `📦 历史文档` 横幅）。
 本机文件 `docs/AGENT.local.md`（由 `AGENT.local.md.example` 复制而来）**不入库、不需登记**：那里放机器相关的事实。
 契约类真源不在 `docs/`，而在
-[`../contracts/`](../contracts/)（`endpoints.json` 66 端点、`sse-events.json`、`tools.json`、`data-files/`）——
+[`../contracts/`](../contracts/)（`endpoints.json` 69 端点、`sse-events.json`、`tools.json`、`data-files/`）——
 退役后端的归档 HTTP 契约已于 W881 清理出公开仓，相关端点的 `docRef` 现指向
 `contracts/endpoints.json` 自身的冻结条目。
 

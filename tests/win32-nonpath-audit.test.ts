@@ -73,18 +73,19 @@ describe('win32 非路径类审计', () => {
     expect(listCalls[listCalls.length - 1]).toBe('C:\\');
   });
 
-  it('终端面板占位符平台中立（不含 ls）', async () => {
+  /**
+   * W1528：终端面板改成真 PTY 后**没有占位符了**（输入由 xterm 自己接管），
+   * 但这条用例的本意是「终端面板不得写死 POSIX 专属示例」—— 它依然成立，只是
+   * 检查对象从 placeholder 换成面板上的说明文案。删掉这条会丢掉那层保护。
+   */
+  it('终端面板文案平台中立（不含 POSIX 专属示例 ls -la）', async () => {
     const { wb } = await boot('C:\\', 'C:\\');
     wb.openPanel('terminal', 'right');
     await flush();
-    // ElLike is the shared structural DOM stand-in; placeholder is the one extra
-    // field this case needs, so it is added at the use site (the root tsconfig has
-    // no DOM lib, so HTMLInputElement is not available here).
-    const input = doc.querySelector('.wb-term-input') as ElLike & { placeholder?: string };
-    const ph = String(input.placeholder ?? '');
-    expect(ph.length).toBeGreaterThan(0);
-    expect(ph, '不得写死 POSIX 示例 ls').not.toMatch(/\bls\b/);
-    expect(ph).toContain('echo hi');
+    const note = String(doc.querySelector('.wb-term-note')?.textContent ?? '');
+    const hint = String(doc.querySelector('.wb-term-hint')?.textContent ?? '');
+    expect(note.length).toBeGreaterThan(0);
+    expect(note + ' ' + hint, '不得写死 POSIX 示例 ls').not.toMatch(/\bls\b/);
   });
 
   it('源码级：apps/web/src 无 process.platform / navigator.platform / child_process / spawn', () => {

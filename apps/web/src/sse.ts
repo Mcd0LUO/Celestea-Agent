@@ -17,6 +17,7 @@ import type {
   ToolPayload,
   ToolResultPayload,
 } from './types';
+import type { TerminalFrame } from './types/terminal'; // W1528：真终端输出帧
 
 export interface SseHandlerMap {
   status: (p: StatusPayload) => void;
@@ -31,6 +32,12 @@ export interface SseHandlerMap {
    * 本地序号；payload 带 id/questions/expires_at/timeout_ms。
    */
   question: (p: QuestionPayload) => void;
+  /**
+   * W1528：工作台终端的 pty 字节。**唯一的非轮次事件** —— 它由服务端的终端
+   * handler 发出，与 turn 无关（信封 turn 恒为 0），载荷是 {id, session, data}，
+   * data 是不透明的终端输出。
+   */
+  terminal: (p: TerminalFrame) => void;
 }
 
 export type SseHandler<K extends SseEventName> = SseHandlerMap[K];
@@ -75,6 +82,8 @@ const EVENT_NAMES: readonly SseEventName[] = [
   'done',
   'compact',
   'question',
+  // W1528：工作台终端的 pty 字节（契约第 10 个名字；唯一的非轮次事件）。
+  'terminal',
 ];
 
 export class SseClient {

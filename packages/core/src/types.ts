@@ -285,6 +285,10 @@ export const SSE_EVENT_NAMES = [
   "compact",
   // W783: the model asked the user something and the turn is PARKED on it.
   "question",
+  // W1528: raw bytes from a workbench terminal's pty. This is the ONE event that
+  // is neither a turn event nor a host status frame: it is produced by the
+  // terminal handler and its payload is opaque terminal output.
+  "terminal",
 ] as const;
 
 export type SseEventName = (typeof SSE_EVENT_NAMES)[number];

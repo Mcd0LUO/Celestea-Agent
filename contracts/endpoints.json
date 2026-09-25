@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Celestea Studio HTTP API contract (66 endpoints)",
+  "title": "Celestea Studio HTTP API contract (69 endpoints)",
   "generatedAt": "2026-09-10T01:20:00Z",
   "phase": "P0 contract freeze",
   "source": {
@@ -8,7 +8,7 @@
     "routes": "frozen from the retired backend implementation (original source file deleted 2026-09-15); kept as contracts/route-table.snapshot.json (38 route() declarations = 43 method+path, minus 4 static = 39 API endpoints)",
     "liveServer": "http://127.0.0.1:3777 (read-only probes only)",
     "routeSnapshot": "contracts/route-table.snapshot.json",
-    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only). W9 added the six permission endpoints (51 -> 57). W860 added GET|PUT /api/sessions/{id}/tools and GET /api/plugins (57 -> 60). W870 added PUT /api/sessions/{id}/model (60 -> 61; the session-scoped model switch the statusline picker targets, TS-only). W881 removed the retired backend's archived HTTP contract (docs/archive/frontend/api-contract.md) from the public repo, so the endpoints it documented now reference their own frozen entry here."
+    "routeTable": "W725 added GET /api/sessions/{id}/context (43 -> 44); W516 added 4 TypeScript-only endpoints (GET|POST|DELETE /api/sessions/{id}/grants + GET /api/sessions/{id}/grants/confirm-token); the retired backend has no counterpart (see contracts/route-table.snapshot.json tsOnlyRoutes). W783 added GET /api/questions + POST /api/questions/{id}/answer (47 -> 49). W785 added GET /api/usage/ledger (49 -> 50). W791 added POST /api/sessions/{id}/mode (50 -> 51; P1 session working mode, TS-only). W9 added the six permission endpoints (51 -> 57). W860 added GET|PUT /api/sessions/{id}/tools and GET /api/plugins (57 -> 60). W870 added PUT /api/sessions/{id}/model (60 -> 61; the session-scoped model switch the statusline picker targets, TS-only). W881 removed the retired backend's archived HTTP contract (docs/archive/frontend/api-contract.md) from the public repo, so the endpoints it documented now reference their own frozen entry here. W1528 added POST /api/terminal + POST /api/terminal/{id}/input + POST /api/terminal/{id}/close (66 -> 69; the workbench terminal's real-PTY face, TS-only)."
   },
   "conventions": {
     "responseBody": "JSON (application/json) except SSE and static assets",
@@ -28,7 +28,7 @@
     "500": "persist failure / compose failure / IO failure",
     "502": "worker tool hard dispatch failure ONLY (src/api.rs:419-433)"
   },
-  "count": 66,
+  "count": 69,
   "endpoints": [
     {
       "id": "get_health",
@@ -4513,6 +4513,231 @@
       ],
       "notes": [
         "G2 (docs/archive/decisions/iteration-g-workbench.md section 1): /run and ! execute immediately and never touch /api/turn or the model. Reuses the run_shell execution path (selectSandboxDetailed + sessionSandboxConfig + sanitized env + output cap); a preset that denies run_shell, or a sandbox policy that refuses, is a structured refusal. NOT a tool: absent from contracts/tools.json and the model-visible face."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "post_terminal",
+      "method": "POST",
+      "path": "/api/terminal",
+      "group": "exec",
+      "rustHandler": "(none - TypeScript-only, W1528)",
+      "docRef": "contracts/endpoints.json#post_terminal",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "session",
+            "type": "string",
+            "required": false,
+            "note": "session whose permission preset + sandbox scope apply; omitted = the detached scope"
+          },
+          {
+            "name": "cols",
+            "type": "integer",
+            "required": false,
+            "note": "pty columns; clamped to 20..500, default 80 (script(1) owns the pty master, so the size is fixed at open)"
+          },
+          {
+            "name": "rows",
+            "type": "integer",
+            "required": false,
+            "note": "pty rows; clamped to 20..500, default 24"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": true,
+            "note": "terminal handle; the input/close endpoints and the SSE frames are keyed by it"
+          },
+          {
+            "name": "pid",
+            "type": "integer|null",
+            "required": true,
+            "note": "pid of the sandboxed script(1) leader (its process group carries the whole pty tree)"
+          },
+          {
+            "name": "cols",
+            "type": "integer",
+            "required": true
+          },
+          {
+            "name": "rows",
+            "type": "integer",
+            "required": true
+          },
+          {
+            "name": "sandbox",
+            "type": "object",
+            "required": true,
+            "note": "contract fields only: provider, net_isolated, tmp_private, seccomp, optional cpu_sec"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 403,
+          "error": "permission preset denies run_shell (code=shell_denied)"
+        },
+        {
+          "status": 400,
+          "error": "structured sandbox refusal (policy fail, bad workdir)"
+        },
+        {
+          "status": 404,
+          "error": "unknown session"
+        },
+        {
+          "status": 422,
+          "error": "field cols/rows must be a number; field session must be a string"
+        },
+        {
+          "status": 429,
+          "error": "the per-process terminal ceiling is reached (code=terminal_limit)"
+        },
+        {
+          "status": 501,
+          "error": "this host cannot allocate a pty (no util-linux script(1), or win32) (code=terminal_unavailable)"
+        }
+      ],
+      "notes": [
+        "W1528: opens a real pty. Output is streamed on the SSE 'terminal' event (the contract's 10th name), never polled: a pty is a stream, and the bus is lossy under back-pressure by contract (it emits a 'lagged' status rather than blocking the child's pipe).",
+        "W1528: the workbench terminal is a REAL pty, not one-shot execution. The pty comes from util-linux script(1) (Node has no pty API; the alternative was a native addon), spawned THROUGH the same Sandbox seam /api/exec uses, so it lives inside bwrap when bwrap is the posture. Permission gate and provider selection are REUSED from handlers/exec.ts (shellDeniedReason + sandboxFor) — this endpoint cannot be a sandbox bypass by construction."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "post_terminal_input",
+      "method": "POST",
+      "path": "/api/terminal/{id}/input",
+      "group": "exec",
+      "rustHandler": "(none - TypeScript-only, W1528)",
+      "docRef": "contracts/endpoints.json#post_terminal_input",
+      "request": {
+        "kind": "text",
+        "fields": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true,
+            "note": "path param: the handle returned by POST /api/terminal"
+          },
+          {
+            "name": "body",
+            "type": "string",
+            "required": false,
+            "note": "RAW bytes written to the pty stdin VERBATIM; no newline is appended (Enter is the byte the client sends: \\r). This is what makes a REPL work"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "bytes",
+            "type": "integer",
+            "required": true,
+            "note": "bytes written (UTF-8 length of the body)"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 404,
+          "error": "unknown terminal (code=terminal_gone)"
+        },
+        {
+          "status": 409,
+          "error": "the terminal's input stream is already closed (code=terminal_gone)"
+        }
+      ],
+      "notes": [
+        "W1528: the input half of the pty. SSE is one-way, so keystrokes travel over HTTP; the body is NOT JSON, so a keystroke never pays JSON escaping and a literal newline survives byte-for-byte.",
+        "W1528: the workbench terminal is a REAL pty, not one-shot execution. The pty comes from util-linux script(1) (Node has no pty API; the alternative was a native addon), spawned THROUGH the same Sandbox seam /api/exec uses, so it lives inside bwrap when bwrap is the posture. Permission gate and provider selection are REUSED from handlers/exec.ts (shellDeniedReason + sandboxFor) — this endpoint cannot be a sandbox bypass by construction."
+      ],
+      "probe": {
+        "checked": false,
+        "reason": "TypeScript-only endpoint"
+      }
+    },
+    {
+      "id": "post_terminal_close",
+      "method": "POST",
+      "path": "/api/terminal/{id}/close",
+      "group": "exec",
+      "rustHandler": "(none - TypeScript-only, W1528)",
+      "docRef": "contracts/endpoints.json#post_terminal_close",
+      "request": {
+        "kind": "json",
+        "fields": [
+          {
+            "name": "id",
+            "type": "string",
+            "required": true,
+            "note": "path param: the handle returned by POST /api/terminal"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "shape": "object",
+        "fields": [
+          {
+            "name": "ok",
+            "type": "boolean",
+            "required": true
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "closed",
+            "type": "boolean",
+            "required": true,
+            "note": "false = the terminal was already gone (idempotent close, never a 404)"
+          },
+          {
+            "name": "pid",
+            "type": "integer|null",
+            "required": false,
+            "note": "the reaped leader's pid; present only when something was actually terminated"
+          }
+        ]
+      },
+      "errors": [],
+      "notes": [
+        "W1528: idempotent. SIGTERMs the pty's whole process group (script and the shell it execs share one group), so a python3 REPL or a top started inside dies with it — no process leak. The panel closes this on unmount, on session switch and on page unload.",
+        "W1528: the workbench terminal is a REAL pty, not one-shot execution. The pty comes from util-linux script(1) (Node has no pty API; the alternative was a native addon), spawned THROUGH the same Sandbox seam /api/exec uses, so it lives inside bwrap when bwrap is the posture. Permission gate and provider selection are REUSED from handlers/exec.ts (shellDeniedReason + sandboxFor) — this endpoint cannot be a sandbox bypass by construction."
       ],
       "probe": {
         "checked": false,
