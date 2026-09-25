@@ -104,3 +104,119 @@
   cursor: pointer;
 }
 .toolcard-preview:hover { border-color: var(--c-border-strong); color: var(--c-text-1); }
+
+/* ============================================================================
+ * W1534 · HTML 预览（预览 / 源码 双模式）
+ * ----------------------------------------------------------------------------
+ * 两条硬约束（与 ui/preview/modes.ts 的头注一一对应）：
+ *
+ *   ① **控件常驻可见**，不是 hover 才显形 —— W1526 修过同类问题（复制按钮原是
+ *      opacity:0 浮层：既找不到、又压在正文上挡字）。这里靠 aria-pressed 表达
+ *      选中态，不靠 opacity 显隐；触屏（没有 hover）同样点得到。
+ *
+ *   ② **控件不覆盖正文** —— .preview-modes 住在 .preview-head（头部正常流一行），
+ *      正文在 .preview-body。两者是**上下相邻的两个块** ⇒ 轴对齐矩形在几何上
+ *      不可能相交，与内容长度/滚动位置无关（W1526 的判定法）。
+ *      所以这里**不需要**任何 z-index / 绝对定位 / 留白经验值。
+ * ============================================================================ */
+
+/* 查看方式切换（role=group 里的互斥按钮）。 */
+.preview-modes {
+  display: flex;
+  flex: 0 0 auto;
+  margin-left: auto; /* 推到头部右侧（关闭按钮之前） */
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.preview-mode {
+  border: none;
+  background: transparent;
+  color: var(--c-text-3);
+  font-size: 11.5px;
+  line-height: 1;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.preview-mode + .preview-mode { border-left: 1px solid var(--c-border-subtle); }
+.preview-mode:hover { color: var(--c-text-1); }
+.preview-mode[aria-pressed="true"] {
+  background: var(--c-surface-sunken, var(--c-surface-raised));
+  color: var(--c-text-1);
+  font-weight: 600;
+}
+.preview-mode:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
+
+/* ---- 预览视图（沙箱 iframe） ---------------------------------------------- */
+/* 容器撑满可用高度：iframe 需要**确定的高度**才画得出来（auto 高度的 iframe
+   会塌成默认 150px 且不跟随面板）。 */
+.preview-html {
+  display: flex;
+  height: 100%;
+  min-height: 240px;
+}
+/* 沙箱 iframe 本体。尺寸必须非零（真机断言：clientWidth/Height > 0）。 */
+.preview-html-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 240px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-sm);
+  /* 预览文档默认白底：那是**用户页面的底色**，不该跟随 Studio 主题。 */
+  background: #fff;
+}
+
+/* ---- 双视图共存（只显示当前那个，另一个保留布局） --------------------------
+ *
+ * ★ 为什么用 visibility 而不是 display:none —— **真机实测**（CDP，chrome-headless-shell 151）。
+ *   W1543 更正 W1534 在此处一处**不成立**的断言：原文写「display:none 会把 iframe 内滚动位
+ *   归零 ⇒ 必须用 visibility」。实测（进 iframe 自己的执行上下文读 window.scrollY）：
+ *     · visibility:hidden  ⇒ 隐藏期间读 **300**，恢复后 **300**
+ *     · display:none        ⇒ 隐藏期间读 **0**，恢复后 **400 / 500**（★ 位置并没有丢）
+ *     · 真正重建 iframe 节点 ⇒ 文档被换掉（contentDocument 回到 null ⇒ 是新文档）
+ *   ⇒ display:none 丢的是**隐藏期间的可读性**（读出来是 0），不是**位置**；恢复后位置还在。
+ *     所以「切回不丢滚动位」这条**不能**用来论证 visibility 的必要性（原注释在此过度声称）。
+ *
+ *   保留 visibility 的真实理由（两条，都站得住）：
+ *     ① 非当前视图**留在布局里** ⇒ 切换只改绘制、不触发面板重排
+ *        （两视图绝对定位同一格；摘掉一个盒子会让可见那个重算尺寸）；
+ *     ② 非当前视图的 scrollTop **始终可读**（300 就是 300，不是误导性的 0）
+ *        ⇒ panel.ts 的 scroll[] 保存/恢复拿到真值，行为可预测、可断言。
+ *   ★ 而源码视图的滚动在**父文档**里（.preview-view 自身 overflow:auto），
+ *     本来就可读可写 ⇒ 两个视图的滚动位**都**保住了（不依赖浏览器行为的那部分
+ *     由 panel.ts 的 scroll[] 显式保存/恢复兜底）。
+ *
+ * 两个视图都绝对定位在同一格（inset 与单视图的 padding 对齐）⇒ 互不挤压、
+ * 各自撑满；非当前那个 visibility:hidden + pointer-events:none（不可见、不可点，
+ * 也从无障碍树里消失），但**仍在布局里**。
+ * ------------------------------------------------------------------------- */
+.preview-body.is-dual {
+  position: relative;
+  padding: 0; /* 留白交给子元素的 inset（绝对定位参照 padding box） */
+  overflow: hidden; /* 双视图下滚动交给子元素：iframe 内部 / 源码容器自身 */
+}
+.preview-body.is-dual > .preview-view {
+  position: absolute;
+  inset: 10px 12px; /* 与单视图的 .preview-body padding 一致 */
+  /* ★ height:auto 必须显式写：绝对定位元素同时给了 top/bottom 与 height 时，
+     height 赢、bottom 被忽略（.preview-html 的 height:100% 会撑出面板 20px）。 */
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  overflow: auto; /* 源码视图的滚动容器（父文档 ⇒ 可读可写，能显式保存/恢复） */
+}
+.preview-body.is-dual > .preview-view.view-off {
+  visibility: hidden;
+  pointer-events: none;
+}
+/* 预览视图自己就是 flex 容器（iframe 撑满），不要再套一层滚动。 */
+.preview-body.is-dual > .preview-view.preview-html { overflow: hidden; min-height: 0; }
+.preview-body.is-dual > .preview-view.preview-html .preview-html-frame { min-height: 0; }
+/* 源码视图：滚动交给外层 .preview-view（它是 .code-wrap 时同理），
+   内层 pre 不再自己滚（否则两层滚动条 + 滚动位记在两个元素上）。 */
+.preview-body.is-dual > .preview-view .preview-code { overflow: visible; }
+
+/* 单视图（非 html / 降级态）：视图节点就是普通块，行为与改动前一致。
+   ★ 这里用 display:none 是**安全**的：单视图下不存在「另一个视图要保住滚动位」的问题，
+     且上面的实测已证明 display:none 不会丢 iframe 内的位置。 */
+.preview-body:not(.is-dual) > .preview-view.view-off { display: none; }

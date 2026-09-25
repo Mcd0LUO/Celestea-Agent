@@ -65,6 +65,11 @@ export const chat = {
   'chat.preview.badgeUnsupported': 'Unsupported type',
   'chat.preview.truncated': 'Truncated (only the first part is shown)',
   'chat.preview.degradeReadFailed': 'This file cannot be read right now, please try again later',
+  // W1534: HTML preview "preview / source" toggle (shown when kind=html)
+  'chat.preview.modeAria': 'View mode',
+  'chat.preview.modePreview': 'Preview',
+  'chat.preview.modeSource': 'Source',
+  'chat.preview.htmlFrameTitle': 'HTML preview (sandboxed)',
   'chat.command.run.desc': 'Run a command directly; the output goes into the conversation (without the model)',
   'chat.command.run.args': '<command>',
   'chat.command.run.usage': 'Usage: /run <command>, e.g. /run echo hi',

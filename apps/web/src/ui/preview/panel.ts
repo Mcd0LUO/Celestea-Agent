@@ -9,12 +9,34 @@
 //       Esc 走 utils/overlays 层级栈（只关栈顶一层）。
 // 降级：二进制 / 超大 / 类型不明 / 内容不在会话里 → 可读原因 + 「复制路径」+
 //       「在文件管理器中打开」（openFsBrowser），绝不留白屏。
+//
+// W1534（HTML 预览）：kind === 'html' 时给**两种查看方式**（预览 / 源码），
+//   控件常驻在 .preview-head（见 modes.ts 的两条硬约束）。
+//
+//   ★ 为什么两个视图节点**同时建、同时进 DOM**，而不是切换时重建：
+//     · 重建 = 每次切换都要重新加载 + 重新高亮 + 重新加载 iframe（闪一下白）；
+//       本仓铁律 1 就是「禁止先清空后加载」。
+//     · 同时存在 ⇒ 两个视图各自的滚动位置天然保留（非当前视图用 visibility:hidden
+//       而非 display:none，理由见 preview.css 的双视图注释 —— W1543 更正了 W1534
+//       在此处的过度声称：display:none 并不丢 iframe 内位置，只是隐藏期间读出来是 0）。
+//       panel.ts 另有 scroll[] 显式保存/恢复兜底（见 switchView），不单靠浏览器行为。
+//     · 代价：源码模式下 iframe 仍然挂着（它的文档已加载完，且 CSP 已关掉全部
+//       外部请求面，不再有网络活动）。可接受。
+//
+//   ★ 滚动位置的取舍（用户要求「切回源码时不丢滚动位置（或明确记录取舍）」）：
+//     · **源码**：滚动发生在 .preview-body 上（父文档），可读可写 ⇒ **明确保留**。
+//     · **预览**：滚动发生在 iframe **内部**，而 iframe 在不透明源里
+//       （contentDocument === null，见 sandbox.ts）⇒ 父页面**读不到也写不了**它的
+//       scrollTop。这是隔离生效的必然代价，**明确记录为取舍**，不假装保留。
+//       缓解：iframe 节点不重建、也不 display:none（用 visibility 隐藏），
+//       ⇒ 浏览器自身的滚动状态得以保留。实测见报告「滚动位置」一节。
 // ============================================================================
 import { el } from '../../utils/dom';
 import { openFsBrowser, type FsBrowserUi } from '../fsbrowser';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../../utils/overlays';
 import { runEnhancers } from '../enhance';
 import { renderPreview } from './renderers';
+import { createModeSwitch, type ModeSwitch, type PreviewView } from './modes';
 import type { PreviewCandidate } from './detect';
 import { t } from '../../i18n';
 
@@ -37,9 +59,18 @@ let titleEl: HTMLElement | null = null;
 let pathEl: HTMLElement | null = null;
 /** 「已截断」标记（服务端说 truncated 时才显示）。 */
 let noteEl: HTMLElement | null = null;
+let modes: ModeSwitch | null = null;
 let overlay: OverlayHandle | null = null;
 let seq = 0;
 let currentPath = '';
+/** 当前文件的已加载内容（切视图不重新加载）。 */
+let currentLoad: PreviewLoad | string | null = null;
+/** 当前查看方式（只在 kind === 'html' 且内容可渲染时有意义）。 */
+let view: PreviewView = 'preview';
+/** 两个视图各自的滚动位置（按视图分开记：切换时各回各家）。 */
+let scroll: Record<PreviewView, number> = { preview: 0, source: 0 };
+/** 当前 body 里是否真的有「双视图」（html 且可渲染）。 */
+let dualView = false;
 
 function basename(path: string): string {
   return path.replace(/^.*[\\/]/, '') || path;
@@ -60,10 +91,36 @@ function openManager(path: string): void {
   });
 }
 
-/** 只建一次：头（标题/路径/关闭）+ 空 body + 动作行（复制路径 / 在文件管理器中打开）。 */
-function buildPanel(): void {
-  const h = el('div', 'preview-host hidden');
-  const panel = el('div', 'preview-panel');
+/**
+ * 某个视图的滚动容器。
+ *
+ * 双视图下是视图节点自己（`.preview-view`，overflow:auto），单视图下是 body。
+ * ★ **预览视图的内部滚动不在这里**：它发生在 iframe 的文档里，而 iframe 在不透明源
+ *   （contentDocument === null）⇒ 父页面读不到它的 scrollTop。那部分靠「非当前视图
+ *   用 visibility:hidden 而不是 display:none」保住（★ W1543 更正：早先写的
+ *   「display:none 会把 iframe 内滚动位归零」**不成立** —— 实测恢复后位置还在，
+ *   只是隐藏期间读出来是 0；选 visibility 的真实理由是留在布局里 + scrollTop 始终可读）。
+ *   见 preview.css 的双视图注释。
+ */
+function scrollHost(v: PreviewView): HTMLElement | null {
+  return dualView ? viewEls[v] : bodyEl;
+}
+
+/** 切换查看方式：先存旧视图滚动位，重画后还原新视图滚动位。 */
+function switchView(next: PreviewView): void {
+  if (next === view) return;
+  if (dualView) scroll[view] = scrollHost(view)?.scrollTop ?? 0;
+  view = next;
+  modes?.setView(next);
+  // ★ 只切 class，**不重画**：两个视图节点都已在 DOM 里（paint 时同时建好）。
+  //   重画 = replaceChildren ⇒ 新 iframe 节点 ⇒ 文档被重新加载（闪白 + 丢滚动位）。
+  //   这条由 tests/w1534-html-panel.test.ts 的「iframe 节点身份不变」守着
+  //   （该断言真的抓到过本函数的重画版本）。
+  applyView();
+}
+
+/** 造头部控件：标题 / 路径 / 已截断标记 / 查看方式 / 关闭。 */
+function buildHead(panel: HTMLElement): void {
   const head = el('div', 'preview-head');
   titleEl = el('span', 'preview-title');
   pathEl = el('span', 'preview-path');
@@ -71,6 +128,8 @@ function buildPanel(): void {
   head.appendChild(pathEl);
   noteEl = el('span', 'preview-note hidden');
   head.appendChild(noteEl);
+  modes = createModeSwitch(switchView);
+  head.appendChild(modes.node);
   const close = el('button', 'preview-close', '×') as HTMLButtonElement;
   close.type = 'button';
   close.title = t('chat.preview.close');
@@ -78,8 +137,10 @@ function buildPanel(): void {
   close.addEventListener('click', closePreview);
   head.appendChild(close);
   panel.appendChild(head);
-  bodyEl = el('div', 'preview-body rendered');
-  panel.appendChild(bodyEl);
+}
+
+/** 造动作行：复制路径 / 在文件管理器中打开。 */
+function buildActions(panel: HTMLElement): void {
   const actions = el('div', 'preview-actions');
   const copy = el('button', 'preview-action', t('chat.preview.copyPath')) as HTMLButtonElement;
   copy.type = 'button';
@@ -90,6 +151,16 @@ function buildPanel(): void {
   open.addEventListener('click', () => openManager(currentPath));
   actions.appendChild(open);
   panel.appendChild(actions);
+}
+
+/** 只建一次：头（标题/路径/查看方式/关闭）+ 空 body + 动作行。 */
+function buildPanel(): void {
+  const h = el('div', 'preview-host hidden');
+  const panel = el('div', 'preview-panel');
+  buildHead(panel);
+  bodyEl = el('div', 'preview-body rendered');
+  panel.appendChild(bodyEl);
+  buildActions(panel);
   h.appendChild(panel);
   document.body.appendChild(h);
   host = h;
@@ -99,49 +170,124 @@ function ensurePanel(): void {
   if (!host || !host.isConnected || !bodyEl) buildPanel();
 }
 
-async function resolveBody(req: PreviewRequest, my: number, body: HTMLElement): Promise<void> {
-  let text: string | null = null;
-  let degraded: string | undefined;
-  let badge: string | undefined;
-  let truncated = false;
-  if (!req.url && req.loadFull) {
+/** 读服务端/会话内容；字符串 = 会话文本，null = 无内容（走降级）。 */
+async function loadText(req: PreviewRequest): Promise<PreviewLoad | string | null> {
+  if (req.url) return null;
+  if (req.loadFull) {
     try {
-      const r = await req.loadFull();
-      if ('degraded' in r) {
-        degraded = r.degraded;
-        badge = r.badge;
-      } else {
-        text = r.text;
-        truncated = r.truncated === true;
-      }
+      return await req.loadFull();
     } catch {
-      degraded = t('chat.preview.degradeReadFailed');
-    }
-  } else if (!req.url && req.load) {
-    try {
-      text = await req.load();
-    } catch {
-      text = null;
+      return { degraded: t('chat.preview.degradeReadFailed') };
     }
   }
-  if (my !== seq) return; // 竞态：晚到的加载结果丢弃，绝不覆盖当前文件
-  const content = renderPreview({ path: req.candidate.path, kind: req.candidate.kind, text, url: req.url ?? null, degraded, badge });
-  if (my !== seq) return;
-  body.replaceChildren(content.node);
+  if (req.load) {
+    try {
+      return await req.load();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** 把已加载结果拆成 renderPreview 的入参。 */
+function unpack(raw: PreviewLoad | string | null): { text: string | null; degraded?: string; badge?: string; truncated: boolean } {
+  if (typeof raw === 'string') return { text: raw, truncated: false };
+  if (raw === null) return { text: null, truncated: false };
+  if ('degraded' in raw) return { text: null, degraded: raw.degraded, badge: raw.badge, truncated: false };
+  return { text: raw.text, truncated: raw.truncated === true };
+}
+
+/** 一个视图的滚动容器（双视图下是视图节点自己；单视图下是 body）。 */
+let viewEls: Record<PreviewView, HTMLElement | null> = { preview: null, source: null };
+
+/** 这个顶层节点是哪个视图（增强遍可能已经把 pre 包进 .code-wrap，故按**后代**判）。 */
+function viewKindOf(n: HTMLElement): PreviewView | null {
+  if (n.classList.contains('preview-html') || n.querySelector('.preview-html-frame') !== null) return 'preview';
+  if (n.classList.contains('preview-code') || n.querySelector('.preview-code') !== null) return 'source';
+  return null;
+}
+
+/**
+ * 双视图：给 body 的**顶层**子节点打 view-on / view-off（+ preview-view）。
+ *
+ * 必须在 runEnhancers **之后**调用：code-copy / code-extras 会把 `pre.preview-code`
+ * 包进 `.code-wrap`，此时 body 的顶层子节点已经不是那个 pre 了 —— 在增强前打的标记
+ * 会留在被包住的内层节点上，而 CSS 的 `> .preview-view` 匹配的是**顶层**，标记就失效。
+ * （这正是本仓 W895-P2 踩过的「作用域 vs 目标自身」同一类坑。）
+ */
+function markDual(body: HTMLElement): void {
+  viewEls = { preview: null, source: null };
+  if (!dualView) return;
+  for (const child of Array.from(body.children)) {
+    const n = child as HTMLElement;
+    const kind = viewKindOf(n);
+    if (kind === null) continue;
+    viewEls[kind] = n;
+    n.classList.add('preview-view');
+  }
+  applyView();
+}
+
+/**
+ * 把当前 view 落到**已存在**的视图节点上（只切 class + 还原滚动位，不碰 DOM 结构）。
+ *
+ * 单独抽出来是因为它有两个调用点：paint（新内容画完）与 switchView（用户点切换）。
+ * 后者**必须**走这条轻路径 —— 重画会换掉 iframe 节点，等于重新加载预览文档。
+ */
+function applyView(): void {
+  if (!dualView) return;
+  for (const kind of ['preview', 'source'] as const) {
+    const n = viewEls[kind];
+    if (n === null) continue;
+    n.classList.toggle('view-on', kind === view);
+    n.classList.toggle('view-off', kind !== view);
+  }
+  const host = scrollHost(view);
+  if (host !== null) host.scrollTop = scroll[view];
+}
+
+/**
+ * 画内容（**单次 replaceChildren**，铁律 1）。
+ *
+ * dual = true 时两个视图**同时**建出来（见文件头注），CSS 只显示当前那个。
+ */
+function paint(req: PreviewRequest, body: HTMLElement): void {
+  const raw = unpack(currentLoad);
+  const base = { path: req.candidate.path, kind: req.candidate.kind, text: raw.text, url: req.url ?? null, degraded: raw.degraded, badge: raw.badge };
+  const shown = renderPreview({ ...base, view });
+  dualView = req.candidate.kind === 'html' && shown.degraded === null && raw.text !== null;
+  const nodes: HTMLElement[] = [shown.node];
+  if (dualView) nodes.push(renderPreview({ ...base, view: view === 'preview' ? 'source' : 'preview' }).node);
+  body.classList.toggle('is-dual', dualView);
+  body.replaceChildren(...nodes);
   // 预览也走**同一条增强缝**（此前只有 code 分支自己调 hljs，于是 markdown 文件里的
   // 围栏代码块、以及数学占位都永远不处理 —— 文件管理器里打开 .md 看不到高亮）。
   //
   // ★ 传 `body` 而不是 `content.node`：增强遍把参数当**作用域**用
-  //   （`container.querySelectorAll(...)` 只匹配后代、匹配不到容器自身）。
-  //   代码文件预览时 `content.node` **就是** `<pre>`，于是 code-copy / code-extras 的
-  //   `querySelectorAll('pre')` 永远返回空 —— 实测「高亮有了、复制按钮/行号/徽标没有」。
-  //   `highlightCode` 用的是 `pre code`，后代 `code` 能匹配，所以只有它看起来正常。
+  //   （container.querySelectorAll 只匹配后代、匹配不到容器自身）。
+  //   代码文件预览时 content.node **就是** pre，于是 code-copy / code-extras 的
+  //   querySelectorAll('pre') 永远返回空 —— 实测「高亮有了、复制按钮/行号/徽标没有」。
   runEnhancers(body);
-  body.classList.toggle('is-degraded', content.degraded !== null);
-  if (noteEl) {
-    noteEl.textContent = truncated ? t('chat.preview.truncated') : '';
-    noteEl.classList.toggle('hidden', !truncated);
+  markDual(body); // ★ 必须在增强之后（见 markDual 注释）；内部会 applyView 还原滚动位
+  body.classList.toggle('is-degraded', shown.degraded !== null);
+  modes?.setVisible(dualView);
+  if (!dualView) {
+    const host = scrollHost(view);
+    if (host !== null) host.scrollTop = scroll[view];
   }
+  if (noteEl) {
+    noteEl.textContent = raw.truncated ? t('chat.preview.truncated') : '';
+    noteEl.classList.toggle('hidden', !raw.truncated);
+  }
+}
+
+/** 加载内容 → 画（带竞态守卫）。 */
+async function resolveBody(req: PreviewRequest, my: number, body: HTMLElement): Promise<void> {
+  const result = await loadText(req);
+  if (my !== seq) return; // 竞态：晚到的加载结果丢弃，绝不覆盖当前文件
+  currentLoad = result;
+  paint(req, body);
 }
 
 /** 打开（或切换到）右侧覆盖式预览面板：头当帧更新，内容就绪时单次替换。 */
@@ -150,6 +296,13 @@ export function openPreview(req: PreviewRequest): void {
   ensurePanel();
   if (!host || !bodyEl || !titleEl || !pathEl) return;
   currentPath = req.candidate.path;
+  currentLoad = null;
+  // 新文件：回到默认查看方式（HTML 默认**预览**，理由见 renderers.ts 的分派注释），
+  // 两个视图的滚动位一并归零 —— 否则会把上一个文件的滚动位置带过来。
+  view = 'preview';
+  scroll = { preview: 0, source: 0 };
+  modes?.setView(view);
+  modes?.setVisible(false); // 内容就绪前不显示（降级态没有两种看法）
   titleEl.textContent = basename(req.candidate.path);
   pathEl.textContent = req.candidate.path;
   pathEl.title = req.candidate.path;
@@ -169,6 +322,9 @@ export function closePreview(): void {
     host.classList.add('hidden');
     if (bodyEl) bodyEl.replaceChildren();
   }
+  currentLoad = null;
+  dualView = false;
+  modes?.setVisible(false);
   if (overlay !== null) {
     popOverlay(overlay);
     overlay = null;
@@ -178,4 +334,9 @@ export function closePreview(): void {
 /** 是否打开（诊断/测试）。 */
 export function previewIsOpen(): boolean {
   return host !== null && !host.classList.contains('hidden');
+}
+
+/** 当前查看方式（诊断/测试）。 */
+export function previewView(): PreviewView {
+  return view;
 }

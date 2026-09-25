@@ -12,7 +12,9 @@
 //   · 「文件：x」句式只认紧跟在冒号后的单 token（无空白/标点）。
 // ============================================================================
 
-export type PreviewKind = 'code' | 'markdown' | 'image' | 'diff' | 'unknown';
+// W1534：html/htm 从 CODE_EXT **拆出来**单独成 kind —— 它要的是「渲染预览 / 高亮源码」
+// 双模式，而 code 只有源码一种看法。留在 CODE_EXT 里会让 .html 永远当代码看（旧行为）。
+export type PreviewKind = 'code' | 'markdown' | 'image' | 'diff' | 'html' | 'unknown';
 export type PreviewSource = 'tool' | 'link' | 'code-span' | 'label';
 
 /** 一个候选文件（路径 + 类型 + 来源）。 */
@@ -25,14 +27,24 @@ export interface PreviewCandidate {
 const IMAGE_EXT: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg']);
 const MARKDOWN_EXT: ReadonlySet<string> = new Set(['md', 'markdown', 'mdx']);
 const DIFF_EXT: ReadonlySet<string> = new Set(['diff', 'patch']);
+/** HTML 家族：可渲染预览（W1534）。svg 仍归 IMAGE_EXT（图片查看器更合适）。 */
+const HTML_EXT: ReadonlySet<string> = new Set(['html', 'htm']);
 const CODE_EXT: ReadonlySet<string> = new Set([
   'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rb', 'go', 'rs', 'java', 'c', 'h', 'cc', 'cpp', 'hpp',
-  'cs', 'php', 'sh', 'bash', 'zsh', 'sql', 'html', 'htm', 'css', 'scss', 'less', 'xml', 'json', 'jsonl',
+  'cs', 'php', 'sh', 'bash', 'zsh', 'sql', 'css', 'scss', 'less', 'xml', 'json', 'jsonl',
   'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env', 'log', 'tex', 'rst', 'csv', 'tsv', 'txt', 'text',
 ]);
-/** 无路径分隔符也放行的「文档/数据/图片」扩展名（裸文件名如 README.md / config.json）。 */
+/**
+ * 无路径分隔符也放行的「文档/数据/图片」扩展名（裸文件名如 README.md / config.json）。
+ *
+ * W1543：把 HTML_EXT 也放进来 —— `index.html` 是最常见的裸 HTML 文件名，
+ * 而本波的整个需求就是「打开一个 .html」。原先 html/htm 只出现在
+ * classifyByPath/looksLikePath 的**扩展名**判定里，没进这张裸名表，于是
+ * 「见 `index.html`」这种不带路径分隔符的提法识别不出来
+ * （tests/w1543-html-kind.test.ts 抓到；修法与既有 `README.md` 的口径对齐）。
+ */
 const BARE_OK_EXT: ReadonlySet<string> = new Set([
-  ...IMAGE_EXT, ...MARKDOWN_EXT, ...DIFF_EXT,
+  ...IMAGE_EXT, ...MARKDOWN_EXT, ...DIFF_EXT, ...HTML_EXT,
   'json', 'jsonl', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env', 'log', 'csv', 'tsv', 'txt', 'text',
 ]);
 /** P0 内容工具：结果全文就是文件内容（按钮只给 read_file 类）。 */
@@ -53,6 +65,7 @@ export function classifyByPath(path: string): PreviewKind {
   if (IMAGE_EXT.has(ext)) return 'image';
   if (MARKDOWN_EXT.has(ext)) return 'markdown';
   if (DIFF_EXT.has(ext)) return 'diff';
+  if (HTML_EXT.has(ext)) return 'html';
   if (CODE_EXT.has(ext)) return 'code';
   return 'unknown';
 }
@@ -64,7 +77,9 @@ export function looksLikePath(raw: string): boolean {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return false;
   if (t.startsWith('#')) return false;
   const ext = extOf(t);
-  if (!(IMAGE_EXT.has(ext) || MARKDOWN_EXT.has(ext) || DIFF_EXT.has(ext) || CODE_EXT.has(ext))) return false;
+  if (!(IMAGE_EXT.has(ext) || MARKDOWN_EXT.has(ext) || DIFF_EXT.has(ext) || HTML_EXT.has(ext) || CODE_EXT.has(ext))) {
+    return false;
+  }
   if (t.includes('/') || t.includes('\\') || t.startsWith('.')) return true;
   return BARE_OK_EXT.has(ext);
 }
