@@ -82,7 +82,16 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: "(^|/)node_modules($|/)" },
-    exclude: { path: "(^|/)(node_modules|dist)($|/)|^reports/|^fixtures/|^contracts/" },
+    // W2.7.7: `webdist` must be listed NEXT TO `dist`, not assumed covered by it —
+    //   `(^|/)dist` requires a separator before `dist`, and in `webdist` the preceding
+    //   character is `b`, so the old pattern never matched it.
+    //   Why this went unnoticed: apps/studio/webdist/ is a DERIVED directory staged only
+    //   by `pnpm run release` (scripts/build-webdist.mjs) and is gitignored, so it simply
+    //   did not exist during ordinary `pnpm check` runs. But the release procedure runs
+    //   release FIRST — so "release, then check" always went red: two rollup chunks inside
+    //   webdist import each other and trip no-circular. A fresh clone at the tag has no
+    //   webdist, so this could only ever surface on the releaser own machine.
+    exclude: { path: "(^|/)(node_modules|dist|webdist)($|/)|^reports/|^fixtures/|^contracts/" },
     tsConfig: { fileName: "tsconfig.json" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
