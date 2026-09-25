@@ -65,6 +65,11 @@ export const chat = {
   'chat.preview.badgeUnsupported': '类型不支持',
   'chat.preview.truncated': '已截断（只显示前一部分）',
   'chat.preview.degradeReadFailed': '这个文件暂时读不出来，请稍后再试',
+  // W1534：HTML 预览的「预览 / 源码」切换（kind=html 时显示）
+  'chat.preview.modeAria': '查看方式',
+  'chat.preview.modePreview': '预览',
+  'chat.preview.modeSource': '源码',
+  'chat.preview.htmlFrameTitle': 'HTML 预览（沙箱）',
   'chat.command.run.desc': '直接执行一条命令，输出进对话（不经过模型）',
   'chat.command.run.args': '<命令>',
   'chat.command.run.usage': '用法：/run <命令>，例如 /run echo hi',

@@ -7,6 +7,8 @@
 import { el, esc } from '../../utils/dom';
 import { renderMarkdownSafe, sanitizeNodes } from '../../utils/sanitize';
 import { extOf, type PreviewKind } from './detect';
+import { applyPreviewPolicy, HTML_FRAME_CLASS } from './sandbox';
+import type { PreviewView } from './modes';
 import { t } from '../../i18n';
 
 /** 扩展名 → highlight.js 已注册语言（未登记的语言不调 hljs，渲染为纯文本）。 */
@@ -35,6 +37,8 @@ export interface PreviewInput {
   degraded?: string;
   /** 降级态的类型标记（面板据此加类；缺省用 degraded 本身）。 */
   badge?: string;
+  /** 查看方式（只对 html 有意义：'preview' 渲染页面 / 'source' 高亮源码）。 */
+  view?: PreviewView;
 }
 
 /** 单文件预览上限（字符）：超过只给可读原因，不硬塞进 DOM。 */
@@ -55,6 +59,51 @@ function codeNode(text: string, path: string): HTMLElement {
 function markdownNode(text: string): HTMLElement {
   const box = el('div', 'preview-md');
   renderMarkdownSafe(box, text);
+  return box;
+}
+
+/**
+ * HTML 预览：把原文交给一个**沙箱 iframe** 渲染（W1534）。
+ *
+ * 三条都必须照做，缺一不可：
+ *
+ * ① **srcdoc 一律用 DOM property setter**（`frame.srcdoc = html`），
+ *    不用 `setAttribute('srcdoc', …)`、更不字符串拼属性。
+ *
+ *    ★ 诚实登记（W1543 实测更正）：在 chrome-headless-shell 151 上，
+ *      `f.srcdoc = html` 与 `f.setAttribute('srcdoc', html)` 对
+ *      plain / 引号 / <script> / &amp; 四类样本**逐字节等价**（propEq 与 attrEq 全 true）。
+ *      所以这条**不是**「不改就会坏」的运行时契约 —— 行为断言抓不到它
+ *      （变异 5：改成 setAttribute ⇒ 13 条里只红新增的那条源码形状断言）。
+ *      它守的是**心智路径**：property setter 表达「把这份字符串当文档」，
+ *      setAttribute 表达「序列化一个属性值」，后者会诱使后来者去手工转义
+ *      `&` / 引号 —— 那才会真的破坏用户 HTML。
+ *      ⇒ 由 tests/w1534-html-sandbox.test.ts 的「srcdoc 必须用 DOM property setter」
+ *        一条**源码形状**断言钉住（与 apps/web/tools/check-*.mjs 同一手法）。
+ *    保真本身的断言（srcdoc === 原文，逐字节）在同文件另有一条，那是**行为**层。
+ *
+ * ② **sandbox 由 applySandbox() 统一设置**（见 sandbox.ts 的逐条论证）：
+ *    不含 allow-same-origin ⇒ 预览文档活在不透明源里。
+ *    直接后果：**frame.contentDocument === null**（父页面无权访问它的文档）。
+ *    这是隔离生效的**正控**，不是缺陷 —— 也正因为如此，写入只能走 srcdoc，
+ *    不能走 contentDocument.write。
+ *
+ * ③ CSP（默认不加载任何外部网络资源）走 iframe 的 **csp 属性**，由
+ *    applyPreviewPolicy() 一次落位 —— **不是**往 HTML 里插 <meta>。
+ *    W1534 原先插 meta，代价是 srcdoc ≠ 原文（实体保真这条验收直接红）；
+ *    W1543 改为属性机制后 srcdoc 逐字节等于用户原文。详见 sandbox.ts 头注 ③。
+ */
+function htmlFrameNode(text: string): HTMLElement {
+  const box = el('div', 'preview-html');
+  const frame = el('iframe', HTML_FRAME_CLASS) as HTMLIFrameElement;
+  // 屏幕阅读器按标题列出 frame：没有 title 的 iframe 是不可访问的。
+  frame.title = t('chat.preview.htmlFrameTitle');
+  // ★ 策略先就位（sandbox ② + csp ③）：属性由元素携带，在文档开始解析前生效。
+  //   唯一设置点，测试对它们做变异负控制。
+  applyPreviewPolicy(frame);
+  // ★ property setter（见 ①），不是 setAttribute；且赋的是**原文**（逐字节保真）。
+  frame.srcdoc = text;
+  box.appendChild(frame);
   return box;
 }
 
@@ -109,6 +158,13 @@ export function renderPreview(input: PreviewInput): PreviewContent {
   if (text.length > PREVIEW_MAX_CHARS) return { node: degradedNode(t('chat.preview.degradeTooLarge')), degraded: t('chat.preview.badgeTooLarge') };
   if (input.kind === 'markdown') return { node: markdownNode(text), degraded: null };
   if (input.kind === 'diff') return { node: diffNode(text), degraded: null };
+  // HTML：默认**渲染预览**（「打开一个 HTML 想看到页面」是主流预期，与 GitHub /
+  // VSCode 的 HTML 预览同一取舍）；切到「源码」时复用 code 分支（language-xml 高亮）。
+  // 两个分支读的是**同一份 text**，所以来回切换不丢内容、不重新加载。
+  if (input.kind === 'html') {
+    if (input.view === 'source') return { node: codeNode(text, input.path), degraded: null };
+    return { node: htmlFrameNode(text), degraded: null };
+  }
   if (input.kind === 'code') return { node: codeNode(text, input.path), degraded: null };
   return { node: degradedNode(t('chat.preview.degradeUnsupported')), degraded: t('chat.preview.badgeUnsupported') };
 }
