@@ -10,8 +10,14 @@
 // 剪贴板：优先 navigator.clipboard（安全上下文）；不可用时回退 execCommand ——
 // 服务端可能经隧道以 http 暴露在非 localhost 主机上，那时 clipboard API 不存在。
 // 两条都失败就如实显示「复制失败」，绝不假装成功。
+//
+// W1526（代码块优化）：按钮从**绝对定位浮层**（top:6px/right:6px，压在首行正文上）
+// 改为住进 `.code-head` 工具条（见 code-chrome.ts）—— 工具条在 `.code-wrap` 里、
+// `pre` 上面，是正常流里的一行。浮层改占位是「装饰与正文永不重叠」的实现方式，
+// 详见 styles/codeblock.css。
 // ============================================================================
 import { t } from "../../i18n";
+import { ensureHead } from "./code-chrome";
 import type { Enhancer } from "./registry";
 
 /** 登记表 / 设置页 / 测试共用的身份。 */
@@ -43,7 +49,11 @@ function addCopyButtons(container: Element): void {
     btn.addEventListener("click", () => {
       void copyBlock(pre, btn);
     });
-    wrap.appendChild(btn);
+    // W1526：按钮住进工具条（正常流，占位）—— 浮层会压在首行正文上。
+    // 工具条由 code-copy / code-extras 共用（谁先跑谁建）。
+    // 仍在 .code-wrap 里、**不在 pre 内**：长行横向滚动时按钮不会被滚走
+    // （上面「按钮是 pre 的兄弟」那条断言守的正是这个归属）。
+    ensureHead(wrap).appendChild(btn);
   }
 }
 
