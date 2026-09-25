@@ -18,6 +18,11 @@
  *   workspaces.ts    /api/workspaces (+rename/delete/batch-delete)
  *   fs.ts            GET /api/fs/browse | GET /api/fs/list
  *   exec.ts          G2: POST /api/exec (immediate shell, permission-gated)
+ *   terminal.ts      W1528: POST /api/terminal | {id}/input | {id}/close (real
+ *                    pty via util-linux script(1), SAME gate + SAME sandbox as
+ *                    exec.ts; output rides the `terminal` SSE event)
+ *   terminal-pty.ts  W1528: the pty plumbing (support probe, argv, registry,
+ *                    tree termination) — no spawn of its own
  *   providers.ts     /api/providers (+delete/test/models fetch/default)
  *   prompts.ts       /api/prompts (+delete/default)
  *   worker.ts        /api/worker/spawn | send | status
@@ -55,6 +60,7 @@ import { registerSessionMoves } from "./session-move.js";
 import { registerSessionModel } from "./session-model.js";
 import { registerSessionTools } from "./session-tools.js";
 import { registerSessions } from "./sessions.js";
+import { registerTerminal } from "./terminal.js";
 import { registerUsage } from "./usage.js";
 import { registerWorker } from "./worker.js";
 import { registerWorkspaces } from "./workspaces.js";
@@ -71,6 +77,10 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     ...registerFs(app, deps, table),
     // G2: immediate execution for the UI (/run, !cmd) — no model in the loop.
     ...registerExec(app, deps, table),
+    // W1528: the workbench terminal's REAL pty (open / keystrokes / close).
+    // Same permission gate + same sandbox boundary as /api/exec — by import,
+    // not by convention (66 -> 69).
+    ...registerTerminal(app, deps, table),
     ...registerProviders(app, deps, table),
     ...registerPrompts(app, deps, table),
     ...registerWorker(app, deps, table),

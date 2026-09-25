@@ -75,7 +75,7 @@
     "codeRef": "src/main.rs:883-892"
   },
   "payloadExtensions": {
-    "note": "Keys the TypeScript host adds to an event payload beyond the frozen legacy table above (W513 per-session frames + W515 injection placements). They are contract too: `payloadExtensions.<event>` is the ONLY place a host-only payload key may be declared, and the W744 parity test fails on any produced key that appears in neither the event's `payload` table nor here. W785 added the `phase:\"fallback\"` value (a payload VALUE, not a new event name) and its five companion keys under `payloadExtensions.status`; the 9 event names are untouched (K5/D8). W1467 added `parent_id` under `payloadExtensions.tool` and `payloadExtensions.tool_result`: a run_code SUB-CALL row (the program SDK bridge call) is published on the same two events as a top-level tool, and the client indents it under the card whose id equals parent_id. The 9 event names are untouched.",
+    "note": "Keys the TypeScript host adds to an event payload beyond the frozen legacy table above (W513 per-session frames + W515 injection placements). They are contract too: `payloadExtensions.<event>` is the ONLY place a host-only payload key may be declared, and the W744 parity test fails on any produced key that appears in neither the event's `payload` table nor here. W785 added the `phase:\"fallback\"` value (a payload VALUE, not a new event name) and its five companion keys under `payloadExtensions.status`; the 9 event names are untouched (K5/D8). W1467 added `parent_id` under `payloadExtensions.tool` and `payloadExtensions.tool_result`: a run_code SUB-CALL row (the program SDK bridge call) is published on the same two events as a top-level tool, and the client indents it under the card whose id equals parent_id. The 9 event names are untouched. W1528 added the terminal event (9 -> 10 names) with its payload declared in the events table itself, like question - it has no LoopEvent producer, so there is nothing to extend.",
     "status": {
       "session": "string|null (the session the frame belongs to; null = process-level)",
       "dropped": "integer (per-session bucket overflow counter, lagged frames only)",
@@ -96,7 +96,7 @@
       "parent_id": "string (W1467: same as payloadExtensions.tool.parent_id - the enclosing run_code call id, present only on a sub-call result)"
     }
   },
-  "count": 9,
+  "count": 10,
   "events": [
     {
       "name": "text",
@@ -199,6 +199,18 @@
       "codeRef": "apps/studio/src/user-questions.ts (publish)",
       "frontendListens": true,
       "note": "W783: emitted when the model calls ask_user_question, i.e. while the turn's slot is BUSY. The answer does NOT come back over POST /api/turn (that would be steering, and steering is only drained at step boundaries the parked call never reaches) -- it goes to POST /api/questions/{id}/answer. envelope `turn` is the SESSION-local turn number of the turn that parked."
+    },
+    {
+      "name": "terminal",
+      "payload": {
+        "id": "string",
+        "session": "string|null",
+        "data": "string"
+      },
+      "source": "W1528: the terminal handler (apps/studio/src/handlers/terminal.ts), relaying a sandboxed script(1) pty",
+      "codeRef": "apps/studio/src/handlers/terminal.ts (pump -> deps.bus.emit('terminal', ...))",
+      "frontendListens": true,
+      "note": "W1528: the 10th event and the FIRST that is neither a turn event nor a host status frame. data is opaque terminal output (escape sequences included) and is NOT guaranteed to be a whole UTF-8 character at a chunk boundary; the client feeds it through a streaming UTF-8 decoder. Lossy under back-pressure BY CONTRACT (the bus emits lagged rather than blocking) - a slow client loses output instead of stalling the child pipe. envelope turn is ALWAYS 0: a pty is not a turn."
     }
   ],
   "frontendDeadListener": {

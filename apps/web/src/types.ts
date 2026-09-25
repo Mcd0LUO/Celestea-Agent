@@ -55,7 +55,9 @@ export type SseEventName =
   | 'done'
   | 'compact'
   /** W784：模型向用户提问（挂起等待作答；答案不经 POST /api/turn 回传）。 */
-  | 'question';
+  | 'question'
+  /** W1528：工作台终端的 pty 字节（契约第 10 名；载荷见 types/terminal.ts）。 */
+  | 'terminal';
 
 export type ConnState = 'connecting' | 'online' | 'down';
 

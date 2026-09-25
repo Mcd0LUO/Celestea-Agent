@@ -445,16 +445,19 @@ describe("W744 · SSE payloads: the production runtime/frames.ts vs contracts/ss
       attempt: 1,
     };
     expect(describeFrameViolations(checkPayload(SSE, "status", payload))).toBe("");
-    // The value that was added is a payload VALUE; the names are frozen at 9.
-    expect(SSE.events.map((e) => e.name)).toHaveLength(9);
-    expect(SSE.count).toBe(9);
+    // The value that was added is a payload VALUE; the names are frozen at
+    // W1528's 10 (W785 added no name, W1528 added `terminal`).
+    expect(SSE.events.map((e) => e.name)).toHaveLength(10);
+    expect(SSE.count).toBe(10);
   });
 
-  it("binds all 9 contract events to a named producer (none unbound, none invented)", () => {
+  it("binds all 10 contract events to a named producer (none unbound, none invented)", () => {
     const loopNames = LOOP_EVENTS.map((r) => r.contractName);
     // W783: `question` is host-emitted by the user-questions service while the
     // turn is parked — a LoopEvent can never produce it, so it is named here.
-    const hostNames = ["status", "compact", "question"];
+    // W1528: `terminal` is the same shape of fact — a pty's bytes come from the
+    // terminal handler, and no loop is involved.
+    const hostNames = ["status", "compact", "question", "terminal"];
     expect([...loopNames, ...hostNames].sort()).toEqual(SSE.events.map((e) => e.name).sort());
     expect(payloadKeyTable(SSE, "status").extensions.length).toBeGreaterThan(0);
     // W783: `question` is host-emitted but a first-class contract event, so its

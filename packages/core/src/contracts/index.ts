@@ -30,7 +30,13 @@ export interface EndpointField {
   note?: string;
 }
 export interface EndpointRequest {
-  kind: "none" | "json" | "query";
+  /**
+   * W1528: `"text"` is a RAW request body (the terminal's keystroke channel).
+   * A keystroke must not pay JSON escaping, and a literal newline has to survive
+   * byte-for-byte, so that one endpoint declares its body as text rather than
+   * pretending to be `json`.
+   */
+  kind: "none" | "json" | "query" | "text";
   fields: EndpointField[];
   note?: string;
 }
@@ -165,8 +171,12 @@ export const FROZEN_COUNTS = {
   // G5 follow-up: 63 -> 64 (GET /api/fs/read, the file manager viewer).
   // W895-C1: 64 -> 66 (GET|PUT /api/display-plugins, the server-side source of
   // truth for the client display-component switches).
-  endpoints: 66,
-  sseEvents: 9,
+  // W1528: 66 -> 69 (POST /api/terminal + POST /api/terminal/{id}/input +
+  // POST /api/terminal/{id}/close, the workbench terminal's real-PTY face).
+  endpoints: 69,
+  // W783: 8 -> 9 (`question`); W1528: 9 -> 10 (`terminal`, the first event that
+  // is neither a turn event nor a host status frame).
+  sseEvents: 10,
   // W884: 13 -> 14 (`load_skill`, the on-demand half of skill progressive
   // disclosure; the catalog half adds no tool).
   // F4: 14 -> 16 (`browser_open` + `browser_act`, the session browser tools).
