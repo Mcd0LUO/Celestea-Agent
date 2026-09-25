@@ -17,6 +17,7 @@
 | [`feature-dynamic-tool-disclosure.md`](./feature-dynamic-tool-disclosure.md) | 设计（只调研与设计，W802） | **动态工具披露**的调研与设计：工具面随任务收窄的方案与取舍；本文不落地代码 | 本文 |
 | [`feature-sandbox-time-semantics.md`](./feature-sandbox-time-semantics.md) | 已实现（P0，W1516） | **沙箱时间语义**：把固定的 20s `RLIMIT_CPU` 改成「跟随该次调用墙钟」的推导值，模型仍可用参数覆盖且被部署方上限夹紧；含 `run_code` 子进程与可配硬顶的补齐 | 本文；落点 `packages/tools/src/sandbox/limits.ts` |
 | [`feature-permission-entry-merge.md`](./feature-permission-entry-merge.md) | 已实现 | **权限入口合并**：状态栏右端只留一个盾牌入口（用已有图标），面板内同时给出会话档位与精细授权；窄屏不再挤掉停止键 | 本文；落点 `apps/web/src/statusline/permission.ts`、`apps/web/src/ui/grants/` |
+| [`feature-sandbox-comparison.md`](./feature-sandbox-comparison.md) | 设计（只调研与设计） | **沙箱机制横向评估**：实读 DSH / Claude Code / ZCode 三家沙箱，按机制对比并指出本仓的缺口与可抄点；含「当前部署走 userspace 降级 ⇒ 缺口全部不设防」的审计含义 | 本文；本仓落点 `packages/tools/src/sandbox/`、`packages/tools/src/guard/path-guard.ts` |
 | [`feature-docs-drift-cleanup.md`](./feature-docs-drift-cleanup.md) | 设计 | **文档漂移清理与归档**：把不再描述现状的文档按规范归档、把可机械发现的漂移变成断言；含本次实读的四条漂移与处置 | 本文；门禁 `tests/doc-conventions.test.ts` |
 | [`iteration-e/`](./iteration-e/README.md) | 设计 | 迭代方向 E（能力深水区，分册）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | [`README.md`](./iteration-e/README.md)；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见归档的 DSH 评估（W253/W254，已于 W881 清理出公开仓） |
