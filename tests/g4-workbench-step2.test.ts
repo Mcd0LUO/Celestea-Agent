@@ -102,27 +102,40 @@ describe('G4 · 多面板工作区（第二步）', () => {
    * W1528：终端不再是「一次性执行」。这条用例的**旧断言**是「明确声明不是交互式
    * 终端」—— 那正是本波要删掉的谎。现在断言的是反面：面板说的是真终端，而且
    * 打开的入口是 POST /api/terminal（pty），不是 POST /api/exec（跑完才返回）。
+   *
+   * ★ W1532（用户：「终端改成点击即加载」）：**入口断言是有意更新的**（架构师批准），
+   *   旧断言是「未连上时给 .wb-term-open 按钮，点击后才发 POST」—— 那正是本波要
+   *   删掉的二次点击。不变量一条没丢，只是触发方式从「点击」变成「渲染」：
+   *     · 仍然**恰好一次** POST /api/terminal（不是 /api/exec）；
+   *     · 仍然不得回落到一次性执行（execCalls === 0）；
+   *     · 连上后仍然挂 .wb-term-xterm 宿主。
+   *   判别力由变异负控制证明：把自动加载改回「等点击」⇒ 这条立刻红（见报告）。
+   *   另加两条 W1532 自己的断言：加载期**有可见提示**（不是空白），
+   *   且二次点击的入口**不存在**（存在就等于任务没做）。
    */
-  it('终端：声明是真终端，打开走 POST /api/terminal（pty），不再走 /api/exec', async () => {
+  it('终端：打开面板即**自动**加载（一次 POST /api/terminal），不再需要第二次点击', async () => {
     const fake = await injectFakeXterm();
     const { wb, execCalls, terminalCalls } = await setup();
     wb.openPanel('terminal', 'right');
-    await flush();
+    // 同步：首次渲染就落在**加载态**，状态行有可见文案（不是空白）。
+    const loading = panelBodies()[0] as ElLike;
+    expect(loading.querySelector('.wb-term-status')?.textContent ?? '', '加载期必须有可见提示').not.toBe('');
+    expect(loading.querySelector('.wb-term-xterm'), '加载期已给宿主占位（连上后尺寸不变）').not.toBeNull();
+    await flush(20); // ★ 不点任何按钮
     const body = panelBodies()[0] as ElLike;
     const note = body.querySelector('.wb-term-note')?.textContent ?? '';
     expect(note, '声明是真终端').toContain('真终端');
     expect(note, '不得再自称一次性执行').not.toContain('不是交互式终端');
     expect(body.querySelector('.wb-term-input'), '不再有一次性命令输入框').toBeNull();
-    const open = body.querySelector('.wb-term-open') as ElLike;
-    expect(open, '未连上时给「打开终端」入口').not.toBeNull();
-    open.click();
-    await flush(20);
-    expect(terminalCalls.length, '打开终端 = 一次 POST /api/terminal').toBe(1);
+    // ★ W1532 的核心：没有第二次点击，pty 请求已经发出，且只有一次。
+    expect(terminalCalls.length, '打开面板即一次 POST /api/terminal（无需点击）').toBe(1);
     expect(terminalCalls[0]).toContain('/api/terminal');
     expect(execCalls.length, '不得回落到一次性执行').toBe(0);
-    // 连上之后画的是 xterm 宿主（.wb-term-xterm），不再有「打开」按钮。
+    // 二次点击的入口**不存在**了。
+    expect(body.querySelector('.wb-term-open'), '「打开终端」按钮已移除').toBeNull();
+    // 连上之后：挂 xterm 宿主，且状态行清空（占位仍在 ⇒ 不跳布局）。
     expect(body.querySelector('.wb-term-xterm'), 'pty 连上后挂 xterm 宿主').not.toBeNull();
-    expect(body.querySelector('.wb-term-open'), '连上后入口消失').toBeNull();
+    expect(body.querySelector('.wb-term-status')?.textContent ?? '', '连上后状态行清空').toBe('');
     void fake;
   });
 
@@ -135,10 +148,8 @@ describe('G4 · 多面板工作区（第二步）', () => {
     await injectFakeXterm();
     const { wb, terminalCalls } = await setup();
     const p = wb.openPanel('terminal', 'right');
-    await flush();
-    (panelBodies()[0] as ElLike).querySelector('.wb-term-open')?.click();
-    await flush(20);
-    expect(terminalCalls.length).toBe(1);
+    await flush(20); // W1532：打开即加载（不再点 .wb-term-open）
+    expect(terminalCalls.length, '打开面板即开 pty（无需点击）').toBe(1);
     // 关闭面板 → 渲染层重画 → 集合差发现它没了 → 发出 close。
     wb.closePanel(p.id);
     await flush(20);
