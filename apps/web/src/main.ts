@@ -32,6 +32,10 @@ import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 
 import './styles/streaming.css'; // W-A 流式渲染
 import './styles/caret.css'; // W-B 光标
 import './styles/codeblock.css'; // W-C 代码块
+// W1529 七项前端任务：同样「各能力各文件」，共享 CSS 谁都不改。
+import './styles/taskpanel.css'; // 任务面板（todo list）
+import './styles/provider-edit.css'; // 提供商模型输入输出类型
+import './styles/theme-claude.css'; // Claude Code 风格色卡
 
 import { api } from './api';
 import { connectSse, initChat } from './chat';
