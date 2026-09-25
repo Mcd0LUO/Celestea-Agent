@@ -205,5 +205,58 @@ macOS-only 的 Seatbelt，写白名单 = 工作区 + `~/.zcode*` + 系统 temp +
 | ZCode（第三方桥）| [william0wang/zcode-acp](https://github.com/william0wang/zcode-acp) 的 `docs/SANDBOX.md` | 实读（文档）|
 | 本仓 | `packages/tools/src/sandbox/`、`packages/tools/src/guard/`、`apps/studio/src/runtime/` | 实读（本仓）|
 
-**未验证的部分**（诚实标注）：本仓的 Windows 路径、`windows-acl` 的实际行为、
-Claude 的 Windows WFP 栅栏 —— 三者都**没有在本机实测**（Windows 真机 sshd 不可达）。
+## 7. 更正与实测（W1523）
+
+**上一版这一节写着「Windows 真机 sshd 不可达，三者都没有实测」—— 那是错的，已作废。**
+
+当时的失败是我的 ssh 命令**漏了 `-i` 私钥**（`/root/.dsh-win/id_ed25519`），
+不是对方 sshd 异常。把「我的命令写错了」归因成「对方服务坏了」，并据此写进提交的文档 ——
+这正是 `pitfalls.md` 记的那类错误：**没有区分「实读」与「实测」就下结论**。
+
+补测后，Windows 通路与 `windows-acl` 的前提**全部实测通过**：
+
+| 前提 | 实测结果 |
+|---|---|
+| SSH 通路 | ✅ `ssh -i /root/.dsh-win/id_ed25519 -p 2222` 通（Win11 家庭版 / 非管理员）|
+| `CreateRestrictedToken` | ✅ `True`（非管理员账户也能创建）|
+| Low 完整性标签（SACL）| ✅ `SetNamedSecurityInfo = 0`（owner + FullControl 即可，**不需要** `SeSecurityPrivilege`）|
+| DACL 可写 | ✅ `Set-Acl` OK |
+
+**这台机器已承担 Windows CI 职责**：clone 公开仓 → `pnpm install --frozen-lockfile`（4.3s，
+store 热）→ `pnpm check`。首跑即抓到 `w1516-cpu-follows-wallclock.test.ts` 的固定 sleep
+flake（见 §8），修复后 Windows 全量门禁 `EXIT=0`（52s）。
+
+仍未实测的只剩：**Claude 的 Windows WFP 栅栏**（那需要装 `srt` 并建 `srt-sandbox` 本地账户，
+本机没有）。
+## 8. Windows CI 首跑抓到的真实缺陷（W1523）
+
+Windows 门禁第一次跑就红了，红在**本仓自己的测试**上：
+
+```
+FAIL packages/tools/src/run-code/w1516-cpu-follows-wallclock.test.ts
+TypeError: Cannot read properties of undefined (reading 'child')
+  at w1516-cpu-follows-wallclock.test.ts:124:24
+     sandbox.spawns[0]!.child.kill();
+```
+
+**根因**：测试用 `await new Promise(r => setTimeout(r, 20))` 等 broker 走到 `sandbox.spawn`。
+固定 sleep 是在**猜**另一个任务需要多久 —— 28 核 Linux 上 20ms 够，Windows CI 上不够，
+于是 `spawns[0]` 还不存在。
+
+这与 `AGENT.md` §6 记录的 `tests/w795-optimistic-grants.test.ts` flake 是**同一类错误**，
+处方也一样：**等条件本身成立，而不是等一个时长**。
+
+```ts
+await vi.waitFor(() => {
+  expect(sandbox.spawns.length, "broker must reach sandbox.spawn").toBeGreaterThan(0);
+}, { timeout: 5_000 });
+sandbox.spawns[0]!.child.kill();
+```
+
+**验证**：变异负控制（把阈值改成 99，条件永不成立）⇒ 断言红
+（`expected 1 to be greater than 99`）；还原 ⇒ 7/7 绿。Windows 上从 1 failed 变 **7/7 passed**，
+随后全量 `pnpm check` **EXIT=0**。
+
+**这条的价值**：它证明 Windows CI 不是装饰 —— 一个在 Linux 上永远绿、在 4 核/慢机器上
+必现的 flake，被它当场抓住。
+

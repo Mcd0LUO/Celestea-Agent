@@ -10,7 +10,7 @@
  * A4 asserts what the broker ASKS the sandbox for (the derived value), which is
  * the half that was missing entirely; the fake sandbox records the request.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createFakeSandbox } from "../sandbox/fake-sandbox.js";
 import { deriveCpuSecFromWallClock } from "../sandbox/limits.js";
@@ -119,8 +119,19 @@ describe("W1516 §3.3 · run_code names the CPU limit when it is what killed the
       () => new Error("expected a cpu_exceeded failure, but the run succeeded"),
       (e: unknown) => e as Error,
     );
-    // Let the broker reach its pump, then let the child die on the CPU signal.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Wait for the broker to REACH the spawn — never a fixed sleep.
+    //
+    // W1523: this used to be `await setTimeout(20)`, which is the same class of
+    // bug AGENT.md §6 records for tests/w795-optimistic-grants.test.ts: a fixed
+    // delay guesses how long another task needs. It passed on the 28-core Linux
+    // box and failed on the Windows CI box with
+    // `TypeError: Cannot read properties of undefined (reading 'child')` —
+    // i.e. the broker had not spawned yet, so spawns[0] did not exist. Waiting
+    // for the condition itself is bounded, deterministic, and returns as soon as
+    // it holds (normal path: immediately).
+    await vi.waitFor(() => {
+      expect(sandbox.spawns.length, "broker must reach sandbox.spawn").toBeGreaterThan(0);
+    }, { timeout: 5_000 });
     sandbox.spawns[0]!.child.kill();
 
     const error = await failure;
