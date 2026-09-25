@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   all,
   at,
+  bootGrants,
   click,
   confirmOk,
   doc,
@@ -32,17 +33,25 @@ import {
   permStub,
   resetHarness,
   stub,
+  tierText,
   type ElLike,
 } from './lib/w795-dom.js';
 
 const PANE = '#settingsPermissions';
-const POPUP = '#statusline .perm-popup';
+/**
+ * W1517（权限入口合并）：档位不再有自己的弹层 —— 列表/切换住**唯一**的盾牌面板
+ * （#statusline .grant-popup）的 §1；断言内容逐条未改，只换了面板与入口的选择器。
+ */
+const POPUP = '#statusline .grant-popup';
 type CheckLike = ElLike & { checked: boolean };
 interface SlMod {
   statusline: { setSession(id: string): void; stop(): void };
 }
 interface PaneMod {
   loadPermissionsSection(): Promise<void>;
+}
+interface GrantsMod {
+  stopGrants(): void;
 }
 
 /** 表单/菜单查询助手（断言全部留在 it 里）。 */
@@ -251,22 +260,29 @@ describe('W858 ② 编辑/删除自定义档：乐观替换与回滚', () => {
   });
 });
 
-describe('W858 ④ statusline 会话档位选择器', () => {
+describe('W858 ④ statusline 会话档位选择器（W1517：住合并后的盾牌面板）', () => {
   let sl: SlMod;
+  let grants: GrantsMod;
   beforeEach(async () => {
     resetHarness();
     sl = (await import(/* @vite-ignore */ at('statusline.ts'))) as SlMod;
-    sl.statusline.setSession('ws/s1');
+    // W1517：入口与面板都归提权通道（能力位决定显隐），所以夹具按**真实装配顺序**
+    // 起：statusline（档位徽标 + 注册档位宿主）→ grants（能力位 + 盾牌面板）。
+    grants = await bootGrants('ws/s1');
+    sl.statusline.setSession('ws/s1'); // 聚焦会话（档位徽标与面板共用同一份）
     await flush(4);
   });
   afterEach(() => {
+    grants?.stopGrants();
     sl?.statusline.stop();
   });
 
-  it('徽标 = 当前档位；菜单列出三档 + 封顶 + 风险行；点选当帧换徽标', async () => {
-    expect(el('slPerm').classList.contains('hidden')).toBe(false);
-    expect(el('slPermBadge').textContent).toBe('Full access');
-    click(el('slPerm'));
+  it('徽标 = 当前档位；面板列出三档 + 封顶 + 风险行；点选当帧换徽标', async () => {
+    // W1517：唯一入口是盾牌；它的显隐由能力位决定（这里 grants=true ⇒ 可见），
+    // 档位名住在同一徽标区（#slGrantTier），与授权计数同处一格。
+    expect(el('slGrant').classList.contains('hidden')).toBe(false);
+    expect(tierText()).toBe('Full access');
+    click(el('slGrant'));
     await flush(3);
     const rows = all(POPUP + ' .sl-opt');
     expect(rows.map((r) => r.dataset['preset'])).toEqual([
@@ -282,9 +298,9 @@ describe('W858 ④ statusline 会话档位选择器', () => {
     permStub.putError = "unknown preset 'read-only'";
     click(rows[0] ?? null);
     // 当帧（同步、未 await 网络）：徽标已经是目标档
-    expect(el('slPermBadge').textContent).toBe('Read only');
+    expect(tierText()).toBe('Read only');
     await flush(4);
-    expect(el('slPermBadge').textContent, 'PUT 失败 ⇒ 回滚到原档').toBe('Full access');
+    expect(tierText(), 'PUT 失败 ⇒ 回滚到原档').toBe('Full access');
     const status = doc.querySelector(POPUP + ' .sl-popup-status');
     expect(status?.textContent ?? '').toContain("unknown preset 'read-only'");
     expect(status?.textContent ?? '').toContain('已恢复原档位');
@@ -292,23 +308,29 @@ describe('W858 ④ statusline 会话档位选择器', () => {
     expect(doc.querySelector(POPUP), '菜单留着，用户可重选').not.toBeNull();
   });
 
-  it('PUT 成功：徽标保持新档、菜单收起、轻提示可见且无占位文案', async () => {
-    click(el('slPerm'));
+  it('PUT 成功：徽标保持新档、面板留着（还承载精细授权）、轻提示可见且无占位文案', async () => {
+    click(el('slGrant'));
     await flush(3);
     click(all(POPUP + ' .sl-opt')[1] ?? null); // write-read
-    expect(el('slPermBadge').textContent).toBe('Write + read (workspace)');
+    expect(tierText()).toBe('Write + read (workspace)');
     expect(el('slHint').textContent).not.toMatch(/切换中|正在/);
     await flush(4);
-    expect(el('slPermBadge').textContent).toBe('Write + read (workspace)');
-    expect(doc.querySelector(POPUP)).toBeNull();
+    expect(tierText()).toBe('Write + read (workspace)');
+    // W1517：面板不再因切档而收起 —— 同一个面板还装着 §2 精细授权，
+    // 切一档就收起会让用户「再授予还得重新点开」。
+    expect(doc.querySelector(POPUP), '面板留着').not.toBeNull();
     expect(permStub.sessionPreset).toBe('write-read');
   });
 
-  it('无活动会话：入口隐藏，菜单说明并禁用全部档位', async () => {
+  it('无活动会话：档位徽标留空，面板说明并禁用全部档位（入口本身仍可用）', async () => {
+    // 会话切空（面板与徽标共用同一份聚焦会话：statusline.session → viewctx）
     sl.statusline.setSession('');
     await flush(3);
-    expect(el('slPerm').classList.contains('hidden')).toBe(true);
-    click(el('slPerm'));
+    // W1517：入口的显隐真源只剩能力位（这里 grants=true ⇒ 入口仍可见）——
+    // 否则「档位端点/会话缺失」会把精细授权一起藏掉（设计 §4 I2）。
+    expect(el('slGrant').classList.contains('hidden')).toBe(false);
+    expect(tierText()).toBe('');
+    click(el('slGrant'));
     await flush(3);
     const rows = all(POPUP + ' .sl-opt');
     expect(rows.length).toBeGreaterThan(0);

@@ -15,6 +15,8 @@ let capProbeAt = 0;
 
 let button: HTMLButtonElement | null = null;
 let badgeEl: HTMLElement | null = null;
+/** W1517：合并入口徽标区里的**档位格**（#slGrantTier；由 statusline/permission.ts 写入）。 */
+let tierEl: HTMLElement | null = null;
 
 /** 当前聚焦会话的完整权限数据（盾牌/面板的真源）。 */
 let data: GrantsResp | null = null;
@@ -118,6 +120,14 @@ export function getShieldBadge(): HTMLElement | null {
 
 export function setShieldBadge(v: HTMLElement | null): void {
   badgeEl = v;
+}
+
+export function getShieldTier(): HTMLElement | null {
+  return tierEl;
+}
+
+export function setShieldTier(v: HTMLElement | null): void {
+  tierEl = v;
 }
 
 export function getData(): GrantsResp | null {

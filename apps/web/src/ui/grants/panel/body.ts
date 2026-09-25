@@ -1,12 +1,16 @@
 // ============================================================================
 // ui/grants/panel/body.ts — 权限面板主体：开/关/重绘（设计 §3.2；W760 从 ../panel.ts 拆出）。
 //
-//   面板 = 复用 statusline 的 .sl-popup 样式族 + utils/overlays 的 Esc 层级栈；
-//   内容顺序（W751/W757 定的）逐字未改：
-//     快捷授权区（./quick）→ 两条说明 → 警示区（./warnings）→ 结果预览 →
-//     逐项明细行（./rows）→ 页脚「全部撤销」→ 面板级状态行。
+//   W1517（权限入口合并）：面板现在同时承载**两块内容**（设计 §3）——
+//     §1 会话档位：原 statusline 的档位弹层（statusline/permission/tier.ts 的
+//        tierSection，列表 / 切换 / 失败回滚逐条沿用）
+//     §2 精细授权：快捷授权区（./quick）→ 两条说明 → 警示区（./warnings）→
+//        结果预览 → 逐项明细行（./rows）→ 页脚「全部撤销」
+//   内容顺序（W751/W757 定的）在 §2 内部逐字未改。
 //   重绘走「离屏构建 + 单次替换」；每次重绘都重新落位（./position）。
 //   授予/撤销动作本身不在这里（见 ../flow.ts），经 GrantsHost 回调触发。
+//   档位段落的宿主契约是 statusline/permission.ts 的 PermissionHost（由 ui/grants.ts
+//   在打开时用**同一个** focusedSession/refresh 源适配后塞进来，见 openPanel）。
 // ============================================================================
 import { el } from '../../../utils/dom';
 import { popOverlay, pushOverlay } from '../../../utils/overlays';
@@ -24,6 +28,8 @@ import {
   setPanelOverlay,
   type GrantsHost,
 } from '../state';
+import { registerTierRepaint, registeredTierHost } from '../../../statusline/permission';
+import { resetTierStatus, tierSection } from '../../../statusline/permission/tier';
 import { activeFor, activeGrants, expiredFor } from './active';
 import { attachPosition, detachPositionNow, positionPanel } from './position';
 import { previewText } from './phrase';
@@ -35,6 +41,7 @@ import { warningBox } from './warnings';
 
 export function closePanel(): void {
   detachPositionNow();
+  registerTierRepaint(() => {}); // 面板关了就不再有重画目标
   const overlay = getPanelOverlay();
   if (overlay) {
     popOverlay(overlay);
@@ -71,6 +78,12 @@ export async function openPanel(host: GrantsHost): Promise<void> {
   const body = el('div', 'sl-popup-body');
   popup.appendChild(body);
 
+  resetTierStatus(); // W1517：上一次的档位失败回执不该跟着新面板出现
+  // 档位视图落定（换会话 / 徽标刷新）时重画面板 —— 面板开着时 §1 的「当前」标记要跟着变。
+  registerTierRepaint(() => {
+    if (getPanelEl() === popup) renderPanel(host);
+  });
+
   if (host.focusedSession() === '') {
     body.replaceChildren(
       el('div', 'sl-popup-note', t('grants.body.noSession')),
@@ -102,7 +115,14 @@ export function renderPanel(host: GrantsHost): void {
   if (!body) return;
   const off = document.createElement('div');
 
-  // 快捷授权（W751 任务 1c）：放在面板最顶部，先给「一键组合」，再是逐项明细。
+  // §1 会话档位（W1517）：原档位弹层的列表/切换，现在住同一个面板里。
+  // 宿主 = statusline 侧注册进来的**同一个**档位 controller（见 permission.ts 的
+  // registerTierHost）—— 两块内容读同一份聚焦会话，不会出现「面板说甲会话、档位说
+  // 乙会话」；未装配（其它测试夹具只加载 grants）时本段整体不画。
+  const tier = registeredTierHost();
+  if (tier !== null) off.appendChild(tierSection(tier, () => renderPanel(host)));
+
+  // §2 精细授权：快捷授权（W751 任务 1c）在最顶部，先给「一键组合」，再是逐项明细。
   off.appendChild(renderPresets(host));
 
   off.appendChild(

@@ -5,7 +5,8 @@
  *
  * 背景：.chat-shell 里原本有三层「小框」在制造视觉噪声 ——
  *   ① #input 自带 1px 描边 + 灰底（base.css 的 textarea 默认样式）；
- *   ② .sl-effort / .sl-mode / .sl-perm / .sl-grant / .sl-mode-btn / .sl-stop 各带 1px 描边；
+ *   ② .sl-effort / .sl-mode / .sl-grant（原还有 .sl-perm，W1517 入口合并后已删）/
+ *      .sl-mode-btn / .sl-stop 各带 1px 描边；
  *   ③ .sl-tps / .sl-cache / .sl-steps 各带灰底胶囊（--c-layer-2）。
  * 结果：一个扁平大框里套着七八个描边/灰底小方块，用户读到的不是「一个框」。
  *
@@ -74,9 +75,12 @@ describe('W1297 · composer 扁平化：内层不再有描边', () => {
     expect(decls, '数值不再垫灰底小方块').not.toMatch(/background/);
   });
 
-  it('权限档位徽标与权限盾牌：无描边', () => {
-    expect(hasVisibleBorder(rule(css('permissions.css'), '.sl-perm')), '.sl-perm 不得再有描边').toBe(false);
+  it('权限入口（W1517 合并后只剩盾牌一个）与其档位徽标格：无描边', () => {
+    // W1517：档位不再有自己的按钮（.sl-perm 已删）—— 入口是唯一的 .sl-grant，
+    // 档位名住它的徽标区（.sl-grant-tier）。断言语义未变：这两个可见元素都不得有描边。
     expect(hasVisibleBorder(rule(css('grants.css'), '.sl-grant')), '.sl-grant 不得再有描边').toBe(false);
+    expect(hasVisibleBorder(rule(css('grants.css'), '.sl-grant-tier')), '.sl-grant-tier 不得再有描边').toBe(false);
+    expect(hasVisibleBorder(rule(css('grants.css'), '.sl-grant-badge')), '.sl-grant-badge 不得再有描边').toBe(false);
   });
 
   it('附件入口：无描边（改用柔和圆底）', () => {

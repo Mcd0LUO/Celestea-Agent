@@ -183,10 +183,11 @@
 /* ---- 下拉面板（自触发键向上弹出，覆盖消息区底部） ----
    W871 修正（用户报「点 Full Access 弹出的面板错位到左边」）：
      · 旧口径只有 `left: 14px` 一条 —— 它是相对**发送栏左缘**的死坐标。这对左端的
-       模型/档位/工作方式键没问题，但触发档位弹层的 #slPerm 徽标在发送栏**右端**：
-       1280×800 实测面板左缘 345 对徽标左缘 1125.45（横向差 −780.45px），
-       即「面板弹到了发送栏另一头」。W867 的 .chat-shell（margin 8 + border 0.5）又
-       把这套死坐标整体推移，用户看到的就是「错位到左边」。
+       模型/工作方式键没问题，但触发权限面板的入口在发送栏**右端**：1280×800 实测
+       面板左缘 345 对触发键左缘 1125.45（横向差 −780.45px），即「面板弹到了发送栏
+       另一头」。W867 的 .chat-shell（margin 8 + border 0.5）又把这套死坐标整体推移，
+       用户看到的就是「错位到左边」。
+       （W1517：那个触发键现在是唯一的盾牌入口；档位不再有自己的弹层。）
      · 现在**水平锚点由触发键所在的那一端决定**：左端键用 left:14px
        （= #statusline 的 padding-left ⇒ 与发送栏正文左缘对齐），右端键用 .right-anchored
        的 right:14px（右缘与正文右缘对齐）。纵向仍是 bottom: calc(100% - 2px)
@@ -364,7 +365,7 @@
 .sl-grant { height: 28px; border-radius: var(--r-badge); }
 /* W12：容器查询 —— 窄屏（≤360px）徽标只留图标/缩短，避免挤走右端取消键。 */
 @container (max-width: 360px) {
-  .sl-mode-label, .sl-grant-badge, .sl-perm-badge { display: none; }
+  .sl-mode-label, .sl-grant-tier { display: none; }
   .sl-model { max-width: 22ch; }
 }
 

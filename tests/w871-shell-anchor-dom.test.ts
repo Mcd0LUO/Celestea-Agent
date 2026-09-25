@@ -300,7 +300,7 @@ describe('W871 ② · 会话树 hover 提示落在行的右下方，不再飞到
 });
 
 // ============================================================================
-// ⑤ 档位弹层：唯一落位适配器（复用 panelGeom）
+// ⑤ 权限面板：唯一落位适配器（复用 panelGeom）
 // ============================================================================
 
 interface AnchorPopupMod {
@@ -308,14 +308,21 @@ interface AnchorPopupMod {
   placeAnchoredPopup(popup: ElLike, anchor: Rect): void;
 }
 
-describe('W871 ③ · 档位弹层锚到触发键 #slPerm（视口坐标 + panelGeom）', () => {
+/**
+ * W1517（权限入口合并）：档位弹层已并入唯一的盾牌面板 —— 触发键从 #slPerm（锁图标）
+ * 换成 #slGrant（盾牌），面板类名从 .sl-popup.perm-popup 换成 .sl-popup.grant-popup。
+ * 本组断言（数字、语义、负例）逐条未改，只换了触发键与面板的选择器；被删掉的
+ * 「.sl-popup.perm-popup 必须 fixed」那条独立断言不再适用（该弹层已不存在），
+ * 同一套落位契约改由 grants.css 的 .sl-popup.grant-popup 承担（下面的 ④ 组已覆盖）。
+ */
+describe('W871 ③ · 权限面板锚到触发键 #slGrant（视口坐标 + panelGeom）', () => {
   let restore: () => void;
   beforeEach(() => {
     resetHarness();
     useRealBody();
     restore = viewport(1280, 800);
-    // 真机实测：徽标在发送栏**右端**
-    geom(doc.querySelector('#slPerm'), rect(1125.45, 623.23, 1223, 641.23));
+    // 真机实测：入口在发送栏**右端**（合并后是唯一的盾牌；坐标沿用 W871 实测值）
+    geom(doc.querySelector('#slGrant'), rect(1125.45, 623.23, 1223, 641.23));
     geom(doc.querySelector('#statusline'), rect(331, 613.23, 1271, 672.2));
   });
   afterEach(() => {
@@ -326,11 +333,11 @@ describe('W871 ③ · 档位弹层锚到触发键 #slPerm（视口坐标 + panel
   it('落位 = 下沿贴锚点上沿 − gap、右缘对齐锚点右缘（具体数字）', async () => {
     const mod = (await import(/* @vite-ignore */ at('ui/anchor-popup.ts'))) as AnchorPopupMod;
     const popup = doc.createElement('div') as unknown as ElLike;
-    popup.className = 'sl-popup perm-popup';
+    popup.className = 'sl-popup grant-popup';
     doc.body.appendChild(popup);
     const restoreBox = stubBoxSize(420, 47.97);
     try {
-      const anchor = mod.anchorOf(doc.querySelector('#slPerm'));
+      const anchor = mod.anchorOf(doc.querySelector('#slGrant'));
       expect(anchor, '锚点取自触发键').not.toBeNull();
       mod.placeAnchoredPopup(popup, anchor as Rect);
 
@@ -356,42 +363,43 @@ describe('W871 ③ · 档位弹层锚到触发键 #slPerm（视口坐标 + panel
     }
   });
 
-  it('真实模块开弹层：openPermissionPopup 走 placePopup()，内联 top/left 与 panelGeom 一致', async () => {
+  it('真实模块开面板：openPanel 走 positionPanel()，内联 top/left 与 panelGeom 一致', async () => {
     const restoreBox = stubBoxSize(420, 47.97);
     vi.stubGlobal('fetch', async (url: unknown) => {
       const u = String(url);
       const payload = u.includes('/permission')
         ? { ok: true, preset: 'full-access', effective: [] }
-        : {
-            ok: true,
-            max: 'full-access',
-            presets: [
-              { id: 'read-only', label: 'Read only', network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: [] },
-              { id: 'full-access', label: 'Full access', network: true, workspaceWritable: true, toolRootsWritable: true, writeRoots: [], allPaths: true, unsandboxed: true, toolDeny: [] },
-            ],
-          };
+        : u.endsWith('/grants')
+          ? { ok: true, grants: [], effective: {} }
+          : {
+              ok: true,
+              max: 'full-access',
+              presets: [
+                { id: 'read-only', label: 'Read only', network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: [] },
+                { id: 'full-access', label: 'Full access', network: true, workspaceWritable: true, toolRootsWritable: true, writeRoots: [], allPaths: true, unsandboxed: true, toolDeny: [] },
+              ],
+            };
       return { ok: true, status: 200, json: async () => payload };
     });
     try {
-      const store = (await import(/* @vite-ignore */ at('ui/permissions/store.ts'))) as {
-        ensurePresets(): Promise<unknown>;
-        resetPresetsForTest?(): void;
+      // W1517：唯一的面板 = 盾牌面板（档位段落住在它里面）；触发键 = 唯一的盾牌入口。
+      const state = (await import(/* @vite-ignore */ at('ui/grants/state.ts'))) as {
+        setShieldButton(el: unknown): void;
       };
-      await store.ensurePresets();
-      const perm = (await import(/* @vite-ignore */ at('statusline/permission.ts'))) as {
-        openPermissionPopup(h: unknown): void;
-        closePermissionPopup(): void;
+      const body = (await import(/* @vite-ignore */ at('ui/grants/panel/body.ts'))) as {
+        openPanel(host: Record<string, unknown>): Promise<void>;
+        closePanel(): void;
       };
-      const opened: string[] = [];
-      perm.openPermissionPopup({
-        root: doc.getElementById('statusline') as ElLike,
-        sessionId: 'ws/s1',
-        currentPreset: 'full-access',
-        applyPermission: (p: string) => opened.push(p),
-        setNote: () => {},
+      state.setShieldButton(doc.getElementById('slGrant'));
+      await body.openPanel({
+        focusedSession: () => 'ws/s1',
+        refresh: async () => {},
+        renderPanel: () => {},
+        startGrant: async () => {},
+        revoke: async () => {},
       });
-      const popup = doc.querySelector('.sl-popup.perm-popup') as ElLike;
-      expect(popup, '弹层必须建出来').not.toBeNull();
+      const popup = doc.querySelector('.sl-popup.grant-popup') as ElLike;
+      expect(popup, '面板必须建出来').not.toBeNull();
       // 位置一律由 JS 现算并写内联 —— 没写就是退回了 left:14px 死坐标
       const left = px(styleOf(popup)['left']);
       const top = px(styleOf(popup)['top']);
@@ -401,10 +409,10 @@ describe('W871 ③ · 档位弹层锚到触发键 #slPerm（视口坐标 + panel
       expect(top, '下沿贴触发键上沿 − 8px').toBe(567);
       expect(px(styleOf(popup)['maxHeight']), '高度上限也由 panelGeom 给').toBeGreaterThan(0);
       // 具体几何关系：面板右缘 = 触发键右缘；面板整体落在发送栏右半侧（不再横跨到左边）
-      expect(left + 420, '面板右缘 = #slPerm 右缘').toBe(1223);
+      expect(left + 420, '面板右缘 = 触发键右缘').toBe(1223);
       expect(left, '面板左缘必须 > 触发键左缘 − 面板宽 … 即落在发送栏右半侧').toBeGreaterThan(331 + 400);
-      perm.closePermissionPopup();
-      expect(doc.querySelector('.sl-popup.perm-popup'), '关闭后摘掉').toBeNull();
+      body.closePanel();
+      expect(doc.querySelector('.sl-popup.grant-popup'), '关闭后摘掉').toBeNull();
     } finally {
       restoreBox();
     }
@@ -418,21 +426,21 @@ describe('W871 ③ · 档位弹层锚到触发键 #slPerm（视口坐标 + panel
     expect((anchor as Rect).width, '零宽锚点 ⇒ 不会误判为可见').toBe(0);
   });
 
-  it('三个弹层共用同一套落位：档位弹层复用 placeAnchoredPopup，盾牌面板不再另写算式', () => {
+  it('落位只有一套算式：权限面板复用 placeAnchoredPopup，档位模块不再自建弹层', () => {
     expect(src('ui/anchor-popup.ts'), '唯一适配器复用 panelGeom 纯函数').toContain('panelGeom');
-    expect(src('ui/grants/panel/position.ts'), '盾牌面板走同一适配器').toContain('placeAnchoredPopup');
-    expect(src('ui/grants/panel/position.ts'), '盾牌面板不再自己调 panelGeom（没有第二套算式）').not.toContain('panelGeom({');
+    expect(src('ui/grants/panel/position.ts'), '权限面板走同一适配器').toContain('placeAnchoredPopup');
+    expect(src('ui/grants/panel/position.ts'), '权限面板不再自己调 panelGeom（没有第二套算式）').not.toContain('panelGeom({');
+    // W1517：档位弹层已并入唯一的面板 —— 档位模块既不自建弹层、也不自带落位算式。
     const perm = src('statusline/permission.ts');
-    expect(perm, '档位弹层走同一适配器').toContain('placeAnchoredPopup');
-    expect(perm, '锚点 = 触发键 #slPerm').toContain("getElementById('slPerm')");
-    expect(perm, '挂载后现算（panelGeom 要量真实尺寸）').toContain('placePopup()');
-    // 弹层是 fixed + 内联坐标 ⇒ 不再依赖 .sl-popup 基类的固定左边距
-    const permRule = rule(css('permissions.css'), '.sl-popup.perm-popup');
-    expect(permRule).toContain('position: fixed');
-    expect(permRule, 'base 的 bottom/left 必须被 auto 掉（top+bottom 同存会拉伸高度）').toContain('bottom: auto');
-    expect(permRule, 'right 也要归零（否则与 left 打架）').toContain('right: auto');
-    expect(permRule, '窄屏要压得过 responsive 的 .sl-popup{width:auto}').toContain('width: min(420px');
-    // 基类保留左端口径（模型/档位/工作方式三个左端触发键仍然对）
+    expect(perm, '档位模块不再有第二个弹层/第二套落位').not.toContain('placeAnchoredPopup');
+    expect(perm, '档位模块不再持有触发键元素（入口归 ui/grants.ts）').not.toContain("getElementById('slPerm')");
+    // 面板是 fixed + 内联坐标 ⇒ 不再依赖 .sl-popup 基类的固定左边距
+    const grantRule = rule(css('grants.css'), '.sl-popup.grant-popup');
+    expect(grantRule).toContain('position: fixed');
+    expect(grantRule, 'base 的 bottom/left 必须被 auto 掉（top+bottom 同存会拉伸高度）').toContain('bottom: auto');
+    expect(grantRule, 'right 也要归零（否则与 left 打架）').toContain('right: auto');
+    expect(grantRule, '窄屏要压得过 responsive 的 .sl-popup{width:auto}').toContain('width: min(');
+    // 基类保留左端口径（模型/工作方式两个左端触发键仍然对）
     expect(rule(css('statusline.css'), '.sl-popup')).toContain('left: 14px');
   });
 });
