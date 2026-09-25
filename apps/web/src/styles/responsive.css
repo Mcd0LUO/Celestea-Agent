@@ -75,7 +75,8 @@ button,
     min-height: var(--tap-min); min-width: var(--tap-min);
   }
   .sl-effort, .sl-mode { padding: 0 8px; }
-  .sl-grant, .sl-stop { width: var(--tap-min); height: var(--tap-min); }
+  /* W1512：.sl-stop 已并入输入栏的 #btnSend.btn-run（单控件两态），不再有独立停止键。 */
+  .sl-grant { width: var(--tap-min); height: var(--tap-min); }
   .sl-grant svg { width: 14px; height: 14px; }
   /* W847：内联图片入口的触控命中区 ≥ --tap-min。W1463：让位改走**垂直**方向 ——
      左内边距保持贴边（4px），下内边距留出 44px 按钮 + 6px 底距。 */
@@ -185,7 +186,9 @@ button,
   /* ---- 2.3b W1462：胶囊**之外**的贴底信息行（会话名·空闲·tok/s·缓存·步数·轮次·耗时）----
      灰色小字、无背景、无描边；小屏再收一档，并接管 iOS 底部安全区。 */
   #statusbar { padding: 3px 8px calc(5px + var(--safe-b)); gap: 8px; font-size: 10.5px; }
-  #btnSend { min-width: 72px; padding: 0 12px; }
+  /* W1513：#btnSend 是纯图标正方形（--send-btn 见 layout.css），窄屏不再另设宽度 ——
+     只把边长收到触控下限，保持两态几何一致。 */
+  #btnSend { --send-btn: var(--tap-min); }
   /* W847：车道键收成 ~32px 内联图标（文字视觉隐藏、无障碍名保留），不为它牺牲取消键 */
   #btnMode { min-width: 32px; padding: 0 6px; }
   #btnMode .sl-mode-icon { display: block; }

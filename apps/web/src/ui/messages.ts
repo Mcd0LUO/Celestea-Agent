@@ -28,7 +28,11 @@ import type { SessionPane } from './viewctx';
 import { railSync } from './rail';
 import { autoscroll, hideEmptyHint } from './messages/scroll';
 import { buildTruncatedNote, setOmittedCount } from './messages/oversize';
+import { addThinkRetained, thinkOverBudget } from './messages/think-budget';
 import { t } from '../i18n';
+// W1512：预算账本住在 ./messages/think-budget.ts，但公开面仍留在 messages.ts
+// （调用方与测试只认这个入口，与 W867 把 cadence 拆出去时同一取舍）。
+export { THINK_CONTAINER_LIMIT, thinkRetained } from './messages/think-budget';
 
 /**
  * W1485：思考段的渲染上限（字符）。
@@ -55,8 +59,47 @@ import { t } from '../i18n';
  * ★ 为什么**两条路径都钳**（live 与历史恢复）：本仓有一条硬契约 —— 实时流与历史重放
  * 必须产出**逐字相同**的 DOM（W895-R）。若 live 钳而恢复不钳，刷新后同一个思考段会
  * 突然变长，契约就破了。`buildThinkSeg` 是两条路径的唯一构造器，钳在它里面即天然一致。
+ *
+ * W1512：这是**单段**上限。容器总量上限见 ./messages/think-budget.ts —— 段数无界时
+ * 单段上限挡不住「600 段 × 64 K」的全容器布局代价（实测展开态 104.8 ms/tick）。
  */
 export const THINK_RENDER_LIMIT = 65536;
+
+/**
+ * W1512：把容器内**最旧的**思考段回收，直到总量回到预算内。
+ *
+ * 只动正文与折叠类，**不删节点**（FRONTEND-RULES 铁律 4：折叠只切 class，不重建
+ * DOM），因此不会产生空白帧，也不破坏 rail 的文档坐标（列还在，只是变矮）。
+ * 账本与上限在 ./messages/think-budget.ts。
+ */
+/**
+ * W1512：把**刚挂载**的一个思考段计入容器预算，并立刻守一次预算。
+ *
+ * 给历史恢复路径用（restore.ts 同步渲染最近 200 条；若只守 live 路径，刷新后同一个
+ * 会话会突然变重，W895-R 的「实时与重放逐字一致」也会破）。live 路径走 appendThinking
+ * 自己的记账，不调本函数。
+ */
+export function noteRestoredThinking(container: HTMLElement, seg: ThinkSegDom): void {
+  addThinkRetained(container, seg.text.length);
+  enforceThinkBudget(container);
+}
+
+function enforceThinkBudget(container: HTMLElement): void {
+  if (!thinkOverBudget(container)) return;
+  const segs = container.querySelectorAll<HTMLElement>('.msg.think-seg');
+  for (const msg of segs) {
+    if (!thinkOverBudget(container)) break;
+    const parts = thinkFolds.get(msg.parentElement ?? msg);
+    if (!parts || parts.text === '') continue;
+    // 从最旧的开始：回收 = 折起 + 释放正文（内容进 dropped，提示行如实报数）。
+    const released = parts.text.length;
+    parts.dropped += released;
+    parts.text = '';
+    addThinkRetained(container, -released);
+    setThinkCollapsed(parts, true);
+    paintThinkBody(parts);
+  }
+}
 
 // ---- thinking（弱化独立段，按事件顺序出现，不再聚合进气泡） ----------------------
 
@@ -169,7 +212,7 @@ function paintThinkBody(seg: ThinkSegDom, emptyText = ''): void {
  * 而后半段本来就是被钳掉的部分。保留前缀也让「已省略 N 字符」这个数随流式单调增长，
  * 而不是先显示 64K、超限后又跳回 0。
  */
-function retainThinking(seg: ThinkSegDom, delta: string): void {
+function retainThinking(seg: ThinkSegDom, delta: string, container: HTMLElement): void {
   const room = THINK_RENDER_LIMIT - seg.text.length;
   if (room <= 0) {
     seg.dropped += delta.length;
@@ -177,10 +220,12 @@ function retainThinking(seg: ThinkSegDom, delta: string): void {
   }
   if (delta.length <= room) {
     seg.text += delta;
+    addThinkRetained(container, delta.length);
     return;
   }
   seg.text += delta.slice(0, room);
   seg.dropped += delta.length - room;
+  addThinkRetained(container, room);
 }
 
 export function buildThinkSeg(
@@ -212,6 +257,11 @@ export function buildThinkSeg(
   const kept = initial.length > THINK_RENDER_LIMIT ? initial.slice(0, THINK_RENDER_LIMIT) : initial;
   const seg: ThinkSegDom = { root, msg, head: cap, body, foldMark, text: kept, dropped: initial.length - kept.length };
   thinkFolds.set(root, seg);
+  // W1512：构造路径不在这里记账 —— 本函数只造节点，容器由调用方 append，此刻还拿不到
+  // 稳定的容器键。两条挂载路径各自记账并各守一次预算：
+  //   · live：appendThinking 用 ctx.el 记账 + enforceThinkBudget(ctx.el)；
+  //   · 历史恢复：restore.ts 挂到 container 后调 noteRestoredThinking(container, seg)。
+  // 若只守 live，刷新后的同一会话会突然变重（W895-R 的逐字一致也会破）。
   paintThinkBody(seg);
   setThinkCollapsed(seg, opts.collapsed !== false);
   const toggle = (): void => {
@@ -308,7 +358,10 @@ export function appendThinking(ctx: SessionPane, delta: string): void {
     // （与上面 foldThinkSeg 同一手法）。
     const parts = thinkFolds.get(seg.root);
     if (parts) {
-      retainThinking(parts, delta || '');
+      retainThinking(parts, delta || '', ctx.el);
+      // W1512：单段钳位之后还要守**容器总量** —— 段数无界，600 个满段 = 37.5 MB
+      // 展开态文本，每 tick 一次全容器布局（实测 105 ms）。超预算就从最旧的段回收。
+      enforceThinkBudget(ctx.el);
       paintThinkBody(parts, t('chat.think.thinking'));
     }
   }

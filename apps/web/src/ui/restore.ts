@@ -26,6 +26,7 @@ import {
   buildThinkSeg,
   ensureAssistant,
   finalizeAssistant,
+  noteRestoredThinking,
   renderEmptyHint,
   renderInboxMessage,
   type MsgKind,
@@ -182,7 +183,11 @@ function renderOne(
  * 历史恢复 = 静态内容，永远用默认态（collapsed: true），不随 live 流式状态变化。
  */
 function renderThinkingHistory(content: string, container: HTMLElement): void {
-  container.appendChild(buildThinkSeg({ text: content, collapsed: true }).root);
+  const seg = buildThinkSeg({ text: content, collapsed: true });
+  container.appendChild(seg.root);
+  // W1512：历史恢复与 live 走**同一个容器预算**。若只守 live，刷新后同一个会话会突然
+  // 变重（同步渲染 200 条），W895-R 的「实时与重放逐字一致」也随之破。
+  noteRestoredThinking(container, seg);
 }
 
 function appendNote(ctx: SessionPane, text: string): void {

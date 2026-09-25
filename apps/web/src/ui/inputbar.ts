@@ -32,6 +32,7 @@ import {
 import { createAttachTray, refreshAttachmentTray } from './attach-tray';
 import { initQuoteTray } from './quote/tray'; // F1：选段提及的待发引用 chip 收纳区
 import { t } from '../i18n';
+import { paintModeButton, paintSendButton } from './inputbar/button-labels';
 import { interceptKey as interceptCommandKey } from './commands'; // A3：命令补全框按键拦截
 export { refreshAttachmentTray }; // 既有调用方（chat.ts / send.ts / 测试）不变
 
@@ -69,10 +70,11 @@ function placeholderWorker(): string {
 let bar: HTMLElement | null = null;
 let inputEl: HTMLTextAreaElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
-// W846：输入栏不再有独立的「取消」按钮 —— 取消由 statusline 的 #slStop 单点承担
-//（两者本就共用 chat.ts requestCancel），输入栏因此恒为 [图片][发送]，运行态几何不变。
-let stopBtn: HTMLButtonElement | null = null;
+// W1512：#btnSend 是**发送/终止两态**的同一控件（照 DSH）。终止不再是 statusline 上
+// 的独立 #slStop —— 那个位置在窄屏会被挤出视口（用户报障），且与 statusline 抢宽度。
 let modeBtn: HTMLButtonElement | null = null;
+/** 当前聚焦会话是否运行中（两态按钮的显隐真源）。 */
+let busy = false;
 
 /** 当前提交车道（运行中生效；空闲发送一律开新轮）。默认插话（= W514 行为）。 */
 let submitMode: SubmitMode = 'steer';
@@ -95,40 +97,13 @@ export function toggleSubmitMode(): void {
 
 /** 车道相关 UI 重绘（切换按钮 / 占位符 / 发送按钮文案）——只改文案与 class。 */
 function renderSubmitUi(): void {
-  if (modeBtn) {
-    // W847：≤640 只显示内联图标，文字落在 .sl-mode-label（视觉隐藏、无障碍名保留）。
-    // 旧夹具没有 label span 时回退 textContent，行为与几何不变。
-    const label = modeBtn.querySelector<HTMLElement>('.sl-mode-label');
-    if (label) label.textContent = submitMode === 'steer' ? t('chat.input.interject') : t('chat.input.queue');
-    else modeBtn.textContent = submitMode === 'steer' ? t('chat.input.interject') : t('chat.input.queue');
-    modeBtn.title =
-      submitMode === 'steer'
-        ? t('chat.input.modeSteerTitle')
-        : t('chat.input.modeQueueTitle');
-    modeBtn.classList.toggle('queue', submitMode === 'queue');
-  }
+  if (modeBtn) paintModeButton(modeBtn, submitMode);
   if (inputEl && inputMode === 'interject') {
     inputEl.placeholder = submitMode === 'steer' ? placeholderSteer() : placeholderQueue();
   }
-  if (sendBtn) {
-    // W866：worker 视图也走同一条「发送」——按钮不再进入禁用态（禁用只属于
-    // 连协议都不支持的旧服务，那种情况由发送路径自己回滚并说明）。
-    sendBtn.disabled = false;
-    sendBtn.textContent =
-      inputMode === 'worker'
-        ? t('chat.input.send')
-        : inputMode === 'interject'
-          ? (submitMode === 'steer' ? t('chat.input.interject') : t('chat.input.queue'))
-          : t('chat.input.send');
-    sendBtn.title =
-      inputMode === 'worker'
-        ? t('chat.input.sendWorkerTitle')
-        : inputMode === 'interject'
-          ? submitMode === 'steer'
-            ? t('chat.input.steerTitle')
-            : t('chat.input.queueTitle')
-          : t('chat.input.sendTitle');
-  }
+  // W1512：发送/终止是同一控件的两态，渲染统一走 paintSendButton（W866 的
+  // 「按钮不禁用」语义包含在里面）。
+  if (sendBtn) paintSendButton(sendBtn, busy, inputMode, submitMode);
 }
 
 export function initInputBar(h: InputBarHandlers): void {
@@ -136,9 +111,6 @@ export function initInputBar(h: InputBarHandlers): void {
   inputEl = input;
   bar = need<HTMLElement>('#inputbar');
   sendBtn = need<HTMLButtonElement>('#btnSend');
-  // W302：statusline 上的「停止」方形按钮（= 唯一取消入口；W846 起不再有 #btnCancel）
-  const stopEl = need<HTMLButtonElement>('#slStop');
-  stopBtn = stopEl;
   modeBtn = document.getElementById('btnMode') as HTMLButtonElement | null;
 
   const autoGrow = () => {
@@ -146,13 +118,17 @@ export function initInputBar(h: InputBarHandlers): void {
     input.style.height = Math.min(input.scrollHeight, MAX_HEIGHT) + 'px';
   };
 
-  sendBtn.addEventListener('click', () => h.send(input.value, submitMode));
-  modeBtn?.addEventListener('click', () => toggleSubmitMode());
-  stopEl.addEventListener('click', () => {
-    if (stopEl.disabled) return;
-    stopEl.disabled = true;
-    h.cancel();
+  // W1512：一个按钮，两个动作。运行中点 = 终止（沿用 #slStop 的单点语义与
+  // 「点一次即禁用、防重复取消」的纪律）；空闲点 = 发送。共用 chat.ts requestCancel。
+  sendBtn.addEventListener('click', () => {
+    if (busy) {
+      sendBtn!.disabled = true;
+      h.cancel();
+      return;
+    }
+    h.send(input.value, submitMode);
   });
+  modeBtn?.addEventListener('click', () => toggleSubmitMode());
   input.addEventListener('keydown', (e) => {
     if (interceptCommandKey(e)) return; // A3：补全框先消费 ↑↓/Enter/Tab/Esc
     if (e.key !== 'Enter' || e.shiftKey) return;
@@ -197,11 +173,9 @@ export function setInputValue(v: string): void {
  * W514：**发送按钮不随 busy 禁用**（运行中发送走插话/排队路径）。
  * W846：取消按钮只剩 statusline 的 #slStop（#btnCancel 已移除）。
  */
-export function setBusy(busy: boolean): void {
-  if (stopBtn) {
-    stopBtn.classList.toggle('hidden', !busy);
-    stopBtn.disabled = !busy;
-  }
+export function setBusy(next: boolean): void {
+  busy = next;
+  renderSubmitUi();
 }
 
 /** 输入栏模式（空闲 / 插话·排队 / worker）——只切 class 与文案，不重建 DOM。 */

@@ -114,13 +114,14 @@ describe("W846 · 结构真源（真实 index.html）", () => {
     const html = readFileSync(join(WEB, "index.html"), "utf8");
     doc.body.innerHTML = html.slice(html.indexOf("<body>") + 6, html.indexOf("</body>"));
     const mode = doc.getElementById("btnMode");
-    const stop = doc.getElementById("slStop");
     expect(mode, "index.html 必须仍有 #btnMode").not.toBeNull();
     expect(mode?.closest("#statusline"), "#btnMode 必须落在 statusline 里").not.toBeNull();
     expect(mode?.closest(".input-side"), "#btnMode 不得再在输入栏里（会抢 #input 宽度）").toBeNull();
-    expect(stop?.closest("#statusline")).not.toBeNull();
-    expect(stop?.closest(".input-side")).toBeNull();
-    expect(doc.getElementById("btnCancel"), "取消入口已收敛到 #slStop").toBeNull();
+    // W1512：终止不再是 statusline 上的独立键（窄屏会被挤出视口），而是输入栏
+    // #btnSend 的运行态；取消入口仍然是单点（chat.ts requestCancel）。
+    expect(doc.getElementById("slStop"), "终止键已并入 #btnSend 两态").toBeNull();
+    expect(doc.getElementById("btnSend")?.closest(".input-side")).not.toBeNull();
+    expect(doc.getElementById("btnCancel"), "取消入口仍只有单点").toBeNull();
   });
 });
 
@@ -168,10 +169,12 @@ describe("W846 · 发送前后结构不变量（真实模块）", () => {
     expect(sideIds()).toEqual(before); // 结构逐节点不变 ⇒ #input 宽度不因子节点变化
     expect((doc.getElementById("btnMode") as ElLike).classList.contains("hidden")).toBe(false);
     expect((doc.getElementById("btnMode") as ElLike).closest(".input-side")).toBeNull();
-    expect((doc.getElementById("slStop") as ElLike).classList.contains("hidden")).toBe(false);
+    // W1512：运行态 = 同一控件的另一个状态（.running），节点数不变、恒可见。
+    expect((doc.getElementById("btnSend") as ElLike).classList.contains("running")).toBe(true);
     bar.setBusy(false);
     bar.setInputMode("idle");
     expect(sideIds()).toEqual(before);
+    expect((doc.getElementById("btnSend") as ElLike).classList.contains("running")).toBe(false);
   });
 });
 

@@ -132,22 +132,44 @@
   max-width: 46ch;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* W788：会话工作方式徽标复用档位胶囊的几何（同一行、同一视觉族） */
-.sl-effort,
-.sl-mode {
+/* W788：思考档位徽标复用档位胶囊的几何（同一行、同一视觉族）。
+   W1513：**工作方式已脱离这一族** —— 它改成风格化图标（见下），不再与档位共用文字胶囊。 */
+.sl-effort {
   color: var(--c-text-2);
-  /* W1297：扁平化 —— 去掉胶囊描边。档位/工作方式只以文字 + 悬停底色区分，
+  /* W1297：扁平化 —— 去掉胶囊描边。档位只以文字 + 悬停底色区分，
      不再给 composer 表面增加第二层「小框」。 */
   border-radius: var(--r-badge);
   padding: 0 8px;
   font-size: 11px;
   height: 28px; line-height: 26px;
 }
-.sl-effort:empty, .sl-mode:empty { display: none; }
-/* W788：执行模式给一点强调（标准模式保持默认灰阶） */
+.sl-effort:empty { display: none; }
+
+/* ============================================================================
+ * W1513：会话工作方式 = **风格化图标**（用户要求「改成风格化图标」）
+ *   标准 standard  → 清单图标（点 + 线）：逐步调用工具
+ *   执行 execution → 终端提示符 >_：折叠进 run_code 程序
+ *   两枚图标都在标记里、由 .exec 决定显哪一枚（切换只改 class，不重建 DOM）。
+ *   语义文本在 .sr-only：不占位、仍在可访问性树里（读屏器与既有断言都保留）。
+ *   几何与 .sl-effort 同高（28px），行高不因本项变化。
+ * ========================================================================== */
+.sl-mode {
+  color: var(--c-text-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border-radius: var(--r-badge);
+}
+/* 两枚图标互斥显示：默认标准，.exec 时换成执行。 */
+.sl-mode .sl-mode-ico { display: block; }
+.sl-mode .sl-mode-ico-exec { display: none; }
+.sl-mode.exec .sl-mode-ico-standard { display: none; }
+.sl-mode.exec .sl-mode-ico-exec { display: block; }
+/* W1513：执行模式的强调**只用颜色**，不再给填充底 —— 用户要的是「风格化图标」，
+   而填充底正是他抱怨的那个「圆形胶囊」。两态因此靠「图标字形 + 色阶」区分
+   （标准 = 次级灰 + 清单图标；执行 = 主色 + 终端图标），与 W1297 的扁平化同向。
+   悬停仍有底色（那是交互反馈，不是状态形状）。 */
 .sl-mode.exec {
   color: var(--c-text-1);
-  background: var(--c-accent-soft);
 }
 .sl-model:hover, .sl-effort:hover, .sl-mode:hover {
   color: var(--c-text-1);
@@ -372,36 +394,6 @@
 }
 .sl-mode-btn.hidden { display: none; }
 
-/* ============================================================================
- * W302：statusline 第 1 行右端的「停止」方形按钮
- *   仅运行中可见（.hidden 全局隐藏类，由 ui/inputbar.setBusy 同步），
- *   点击 = 唯一取消入口 chat.ts requestCancel（W846 起输入栏的 #btnCancel 已移除）。
- *   显隐只切 class，不触碰消息区 / 背景视图（FRONTEND-RULES 铁律 5）。
- * ============================================================================ */
-.sl-stop {
-  flex: 0 0 auto;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: var(--r-sm);
-  color: var(--c-text-2);
-  cursor: pointer;
-  line-height: 0;
-}
-.sl-stop svg { display: block; }
-.sl-stop:hover {
-  background: var(--c-accent-soft);
-  color: var(--c-text-1);
-}
-.sl-stop:focus-visible {
-  outline: 1px solid var(--c-accent-ring);
-  outline-offset: 1px;
-}
-.sl-stop:disabled {
-  opacity: .45;
-  cursor: default;
-  background: transparent;
-  color: var(--c-text-2);
-}
+/* W1512：原 .sl-stop（statusline 右端的独立停止键）已移除 —— 终止并入输入栏的
+ * #btnSend.btn-run 运行态（照 DSH 的单控件两态）。移除的理由就是它自己的缺陷：
+ * statusline 右端在窄屏会被模型名/用量/车道键挤出视口，用户看不到终止入口。 */

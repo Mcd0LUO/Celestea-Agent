@@ -60,8 +60,10 @@ describe('W1297 · composer 扁平化：内层不再有描边', () => {
     expect(decls, '#input 不得再有独立底色').toMatch(/background:\s*transparent/);
   });
 
-  it('statusline 的档位/工作方式/车道/停止键：无描边', () => {
-    for (const sel of ['.sl-effort,\n.sl-mode', '.sl-mode-btn', '.sl-stop']) {
+  it('statusline 的档位/工作方式/车道：无描边（停止键 W1512 已移入输入栏）', () => {
+    // W1513：工作方式已从「文字胶囊」改成风格化图标 —— 它与 .sl-effort 不再共用规则，
+    // 故各自断言（.sl-mode 只声明几何，无描边这一点必须仍然成立）。
+    for (const sel of ['.sl-effort', '.sl-mode', '.sl-mode-btn']) {
       const decls = rule(css('statusline.css'), sel);
       expect(hasVisibleBorder(decls), sel + ' 不得再有描边（扁平化）').toBe(false);
     }

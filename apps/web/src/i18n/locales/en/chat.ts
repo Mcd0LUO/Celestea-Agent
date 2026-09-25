@@ -236,6 +236,9 @@ export const chat = {
   'chat.input.steerTitle': 'Interject (Enter): inject into the running turn, delivered at the next step',
   'chat.input.queueTitle': 'Queue (Enter): delivered as the next turn after this one ends',
   'chat.input.sendTitle': 'Send (Enter)',
+  // W1512: the running state of the merged send/stop control (one control, as DSH).
+  'chat.input.stop': 'Stop',
+  'chat.input.stopTitle': 'Stop this turn',
   'chat.input.attachTitle': 'Add attachments (images / text files; paste, drag or choose)',
   'chat.input.attachAria': 'Add attachments',
   'chat.input.rejectedCount': '{n} files do not meet the requirements and are marked red in the pending area',

@@ -27,6 +27,8 @@ interface ElLike {
   innerHTML: string;
   hidden: boolean;
   disabled: boolean;
+  /** W1513：按钮去掉可见文字后，语义改由 title / aria-label 承载，故进夹具类型。 */
+  title: string;
   classList: ClassListLike;
   style: Record<string, unknown>;
   children: ArrayLike<ElLike>;
@@ -115,14 +117,23 @@ afterEach(() => {
 });
 
 describe("W847 · ② 右端集群 .sl-end（DOM 结构真源）", () => {
-  it("#slStop 在 .sl-end 内，且 .sl-end 是第 1 行最后一个 flex 子节点；.sl-spacer 已移除", () => {
+  it("#btnMode / #slGrant / #slHint 都在 .sl-end 内；.sl-spacer 已移除", () => {
     doc.body.innerHTML = realBody();
-    const stop = doc.getElementById("slStop") as ElLike;
-    expect(stop.closest(".sl-end"), "#slStop 必须落在 .sl-end 内").not.toBeNull();
     expect((doc.getElementById("btnMode") as ElLike).closest(".sl-end")).not.toBeNull();
     expect((doc.getElementById("slGrant") as ElLike).closest(".sl-end")).not.toBeNull();
     expect((doc.getElementById("slHint") as ElLike).closest(".sl-end")).not.toBeNull();
     expect(indexHtml()).not.toContain('class="sl-spacer"');
+  });
+
+  it("W1512：终止键**不再**挂在 statusline —— 它已并入输入栏的 #btnSend（两态）", () => {
+    // 这正是用户报障的修法：statusline 右端在窄屏会被模型名/用量/车道键挤出视口，
+    // 于是「终止」看不见。并入输入栏后它恒在可见位置，且不再与 statusline 抢宽度。
+    doc.body.innerHTML = realBody();
+    expect(doc.getElementById("slStop"), "statusline 上不应再有独立终止键").toBeNull();
+    const send = doc.getElementById("btnSend") as ElLike;
+    expect(send, "#btnSend 必须存在（发送/终止两态）").not.toBeNull();
+    expect(send.closest(".input-side"), "两态按钮在输入栏内").not.toBeNull();
+    expect(send.closest("#statusline"), "两态按钮不再属于 statusline").toBeNull();
   });
 });
 
@@ -200,12 +211,18 @@ describe("W847 · ① 真实模块行为（jsdom）", () => {
     expect(btn.querySelector("svg"), "内联 SVG 回形针").not.toBeNull();
     expect((btn.getAttribute("aria-label") || "").length).toBeGreaterThan(0);
 
-    // 取消键（#slStop）语义不变：运行态出现、空闲隐藏
-    const stop = doc.getElementById("slStop") as ElLike;
+    // W1512：终止并入 #btnSend 的运行态 —— 语义不变（运行中才是终止），
+    // 但形态从「另一个隐藏键」变成「同一控件的另一个状态」，因此**恒可见**。
+    // W1513：按钮只剩图标，语义改由 title / aria-label 承载（不再有可见文字）。
+    const send = doc.getElementById("btnSend") as ElLike;
     bar.setBusy(true);
-    expect(stop.classList.contains("hidden")).toBe(false);
+    expect(send.classList.contains("running"), "运行中 → 终止态").toBe(true);
+    expect(send.classList.contains("hidden"), "终止态不再靠 hidden 切换（恒可见）").toBe(false);
+    expect(send.title || "", "运行态语义 = 终止").toContain("终止");
+    expect(send.getAttribute("aria-label") || "", "无障碍名同步为终止").toContain("终止");
     bar.setBusy(false);
-    expect(stop.classList.contains("hidden")).toBe(true);
+    expect(send.classList.contains("running"), "空闲 → 发送态").toBe(false);
+    expect(send.title || "", "空闲态语义 = 发送").toContain("发送");
 
     // 车道键文案落在 label（图标按钮仍保留文本无障碍名）
     bar.setSubmitMode("queue");

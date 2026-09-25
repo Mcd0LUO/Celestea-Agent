@@ -236,6 +236,9 @@ export const chat = {
   'chat.input.steerTitle': '插话（Enter）：注入运行中的轮次，下一步送达',
   'chat.input.queueTitle': '排队（Enter）：本轮结束后作为下一回合送达',
   'chat.input.sendTitle': '发送（Enter）',
+  // W1512：发送/终止两态按钮的运行态文案（同一控件，照 DSH）。
+  'chat.input.stop': '终止',
+  'chat.input.stopTitle': '终止本轮生成',
   'chat.input.attachTitle': '添加附件（图片 / 文本文件，可粘贴 / 拖拽 / 选择）',
   'chat.input.attachAria': '添加附件',
   'chat.input.rejectedCount': '有 {n} 个文件不符合要求，已在待发区标红',

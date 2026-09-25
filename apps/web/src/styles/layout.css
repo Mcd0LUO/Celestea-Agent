@@ -294,6 +294,40 @@ body.resizing { cursor: col-resize; user-select: none; }
   display: flex; flex-direction: row; align-items: flex-end; gap: 8px;
   flex: 0 0 auto;
 }
-#btnSend { min-width: 88px; padding: 9px 14px; }
+/* W1513：发送键是**纯图标**（用户要求「文字去掉只留按钮」）—— 正方形槽位。
+   边长用 --send-btn 单一真源，两态共用 ⇒ 切换时几何逐像素一致（W847 不变量延续）。 */
+#btnSend {
+  --send-btn: 44px;
+  width: var(--send-btn); min-width: var(--send-btn); height: var(--send-btn);
+  padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  /* W1513：圆形主按钮（对齐用户给的 DSH 参考图）—— 正方形 + 50% 圆角。 */
+  border-radius: 50%;
+}
+
+/* ============================================================================
+ * W1512：发送/终止 = 同一控件的两态（照 DSH 的 composer 主按钮）
+ *   空闲  [btn-run 无 .running]  → ↑ 发送
+ *   运行中[btn-run.running]      → ■ 终止
+ *   两态**同一个正方形槽位**、同一套 padding/border ⇒ 切换时 .input-side 宽度
+ *   逐像素不变（W847 宽度不变量的延续），#input 不会被挤窄。
+ *   为什么合并：终止键原先在 statusline 右端，窄屏被模型名/用量/车道键挤出视口
+ *   （用户报障）；放进输入栏后它恒在可见位置，且不再与 statusline 抢宽度。
+ *   W1513：文字（.btn-run-label）已彻底移除，两态都只剩图标 —— 语义改由
+ *   title / aria-label 承载（paintSendButton 按当前语言写入，见 ui/inputbar）。
+ * ========================================================================== */
+#btnSend.btn-run {
+  position: relative;
+}
+#btnSend.btn-run .ico-send,
+#btnSend.btn-run .ico-stop { display: none; }
+/* 空闲态：↑ 发送 */
+#btnSend.btn-run:not(.running) .ico-send { display: block; }
+/* 运行态：■ 终止 */
+#btnSend.btn-run.running .ico-stop { display: block; }
+#btnSend.btn-run.running {
+  background: var(--c-warn, #b45309);
+  border-color: var(--c-warn, #b45309);
+}
 
 /* 响应式：窄屏默认收起由 ui/sidebar.ts 依据 localStorage/视口宽度处理 */

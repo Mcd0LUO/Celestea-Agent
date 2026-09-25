@@ -45,13 +45,47 @@ export async function modeSwitchSupported(force = false): Promise<boolean> {
   return capState === 'on';
 }
 
-/** 徽标渲染（只改文本 / class / 标题，不重建 DOM：铁律 1/2/5）。 */
+/**
+ * W1513：工作方式徽标的**两枚风格化图标**（内联 SVG 常量，无用户输入参与拼接，
+ * innerHTML 在这里没有注入面 —— 与 W765 的 THINK_CHEVRON_SVG 同一纪律）。
+ *
+ *   标准（standard）  = 逐步执行：点 + 线的清单，读作「一步一步调用工具」
+ *   执行（execution） = 程序化批量：终端提示符 >_，读作「折叠进 run_code 程序」
+ *
+ * 尺寸/线宽对齐既有图标族（16 视图 + stroke 1.4 + 圆头 + currentColor），
+ * 因此颜色跟随 .sl-mode 的 color，两态只换图标、不换几何。
+ */
+const MODE_ICON_STANDARD =
+  '<svg class="sl-mode-ico sl-mode-ico-standard" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
+  '<path d="M2.4 4.2h.01M5.4 4.2h8.2M2.4 8h.01M5.4 8h8.2M2.4 11.8h.01M5.4 11.8h8.2" ' +
+  'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>';
+const MODE_ICON_EXECUTION =
+  '<svg class="sl-mode-ico sl-mode-ico-exec" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
+  '<path d="M3 4.6 6.4 8 3 11.4M8.6 11.6h4.4" ' +
+  'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+
+/**
+ * 徽标渲染（只改 class / 文本 / 标题，不重建 DOM：铁律 1/2/5）。
+ *
+ * W1513：可见内容从「文字 + 圆形胶囊」改为**图标**（用户要求）。图标骨架只在第一次
+ * 渲染时建一次（此后每帧只切 class），语义文本移到 .sr-only —— 它不占位、仍在可访问
+ * 性树里，因此 textContent 与无障碍名都保留（既有断言与读屏器都不受影响）。
+ */
 export function renderModeBadge(node: HTMLElement, mode: unknown): void {
   const text = modeLabel(mode);
-  node.textContent = text;
+  const label = node.querySelector<HTMLElement>('.sl-mode-sr');
+  if (label === null) {
+    // 首次渲染：图标 + 视觉隐藏的语义文本（只建一次，之后不再动结构）。
+    node.innerHTML = MODE_ICON_STANDARD + MODE_ICON_EXECUTION + '<span class="sl-mode-sr sr-only"></span>';
+  }
+  const sr = node.querySelector<HTMLElement>('.sl-mode-sr');
+  if (sr !== null) sr.textContent = text;
   node.classList.toggle('hidden', text === '');
   node.classList.toggle('exec', mode === 'execution');
   node.title = text === '' ? '' : t('statusline.mode.badgeTitle', { mode: text });
+  // 无障碍名跟着两态走（图标本身 aria-hidden，语义只在 title + sr-only 上）。
+  if (text === '') node.removeAttribute('aria-label');
+  else node.setAttribute('aria-label', text);
 }
 
 // ---- 切换请求（三态分类） ------------------------------------------------------

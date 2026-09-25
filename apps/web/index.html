@@ -109,10 +109,6 @@
                 <svg class="sl-mode-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M2.5 5.5h10M10 3l2.5 2.5L10 8M13.5 10.5h-10M6 8l-2.5 2.5L6 13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                 <span class="sl-mode-label">插话</span>
               </button>
-              <!-- W302：运行中显示的正方形停止按钮（取消当前轮次；显隐真源 = ui/inputbar.setBusy） -->
-              <button id="slStop" class="sl-stop hidden" type="button" title="停止本轮生成" aria-label="停止本轮生成">
-                <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="currentColor"></rect></svg>
-              </button>
               <button id="slGoal" class="sl-goal hidden" type="button" title="当前目标" aria-label="当前目标">
                 <span class="sl-goal-badge" id="slGoalBadge"></span>
               </button>
@@ -132,11 +128,19 @@
           <div class="input-box">
             <textarea id="input" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
           </div>
-          <!-- W846：运行态不再向输入栏追加按钮 —— 车道切换（#btnMode）已移到 statusline，
-               取消由 statusline 的 #slStop 单点承担（两者本就共用 chat.ts requestCancel）。
-               W847：.input-side 恒为 [发送]，#input 宽度逐像素不变。 -->
+          <!-- W1512：发送与终止是**同一个控件的两种状态**（照 DSH）：空闲 = 发送（↑），
+               运行中 = 终止（■）。为什么合并：原先终止键挂在 statusline 右端，窄屏下被
+               模型名/用量/车道键挤出视口（用户报障）。放进输入栏后它**恒在可见位置**，
+               且与发送键共用同一块槽位 ⇒ 两态几何逐像素一致，不推挤 #input。
+               W1513：**只留图标、去掉文字**（用户要求「文字去掉只留按钮」）—— 两态都是
+               纯图标，槽位收成正方形（--send-btn，见 layout.css）。无障碍名仍在
+               title / aria-label 上（由 ui/inputbar 的 paintSendButton 按语言写入）。
+               显隐真源仍是 ui/inputbar.setBusy；Enter 仍可插话（按钮只负责终止）。 -->
           <div class="input-side">
-            <button id="btnSend" class="btn btn-accent">发送</button>
+            <button id="btnSend" class="btn btn-accent btn-run" type="button" title="发送（Enter）" aria-label="发送">
+              <svg class="ico-send" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 13.2V3.2M8 3.2 3.4 7.8M8 3.2l4.6 4.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              <svg class="ico-stop" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3.6" y="3.6" width="8.8" height="8.8" rx="1.6" fill="currentColor"></rect></svg>
+            </button>
           </div>
         </div>
         </section>

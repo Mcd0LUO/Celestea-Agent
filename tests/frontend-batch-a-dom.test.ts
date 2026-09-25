@@ -94,18 +94,19 @@ const HTML =
   '<button class="sl-mode hidden" id="slMode"></button><span class="sl-spacer"></span>' +
   '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-badge" id="slGrantBadge"></span><span class="sl-grant-dot" id="slGrantDot"></span></button>' +
   '<button id="btnMode" class="sl-mode-btn hidden" type="button">插话</button>' +
-  '<button id="slStop" class="sl-stop hidden"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9"></rect></svg></button>' +
+  // W1512：终止不再是 statusline 上的独立键 —— 已并入 #btnSend 的两态。
   '<span class="sl-hint" id="slHint"></span></div>' +
   '<div class="sl-row sl-row-sub"><div id="sessionBar" class="session-bar"></div>' +
   '<span class="sl-tps" id="slTps">— tok/s</span><span class="sl-sep">·</span>' +
   '<span class="sl-cache" id="slCache">缓存 —</span><span class="sl-sep">·</span><span class="sl-steps" id="slSteps">— 步</span></div></div>' +
   '<footer id="statusbar"><span class="dot" id="statusDot"></span><span id="statusText"></span>' +
   '<span id="statusTurn"></span><span id="statusStep"></span><span id="statusTime"></span></footer>' +
-  // W846：运行态不再向 .input-side 追加按钮 —— #btnMode 已移入 .sl-row-main，
-  // 取消由 #slStop 单点承担（输入栏恒为 [图片][发送]，两态宽度逐像素一致）。
+  // W846：运行态不再向 .input-side 追加按钮 —— #btnMode 已移入 .sl-row-main。
+  // W1512：发送/终止 = #btnSend 的两态（同一 88px 槽位，宽度逐像素一致）。
   '<div id="inputbar"><div class="input-box"><textarea id="input" rows="2"></textarea></div>' +
   '<div class="input-side">' +
-  '<button id="btnSend" class="btn btn-accent">发送</button></div></div></main></div></div>';
+  '<button id="btnSend" class="btn btn-accent btn-run" type="button">' +
+  '<span class="btn-run-label" id="btnSendLabel">发送</span></button></div></div></main></div></div>';
 
 /** className 取值：SVG 元素的 className 是 SVGAnimatedString（不是字符串）。 */
 function clsOf(el: ElLike): string {
@@ -116,8 +117,9 @@ function clsOf(el: ElLike): string {
 }
 
 /** 运行态**只切 class** 时会被换掉的 class（状态标记，不是结构）：
- *  .hidden（按钮显隐）/ .interject / .readonly（ui/inputbar.setInputMode 写在 #inputbar 上）。 */
-const STATE_CLASSES = new Set(["hidden", "interject", "readonly"]);
+ *  .hidden（按钮显隐）/ .interject / .readonly（ui/inputbar.setInputMode 写在 #inputbar 上）
+ *  / .running（W1512：#btnSend 的发送↔终止两态 —— 正是「同一控件换状态」的本体）。 */
+const STATE_CLASSES = new Set(["hidden", "interject", "readonly", "running"]);
 
 /** DOM 结构签名（忽略状态 class）——用于断言「只切 class，不改结构」。 */
 function skeleton(el: ElLike | null): string {
@@ -273,14 +275,17 @@ describe("W789 · 运行态 composer 结构不变量（8）", () => {
     const sl = doc.getElementById("statusline") as ElLike;
     const ib = doc.getElementById("inputbar") as ElLike;
     const before = { sl: skeleton(sl), ib: skeleton(ib), slKids: sl.childElementCount, ibKids: ib.childElementCount };
-    const hiddenBefore = ["slStop", "btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
-    expect(hiddenBefore).toEqual([true, true]); // 空闲：停止键与车道键都隐藏
+    const hiddenBefore = ["btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
+    expect(hiddenBefore).toEqual([true]); // 空闲：车道键隐藏
+    // W1512：终止键不再是 statusline 上的独立 #slStop，而是 #btnSend 的运行态。
+    expect(doc.getElementById("slStop"), "终止键已并入 #btnSend").toBeNull();
 
     bar.setBusy(true);
     bar.setInputMode("interject");
 
-    const hiddenAfter = ["slStop", "btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
-    expect(hiddenAfter).toEqual([false, false]); // 运行：停止键与车道键出现（都不在 .input-side）
+    const hiddenAfter = ["btnMode"].map((id) => doc.getElementById(id)?.classList.contains("hidden"));
+    expect(hiddenAfter).toEqual([false]); // 运行：车道键出现（不在 .input-side）
+    expect((doc.getElementById("btnSend") as ElLike).classList.contains("running")).toBe(true);
     // 出现按钮 ≠ 改动结构：DOM 骨架与子节点数完全一致（几何恒定的必要条件）
     expect(skeleton(sl)).toBe(before.sl);
     expect(skeleton(ib)).toBe(before.ib);
@@ -293,10 +298,10 @@ describe("W789 · 运行态 composer 结构不变量（8）", () => {
     expect(["btnSend"]).toEqual(Array.from(side.children).map((c) => c.id));
     const box = ib.querySelector(".input-box") as ElLike;
     expect(box.querySelector("#btnAttach")).not.toBeNull();
-    // 运行态出现的两个控制都在 statusline 第 1 行：车道键 + 停止键
+    // 运行态出现的控制：车道键在 statusline 第 1 行；终止在输入栏（同一按钮的另一态）
     const main = sl.querySelector(".sl-row-main") as ElLike;
     expect(main.querySelector("#btnMode")).not.toBeNull();
-    expect(main.querySelector("#slStop")).not.toBeNull();
+    expect((doc.getElementById("btnSend") as ElLike).classList.contains("running")).toBe(true);
     bar.setBusy(false);
     bar.setInputMode("idle");
   });
