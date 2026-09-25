@@ -62,4 +62,22 @@ describe('W891 跨平台脚本', () => {
     // 版本号由 git describe --tags 派生：浅检出会让版本门禁失去意义。
     expect(text, 'checkout 必须取全历史与 tag').toContain('fetch-depth: 0');
   });
+
+  it('CI 测量 Node 支持带的两端，不跟随 .nvmrc 的单值', () => {
+    const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+    // .nvmrc 只有一个数：拿它当 CI 输入 = 「声称支持整条带，只测过一个点」。
+    expect(ci, 'CI 不得把 .nvmrc 的单值当成支持带的测量').not.toContain('node-version-file');
+    const matrix = /matrix:[\s\S]*?node:\s*\[([^\]]+)\]/.exec(ci);
+    expect(matrix, 'CI 必须有 node 矩阵').not.toBeNull();
+    const versions = (matrix?.[1] ?? '')
+      .split(',')
+      .map((part) => part.trim().replace(/['"]/g, ''))
+      .filter((part) => part !== '');
+    expect(versions.length, 'CI 至少测两个 Node 版本').toBeGreaterThanOrEqual(2);
+    // 矩阵必须锚在 engines.node 的下界上（根 package.json 是唯一真源）。
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { engines?: { node?: string } };
+    const minMajor = /^>=\s*(\d+)/.exec(pkg.engines?.node ?? '')?.[1] ?? '';
+    expect(minMajor, 'engines.node 必须声明下界').not.toBe('');
+    expect(versions, 'CI 矩阵必须覆盖 engines.node 的下界').toContain(minMajor);
+  });
 });

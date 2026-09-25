@@ -2,6 +2,13 @@
 # lint / arch / test / web) only ran when a human remembered to run it, which is
 # not a gate (docs/AGENT.md §8). Two OSes on purpose: Windows is a platform this
 # repo now claims to support, so it must be measured rather than assumed.
+#
+# Node is a MATRIX, not `.nvmrc`'s single value. engines.node claims ">=24 <27",
+# and a band measured at one point is a claim, not a measurement (W203 audit:
+# "只测一个 Node 版本，而 engines.node 声称 >=24 <27"). 25 is deliberately absent:
+# vitest's own engines (`^22.12.0 || ^24.0.0 || >=26.0.0`) excludes it and
+# `engineStrict: true` turns that into a hard install failure — a DEV-side limit
+# only, since vitest is a devDependency and production still runs on 25.
 name: ci
 
 on:
@@ -16,13 +23,14 @@ concurrency:
 
 jobs:
   check:
-    name: pnpm check (${{ matrix.os }})
+    name: pnpm check (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        node: [24, 26]
     steps:
       # Full history + tags: the version derives from `git describe --tags`
       # (scripts/version.mjs), and the web bundle embeds it. A shallow checkout
@@ -36,7 +44,7 @@ jobs:
           version: 11.22.0
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile

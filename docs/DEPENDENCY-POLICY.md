@@ -23,6 +23,12 @@ pnpm audit 是**诊断**，不是门禁。
   （enable-pre-post-scripts 默认 false），prestart 会静默不触发 —— 正是要避免的失败形态。
 - pnpm 侧：pnpm-workspace.yaml 的 engineStrict: true 让 pnpm install 对越界 Node 直接失败
   （ERR_PNPM_UNSUPPORTED_ENGINE）。升级 Node 的流程见 §4。
+- **CI 测的是带的两端，不是 .nvmrc 的单值**：`.github/workflows/ci.yml` 用 `node: [24, 26]`
+  矩阵（× ubuntu/windows）。`.nvmrc` 只决定开发机默认装哪个版本；拿它当 CI 输入就等于
+  「声称支持整条带、只测过一个点」（W203 审计的原话）。
+- **25 刻意不在矩阵里**：vitest 自己的 engines（`^22.12.0 || ^24.0.0 || >=26.0.0`）不含 25，
+  `engineStrict: true` 会把它变成硬失败（`ERR_PNPM_UNSUPPORTED_ENGINE`）。这是 **dev 侧**限制 ——
+  vitest 是 devDependency，生产在 Node 25 上照跑（启动守卫只认 engines.node 的带）。
 
 ## 3. 安装与锁（已落地）
 
