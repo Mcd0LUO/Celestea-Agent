@@ -212,6 +212,36 @@ function scanLocale(problems, file, rel) {
   visit(sf);
 }
 
+/**
+ * 护栏 C（W1520）：**死键检测** —— 字典里定义了、但没有任何消费方引用的 key。
+ *
+ * 为什么需要：护栏 B 只保证 zh/en 两边 key **集合一致**，两边一起长一个没人用的
+ * key 它是看不见的。W1520 就是这样攒出来的 —— 删掉成功提示的调用点后，
+ * `statusline.mode.switched` 只剩两条字典定义悬在那里；而它**不是孤例**：
+ * 首次跑本门禁时全仓已有 12 个这样的键（跨 6 个批次攒下来的）。
+ *
+ * 判定口径（刻意保守，宁可漏报不可误报）：
+ *   · 引用语料 = apps/web/**（含 index.html 的 data-i18n*）+ tests/** + scripts/**，
+ *     **排除 i18n/locales/** 自身 —— 否则每个 key 都会「引用自己」而全部通过；
+ *   · 支持三种字面量写法（'k' / "k" / `k`），因为 data-i18n 属性走双引号；
+ *   · 不做动态拼接识别：全仓 0 处 t(`...${...}`)，若将来出现，这里会**误报**，
+ *     届时把该 key 加进 DEAD_KEY_ALLOW（并在注释里写明为什么它无法被静态看到）。
+ *
+ * `common.brand` 是**已知且刻意**的例外：i18n/index.ts:9 明文规定品牌名不译、
+ * 原样出现在两种字典里 —— 它没有调用点是正确的，不是债务。
+ */
+const DEAD_KEY_ALLOW = new Set(['common.brand']);
+
+/**
+ * 动态构造的 key **前缀**（W1520 补）。全仓只有一处：
+ * `plugins/descriptor.ts:130` 的 `('settings.plugins.cat.' + c)`（c ∈ CLIENT_PLUGIN_CATEGORIES）。
+ * 静态扫描看不见这种拼接，会把 4 个**活的**分类键误判成死键 —— 这是本门禁第一版
+ * 真实踩到的坑（把 4 个键删了，tests/w895l-plugin-library.test.ts 立刻红）。
+ * 前缀命中即视为「可能被引用」，宁可漏报不可误报。
+ * 新增动态拼接时必须在此登记，并在注释里写明拼接点。
+ */
+const DYNAMIC_KEY_PREFIXES = ['settings.plugins.cat.'];
+
 /** 收集一个字典文件里所有字符串 key（护栏 B 用）。 */
 function keysOf(file) {
   const text = readFileSync(file, 'utf8');
@@ -232,6 +262,16 @@ function keysOf(file) {
  */
 function isTestFile(name) {
   return name.endsWith('.test.ts');
+}
+
+/** 护栏 C 的语料遍历：任意文本文件，含 index.html / tests / scripts。 */
+function* walkAny(dir) {
+  for (const name of readdirSync(dir).sort()) {
+    if (name === 'node_modules' || name === 'dist' || name === '.git') continue;
+    const p = path.join(dir, name);
+    if (statSync(p).isDirectory()) yield* walkAny(p);
+    else if (/\.(ts|mjs|js|html|json)$/.test(name)) yield p;
+  }
 }
 
 function* walk(dir) {
@@ -314,6 +354,24 @@ export function runGate(root = ROOT) {
     if (hasCjk) stats.remaining += 1;
     else { warnings.push(rel + ': 已无中文，可从 PENDING_MIGRATION 移除（棘轮收紧）'); stats.stale += 1; }
   }
+  // 护栏 C：死键（定义了但无消费方）。语料**必须排除 locales 自身** —— 否则每个 key
+  // 都在字典里「引用自己」，全部通过（这是本门禁第一版的真实 bug，注入死键仍报绿）。
+  const localesDir = path.join(src, 'i18n', 'locales');
+  const refFiles = [];
+  for (const r of [src, path.join(root, '..', '..', 'tests'), path.join(root, '..', '..', 'scripts')]) {
+    try { for (const f of walkAny(r)) refFiles.push(f); } catch { /* 目录缺失不阻塞 */ }
+  }
+  refFiles.push(html);
+  const consumers = refFiles.filter((f) => !f.startsWith(localesDir));
+  const refText = consumers.map((f) => { try { return readFileSync(f, 'utf8'); } catch { return ''; } }).join('\n');
+  const deadKeys = [];
+  for (const k of zh) {
+    if (DEAD_KEY_ALLOW.has(k)) continue;
+    if (DYNAMIC_KEY_PREFIXES.some((p) => k.startsWith(p))) continue;
+    if (!refText.includes("'" + k + "'") && !refText.includes('"' + k + '"') && !refText.includes('`' + k + '`')) deadKeys.push(k);
+  }
+  for (const k of deadKeys) problems.push('i18n 死键（定义了但无任何消费方）：' + k + ' —— 删掉它，或若确为刻意保留则加进 DEAD_KEY_ALLOW 并写明理由');
+  stats.deadKeys = deadKeys.length;
   stats.zhKeys = zh.length;
   stats.enKeys = en.length;
   return { problems, warnings, stats };
@@ -336,7 +394,7 @@ function main() {
   for (const w of warnings) console.log('  ⚠ ' + w);
   console.log('✓ UI 文案门禁通过：locales 值（zh ' + stats.zhKeys + ' / en ' + stats.enKeys + ' 条，中英同扫）无实现细节词；' +
     'src 组件无绕过 i18n 的中文（待迁移白名单 ' + stats.pending + ' 个，其中仍有中文 ' + stats.remaining + ' 个，陈旧 ' + stats.stale + ' 个）；' +
-    'zh/en key 集合一致。');
+    'zh/en key 集合一致；死键 ' + (stats.deadKeys ?? 0) + ' 个。');
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main();

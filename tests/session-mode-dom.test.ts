@@ -161,8 +161,10 @@ describe("W788 · 工作方式文案（纯函数，node 可断言）", () => {
 
   it("keeps the frozen 409 copy and the old-service copy verbatim (§3.1)", () => {
     expect(copy.modeNotes().busy).toBe("turn 进行中，无法切换模式");
-    expect(copy.modeNotes().applied).toBe("将在会话下一轮生效");
     expect(copy.modeNotes().unsupported).toBe("当前版本不支持切换工作方式");
+    // W1520：applied（成功回执）已删除 —— 成功路径不再写状态栏提示。
+    // 这里连"字段不存在"一起钉住：它回来就意味着那条撑爆 .sl-end 的提示也回来了。
+    expect("applied" in copy.modeNotes(), "成功回执 applied 不得复活（W1520）").toBe(false);
   });
 });
 

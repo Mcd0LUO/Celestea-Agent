@@ -36,16 +36,18 @@ export function modeTitle(mode: unknown): string {
 }
 
 /**
- * 切换回执文案。
- *   applied     —— 200：不打断在飞轮次，**下一轮边界**生效（设计 §2.2 #2）
+ * 切换回执文案 —— **只覆盖失败/降级**。
  *   busy        —— 409：**冻结文案**（设计 §3.1，与 /compact 同款纪律）
  *   unsupported —— 404/405：该部署未提供切换端点（老服务）→ 只读降级，
  *                  绝不假装成功（任务书 §4）
  *   invalid     —— 400/422：mode 取值被服务拒绝（UI 只提供合法值，属异常路径）
+ *
+ * W1520：原 applied（200 成功回执「将在会话下一轮生效」）已删除 —— 成功路径不再
+ * 写状态栏提示（见 statusline/mode.ts 的 pickMode 注释：那条提示会撑爆 .sl-end
+ * 右端集群，真机实测 44px → 245px）。**失败三项必须留**：那是诚实降级。
  */
-export function modeNotes(): { applied: string; busy: string; unsupported: string; invalid: string } {
+export function modeNotes(): { busy: string; unsupported: string; invalid: string } {
   return {
-    applied: t('mode.note.applied'),
     busy: t('mode.note.busy'),
     unsupported: t('mode.note.unsupported'),
     invalid: t('mode.note.invalid'),
