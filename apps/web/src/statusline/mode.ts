@@ -233,6 +233,19 @@ function modeRow(value: SessionMode, label: string, current: boolean, can: boole
  *   点下去**同一帧**就把徽标与清单画成目标模式的终态（零占位文案），请求在后台跑；
  *   失败则把徽标退回原模式并说明原因 —— 三态（busy / unsupported / invalid）的分支
  *   与文案逐字未改，只是「进度占位」换成了「先画终态、失败回滚」。
+ *
+ * W1520：**成功路径不再写状态栏提示**（用户要求「切换执行模式不要弹提示」）。
+ *
+ * 为什么这条提示必须去掉，而不只是「少说一句」：成功提示走的是 `#slHint`，而它是
+ * `.sl-end` 右端集群里**会占宽**的一格（`.sl-row-main` 是 nowrap，集群 `flex:0 0 auto`）。
+ * 真机 CDP 实测（427px 视口）：提示为空时 `.sl-end` 宽 **44px**、行不溢出；
+ * 写入「已切换工作方式 · 将在会话下一轮生效」后 `.sl-end` 涨到 **245px**、
+ * `scrollWidth 476 > clientWidth 401` —— 右端集群被撑爆，正是 W1517 合并权限入口
+ * 要解决的那个「结构被破坏」的形态（用户原话：「会破坏结构」）。
+ *
+ * 注意**只去掉成功那一条**：失败/降级（busy / unsupported / invalid / error）的提示
+ * 必须保留 —— 那是「不假装成功」的诚实降级（任务书 §4），删掉它才是真破坏。
+ * 徽标本身已经当帧画成终态（乐观更新），用户看得到切换成功，不需要额外一句话。
  */
 async function pickMode(mode: SessionMode): Promise<void> {
   const h = host;
@@ -251,7 +264,8 @@ async function pickMode(mode: SessionMode): Promise<void> {
 
   const out = await requestModeSwitch(h.sessionId, mode);
   if (out.kind === 'ok') {
-    h.setNote(t('statusline.mode.switched', { note: modeNotes().applied }), 6000);
+    // W1520：成功不弹提示 —— 徽标已当帧画成终态，再写 #slHint 会撑爆右端集群
+    // （见 pickMode 的模块注释：44px → 245px 的真机实测）。
     closeModePopup();
     return;
   }

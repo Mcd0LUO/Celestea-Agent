@@ -263,7 +263,7 @@ describe("W788 · 切换弹层三态（真实 DOM）", () => {
     expect(badge().textContent).toBe("标准");
   });
 
-  it("POSTs {mode} and lands on 执行, with the「下一轮生效」note", async () => {
+  it("POSTs {mode} and lands on 执行, WITHOUT a statusline hint (W1520)", async () => {
     await openPopup();
     expect(opts().map((o) => o.textContent)).toEqual(["标准模式当前", "执行模式（PTC）"]);
     expect(opts()[0]?.disabled).toBe(true); // 当前项禁用：点它没有意义
@@ -273,7 +273,10 @@ describe("W788 · 切换弹层三态（真实 DOM）", () => {
     expect(modePosts()[0]?.url).toBe("/api/sessions/ws%2Fs1/mode");
     expect(JSON.parse(modePosts()[0]?.body ?? "{}")).toEqual({ mode: "execution" });
     expect(badge().textContent).toBe("执行");
-    expect(doc.getElementById("slHint")?.textContent).toContain("将在会话下一轮生效");
+    // W1520：成功**不写** #slHint。那条提示会占宽并撑爆 .sl-end 右端集群
+    // （真机实测 44px → 245px、行溢出），用户要求「切换执行模式不要弹提示」。
+    // 徽标已当帧画成终态，成功与否看徽标即可。
+    expect(doc.getElementById("slHint")?.textContent).toBe("");
     expect(doc.querySelector("#statusline .sl-popup")).toBeNull(); // 成功即收起
   });
 

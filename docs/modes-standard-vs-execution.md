@@ -191,7 +191,15 @@ Hard limits: ≤20 sub-calls, wall clock ≤120s, sub-call output ≤256 KiB, pr
 | **新建会话弹窗**（主入口） | 「工作方式」下拉：`标准模式` / `执行模式（PTC）`，默认标准；随 `POST /api/sessions` 提交 | `frontend/src/ui/sessions.ts:743-880`（现有 标题/工作区/模型 三行之后）、`types.ts:321-328` 的 `SessionCreateReq` |
 | **statusline**（每次可见） | 会话标识格旁加一个**只读**徽标 `标准` / `执行`；点击 → 弹层里可切换（P1，调 `POST /api/sessions/{id}/mode`），与现有"模型/推理档位"快速切换同款交互与错误处理 | `frontend/src/statusline.ts`（已有按会话快照缓存 `cache: Map<string, StatusSnapshot>`，mode 随 `StatusSnapshot` 一起缓存） |
 | **设置页「会话」页签** | 会话列表增「模式」列（只读 + 切换按钮）；**不加全局模式项** | `frontend/src/ui/config.ts`（导航页：通用配置/工具/会话） |
-| **新建会话后的提示** | 切模式后在状态栏提示「将在会话下一轮生效」（复用配置变更的既有文案模式） | `statusline.ts` / `ui/config.ts` 既有 hint 机制 |
+| **切换后的提示** | ~~切模式后在状态栏提示「将在会话下一轮生效」~~ **W1520 推翻**：成功切换**不写任何状态栏提示**；失败/降级（busy / unsupported / invalid / error）仍必须提示 | `statusline/mode.ts` 的 `pickMode` |
+
+**W1520 为什么推翻上表最后一行的「状态栏提示」**：那条提示走 `#slHint`，而它是
+`.sl-end` 右端集群里**会占宽**的一格（`.sl-row-main` 是 `nowrap`、集群 `flex:0 0 auto`）。
+真机 CDP 实测（427px 视口）：提示为空时 `.sl-end` 宽 **44px**、行不溢出；写入
+「已切换工作方式 · 将在会话下一轮生效」后涨到 **245px**，`scrollWidth 476 > clientWidth 401`
+—— 右端集群被撑爆。这正是 W1517 合并权限入口时在修的「结构被破坏」形态。
+且徽标已当帧画成终态（W795 乐观更新），用户看得到切换成功，不需要额外一句话。
+**只删成功那一条**：失败/降级的提示是「不假装成功」的诚实降级（§4），必须保留。
 
 **与 statusline/设置的关系裁决**：`mode` **不进**「通用配置」页（那是 `POST /api/config` 的进程级热调面：模型/基址/档位/上下文/系统提示词）。理由：会话工作方式不是全局参数；一旦放进 `POST /api/config`，就会与 `/api/config` 的 epoch 失效语义纠缠成"所有会话一起换模式"。
 
