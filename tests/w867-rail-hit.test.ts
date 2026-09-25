@@ -155,7 +155,7 @@ describe('W867 · 用户 6①：rail 吸附/命中距离收短', () => {
     expect(geom.railBarWidth(0.5, wide), '中间刻度按同一比例插值').toBeCloseTo(4 + 0.5 * (66 - 4), 10);
   });
 
-  it('两条之间的中点：旧口径会吸附弹卡，新口径不再吸附/提示', async () => {
+  it('两条之间的中点：旧口径会吸附弹卡，新口径不再吸附/提示（W1546：改为点亮最近条 .is-near）', async () => {
     const { main } = await bootRail();
     const hint = (await import(/* @vite-ignore */ at('ui/hint/index.ts'))) as HintMod;
     const y0 = barY(0);
@@ -168,6 +168,23 @@ describe('W867 · 用户 6①：rail 吸附/命中距离收短', () => {
     moveTo(main, 20, mid);
     expect(bars().some((b) => b.classList.contains('is-hover')), '中点不得吸附任何一条').toBe(false);
     expect(hint.hintCardEl(), '中点不得弹预览卡').toBeNull();
+    // W1546 的唯一改动：死区里**最近的**那根条点亮 .is-near（描边态，不是吸附态）。
+    // 原断言「中点不得吸附/不得弹卡」逐字保留 —— 它守的是 W867 的防跨条误吸，仍然吃劲。
+    expect(bars()[0]?.classList.contains('is-near'), '同距取靠上的一根（railCenterHit 同口径）').toBe(true);
+    expect(bars()[1]?.classList.contains('is-near'), '另一根不得同时点亮').toBe(false);
+    expect(bars()[0]?.classList.contains('is-hover'), '点亮 ≠ 吸附：is-hover 只属于半径内').toBe(false);
+    // 「吸附」= setGrow(hit, 1) 的满刻度（RAIL_MAX_W + 命中加成）；死区里只有**连续**的
+    // fisheye 增益（railGrow(4.5)），绝不跳到满刻度 —— 这正是 W867 要的「不误吸」。
+    const geom = (await import(/* @vite-ignore */ at('ui/rail-geom.ts'))) as RailGeomMod & {
+      railBarHeight(p: number): number;
+      railGrow(d: number): number;
+      RAIL_MAX_W: number;
+      RAIL_HIT_BOOST: number;
+    };
+    const w = Number.parseFloat(String(bars()[0]?.style?.['width']));
+    const cont = geom.railBarWidth(geom.railGrow(4.5), 66); // setGrow 写的是 toFixed(1)
+    expect(Math.abs(w - cont), '死区宽度 = 连续 fisheye 增益（不是满刻度 72）').toBeLessThanOrEqual(0.05);
+    expect(w, '远小于满吸附刻度').toBeLessThan(geom.railBarWidth(1, 66));
   });
 
   it('条心：仍然吸附并弹出该轮的预览卡（不是把阈值改成 0 的假修复）', async () => {

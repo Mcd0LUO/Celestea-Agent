@@ -64,6 +64,51 @@ export function railHitRadius(pitch: number): number {
   return Math.max(HIT_MIN, Math.min(halfBar + HIT_SLOP, pitch / 2));
 }
 
+/** 一次命中判定的结果：命中的条目 + 它是否在悬停半径内 + 指针到条心的距离。 */
+export interface RailHit<T> {
+  item: T;
+  /** 在 railHitRadius 之内 = W867 的**悬停**命中（吸附/弹卡）；false = 落在条间死区。 */
+  hover: boolean;
+  /** 指针到该条心的距离（px）。 */
+  distance: number;
+}
+
+/**
+ * W1546 · **点击归属**（用户：「thread-rail 灵动条中间不能点击，应该判为中间也可点击」）。
+ *
+ * 与 railHitRadius（悬停半径）是**两个口径**，故意分开：
+ *   · 悬停（railHitRadius）= 「指针落在长条本身上」—— W867 定的防跨条误吸口径，
+ *     条间空隙**不**吸附、**不**弹预览卡。本函数不改它（原样返回 hover 标志）。
+ *   · 点击（本函数）= 「带内最近的一根条，恒有归属」—— 条间空隙归最近条（相邻条心
+ *     之间的中垂线分界，同距取靠上的一根），端点之外夹到首/末条（滚到顶/底），
+ *     因此**没有死区**：带内任意 y 都能点到一根。
+ * 两者共用同一份「最近条」计算 ⇒ 点击命中的那根 == 悬停高亮的那根，绝不打架。
+ *
+ * 为什么不做「点击半径 = 悬停半径 + 空隙的一半」：那只是把 2px 死区换成另一组
+ * 魔数（pitch=4 时半空隙 0、pitch=9 时 2.25），而「最近者胜」在任意 pitch、
+ * 折叠条、细条化档、条数超密（pitch 压到 RAIL_PITCH_MIN）下都是同一句话。
+ *
+ * 空集合 → null（调用方不做事）。y 用**相对 #main 的轨道坐标**（与条心同一坐标系）。
+ */
+export function railHit<T extends { y: number }>(
+  items: readonly T[],
+  y: number,
+  railTop: number,
+  pitch: number,
+): RailHit<T> | null {
+  let best: T | null = null;
+  let bestD = Infinity;
+  for (const it of items) {
+    const d = Math.abs(y - (railTop + it.y));
+    if (d < bestD) {
+      bestD = d;
+      best = it;
+    }
+  }
+  if (best === null) return null;
+  return { item: best, hover: bestD <= railHitRadius(pitch), distance: bestD };
+}
+
 /**
  * 留白带宽：.mcol 左缘 − #main 左缘（rect 由调用方传入 ⇒ 本模块零 DOM）。
  * 量不到 .mcol 时回落「主区宽 − 24」，与改动前逐字一致。

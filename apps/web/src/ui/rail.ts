@@ -6,6 +6,7 @@
 //   left 固定在 #main 左缘内侧 8px。
 // ★ 交互：鼠标进入条带 → 最近长条吸附（fisheye 变长 + 微亮）；hover 停留
 //   弹预览卡（取自已渲染消息 DOM，零网络请求）；点击 → 平滑定位到对应轮。
+//   W1546：点击 = 带内最近的一根条（无死区，见 rail-geom.railHit）；悬停仍守 W867 半径，死区点亮 .is-near。
 // ★ W790（item 4）：预览卡不再由本模块自建 —— 它是注册进 ui/hint 注册缝的
 //   一个提供者（id 'rail-preview'，priority 10），延迟/宿主/撤卡统一归引擎；
 //   轨道条带是 pointer-events:none（交互走 #main 级命中判定），所以用 hoverHint()
@@ -28,7 +29,7 @@ import { t } from '../i18n';
 // W867：几何常量与公式搬到 ./rail-geom.ts（纯搬家，逐字未变：零 DOM、可单测）。
 import {
   RAIL_PAD_Y, RAIL_PITCH_NATURAL, railBarHeight, railBarOpacity, railBarWidth,
-  railCardPlacement, railFitsAll, railGrow, railGutterWidth, railHitRadius, railLane, railPitch,
+  railCardPlacement, railFitsAll, railGrow, railGutterWidth, railHit, railHitRadius, railLane, railPitch,
 } from './rail-geom';
 /** W1485：记账层变量（轨道 DOM 与几何仍归本模块）。 */
 let mainEl: HTMLElement | null = null;
@@ -240,7 +241,7 @@ function clearHover(): void {
   hoverItem = null;
   hideHint(); // W790：撤卡交给提示引擎（延迟/宿主/落位都不在本模块）
   const st = curState();
-  if (st) for (const it of st.items) it.el.classList.remove('is-hover');
+  if (st) for (const it of st.items) it.el.classList.remove('is-hover', 'is-near');
 }
 
 function collapse(): void {
@@ -269,50 +270,51 @@ function applyMove(): void {
   const m = mainEl.getBoundingClientRect();
   const x = moveX - m.left;
   const y = moveY - m.top;
-  const inZone =
-    railW > 0 && x >= railX - 6 && x <= railX + railW + 14 && y >= railTop && y <= railTop + railH;
+  const inZone = railW > 0 && x >= railX - 6 && x <= railX + railW + 14 && y >= railTop && y <= railTop + railH;
   if (!inZone) {
     collapse();
     return;
   }
-  const hitR = railHitRadius(pitch); // W867：命中 = 落在长条上（旧 max(pitch/2, 8) 恒 8px）
-  let best: RailItem | null = null;
-  let bestD = Infinity;
-  for (const it of allItems(st)) {
-    if (!it.visible) continue;
-    const d = Math.abs(y - (railTop + it.y));
-    setGrow(it, railGrow(d)); // W867：增益公式在 ./rail-geom.ts（默认 range = RAIL_FISHEYE_RANGE）
-    if (d < bestD) {
-      bestD = d;
-      best = it;
-    }
+  const bars = allItems(st).filter((it) => it.visible);
+  for (const it of bars) setGrow(it, railGrow(Math.abs(y - (railTop + it.y)))); // W867：增益公式在 ./rail-geom.ts
+  const at = railHit(bars, y, railTop, pitch); // W1546：最近条 + 是否在悬停半径内（两个口径同一份计算）
+  const hit = at?.hover ? at.item : null; // W867：悬停 = 落在长条上（旧 max(pitch/2, 8) 恒 8px ⇒ 跨条误吸）
+  if (hit) setGrow(hit, 1);
+  else clearHover(); // 死区：不吸附、不弹卡（下面的 .is-near 让「点它会点中谁」看得见）
+  if (hit && hoverItem !== hit) {
+    hoverItem = hit;
+    hoverHint(hit.el); // W790：停留 150ms → 提示引擎按提供者弹卡
   }
-  const hit = best !== null && bestD <= hitR ? best : null;
-  if (hit) {
-    setGrow(hit, 1);
-    if (hoverItem !== hit) {
-      hoverItem = hit;
-      hoverHint(hit.el); // W790：停留 150ms → 提示引擎按提供者弹卡
-    }
-  } else {
-    clearHover();
+  // W1546：死区里最近的那根条仍然点亮（.is-near，只改描边不改几何）—— 点下去命中的就是它。
+  for (const it of bars) {
+    it.el.classList.toggle('is-hover', it === hit);
+    it.el.classList.toggle('is-near', hit === null && it === at?.item);
   }
-  for (const it of allItems(st)) it.el.classList.toggle('is-hover', it === hit);
 }
 
 function onLeave(): void {
   collapse();
 }
 
+/**
+ * W1546 · 点击 = **带内最近的一根条**（用户：「中间不能点击，应该判为中间也可点击」）。
+ * 旧写法两道门都会漏：① `!hoverItem` 就 return —— 指针没动过（触控 / 程序化点击）
+ * 时恒 null；② `|y − hoverItem.y| > railHitRadius(pitch)` —— 条间那 2px 空隙直接
+ * return，正是用户报的死区。新口径：横向仍限条带内（原样 6 / 14px 容差），纵向只夹
+ * 轨道两端，归属交给 railHit 的最近者胜（死区归最近条、端点外归首/末条）⇒ 无死区。
+ */
 function onClick(e: MouseEvent): void {
-  if (!mainEl || !hoverItem) return;
+  if (!mainEl || !track) return;
   const m = mainEl.getBoundingClientRect();
   const x = e.clientX - m.left;
   const y = e.clientY - m.top;
-  if (x < railX - 6 || x > railX + railW + 14 || y < railTop || y > railTop + railH) return;
-  if (Math.abs(y - (railTop + hoverItem.y)) > railHitRadius(pitch)) return; // W867：与 applyMove 同口径
+  if (x < railX - 6 || x > railX + railW + 14) return;
+  const st = curState();
+  if (!st || y < railTop || y > railTop + railH) return;
+  const at = railHit(allItems(st).filter((it) => it.visible), y, railTop, pitch);
+  if (!at) return;
   e.preventDefault();
-  hoverItem.startCol.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  at.item.startCol.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function onScroll(): void {
@@ -474,8 +476,6 @@ export function initRail(): void {
 export function railBoundPane(): SessionPane | null {
   return cur;
 }
-
-
 
 /** 滚动监听随激活容器切换（scroll 事件不冒泡，必须绑在滚动元素上）。 */
 let scrollBound: HTMLElement | null = null;
