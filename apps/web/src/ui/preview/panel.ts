@@ -36,6 +36,7 @@ import { openFsBrowser, type FsBrowserUi } from '../fsbrowser';
 import { popOverlay, pushOverlay, type OverlayHandle } from '../../utils/overlays';
 import { runEnhancers } from '../enhance';
 import { renderPreview } from './renderers';
+import { streamInto, type StreamFill } from './stream';
 import { createModeSwitch, type ModeSwitch, type PreviewView } from './modes';
 import type { PreviewCandidate } from './detect';
 import { t } from '../../i18n';
@@ -43,12 +44,26 @@ import { t } from '../../i18n';
 /** 富加载结果：拿到文本（+ 是否截断），或一个**可读的**降级原因。 */
 export type PreviewLoad = { text: string; truncated?: boolean } | { degraded: string; badge?: string };
 
+/**
+ * W1545：**分段装载**的一步（巨文件流式打开）。
+ *
+ * 服务端 `GET /api/fs/read` 是「按行窗口」的（offset/limit，见
+ * apps/studio/src/handlers/fs-read.ts）—— 一次只给一段，`truncated` 说还有更多。
+ * 这个形状把「取下一段」交给调用方（workbench/files-open.ts）：
+ *   · 壳与**首段**由 panel 当帧画出（面板不等整篇读完就出现）；
+ *   · 后续每段**追加**一个 <pre><code> 块，绝不整块重建（铁律 1/2）。
+ */
 export interface PreviewRequest {
   candidate: PreviewCandidate;
   /** 内容加载（P0：从会话 DOM 取文本；返回 null = 走降级）。 */
   load?: () => Promise<string | null>;
   /** F2 P1：工作区文件用——服务端读取，binary/超大/读取失败给可读降级。 */
   loadFull?: () => Promise<PreviewLoad>;
+  /**
+   * W1545：**分段装载**（巨文件流式打开）。给了它就优先走流式路径；
+   * 与 loadFull 二选一（html 例外，理由见 resolveBody 注释）。
+   */
+  stream?: () => Promise<StreamFill>;
   /** 图片预览地址（objectURL / attachment URL）。 */
   url?: string | null;
 }
@@ -59,12 +74,15 @@ let titleEl: HTMLElement | null = null;
 let pathEl: HTMLElement | null = null;
 /** 「已截断」标记（服务端说 truncated 时才显示）。 */
 let noteEl: HTMLElement | null = null;
+/** W1545：流式装载的进度行（住在动作行里，与「已截断」标记分开：一个说「还在读」，一个说「读不到了」）。 */
+let streamNoteEl: HTMLElement | null = null;
 let modes: ModeSwitch | null = null;
 let overlay: OverlayHandle | null = null;
 let seq = 0;
 let currentPath = '';
 /** 当前文件的已加载内容（切视图不重新加载）。 */
 let currentLoad: PreviewLoad | string | null = null;
+
 /** 当前查看方式（只在 kind === 'html' 且内容可渲染时有意义）。 */
 let view: PreviewView = 'preview';
 /** 两个视图各自的滚动位置（按视图分开记：切换时各回各家）。 */
@@ -150,6 +168,11 @@ function buildActions(panel: HTMLElement): void {
   open.type = 'button';
   open.addEventListener('click', () => openManager(currentPath));
   actions.appendChild(open);
+  // W1545：流式进度（「已读 N/M 行」）。住在动作行里、**不在 body 里** ——
+  // body 的顶层子节点是双视图标记（markDual 按 '> .preview-view' 匹配），
+  // 往里插状态行会让 html 预览的视图标记错位。这里只改它的文本，不重建节点。
+  streamNoteEl = el('span', 'preview-stream-note hidden');
+  actions.appendChild(streamNoteEl);
   panel.appendChild(actions);
 }
 
@@ -282,8 +305,32 @@ function paint(req: PreviewRequest, body: HTMLElement): void {
   }
 }
 
+/** W1545 流式进度 / 上限提示（只改文本，不重建节点）。 */
+function setStreamNote(text: string): void {
+  if (streamNoteEl === null) return;
+  streamNoteEl.textContent = text;
+  streamNoteEl.classList.toggle('hidden', text === '');
+}
+
 /** 加载内容 → 画（带竞态守卫）。 */
 async function resolveBody(req: PreviewRequest, my: number, body: HTMLElement): Promise<void> {
+  // W1545: a segment provider wins for every kind except html. HTML is the one
+  // kind whose renderer needs the WHOLE text up front (iframe srcdoc = the file
+  // byte-for-byte; the source view is the same document), so it stays on the
+  // one-shot path (a second 'read to EOF' request) even when a provider is given.
+  if (req.stream !== undefined && req.candidate.kind !== 'html') {
+    await streamInto(
+      {
+        body,
+        path: req.candidate.path,
+        kind: req.candidate.kind,
+        isCurrent: () => my === seq,
+        note: setStreamNote,
+      },
+      req.stream,
+    );
+    return;
+  }
   const result = await loadText(req);
   if (my !== seq) return; // 竞态：晚到的加载结果丢弃，绝不覆盖当前文件
   currentLoad = result;
@@ -312,6 +359,16 @@ export function openPreview(req: PreviewRequest): void {
     noteEl.classList.add('hidden');
   }
   if (overlay === null) overlay = pushOverlay(closePreview);
+  // W1545: the SHELL is painted this very frame (head + path + skeleton + actions),
+  // BEFORE any read is awaited -- the panel used to wait for the whole first read
+  // before painting anything, which is what made a big file's panel feel late. The
+  // skeleton is swapped out only when the first real segment lands (rule 1).
+  bodyEl.classList.remove('is-dual', 'is-degraded');
+  bodyEl.classList.add('is-loading');
+  const skeleton = el('div', 'preview-skeleton');
+  for (let i = 0; i < 3; i += 1) skeleton.appendChild(el('div', 'preview-skeleton-line'));
+  bodyEl.replaceChildren(skeleton);
+  setStreamNote('');
   void resolveBody(req, my, bodyEl);
 }
 

@@ -137,36 +137,6 @@
 .wb-placeholder { font-size: 12px; color: var(--c-text-3); padding: 4px 2px; }
 .wb-row.open { background: var(--c-accent-soft); color: var(--c-text-1); }
 
-/* ---- 内联展开块（W1532：点文件在**行下方**展开，VSCode 风格） ----
-   几何是这套交互的**定义**，不是装饰：它是 .wb-list 里文件行的兄弟节点，
-   margin-left 让开图标列 ⇒ 左边界落在文件行内部、右边界与列同宽。
-   因此它**不可能**是覆盖式浮层（浮层按定义要脱离列表、盖住视口）。
-   max-height 是硬约束：内联块长在目录列表里，不设上限时一个巨大文本会把整列
-   滚动条吃掉，用户就没法继续翻其它文件了。 */
-.wb-inline {
-  margin: 2px 0 6px 22px;
-  padding: 6px 8px;
-  border-left: 2px solid var(--c-accent-ring);
-  border-radius: var(--r-sm);
-  background: var(--c-layer-2);
-  max-height: 340px;
-  overflow: auto;
-  min-width: 0;
-}
-.wb-inline-status, .wb-inline-note { font-size: 11.5px; color: var(--c-text-3); }
-.wb-inline-badge {
-  display: inline-block;
-  margin-bottom: 4px;
-  padding: 1px 6px;
-  border: 1px solid var(--c-border-subtle);
-  border-radius: var(--r-sm);
-  font-size: 11px;
-  color: var(--c-text-3);
-}
-/* 内容自带 preview-* 类（与浮层同一套渲染器）⇒ 这里只压掉它的外层留白。 */
-.wb-inline-content > :first-child { margin-top: 0; }
-.wb-inline-content > :last-child { margin-bottom: 0; }
-
 /* 拖动停靠时的落点提示 */
 .wb-drop-hint {
   position: absolute;

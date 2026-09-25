@@ -65,6 +65,9 @@ export const chat = {
   'chat.preview.badgeUnsupported': 'Unsupported type',
   'chat.preview.truncated': 'Truncated (only the first part is shown)',
   'chat.preview.degradeReadFailed': 'This file cannot be read right now, please try again later',
+  // W1545: streaming open (append per segment) status + an honest notice at the hard cap
+  'chat.preview.streamRead': 'Loaded {loaded}/{total} lines',
+  'chat.preview.streamLimit': 'The file exceeds the {mb} MB preview limit; only the first part is shown',
   // W1534: HTML preview "preview / source" toggle (shown when kind=html)
   'chat.preview.modeAria': 'View mode',
   'chat.preview.modePreview': 'Preview',
@@ -227,7 +230,6 @@ export const chat = {
   'chat.wb.term.limit': 'Too many terminals are open at once; close one first.',
   'chat.wb.term.notStarted': 'The terminal did not open',
   'chat.wb.term.retry': 'Retry',
-  'chat.wb.file.loading': 'Reading the file…',
   'chat.input.placeholderIdle': 'Type a message; Enter to send, Shift+Enter for a new line',
   'chat.input.placeholderSteer': 'Enter to interject (delivered at the next step) · Ctrl/Cmd+Enter to queue (delivered on the next turn)',
   'chat.input.placeholderQueue': 'Enter to queue (delivered after this turn) · Ctrl/Cmd+Enter to interject (delivered at the next step)',
