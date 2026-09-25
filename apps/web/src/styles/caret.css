@@ -1,5 +1,136 @@
 /* ============================================================================
-   styles/caret.css — W1524 光标（W-B）
+   styles/caret.css — W1525 VSCode 风格光标（W-B）
    ----------------------------------------------------------------------------
    见 streaming.css 顶部说明：共享 CSS 文件不碰，新能力一律新文件。
+   本文件只承载**光标**这一件事；DOM 结构与几何计算在
+   apps/web/src/ui/inputbar/caret-mirror.ts（本文件只描述外观与状态）。
+
+   设计（为什么是这样）：
+     原生 <textarea> 的插入符只有 `caret-color` 一个旋钮 —— 形状不可定制、
+     位置不可过渡。要「VSCode 风格」（可定制形状 + 平滑移动 + 闪烁），只能把文字
+     交给一层镜像 div 渲染，再用一个绝对定位的假光标画插入符。
+
+   状态机（**唯一**开关是 #inputbar 上的 .has-fake-caret，由 JS 的探测结果决定）：
+     默认（无 .has-fake-caret）= 回落态
+       #input 文字不透明 + caret-color 可见 + .caret-mirror 隐藏
+       ⇒ 镜像层没挂上 / 探测失败 / 失焦 / IME 组合中 / 文本超长，用户看到的都是
+          **完全原生的输入框**，一个字都不会丢。这就是「回落」的实现。
+     接管态（有 .has-fake-caret）
+       #input 文字透明 + caret-color 透明 + .caret-mirror 显示 + .caret-fake 显示
+       ⇒ 文字由镜像层画、插入符由假光标画。两者**同进同出**（同一条类），
+         所以不存在「文字透明了却没有光标」或「两个光标」的中间态。
+
+   为什么 .caret-mirror 在接管态是**显示**而不是恒显：镜像层与真 textarea 会各画
+   一遍同样的文字，恒显就是双层描字（错位时发虚）。只在接管态显示，任一时刻
+   文字都只有一层在画。
    ============================================================================ */
+
+/* ---- 0. 参数（单一真源；caret-mirror.ts 只读引用） ------------------------- */
+#inputbar {
+  /* VSCode 默认光标：2px 竖条 + 平滑移动 + 闪烁。 */
+  --caret-w: 2px;
+  --caret-dur: 90ms;
+  --caret-ease: cubic-bezier(.2, .7, .3, 1);
+  --caret-blink: 1.06s;
+}
+
+/* ---- 1. 镜像层（纯装饰：不接收指针事件、不进无障碍树、不参与选中） --------- */
+.caret-mirror {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  /* 排版度量（字体/行高/内边距/断行策略）由 JS 从真 textarea 逐条抄来，
+     这里只钉**镜像层独有**的三条：裁剪、不拦截指针、不可选中。 */
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  /* 默认隐藏：见文件头「为什么只在接管态显示」。用 visibility 而不是 display ——
+     display:none 的盒子量不出几何，JS 的可用性探测就没法做。 */
+  visibility: hidden;
+  z-index: 0;
+}
+
+/* ---- 2. 假光标 ------------------------------------------------------------- */
+.caret-fake {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--caret-w);
+  height: var(--caret-h, 1em);
+  /* 位置走 transform（合成层，不触发布局）；--caret-x/-y 由 JS 写入 px。 */
+  transform: translate3d(var(--caret-x, 0px), var(--caret-y, 0px), 0);
+  background: var(--c-accent);
+  border-radius: 1px;
+  opacity: 0;
+  /* 平滑移动 = VSCode 的 cursorSmoothCaretAnimation。高度与位移分开给时长：
+     高度变化只发生在换行/字号变化时，跟着位移一起过渡反而更自然。 */
+  transition:
+    transform var(--caret-dur) var(--caret-ease),
+    height var(--caret-dur) var(--caret-ease),
+    opacity 90ms linear;
+}
+.caret-fake.on {
+  opacity: 1;
+  animation: caret-blink var(--caret-blink) steps(1, end) infinite;
+}
+/* 远距离跳转（点击重定位 / 换行 / 跳到文首）：瞬移，不滑过整屏。
+   JS 在设置新坐标前加这个类，强制一次样式落地后再摘掉。 */
+.caret-fake.no-anim {
+  transition: none;
+}
+
+@keyframes caret-blink {
+  0%,
+  49.99% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- 3. 接管态：文字交给镜像层，原生插入符让位 ----------------------------
+   每一条都写成 `.has-fake-caret **且** :has(> .caret-mirror)` —— 这是**结构性**
+   兜底，不是冗余：`.has-fake-caret` 是 JS 写上的状态类，而镜像层是它承诺存在的
+   那个节点。若两者不同步（镜像层被外力移除、或将来有人删了镜像层却留着类），
+   单看类就会把文字设成透明却没有镜像层来画 —— **输入框看起来是空的**（丢字级事故）。
+   加上 :has() 之后，镜像层不在 = 三条接管规则整体不匹配 = 自动退回原生渲染，
+   无论状态类是什么。JS 的 probe() 里也查 isConnected，两层各自独立成立。
+   （:has() 自 Chrome 105 / Safari 15.4 / Firefox 121 起可用；本仓 target 为 es2020
+    的现代浏览器，且此处的失败方向是「更保守 = 用原生插入符」，不是硬依赖。） */
+#inputbar.has-fake-caret:has(> .input-box > .caret-mirror) .caret-mirror {
+  visibility: visible;
+}
+#inputbar.has-fake-caret:has(> .input-box > .caret-mirror) #input {
+  /* 文字透明 —— 但**只**在接管态。回落态由本规则不生效自动还原。 */
+  color: transparent;
+  /* 原生插入符必须让位，否则会与假光标同时可见（两个光标）。 */
+  caret-color: transparent;
+}
+/* 选中态例外：文字透明会让「有选区但看不见字」。选区底色仍由原生 ::selection 画，
+   这里只把选中文字的颜色恢复成不透明。 */
+#inputbar.has-fake-caret:has(> .input-box > .caret-mirror) #input::selection {
+  color: var(--c-text-1);
+}
+/* 占位符例外：base.css 的 `textarea::placeholder { color: var(--c-text-3) }` 是直接
+   声明在伪元素上的，不会被 #input 的 color: transparent 继承覆盖 —— 这条是**显式**
+   写出来提醒后来人，别把它当成冗余删掉。 */
+#inputbar.has-fake-caret:has(> .input-box > .caret-mirror) #input::placeholder {
+  color: var(--c-text-3);
+}
+
+/* ---- 4. 无障碍：减弱动效时不留动画（全局那条只压 animation-duration，
+        对 steps() 无限循环是未定义表现，这里显式关掉并让光标常亮） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .caret-fake {
+    transition: none;
+  }
+  .caret-fake.on {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

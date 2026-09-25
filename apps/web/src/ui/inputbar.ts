@@ -31,6 +31,7 @@ import {
 // W867（追加）：展示夹的落位 / 尺寸 / 渲染接线整段在 ./attach-tray.ts，本文件只调用。
 import { createAttachTray, refreshAttachmentTray } from './attach-tray';
 import { initQuoteTray } from './quote/tray'; // F1：选段提及的待发引用 chip 收纳区
+import { mountCaretMirror, type CaretMirror } from './inputbar/caret-mirror'; // W1525 VSCode 风格光标
 import { t } from '../i18n';
 import { paintModeButton, paintSendButton } from './inputbar/button-labels';
 import { interceptKey as interceptCommandKey } from './commands'; // A3：命令补全框按键拦截
@@ -80,6 +81,8 @@ let busy = false;
 let submitMode: SubmitMode = 'steer';
 /** 当前输入栏模式（文案/按钮重绘用）。 */
 let inputMode: InputMode = 'idle';
+/** W1525 假光标（镜像层）。null = 未挂载 / 挂载失败 ⇒ 原生插入符（回落）。 */
+let caret: CaretMirror | null = null;
 
 export function getSubmitMode(): SubmitMode {
   return submitMode;
@@ -142,9 +145,17 @@ export function initInputBar(h: InputBarHandlers): void {
     h.send(input.value, lane);
   });
   input.addEventListener('input', autoGrow);
+  // W1525：假光标挂 .input-box（它已是 position:relative）。注册在 autoGrow 之后 ——
+  // 高度先定，镜像层的裁剪区才对。光标是装饰：任何异常都不许影响输入栏本身。
+  try {
+    caret = mountCaretMirror(input, bar.querySelector<HTMLElement>('.input-box'));
+  } catch {
+    caret = null;
+  }
   initAttachmentEntries(input, bar);
   renderSubmitUi();
   window.setTimeout(autoGrow, 0);
+  window.setTimeout(() => caret?.sync(), 0);
 }
 
 /** 发送成功后清空输入框并复位高度。 */
@@ -153,6 +164,7 @@ export function clearInput(): void {
   input.value = '';
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, MAX_HEIGHT) + 'px';
+  caret?.sync(); // W1525：程序化改值不发 input 事件，显式重绘假光标
 }
 
 /** 当前输入框内容（切换会话时保存草稿用）。 */
@@ -166,6 +178,7 @@ export function setInputValue(v: string): void {
   input.value = v;
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, MAX_HEIGHT) + 'px';
+  caret?.sync(); // W1525：同上（恢复草稿 / 插话失败还原）
 }
 
 /**
