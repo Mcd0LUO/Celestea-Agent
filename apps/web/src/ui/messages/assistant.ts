@@ -13,6 +13,7 @@ import { runEnhancers } from '../enhance';
 import { htmlToNodes } from './markdown';
 import { buildOmittedNote, clampForRender, MESSAGE_RENDER_LIMIT, setOmittedCount } from './oversize';
 import { prunePaneDom } from './dom-cap'; // W1485：消息容器的 DOM 上限
+import { waitFor } from './cadence'; // W1524：合并窗口 = 上次渲染实测耗时（自适应）
 import { autoscroll, hideEmptyHint, renderEmptyHint } from './scroll';
 
 // ---- 文本段增量渲染器（W301） ---------------------------------------------------
@@ -53,6 +54,7 @@ export function resetMessages(ctx: SessionPane): void {
     ctx.render.timer = null;
   }
   ctx.render.deadline = Number.NEGATIVE_INFINITY; // W867：清空后第一帧同样立即渲染
+  ctx.render.cost = 0; // W1524：清空后没有实测代价，窗口回到下限
   if (ctx.assistant) doms.delete(ctx.assistant);
   ctx.assistant = null;
   ctx.turn = null;
@@ -70,6 +72,11 @@ export function resetMessages(ctx: SessionPane): void {
  *   · 距上次渲染已过窗口（首次 / 空闲后的第一帧）→ **同一调用栈内立即渲染**，事件到达
  *     即出字，不再等一个 60ms 节拍（旧口径在流式与快速切换时明显发顿，用户 6②）；
  *   · 同一窗口内的连续增量 → 并成一次尾部渲染，绝不逐字节重排。
+ *
+ * ★ W1524：这个 12 是**下限**，实际窗口 = clamp(上次渲染实测耗时, 12, 50)，见
+ *   ./cadence.ts 的 mergeWindow。固定窗口在「渲染本身 ≥ 窗口」的内容上会退化成
+ *   「每帧都渲染」——CDP 真机实测（代码形态）：一个 4 帧突发 = 4 次同步全量渲染，
+ *   13 个长帧、最长 89.5ms。常量名与下限语义保持不变，W867 的门禁照旧成立。
  */
 export const RENDER_DEBOUNCE = 12;
 
@@ -152,6 +159,19 @@ function renderTextView(ctx: SessionPane, view: AssistantView): void {
   railSync(ctx);
 }
 
+/**
+ * W1524：带**实测耗时**的渲染 —— 每次真正渲染都把耗时写回节拍，作为下一次的合并窗口。
+ *
+ * 为什么单独包一层而不是在 renderTextView 内部测：renderTextView 开头有一条「文本没变
+ * 就短路」的快路径（只 autoscroll/railSync），那条路径的耗时**不代表**重排代价，记进去
+ * 会让窗口无端变小。只统计真正干了活的那条路径。
+ */
+function renderTimed(ctx: SessionPane, view: AssistantView): void {
+  const t0 = performance.now();
+  renderTextView(ctx, view);
+  ctx.render.cost = performance.now() - t0;
+}
+
 function scheduleTextView(ctx: SessionPane, view: AssistantView): void {
   if (ctx.render.timer !== null) return; // 已有一次尾部渲染排队（窗口内的增量都并进它）
   // W1485：标签页在后台时**不排渲染**，只累积（view.text 继续涨）。
@@ -160,16 +180,17 @@ function scheduleTextView(ctx: SessionPane, view: AssistantView): void {
   // 后台只累积、变可见时由 flushVisible() 一次性对齐（同一帧内完成，不会空白）。
   if (document.hidden) return;
   const now = performance.now();
-  const wait = Math.max(0, ctx.render.deadline + RENDER_DEBOUNCE - now);
+  // W1524：窗口自适应（见 ./cadence.ts）。waitFor 内部保留 -Infinity 的首帧哨兵语义。
+  const wait = waitFor(now, ctx.render, RENDER_DEBOUNCE);
   if (wait === 0) {
     ctx.render.deadline = now;
-    renderTextView(ctx, view); // leading：立即渲染（不再等定时器）
+    renderTimed(ctx, view); // leading：立即渲染（不再等定时器）
     return;
   }
   ctx.render.timer = window.setTimeout(() => {
     ctx.render.timer = null;
     ctx.render.deadline = performance.now();
-    renderTextView(ctx, view);
+    renderTimed(ctx, view);
   }, wait);
 }
 
@@ -223,9 +244,27 @@ export function appendText(ctx: SessionPane, view: AssistantView, delta: string)
   scheduleTextView(ctx, view);
 }
 
-/** Sync final assistant text from the done event. */
+/**
+ * Sync final assistant text from the done event.
+ *
+ * ★ W1524：文本**没变**时也必须冲刷排队中的那次渲染。
+ *
+ *   旧实现是 view.text === text → return，理由是「没有新内容就不用渲染」。但那只在
+ *   「已渲染的文本 == view.text」时成立；流式的尾部渲染是**排队**的（scheduleTextView
+ *   的定时器），done 到达时完全可能有一次渲染还没落地。此时早退 = 让用户对着旧 DOM 等
+ *   满一个合并窗口（W1524 的窗口最坏 50ms）。
+ *
+ *   这不是纯理论：tests/w895r-live-replay-parity 就是靠「done 之后 8 个宏任务内 DOM 必须
+ *   已是终态」在读结果，W1524 把窗口从固定 12ms 改成自适应后该用例 6 跑 2 红（原始代码
+ *   6 跑 0 红）。修在这里而不是去调窗口：**turn 结束本来就该立刻对齐终态**，与窗口多长无关。
+ */
 export function applyFinalText(ctx: SessionPane, view: AssistantView, text: string): void {
-  if (typeof text !== 'string' || !text || view.text === text) return;
+  if (typeof text !== 'string' || !text) return;
+  if (view.text === text) {
+    // 内容没变，但可能有排队未落的渲染 → 立刻冲刷，别让终态等一个窗口。
+    if (ctx.render.timer !== null) flushTextView(ctx, view);
+    return;
+  }
   view.text = text;
   flushTextView(ctx, view);
 }
