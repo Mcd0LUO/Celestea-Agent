@@ -16,8 +16,9 @@
  *   ⑦ 可达：分册目录里的非索引文档必须被该目录的 `README.md` 链接。
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ownCheckoutPath } from './lib/checkout-path.js';
 
 const REPO = process.cwd();
 const DOCS = join(REPO, 'docs');
@@ -282,10 +283,16 @@ describe('文档不变量', () => {
  *
  * 两处范围收窄（与 ③b 的锚点检查同一取舍）：归档是冻结的历史快照；围栏代码块里
  * 是样例载荷与当时的命令输出（记录，不是叙述）。
+ *
+ * **「本仓自己的」由 git 决定，不由 cwd 决定**（W1519 修假绿）：原来是
+ * `'/src/' + basename(REPO)`，而 `REPO = process.cwd()` —— 在链接工作树里 cwd 的
+ * basename 是工作树目录名（`w1516-cpu-sync`），于是这条门禁**静默空转**、一条也不报。
+ * 仓库名改从 `git rev-parse --git-common-dir` 问（见 `./lib/checkout-path.js`），
+ * 主工作树与链接工作树得到同一个答案。
  */
 function checkoutPathProblems(p: string, text: string): string[] {
   if (isArchived(p)) return [];
-  const ownDir = '/src/' + basename(REPO);
+  const ownDir = ownCheckoutPath(REPO);
   const problems: string[] = [];
   let inFence = false;
   for (const line of text.split('\n')) {
