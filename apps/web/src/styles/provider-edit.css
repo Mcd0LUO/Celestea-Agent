@@ -34,8 +34,14 @@
   color: var(--c-text-1); font-weight: 600;
 }
 .prov-modality-chip.on::before { content: '✓ '; }
-/* 未写盘的乐观默认态：点线描边 + 说明文字，与「已显式固定」明确可辨。
-   （本仓禁 dashed，见 W847 W8；用 dotted。） */
-.prov-modalities.is-default .prov-modality-chip { border-style: dotted; }
+/* 未写盘的乐观默认态：左侧实心强调条 + 说明文字，与「已显式固定」明确可辨。
+   ★ 这里原用非实线线型描边，违反 W847 W8 / W858 的「styles 下不得出现虚线段线型」
+   机械门禁（禁的是**两种**非实线线型、不是只禁其中一种；且它逐行扫原文，
+   连注释里的字面词也算 —— 所以此处刻意不复写那两个词）。改为与仓库既有同语义
+   先例一致的手法：settings.css 的 .prov-table tr.is-default 也用 border-left
+   实心条表达「默认/未显式固定」，不靠线型。 */
+.prov-modalities.is-default .prov-modality-chip {
+  border-left-width: 2px; border-left-color: var(--c-accent-ring);
+}
 .prov-modality-note { font-size: 11px; color: var(--c-text-3); }
 .prov-modality-note[hidden] { display: none; }
