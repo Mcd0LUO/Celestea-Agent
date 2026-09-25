@@ -76,6 +76,40 @@ probeHost(): bwrap 在 PATH？→ `bwrap --version` 成功？→ 按正确顺序
 | `CELESTEA_SANDBOX_NPROC` | 推导 | 显式覆盖 `RLIMIT_NPROC` |
 | `CELESTEA_SANDBOX_NPROC_HEADROOM` | `512` | 推导时的余量 |
 | `CELESTEA_SANDBOX_RLIMITS` | `1` | `0` → 完全不施加 rlimit |
+| `CELESTEA_SHELL_MAX_CPU_SEC` | `600` | `RLIMIT_CPU` 的部署方上限（模型侧 `cpu_sec` 与前台推导都被它夹紧） |
+| `CELAESTEA_RUN_CODE_MAX_TIMEOUT_MS` | `120000` | `run_code` 的 `timeout_ms` 硬顶（默认值不变，仍是 120000ms） |
+
+### `RLIMIT_CPU` 跟随墙钟（W1516；设计正文 `docs/feature-sandbox-time-semantics.md` §3.1）
+
+固定的 20s `RLIMIT_CPU` 与墙钟是**两条互不相干的时间线**，而报错只报其中一条：worker 跑 `find /`
+被 20s 的 CPU 上限杀掉，错误却写 `killed after 30000ms`，于是「我把 timeout 调大了为什么还是被杀」
+成了一个没有答案的问题。现在 CPU 上限由**该次调用生效的墙钟**推导：
+
+```
+cpuSec = clamp(ceil(wallClockMs / 1000) + CPU_GRACE_SEC(5), 1, config.maxCpuSec)
+```
+
+三种取值来源（`limits.ts` 的 `resolveCallCpuSec` 是唯一判定点）：
+
+| 来源 | 何时 | 取值 |
+|---|---|---|
+| `explicit` | 调用传了 `cpu_sec` | 该值，仍被 `maxCpuSec` 夹紧（clamp，不是报错） |
+| `wall-clock` | 前台、未传 `cpu_sec` | `ceil(生效墙钟 / 1000) + 5` |
+| `background` | `background:true`、未传 `cpu_sec` | `maxCpuSec` 本身（该路径没有调用级墙钟） |
+
+- **前台**：`wallClockMs` 取 `launch.ts` 的 `resolveTimeout()` 返回的**生效**值（显式 `timeout_ms`，
+  否则该 config 的默认值），所以「调大 timeout」现在会把 CPU 预算一起抬高。
+- **后台刻意不对称**：`background:true` 没有调用级墙钟，无处可跟随；缺省取部署方上限 `maxCpuSec`，
+  硬边界仍由部署方掌握。
+- `DEFAULT_LIMITS.cpuSec = 20` 只作为「无调用上下文」时的兜底保留，前台/后台的按调用路径都不再吃它。
+- 5s 的 grace 是**刻意的**：保证墙钟先到，于是超时报 `code=timeout`（带输出预览），
+  而不是含糊的 CPU 死亡。
+- `run_code` 的子进程同样带推导出的 `cpuSec`（`run-code/broker.ts` 的 `spawnProgram`）；
+  被 CPU 上限杀死时返回 `code=cpu_exceeded` 并**指名上限**，与 `run_shell` 的 `cpu_exceeded` 对齐。
+
+> 真机注记：bwrap 无法 bind 一个**祖先目录不可穿越**的路径（本仓 checkout 位于 0750 祖先之下），
+> 所以 `bwrap-live.test.ts` 在这类 worktree 里会整组红 —— 那是环境事实，与本特性无关
+> （`cpuSec=20` 的旧行为同样失败）；W1516 的真机用例因此跑在系统临时目录里。
 
 ## 4. `RLIMIT_NPROC`：唯一一个语义有毒的 rlimit
 

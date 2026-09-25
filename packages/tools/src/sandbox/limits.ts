@@ -165,3 +165,88 @@ export function resolveCpuSec(base: number, requested: number | undefined, max: 
 export function limitsForCpu(base: SandboxLimits, resolution: CpuResolution): SandboxLimits {
   return resolution.cpuSec === base.cpuSec ? base : { ...base, cpuSec: resolution.cpuSec };
 }
+
+// ---- CPU follows the wall clock (docs/feature-sandbox-time-semantics.md §3.1) ----
+
+/**
+ * Headroom added on top of the wall clock before it becomes `RLIMIT_CPU`.
+ *
+ * The point of the grace is to make "the wall clock fires first" the NORMAL
+ * outcome: when the deadline wins, the caller gets the honest `code=timeout`
+ * (with captured output previews), instead of an ambiguous CPU death that only
+ * says "killed" and hides which of the two independent timelines expired. 5s
+ * covers the SIGKILL + reap path (`REAP_GRACE_MS` = 5s in `launch.ts`) inside the
+ * wall-clock window.
+ */
+export const CPU_GRACE_SEC = 5;
+
+/**
+ * §3.1: `cpuSec = clamp(ceil(wallClockMs / 1000) + CPU_GRACE_SEC, 1, maxCpuSec)`.
+ *
+ * `maxCpuSec` is the deployer ceiling (`CELESTEA_SHELL_MAX_CPU_SEC`), so a
+ * derived value can never exceed it. The ceiling is treated as at least 1 so a
+ * misconfigured `0` still yields a usable limit instead of `--cpu=0`.
+ */
+export function deriveCpuSecFromWallClock(wallClockMs: number, maxCpuSec: number, graceSec = CPU_GRACE_SEC): number {
+  const ceiling = Math.max(Math.trunc(maxCpuSec), 1);
+  const seconds = Math.ceil(wallClockMs / 1000) + graceSec;
+  return Math.max(Math.min(seconds, ceiling), 1);
+}
+
+/**
+ * Where a call's effective `RLIMIT_CPU` came from. There are exactly THREE
+ * sources and they are deliberately asymmetric:
+ *
+ * | source       | when                             | value                    |
+ * |--------------|----------------------------------|--------------------------|
+ * | `explicit`   | the caller passed `cpu_sec`      | that value, clamped      |
+ * | `wall-clock` | foreground, no `cpu_sec`         | `ceil(timeout/1000) + 5` |
+ * | `background` | `background: true`, no `cpu_sec` | `maxCpuSec` (the ceiling)|
+ *
+ * The last row is INTENTIONALLY asymmetric. A background process has no
+ * call-level wall clock at all — `launch.ts`'s `resolveTimeout` only bounds a
+ * foreground `run` — so there is nothing for it to follow. The two honest
+ * answers are "keep the old fixed 20s" or "use the deployer's ceiling"; the
+ * deployer asked for long-lived helpers to be allowed the budget they
+ * configured, so the default is the ceiling. The hard boundary is still
+ * `maxCpuSec`, which only an operator can move.
+ *
+ * `DEFAULT_LIMITS.cpuSec` (20) therefore survives ONLY as the fallback for
+ * callers that resolve limits outside any call (see [limitsFromEnv]); neither
+ * the foreground nor the background per-call path reads it as a default.
+ */
+export type CpuSource = "explicit" | "wall-clock" | "background";
+
+/** A [`CpuResolution`] plus which of the three sources produced it. */
+export interface CallCpuResolution extends CpuResolution {
+  source: CpuSource;
+}
+
+export interface CallCpuInput {
+  /** The caller's per-call `cpu_sec` (`undefined` = not passed). */
+  requested: number | undefined;
+  /** Deployer ceiling: `config.maxCpuSec`. */
+  maxCpuSec: number;
+  /**
+   * The **effective** wall clock of this call in ms (the value `resolveTimeout`
+   * returned), or `null` for a background spawn — which has no call-level wall
+   * clock and therefore nothing to follow.
+   */
+  wallClockMs: number | null;
+}
+
+/**
+ * Resolve the effective `RLIMIT_CPU` of ONE call from its three possible
+ * sources (see [CpuSource]). An explicit `cpu_sec` always wins over a derived
+ * default and is clamped to `maxCpuSec` exactly as before — clamping is
+ * reported (`clamped: true`), never an error.
+ */
+export function resolveCallCpuSec(input: CallCpuInput): CallCpuResolution {
+  const { requested, maxCpuSec, wallClockMs } = input;
+  const background = Math.max(Math.trunc(maxCpuSec), 1);
+  const fallback = wallClockMs === null ? background : deriveCpuSecFromWallClock(wallClockMs, maxCpuSec);
+  const resolved = resolveCpuSec(fallback, requested, maxCpuSec);
+  const source: CpuSource =
+    requested === undefined ? (wallClockMs === null ? "background" : "wall-clock") : "explicit";
+  return { ...resolved, source };
+}

@@ -17,7 +17,9 @@
  *   refused before dispatch, the wall clock is enforced while waiting for a
  *   line, the sub-call output ledger is charged per reply;
  * - every infrastructure failure is a structured `run_code: code=… msg="…"`
- *   (invalid_arg | registry | config | spawn | protocol | timeout | aborted);
+ *   (invalid_arg | registry | config | spawn | protocol | timeout | cpu_exceeded
+ *   | aborted); `cpu_exceeded` is the §3.3 addition that makes a child killed by
+ *   its own `RLIMIT_CPU` self-describing instead of a bare `aborted`;
  *   a program exception is that exception's text plus a bounded log tail;
  * - the child is killed on timeout, on cancel and on protocol failure — never
  *   left behind — and its script file is removed on every exit path.
@@ -35,6 +37,9 @@ import { stringArg } from "../args.js";
 import { resolveShellKind, type ShellResolveInput } from "../platform/exec.js";
 import { pythonCandidates, runCodeCommand } from "../platform/quote.js";
 import { whichSync } from "../sandbox/probe.js";
+import { cpuExceededFailure as cpuKillFailure, isCpuSignal } from "./cpu-kill.js";
+import { newRunState, type ChildTermination, type RunBudget, type RunState, type Settled } from "./run-state.js";
+import { deriveCpuSecFromWallClock } from "../sandbox/limits.js";
 import { TIMED_OUT, withTimeout } from "../sandbox/async.js";
 import { readCapped, REAP_GRACE_MS } from "../sandbox/launch.js";
 import { ToolFailure } from "../tool-failure.js";
@@ -70,28 +75,6 @@ interface SubRequest {
   args: Record<string, unknown>;
 }
 
-/** Terminal state of the child, plus its captured stderr. */
-interface Settled {
-  exitCode: number | null;
-  killed: boolean;
-  stderrText: string;
-  stderrTruncated: boolean;
-}
-
-/** Mutable state of one run (logs, budget, outcome). */
-interface RunState {
-  logs: string;
-  logsTruncated: boolean;
-  subOutputBytes: number;
-  subOutputDropped: number;
-  dispatched: number;
-  hasFinal: boolean;
-  finalValue: unknown;
-  programError: string | null;
-  infraError: string | null;
-  settle: Settled | null;
-}
-
 let scriptSeq = 0;
 
 /**
@@ -112,13 +95,18 @@ export const TS_PROGRAM_RUNTIME = existsSync("/usr/bin/node") ? "/usr/bin/node" 
 export async function brokerRun(ctx: BrokerContext, args: unknown): Promise<ToolExecOutcome> {
   const source = programSource(args);
   const timeoutMs = resolveTimeoutMs(readArg(args, "timeout_ms"), ctx.config);
+  // §3.3: the child's RLIMIT_CPU follows THIS run's effective wall clock. Computed
+  // once, here, so the value handed to the sandbox and the value named in a
+  // `cpu_exceeded` failure cannot drift apart.
+  const cpuSec = deriveCpuSecFromWallClock(timeoutMs, ctx.sandbox.config.maxCpuSec);
   // W880: the program is written to <CELESTEA_HOME>/.../run-code, NOT into the
   // workspace. The sandbox config owns that absolute path; the interpreter is
   // invoked with the absolute path so no cwd-relative lookup is involved.
   const script = await placeProgram(ctx.sandbox.config.programDir, source);
   const state = newRunState();
+  state.cpuSec = cpuSec;
   try {
-    await executeProgram(ctx, script.path, source.language, timeoutMs, state);
+    await executeProgram(ctx, { scriptPath: script.path, language: source.language, budget: { timeoutMs, cpuSec } }, state);
   } catch (e) {
     throw withLogs(e, ctx, state);
   } finally {
@@ -223,10 +211,22 @@ function interpreterCommand(language: RunCodeLanguage, scriptPath: string, input
   return runCodeCommand(kind, language, resolveInterpreter(language), scriptPath);
 }
 
-async function spawnProgram(sandbox: Sandbox, scriptPath: string, language: RunCodeLanguage): Promise<SandboxChild> {
+/**
+ * §3.3: spawn the program with an `RLIMIT_CPU` derived from THIS run's wall clock.
+ *
+ * Before this, the call was `sandbox.spawn({ command })` — no `cpuSec` at all —
+ * so the child silently ate the provider's base `DEFAULT_LIMITS.cpuSec` (20s)
+ * while the broker's own wall clock was 120s. A perfectly ordinary long program
+ * was therefore killed by the CPU limit at 20s, far before its deadline, and the
+ * failure carried no `cpu_exceeded` marker: the reported cause and the real one
+ * disagreed. Passing the derived value makes the child's CPU budget follow the
+ * wall clock it is actually allowed to use (§3.1), so "the wall clock fires
+ * first" is the normal outcome.
+ */
+async function spawnProgram(sandbox: Sandbox, scriptPath: string, language: RunCodeLanguage, cpuSec: number): Promise<SandboxChild> {
   let spawned: SandboxSpawned;
   try {
-    spawned = await sandbox.spawn({ command: interpreterCommand(language, scriptPath, sandbox.shell) });
+    spawned = await sandbox.spawn({ command: interpreterCommand(language, scriptPath, sandbox.shell), cpuSec });
   } catch (e) {
     throw runCodeFailure("spawn", errorText(e));
   }
@@ -242,15 +242,25 @@ async function spawnProgram(sandbox: Sandbox, scriptPath: string, language: RunC
   return spawned.child;
 }
 
-/** Spawn, pump the protocol to completion, then settle (and always clean up). */
-async function executeProgram(
-  ctx: BrokerContext,
-  scriptPath: string,
-  language: RunCodeLanguage,
-  timeoutMs: number,
-  state: RunState,
-): Promise<void> {
-  const child = await spawnProgram(ctx.sandbox, scriptPath, language);
+/** What one `run_code` program is, plus the budget it runs under. */
+interface ProgramRun {
+  scriptPath: string;
+  language: RunCodeLanguage;
+  /** The effective wall clock AND the `RLIMIT_CPU` derived from it (§3.1). */
+  budget: RunBudget;
+}
+
+/**
+ * Spawn, pump the protocol to completion, then settle (and always clean up).
+ *
+ * The wall clock and the child's `RLIMIT_CPU` travel together in `budget`, so the
+ * value handed to the sandbox and the value named in a `cpu_exceeded` failure are
+ * provably the same number.
+ */
+async function executeProgram(ctx: BrokerContext, run: ProgramRun, state: RunState): Promise<void> {
+  const { scriptPath, language, budget } = run;
+  const { timeoutMs, cpuSec } = budget;
+  const child = await spawnProgram(ctx.sandbox, scriptPath, language, cpuSec);
   const stderr = readCapped(child.stderr, ctx.config.maxLogBytes);
   // W833 (R3 B1 / W812 P1-1): the wall clock is enforced HERE, not only while
   // waiting for the next stdout line. A slow sub-call (run_shell itself allows
@@ -289,13 +299,24 @@ async function executeProgram(
   state.settle = { ...settled, stderrText: captured.text, stderrTruncated: captured.truncated };
 }
 
-/** Wait for a natural exit within `graceMs`; on expiry kill the tree. */
-async function settleChild(child: SandboxChild, graceMs: number): Promise<{ exitCode: number | null; killed: boolean }> {
+/**
+ * Wait for a natural exit within `graceMs`; on expiry kill the tree.
+ *
+ * Also reports WHICH kill this was. A non-null `signal` with `killed === false`
+ * is the child dying on its own — and on POSIX that is exactly what a
+ * `RLIMIT_CPU` exhaustion looks like: the kernel raises SIGXCPU at the soft
+ * limit and, if the process survives, SIGKILL at the hard limit. `RLIMIT_CPU`
+ * counts CPU time of ONE process, so this is the only place the fact can be
+ * observed (the broker's wall clock is a different timeline entirely).
+ */
+async function settleChild(child: SandboxChild, graceMs: number): Promise<ChildTermination> {
   const exit = await withTimeout(child.wait(), graceMs);
-  if (exit !== TIMED_OUT) return { exitCode: exit.code, killed: false };
+  if (exit !== TIMED_OUT) {
+    return { exitCode: exit.code, killed: false, cpuExceeded: isCpuSignal(exit.signal), signal: exit.signal };
+  }
   child.kill();
   await withTimeout(child.wait(), REAP_GRACE_MS);
-  return { exitCode: null, killed: true };
+  return { exitCode: null, killed: true, cpuExceeded: false, signal: null };
 }
 
 /** Close our end of the reply channel so a blocked bridge call sees EOF. */
@@ -530,12 +551,27 @@ function composeRender(config: RunCodeConfig, state: RunState): string | null {
   return parts.length === 0 ? null : parts.join("\n");
 }
 
-/** The canonical value, or the structured error (infra > program > aborted). */
+/** The canonical value, or the structured error (infra > program > CPU > aborted). */
 function outcomeOf(ctx: BrokerContext, state: RunState): ToolExecOutcome {
   const render = composeRender(ctx.config, state);
-  const error = state.infraError ?? state.programError ?? (state.hasFinal ? null : abortedMessage(state));
+  const error = state.infraError ?? state.programError ?? cpuExceededFailure(state) ?? (state.hasFinal ? null : abortedMessage(state));
   if (error !== null) throw new ToolFailure(errorCode(error) ?? RUN_CODE_ERROR_PREFIX, withLogsText(error, render));
   return { value: state.hasFinal ? state.finalValue : null, render };
+}
+
+/**
+ * §3.3: did the CHILD's own `RLIMIT_CPU` kill this run? The verdict itself lives
+ * in `cpu-kill.ts`; this only supplies the run's facts. It is consulted LAST, so
+ * an infra error, a program exception or a completed run always wins — a CPU kill
+ * can never steal the `code=timeout` case that §3.2/§3.3 want to keep.
+ */
+function cpuExceededFailure(state: RunState): string | null {
+  return cpuKillFailure({
+    death: state.settle,
+    cpuSec: state.cpuSec,
+    hasFinal: state.hasFinal || state.programError !== null,
+    capturedBytes: Buffer.byteLength(state.logs, "utf8"),
+  });
 }
 
 /** Attach the bounded render tail to a failure (legacy `FailureCtx`). */
@@ -549,17 +585,4 @@ function withLogs(error: unknown, ctx: BrokerContext, state: RunState): Error {
   return error instanceof ToolFailure ? new ToolFailure(error.kind, text) : new ToolFailure(RUN_CODE_ERROR_PREFIX, text);
 }
 
-function newRunState(): RunState {
-  return {
-    logs: "",
-    logsTruncated: false,
-    subOutputBytes: 0,
-    subOutputDropped: 0,
-    dispatched: 0,
-    hasFinal: false,
-    finalValue: null,
-    programError: null,
-    infraError: null,
-    settle: null,
-  };
-}
+

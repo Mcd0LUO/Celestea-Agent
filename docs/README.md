@@ -15,6 +15,9 @@
 | [`feature-multimodal-attachments/`](./feature-multimodal-attachments/README.md) | 设计（已实现 P0） | **多模态附件**设计（分册）：图片/文本附件的三入口、能力位探测、降级提示、objectURL 生命周期 | [`README.md`](./feature-multimodal-attachments/README.md)；`apps/web/src/ui/attachments.ts` |
 | [`feature-display-components.md`](./feature-display-components.md) | 设计（**P0 已实现**，W895） | **可选显示组件**：把「渲染后增强」与「markdown 扩展」变成可注册的缝，显示能力做成可开关组件（构建期装配，不做运行时下载） | 本文；缝的现有先例见 `apps/web/src/ui/hint/registry.ts` 的取舍注释 |
 | [`feature-dynamic-tool-disclosure.md`](./feature-dynamic-tool-disclosure.md) | 设计（只调研与设计，W802） | **动态工具披露**的调研与设计：工具面随任务收窄的方案与取舍；本文不落地代码 | 本文 |
+| [`feature-sandbox-time-semantics.md`](./feature-sandbox-time-semantics.md) | 已实现（P0，W1516） | **沙箱时间语义**：把固定的 20s `RLIMIT_CPU` 改成「跟随该次调用墙钟」的推导值，模型仍可用参数覆盖且被部署方上限夹紧；含 `run_code` 子进程与可配硬顶的补齐 | 本文；落点 `packages/tools/src/sandbox/limits.ts` |
+| [`feature-permission-entry-merge.md`](./feature-permission-entry-merge.md) | 设计 | **权限入口合并**：状态栏右端只留一个盾牌入口（用已有图标），面板内同时给出会话档位与精细授权；窄屏不再挤掉停止键 | 本文；落点 `apps/web/src/statusline/permission.ts`、`apps/web/src/ui/grants/` |
+| [`feature-docs-drift-cleanup.md`](./feature-docs-drift-cleanup.md) | 设计 | **文档漂移清理与归档**：把不再描述现状的文档按规范归档、把可机械发现的漂移变成断言；含本次实读的四条漂移与处置 | 本文；门禁 `tests/doc-conventions.test.ts` |
 | [`iteration-e/`](./iteration-e/README.md) | 设计 | 迭代方向 E（能力深水区，分册）：断点恢复 / 可恢复多 agent / 成本账本 / 模型降级的目标契约、分期与验收标准 | [`README.md`](./iteration-e/README.md)；落地后回写 [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
 | [`modes-standard-vs-execution.md`](./modes-standard-vs-execution.md) | 设计（**P0 已实现，W729**） | 特性设计：**会话双模式**（标准模式 / 执行模式，即 DSH PTC 对应物）的目标契约、分期与可机械检验的验收标准；§10 是 P0 落地回填 | 本文；PTC 语义来源见归档的 DSH 评估（W253/W254，已于 W881 清理出公开仓） |
 | [`deployment.md`](./deployment.md) | 当前 | **部署与安全模型**：生产 systemd + nginx、隧道访问、安全模型（含 Windows 差异表） | 本文；登录门见 [`archive/decisions/feature-studio-auth.md`](./archive/decisions/feature-studio-auth.md) |

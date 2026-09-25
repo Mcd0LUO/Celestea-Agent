@@ -46,6 +46,12 @@ export interface FakeSpawnRecord {
   command: string;
   workdir: string | undefined;
   child: FakeChild;
+  /**
+   * W1516: the request exactly as the caller sent it, so a test can assert what
+   * was ASKED for (e.g. the derived `cpuSec`) and not merely what the child did.
+   * The whole request is kept so a future field needs no change here.
+   */
+  request: SandboxSpawnRequest;
 }
 
 /** Scripted child: synthetic pipes, scripted exit, observable signals. */
@@ -150,7 +156,7 @@ export function createFakeSandbox(options: FakeSandboxOptions = {}): FakeSandbox
     },
     async spawn(request: SandboxSpawnRequest): Promise<SandboxSpawned> {
       const created = child(take());
-      spawns.push({ command: request.command, workdir: request.workdir, child: created });
+      spawns.push({ command: request.command, workdir: request.workdir, child: created, request });
       return { child: created, sandbox: meta };
     },
   };

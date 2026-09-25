@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { TIMED_OUT } from "../sandbox/async.js";
 import {
+  DEFAULT_MAX_TIMEOUT_MS,
+  ENV_RUN_CODE_MAX_TIMEOUT_MS,
   MAX_LINE_BYTES,
   MAX_LOG_BYTES,
   MAX_SUB_CALLS,
@@ -13,6 +15,7 @@ import {
   resolveTimeoutMs,
   runCodeConfig,
   runCodeConfigFromEnv,
+  runCodeMaxTimeoutMs,
 } from "./limits.js";
 import { LineReader, appendBounded, jsonByteLength, safeUtf8, tail, truncateValue, utf8Prefix } from "./lines.js";
 
@@ -119,6 +122,7 @@ describe("limits + config", () => {
   it("defaults to 120s / 20 sub-calls / 256KiB / 64KiB / 5s stdin-write", () => {
     expect(runCodeConfig()).toEqual({
       timeoutMs: 120_000,
+      maxTimeoutMs: 120_000,
       maxSubCalls: 20,
       maxSubOutputBytes: 262_144,
       maxLogBytes: 65_536,
@@ -128,6 +132,37 @@ describe("limits + config", () => {
     // W896: the stdin-write bound is injectable (outside tests nothing overrides the
     // default), which is what lets the "child stopped reading stdin" case run in ~1s.
     expect(runCodeConfig({ stdinWriteTimeoutMs: 1_000 }).stdinWriteTimeoutMs).toBe(1_000);
+  });
+
+  /**
+   * W1516 A5 (§3.3): the `timeout_ms` ceiling is deployer-configurable via
+   * `CELAESTEA_RUN_CODE_MAX_TIMEOUT_MS`, and its DEFAULT is unchanged at 120000ms.
+   */
+  it("A5: reads CELAESTEA_RUN_CODE_MAX_TIMEOUT_MS, defaulting to 120000", () => {
+    // Env absent -> the historical hard cap, byte for byte.
+    expect(runCodeMaxTimeoutMs({})).toBe(120_000);
+    expect(runCodeMaxTimeoutMs({})).toBe(DEFAULT_MAX_TIMEOUT_MS);
+    // Explicit -> honoured (this is the whole point of the knob).
+    expect(runCodeMaxTimeoutMs({ [ENV_RUN_CODE_MAX_TIMEOUT_MS]: "600000" })).toBe(600_000);
+    // Illegal / non-positive -> fall back to the default, never "unlimited".
+    expect(runCodeMaxTimeoutMs({ [ENV_RUN_CODE_MAX_TIMEOUT_MS]: "soon" })).toBe(120_000);
+    expect(runCodeMaxTimeoutMs({ [ENV_RUN_CODE_MAX_TIMEOUT_MS]: "0" })).toBe(120_000);
+    expect(runCodeMaxTimeoutMs({ [ENV_RUN_CODE_MAX_TIMEOUT_MS]: "-5" })).toBe(120_000);
+    // ...and the default WALL CLOCK is untouched by the ceiling knob.
+    expect(runCodeConfigFromEnv({ [ENV_RUN_CODE_MAX_TIMEOUT_MS]: "600000" })).toMatchObject({
+      timeoutMs: 120_000,
+      maxTimeoutMs: 600_000,
+    });
+  });
+
+  it("A5: the raised ceiling actually admits a longer timeout_ms (and still bounds it)", () => {
+    const raised = runCodeConfigFromEnv({ [ENV_RUN_CODE_MAX_TIMEOUT_MS]: "600000" });
+    // 300s was impossible before (the cap was 120s); now it is accepted...
+    expect(resolveTimeoutMs(300_000, raised)).toBe(300_000);
+    // ...and the raised ceiling is still a ceiling, named in the failure.
+    expect(() => resolveTimeoutMs(600_001, raised)).toThrow(/exceeds the run_code maximum 600000ms/);
+    // The default posture still refuses 300s, so nothing loosened by accident.
+    expect(() => resolveTimeoutMs(300_000, runCodeConfigFromEnv({}))).toThrow(/exceeds the run_code maximum 120000ms/);
   });
 
   it("reads CELAESTEA_RUN_CODE_TIMEOUT_MS and clamps it to [1, 120000]", () => {

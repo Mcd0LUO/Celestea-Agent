@@ -17,8 +17,8 @@ import { describe, expect, it } from "vitest";
 
 import { POSIX_SHELL } from "../testing/platform-gates.js";
 import { BwrapSandbox } from "./bwrap.js";
-import { buildSandboxConfig } from "./config.js";
-import { DEFAULT_LIMITS, type SandboxLimits } from "./limits.js";
+import { buildSandboxConfig, DEFAULT_TIMEOUT_MS } from "./config.js";
+import { DEFAULT_LIMITS, deriveCpuSecFromWallClock, type SandboxLimits } from "./limits.js";
 import type { HostProbe } from "./probe.js";
 import { applyLimits, rlimitDiagnostics, ulimitScript } from "./rlimit.js";
 import { UserspaceSandbox } from "./userspace.js";
@@ -127,7 +127,10 @@ describe("F4 · providers pass the flag into the real plan", () => {
     const lines = readFileSync(prlimit.record, "utf8").trim().split(NL);
     expect(lines[0]).toContain("--as=2147483648");
     expect(lines[1]).not.toContain("--as=");
-    expect(lines[1]).toContain("--cpu=20");
+    // W1516: the CPU limit follows the wall clock now, so this is the DERIVED
+    // value for the default 30s timeout (35), not the old fixed 20. The
+    // exemption under test is `--as=` only; every other limit stays.
+    expect(lines[1]).toContain(`--cpu=${deriveCpuSecFromWallClock(DEFAULT_TIMEOUT_MS, 600)}`);
     expect(lines[1]).toContain("--nproc=1024");
     expect(lines[1]).toContain("--fsize=268435456");
     expect(lines[1]).toContain("--nofile=256");
@@ -148,7 +151,8 @@ describe("F4 · providers pass the flag into the real plan", () => {
     const lines = readFileSync(prlimit.record, "utf8").trim().split(NL);
     expect(lines[0]).toContain("--as=2147483648");
     expect(lines[1]).not.toContain("--as=");
-    expect(lines[1]).toContain("--cpu=20");
+    // W1516: derived from the wall clock (see the bwrap case above).
+    expect(lines[1]).toContain(`--cpu=${deriveCpuSecFromWallClock(DEFAULT_TIMEOUT_MS, 600)}`);
     expect(plain.sandbox).not.toHaveProperty("address_space_limited");
     expect(exempt.sandbox).not.toHaveProperty("address_space_limited");
   });

@@ -48,7 +48,7 @@ import {
 } from "./bwrap-argv.js";
 import { bwrapEnforcement } from "./enforcement.js";
 import { captureRun, preview, resolveTimeout, spawnPlan, validateSandboxConfig } from "./launch.js";
-import { limitsForCpu, limitsFromEnv, refreshNproc, resolveCpuSec, type SandboxLimits } from "./limits.js";
+import { limitsForCpu, limitsFromEnv, refreshNproc, resolveCallCpuSec, type CallCpuResolution, type SandboxLimits } from "./limits.js";
 import { probeHost, type HostProbe } from "./probe.js";
 import { applyLimits, rlimitDiagnostics, rlimitVia, type RlimitDescribeOptions, type RlimitVia } from "./rlimit.js";
 import { openSeccompBlob } from "./seccomp.js";
@@ -136,27 +136,32 @@ export class BwrapSandbox implements Sandbox {
   async run(request: SandboxRunRequest): Promise<SandboxRunResult> {
     validateSandboxConfig(this.config);
     const timeoutMs = resolveTimeout(this.config, request.timeoutMs);
-    const limits = this.limitsFor(request.cpuSec);
+    // §3.1: the EFFECTIVE wall clock of THIS call decides RLIMIT_CPU, so the
+    // value is derived from `timeoutMs` — not from a module constant. An explicit
+    // `cpu_sec` still wins and is still clamped (see [resolveCallCpuSec]).
+    const limits = this.limitsFor(resolveCallCpuSec({ requested: request.cpuSec, maxCpuSec: this.config.maxCpuSec, wallClockMs: timeoutMs }));
     const { child, meta } = await this.launch(request.command, request.workdir, false, limits, request.noAddressSpaceLimit === true);
     return captureRun(this.config, child, timeoutMs, meta);
   }
 
   async spawn(request: SandboxSpawnRequest): Promise<SandboxSpawned> {
     validateSandboxConfig(this.config);
-    const limits = this.limitsFor(request.cpuSec);
+    // `wallClockMs: null` = this path has NO call-level wall clock, so the default
+    // is the deployer ceiling instead of a derived value (see [CpuSource]).
+    const limits = this.limitsFor(resolveCallCpuSec({ requested: request.cpuSec, maxCpuSec: this.config.maxCpuSec, wallClockMs: null }));
     const { child, meta } = await this.launch(request.command, request.workdir, true, limits, request.noAddressSpaceLimit === true);
     return { child: wrapChild(child, { detached: true }), sandbox: meta };
   }
 
   /**
-   * W6: the base limits with this call's `cpu_sec` merged in (clamped).
+   * W6: the base limits with this call's resolved CPU limit merged in (clamped).
    * W1465: `nproc` is re-derived from a FRESH thread count on every call -- the
    * construction-time value is a time bomb (see [refreshNproc]). Callers that
    * pinned `limits` keep them verbatim (deterministic plans / tests).
    */
-  private limitsFor(cpuSec: number | undefined): SandboxLimits {
+  private limitsFor(resolution: CallCpuResolution): SandboxLimits {
     const base = this.refreshNprocPerCall ? refreshNproc(this.limits, this.env) : this.limits;
-    return limitsForCpu(base, resolveCpuSec(base.cpuSec, cpuSec, this.config.maxCpuSec));
+    return limitsForCpu(base, resolution);
   }
 
   /** Isolation actually in force, without running anything (logs / health). */
