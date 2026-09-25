@@ -120,10 +120,36 @@ export interface ToolCardData {
 export function buildToolCard(d: ToolCardData): ToolCardRef {
   const col = el('div', 'mcol');
   const msg = el('div', 'msg tool');
-  const cap = el('div', 'msg-caption');
-  cap.appendChild(el('span', 'who', t('chat.tool.title')));
-  cap.appendChild(el('span', null, d.name));
-  msg.appendChild(cap);
+  // W1542：**行内重复**修复 —— 工具名在每一行**最多出现一次**。
+  //
+  // 缺陷（真机实测，冻结快照 87 行）：`.msg-caption`（「工具 <名>」）**无条件**给
+  // 每行建，而卡头 `.toolcard-name` 在没有 desc 时又回落成工具名 —— 于是同一行把
+  // 同一个名字印两遍：`Tool run_shell` + `c8 run_shell`。名字次数直方图
+  // {1: 18, 2: 69}；2 次的那 69 行**全部**是「卡头印工具名」的行，1 次的那 18 行
+  // 全部是「卡头印 desc」的行 ⇒ 重复与「顶层/子行」无关，只与卡头印了什么有关。
+  //
+  // 修法（两条判据同源：caption 只说卡头没说的事）：
+  //   ① 子调用行**不建** caption —— 它是树里的子项，父卡的 caption 已经在说
+  //      「这是工具调用」，`c<n>` 标记与缩进导引线也已表明从属关系，再挂一行是
+  //      纯噪声。顶层行保留（流级分隔标记，与 user/think-seg/info 的行首标记同源）。
+  //   ② caption 里**只在卡头没说名字时**补名字（= 卡头印的是 desc）—— 卡头已经印了
+  //      名字就绝不再印一遍。
+  //
+  // 为什么删的是 caption 而不是卡头名字：卡头是**交互元素**（summary）—— 折叠指示 /
+  // 状态 / 复制按钮都在它上面，子行必须有它；caption 不是交互元素，去掉它不动任何
+  // 可点区域。名字也不会丢：`nameEl.title` 始终是工具名，悬停可辨。
+  //
+  // 判据用 `d.sub`（= id 形如 parent:cN）而不是「挂载位置」：父卡缺失时 mountToolCard
+  // 会把子项**退回顶层**（丢内容比缩进错更糟），那种行仍是子调用 —— 按挂载位置判会让
+  // 同一份数据在父卡在/不在时长得不一样。
+  const label = toolDescLabel(d.desc, d.name);
+  const headShowsToolName = label === d.name; // 卡头印的是工具名（= 没有 desc）
+  if (d.sub === undefined) {
+    const cap = el('div', 'msg-caption');
+    cap.appendChild(el('span', 'who', t('chat.tool.title')));
+    if (!headShowsToolName) cap.appendChild(el('span', null, d.name));
+    msg.appendChild(cap);
+  }
   const bubble = el('div', 'bubble');
   const card = document.createElement('details');
   card.className = 'toolcard running';
@@ -143,7 +169,11 @@ export function buildToolCard(d: ToolCardData): ToolCardRef {
     el('span', 'step-tag', d.sub === undefined ? t('chat.tool.step', { n: d.step }) : 'c' + d.sub),
   );
   // W778：折叠行标签 = desc（缺失回落工具名）；title 里保留工具名，悬停可辨。
-  const nameEl = el('span', 'toolcard-name', toolDescLabel(d.desc, d.name));
+  // W1542：label 在函数开头算一次（上面决定「caption 要不要补名字」用的就是它）——
+  // 两处各算一遍迟早分叉（同一规则两份实现是本仓反复踩过的坑）；W1541 正是在这里
+  // 踩了 TDZ：`label` 当时还没声明就被上面的 caption 用了，每次建卡都抛
+  // ReferenceError（7/7 测试红，真机整页工具卡全白）。
+  const nameEl = el('span', 'toolcard-name', label);
   nameEl.title = d.name;
   row1.appendChild(nameEl);
   const state = el('span', 'toolcard-state');
