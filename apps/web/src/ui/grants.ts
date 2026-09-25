@@ -47,6 +47,7 @@ import {
   setPanelNote,
   setShieldBadge,
   setShieldButton,
+  setShieldTier,
   settleOptimistic,
   type GrantsHost,
 } from './grants/state';
@@ -187,6 +188,8 @@ export function initGrants(): void {
   wired = true;
   setShieldButton(document.getElementById('slGrant') as HTMLButtonElement | null);
   setShieldBadge(document.getElementById('slGrantBadge'));
+  // W1517：合并入口的档位格（#slGrantTier）——盾牌标题要能同时说出档位与放宽项数
+  setShieldTier(document.getElementById('slGrantTier'));
   const btn = getShieldButton();
   if (btn) {
     btn.addEventListener('click', (e) => {

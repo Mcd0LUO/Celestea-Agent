@@ -78,6 +78,9 @@ button,
   /* W1512：.sl-stop 已并入输入栏的 #btnSend.btn-run（单控件两态），不再有独立停止键。 */
   .sl-grant { width: var(--tap-min); height: var(--tap-min); }
   .sl-grant svg { width: 14px; height: 14px; }
+  /* W1517：触控档下入口是 44px 方块 —— 档位名留不下几个字（只剩省略号），
+     与合并前 ≤360 的容器查询同一口径：只留图标。档位名在面板 §1 里照样看得见。 */
+  .sl-grant-tier { display: none; }
   /* W847：内联图片入口的触控命中区 ≥ --tap-min。W1463：让位改走**垂直**方向 ——
      左内边距保持贴边（4px），下内边距留出 44px 按钮 + 6px 底距。 */
   #btnAttach.attach-inline { width: var(--tap-min); height: var(--tap-min); }
@@ -95,7 +98,8 @@ button,
   .grant-row-actions .btn { min-height: var(--tap-min); }
   .settings-nav-item { min-height: var(--tap-min); }
 
-  /* 弹层永不越出视口（权限面板的宽度由 JS 几何算，这里兜底） */
+  /* 弹层永不越出视口（权限面板的宽度由 JS 几何算，这里兜底）。
+     W1517：合并后只剩一个权限面板（档位弹层已并入），第二选择器随之删除。 */
   .sl-popup,
   .sl-popup.grant-popup { max-width: calc(100vw - 16px); }
 
@@ -222,11 +226,10 @@ button,
   .sl-popup-textrow { flex-wrap: wrap; }
   .sl-popup-input { flex: 1 1 100%; min-height: var(--tap-min); }
 
-  /* 权限面板 / 会话档位弹层：小屏改底部抽屉式（用 !important 覆盖
-     ui/grants/panel/position.ts 与 statusline/permission.ts 写入的内联坐标）。
-     W871：档位弹层与盾牌面板共用同一套落位（ui/anchor-popup.ts），小屏同样收进抽屉。 */
-  .sl-popup.grant-popup,
-  .sl-popup.perm-popup {
+  /* 权限面板（合并后的唯一面板：§1 档位 + §2 精细授权）：小屏改底部抽屉式
+     （用 !important 覆盖 ui/grants/panel/position.ts 写入的内联坐标）。
+     W1517：档位弹层已并入本面板，故这里不再有第二个弹层选择器。 */
+  .sl-popup.grant-popup {
     left: 0 !important; right: 0 !important;
     top: auto !important; bottom: 0 !important;
     width: auto !important; max-width: none !important;

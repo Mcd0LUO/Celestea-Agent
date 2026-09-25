@@ -4,8 +4,10 @@
 //   为什么单独一个文件：W871 之前，同一个需求有两套写法 ——
 //     · ui/grants/panel/position.ts（盾牌面板）：panelGeom 现算视口坐标 + position:fixed；
 //     · statusline/permission.ts（会话档位弹层）：靠 .sl-popup 基类的
-//       `bottom: calc(100% - 2px); left: 14px` 死坐标，而触发它的 #slPerm 在发送栏
+//       `bottom: calc(100% - 2px); left: 14px` 死坐标，而触发它的入口在发送栏
 //       **右端** ⇒ 面板弹到另一头（1280×800 实测横向差 −780.45px，用户报「错位到左边」）。
+//       （W1517：档位弹层已并入盾牌面板 —— 触发键就是唯一的盾牌入口 #slGrant，
+//       落位仍走本模块的同一套适配器。）
 //   本模块把前者抽成**唯一**的落位适配器（几何仍是 ui/grants/geom.ts 的纯函数
 //   panelGeom —— 没有第二套算式），供两者共用。
 //

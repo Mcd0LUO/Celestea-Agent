@@ -43,6 +43,7 @@ import {
 } from './statusline/mode';
 import {
   createPermissionController,
+  registerTierHost,
   type PermissionController,
 } from './statusline/permission';
 import {
@@ -72,7 +73,11 @@ export class Statusline implements PickerHost, ModeHost {
   private hintEl: HTMLElement;
   /** W788：会话工作方式徽标（只读；点击弹层切换）。 */
   private modeEl: HTMLElement;
-  /** W858：会话权限档位入口（徽标 + 弹层，状态自持；页面无 #slPerm 时为无入口）。 */
+  /**
+   * W858/W1517：会话权限档位（徽标 + 面板段落，状态自持）。
+   * W1517 起档位**不再有自己的按钮** —— 徽标写进盾牌（#slGrantTier），列表/切换住
+   * 盾牌面板的 §1；页面没有 #slGrant 时为无入口（老骨架/其它测试夹具）。
+   */
   private perm: PermissionController;
 
   // ---- 快速切换（W227 / W750）：弹层状态由 ./statusline/picker.ts 读写（PickerHost） ----
@@ -108,8 +113,10 @@ export class Statusline implements PickerHost, ModeHost {
     // 放开到 document；仍用 need()（id 是运行时真源，缺失要当场炸而不是静默）。
     this.hintEl = need<HTMLElement>('#slHint', this.el);
     this.modeEl = need<HTMLElement>('#slMode', this.el);
-    // W858：档位入口（徽标可选：其它骨架/老页面没有 #slPerm 时安静地不装入口）
+    // W858/W1517：档位徽标（可选：其它骨架/老页面没有 #slGrant 时安静地不装入口）。
+    // 同一个 controller 注册给盾牌面板当 §1 的宿主 —— 面板与徽标共用一份档位状态。
     this.perm = createPermissionController(this.el, () => this.session, (t, ms) => this.setNote(t, ms));
+    registerTierHost(this.perm);
     this.ringProg.style.strokeDasharray = String(RING_C);
     this.el.title = t('statusline.tooltip');
 
@@ -129,7 +136,7 @@ export class Statusline implements PickerHost, ModeHost {
     this.effortEl.addEventListener('click', () => togglePopup(this, 'effort'));
     // W788：工作方式徽标（只读）→ 弹层切换
     this.modeEl.addEventListener('click', () => toggleModePopup(this));
-    this.perm.attach(); // W858：档位徽标 → 选择弹层
+    this.perm.attach(); // W858/W1517：档位徽标 → 合并面板的 §1（入口是盾牌）
     // Esc 关闭统一由 utils/overlays 层级栈处理（任务 3：唯一 document Esc 监听）
     document.addEventListener('click', (e) => {
       // W795：一律用**事件路径**判定「点在不在里面」——乐观渲染会当帧重绘弹层内容，
@@ -140,7 +147,8 @@ export class Statusline implements PickerHost, ModeHost {
       if (this.popup && !hit(this.popup, this.modelEl, this.effortEl)) closePopup(this);
       // W788：工作方式弹层同款——点自己/徽标不开倒，点别处关掉
       if (!modePopupHit(e) && !this.modeEl.contains(e.target as Node)) closeModePopup();
-      this.perm.onOutsideClick(e); // W858：档位弹层同款（点自己/徽标不关，点别处关掉）
+      // W1517：档位没有自己的弹层了 —— 它的面板就是盾牌面板，收起逻辑归
+      // ui/grants.ts 的「点面板外/盾牌外 → closePanel」（唯一一份，不重复实现）。
     });
   }
 
@@ -209,7 +217,7 @@ export class Statusline implements PickerHost, ModeHost {
       ...(cached ?? {}),
     };
     this.render();
-    this.perm.onSession(this.session); // W858：换会话 → 换一份档位视图
+    this.perm.onSession(this.session); // W858/W1517：换会话 → 换一份档位徽标（面板随 grants 刷新）
     void this.poll();
   }
 

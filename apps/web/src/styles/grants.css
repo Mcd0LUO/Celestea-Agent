@@ -10,15 +10,17 @@
 
 /* ---- 1) 状态栏盾牌按钮 ---------------------------------------------------- */
 
+/* W1517：唯一的权限入口（档位 + 精细授权合并）—— 图标 + 档位名 + 授权计数，
+   三者横排一行（徽标区不做两行）。宽度自适应：档位名长短不同，写死宽度会截断。 */
 .sl-grant {
   position: relative;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
+  gap: 4px;
   height: 18px;
-  padding: 0;
+  padding: 0 4px;
   background: transparent;
   /* W1297：扁平化 —— 去掉描边，盾牌只以图标/状态色区分。 */
   border: none;
@@ -51,16 +53,29 @@
 }
 .sl-grant.granted:hover { background: var(--c-grant-soft); }
 
-/* 角标：生效条数（仅已授予时可见） */
+/* W1517：档位名（原档位徽标的内容）并入徽标区 —— 与授权计数同处一格、
+   同一行；档位未知（无活动会话 / 老服务无档位端点）时为空串，不占位。 */
+.sl-grant-tier {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--c-text-2);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-grant.granted .sl-grant-tier { color: var(--c-grant); }
+
+/* 角标：生效条数（仅已授予时可见）。
+   W1517：从「绝对定位浮在按钮右上角」改为徽标区里的**行内小胶囊** —— 入口现在是
+   图标 + 档位名 + 计数的横排，浮起来的角标会压住档位名。 */
 .sl-grant-badge {
   display: none;
-  position: absolute;
-  top: -5px;
-  right: -5px;
   min-width: 11px;
   height: 11px;
-  padding: 0 2px;
-  border-radius: var(--r-sm);
+  padding: 0 3px;
+  border-radius: var(--r-badge);
   background: var(--c-grant);
   color: #fff;
   font-family: var(--mono);
@@ -106,7 +121,9 @@
   left: 0;
   right: auto;
   bottom: auto;
-  width: min(460px, calc(100vw - 40px));
+  /* W1517：合并面板（§1 档位 + §2 精细授权）比合并前的盾牌面板更宽一档，
+     好让档位行（名称 + id + 当前标记）与授权明细行都不折行。 */
+  width: min(520px, calc(100vw - 40px));
   overflow: hidden;
 }
 .sl-popup.grant-popup .sl-popup-body {

@@ -85,7 +85,7 @@ const HTML =
   '<span class="sl-ring" id="slRing"></span><span class="sl-ctx" id="slCtx">—/—</span>' +
   '<button class="sl-model" id="slModel">—</button><button class="sl-effort" id="slEffort">—</button>' +
   '<button class="sl-mode hidden" id="slMode"></button><span class="sl-spacer"></span>' +
-  '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-badge" id="slGrantBadge"></span>' +
+  '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-tier" id="slGrantTier"></span><span class="sl-grant-badge" id="slGrantBadge"></span>' +
   '<span class="sl-grant-dot" id="slGrantDot"></span></button>' +
   '<button id="slStop" class="sl-stop hidden"></button><span class="sl-hint" id="slHint"></span></div>' +
   '<div class="sl-row sl-row-sub"><div id="sessionBar" class="session-bar"></div><span class="sl-sep">·</span>' +

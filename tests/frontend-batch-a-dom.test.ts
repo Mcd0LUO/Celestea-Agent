@@ -92,7 +92,7 @@ const HTML =
   '<button class="sl-model" id="slModel">—</button><span class="sl-sep">·</span>' +
   '<button class="sl-effort" id="slEffort">—</button><span class="sl-sep">·</span>' +
   '<button class="sl-mode hidden" id="slMode"></button><span class="sl-spacer"></span>' +
-  '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-badge" id="slGrantBadge"></span><span class="sl-grant-dot" id="slGrantDot"></span></button>' +
+  '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-tier" id="slGrantTier"></span><span class="sl-grant-badge" id="slGrantBadge"></span><span class="sl-grant-dot" id="slGrantDot"></span></button>' +
   '<button id="btnMode" class="sl-mode-btn hidden" type="button">插话</button>' +
   // W1512：终止不再是 statusline 上的独立键 —— 已并入 #btnSend 的两态。
   '<span class="sl-hint" id="slHint"></span></div>' +

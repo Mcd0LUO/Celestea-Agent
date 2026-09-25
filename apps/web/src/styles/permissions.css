@@ -4,64 +4,26 @@
  *   颜色只引用 tokens.css 的 --c-* 与 --bg-* 与 --label-* 族；圆角只走 --r-*
  *   （--r-sm / --r-md / --r-card / --r-badge）；发丝线用 --hairline；
  *   一像素虚线一律不用（W12 机械门禁）。
- *   1) statusline 档位徽标（与 .sl-grant 盾牌并列、互不重叠）
- *   2) 档位选择弹层（沿用 .sl-popup / .sl-opt 样式族，仅补风险行配色）
+ *   1) statusline 的档位**徽标格**（W1517 起并入唯一的盾牌入口，见 grants.css）
+ *   2) 合并面板里的档位段落（.perm-tier，沿用 .sl-popup / .sl-opt 样式族 + 风险行配色）
  *   3) 设置页 pane（工具条 / 卡片 / chips / 编辑器）
  * ============================================================================ */
 
-/* ---- 1) statusline 会话档位徽标 ------------------------------------------- */
-.sl-perm {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 18px;
-  max-width: 18ch;
-  padding: 0 6px;
-  background: transparent;
-  /* W1297：扁平化 —— 去掉描边，徽标只以图标 + 文字区分。 */
-  border: none;
-  border-radius: var(--r-sm);
-  color: var(--c-text-2);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  line-height: 16px;
-  cursor: pointer;
-}
-.sl-perm:hover {
-  background: var(--c-accent-soft);
-  color: var(--c-text-1);
-}
-.sl-perm:focus-visible {
-  outline: 1px solid var(--c-accent-ring);
-  outline-offset: 1px;
-}
-.sl-perm.hidden { display: none; }
-.sl-perm-icon { display: block; flex: 0 0 auto; }
-.sl-perm-badge {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* ---- 1) statusline 会话档位徽标格（并入唯一入口） --------------------------- */
+/* W1517：档位不再是独立按钮 —— 这里只声明徽标区里的档位格；入口的几何/三态色在
+   grants.css 的 .sl-grant（唯一的权限入口），本文件不再有第二个入口的样式。
+   .sl-grant-tier 的排版规则住在 grants.css（与 .sl-grant-badge 同一处，便于一起读）。 */
 
-/* ---- 2) 档位选择弹层 ------------------------------------------------------- */
-/* W871：与 .sl-popup.grant-popup 同一套落位（**复用** ui/grants/panel/position.ts 的
-   panelGeom：视口坐标 + position: fixed + JS 内联 top/left/max-height）。
-   用户报「点 Full Access 弹出的面板错位到左边」的根因是：它有触发键（#slPerm 在发送栏
-   **右端**）却被 .sl-popup 基类的 left:14px（相对发送栏**左**缘）钉在另一头 ——
-   1280×800 实测面板左缘 345 对徽标左缘 1125.45（横向差 −780.45px）。
-   这里把 bottom/left/right 全部 auto 掉，位置一律由 JS 现算。
-   width 保持 (0,2,0)：压过 responsive.css 窄屏档的 .sl-popup{width:auto}，
-   保证 offsetWidth 就是面板真实宽度（panelGeom 的输入）。 */
-.sl-popup.perm-popup {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: auto;
-  bottom: auto;
-  width: min(420px, calc(100vw - 40px));
-}
+/* ---- 2) 合并面板里的档位段落（§1） ----------------------------------------- */
+/* W1517：档位列表住进盾牌面板（.sl-popup.grant-popup，落位见 grants.css 的
+   panelGeom 说明）。这里只补两件事：
+     · 段落与 §2 之间的分界（.sl-popup-sep 已有上边框，这里给段落本身留出下间距）；
+     · 档位行在小屏下的触控高度（responsive.css 已给 .sl-opt 兜底）。
+   历史（保留，说明为什么落位算式只有一套）：W871 之前档位弹层有自己的弹层类名，
+   靠 .sl-popup 基类的 `left: 14px` 死坐标定位，而触发键在发送栏**右端** ⇒ 1280×800
+   实测横向差 −780.45px（用户报「错位到左边」）。合并后不再有第二个弹层，
+   那套类名与规则一并删除，落位只剩 grants.css 里的一份。 */
+.perm-tier { padding-bottom: 6px; }
 .sl-popup-note.perm-risk { color: var(--c-warn); }
 
 /* ---- 3) 设置页 pane -------------------------------------------------------- */

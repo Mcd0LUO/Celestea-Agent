@@ -100,8 +100,9 @@ export const HTML =
   '<circle class="sl-ring-prog"></circle></svg></span><span class="sl-ctx" id="slCtx">—/—</span>' +
   '<button class="sl-model" id="slModel">—</button><button class="sl-effort" id="slEffort">—</button>' +
   '<button class="sl-mode hidden" id="slMode"></button><span class="sl-spacer"></span>' +
-  '<button id="slPerm" class="sl-perm hidden"><span class="sl-perm-badge" id="slPermBadge"></span></button>' +
-  '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-badge" id="slGrantBadge"></span>' +
+  // W1517：权限入口合并成一个盾牌（档位名住徽标区，与授权计数同处一格）
+  '<button id="slGrant" class="sl-grant hidden"><span class="sl-grant-tier" id="slGrantTier"></span>' +
+  '<span class="sl-grant-badge" id="slGrantBadge"></span>' +
   '<span class="sl-grant-dot" id="slGrantDot"></span></button>' +
   '<button id="slStop" class="sl-stop hidden"></button><span class="sl-hint" id="slHint"></span></div>' +
   '<div class="sl-row sl-row-sub"><span class="sl-tps" id="slTps">— tok/s</span>' +
@@ -365,6 +366,8 @@ function sessionModelRoute(method: string, body: string): unknown {
 // ---- 权限面板查询助手（断言留在 *.test.ts） -------------------------------------
 
 export const panel = (): ElLike | null => doc.querySelector("#statusline .grant-popup");
+/** W1517：合并入口的档位格（原 #slPermBadge 的档位名，现在住盾牌徽标区）。 */
+export const tierText = (): string => el("slGrantTier").textContent ?? "";
 export const panelText = (): string => panel()?.textContent ?? "";
 export const rowOf = (cap: string): ElLike =>
   doc.querySelector('#statusline .grant-row[data-cap="' + cap + '"]') as ElLike;
