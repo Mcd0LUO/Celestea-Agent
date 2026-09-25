@@ -28,6 +28,10 @@ import './styles/workbench.css'; // G4 多面板工作区（入口菜单 / 可�
 import './styles/workerstrip.css'; // W866 会话页左上角 worker 快捷条
 import './styles/tooltree.css'; // W1467 run_code 子调用缩进树
 import './styles/responsive.css'; // W765 响应式层（断点：mobile ≤640 / tablet ≤1024）
+// W1524 前端优化四波：各自独立的 CSS 文件，**共享 CSS 文件谁都不改**（见各文件头注释）。
+import './styles/streaming.css'; // W-A 流式渲染
+import './styles/caret.css'; // W-B 光标
+import './styles/codeblock.css'; // W-C 代码块
 
 import { api } from './api';
 import { connectSse, initChat } from './chat';
