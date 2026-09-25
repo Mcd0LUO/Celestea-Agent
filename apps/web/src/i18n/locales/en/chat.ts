@@ -279,6 +279,8 @@ export const chat = {
   'theme.mono.hint': 'Monochrome Instagram style · pure greyscale light, no color accents',
   'theme.dark.label': 'Dark',
   'theme.dark.hint': 'Layered dark grey · semantic token override',
+  'theme.claude.label': 'Claude',
+  'theme.claude.hint': 'Claude Code style · Anthropic warm cream & terracotta, follows system light/dark',
   'theme.title': 'Theme · {hint}{suffix}',
   'theme.clickToSwitch': ' (click to switch)',
   'theme.onlyTheme': ' (the only theme)',

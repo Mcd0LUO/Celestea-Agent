@@ -17,6 +17,10 @@ export function themes(): readonly ThemeDef[] {
     { id: 'mono', label: t('theme.mono.label'), hint: t('theme.mono.hint') },
     // W12：深色主题 —— 只覆盖 static/alias token（见 styles/tokens.css），组件零改动。
     { id: 'dark', label: t('theme.dark.label'), hint: t('theme.dark.hint') },
+    // W1535：Claude Code 风格 —— Anthropic 官方品牌色（暖米白 / 陶土橙 / 暖灰）。
+    // 同样只覆盖 static/alias token（见 styles/theme-claude.css），组件零改动；
+    // 该主题自带深浅两套，深色由系统 prefers-color-scheme 选择（仍是单一 data-theme id）。
+    { id: 'claude', label: t('theme.claude.label'), hint: t('theme.claude.hint') },
   ];
 }
 

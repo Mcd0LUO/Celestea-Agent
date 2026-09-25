@@ -3,4 +3,150 @@
    ----------------------------------------------------------------------------
    只放新主题 [data-theme="claude"] 的 token 覆盖；tokens.css 由本 worker 独占
    （它要加主题块），但其它 worker 一律不碰 tokens.css。
+
+   —— W1535 落地说明 ——
+   ① 取色来源（**官方**，非臆造）：Anthropic 官方仓库 anthropics/skills 的
+      brand-guidelines 技能 SKILL.md「Colors」节，原文逐字：
+        Main:   Dark #141413 / Light #faf9f5 / Mid Gray #b0aea5 / Light Gray #e8e6dc
+        Accent: Orange #d97757 / Blue #6a9bcc / Green #788c5d
+      来源 URL：https://github.com/anthropics/skills/blob/main/skills/brand-guidelines/SKILL.md
+      （raw：https://raw.githubusercontent.com/anthropics/skills/main/skills/brand-guidelines/SKILL.md）
+      另核实：Claude Code 官方文档的「Configure your terminal」页**只讲终端设置**
+      （多行输入 / Option 键 / 通知），**没有公开色板**；社区主题仓（matcra587/claude-themes
+      等）也都是 Catppuccin/Dracula/Nord 等第三方调色板，不是 Anthropic 自有色。
+      ⇒ 结论：Claude Code CLI 本身无官方公开色板；本主题 = Anthropic 官方品牌色 + 由其推导的
+         UI 层级色。**没有**任何被标注为「官方 UI 色值」的颜色。
+
+   ② 为什么橙要加深：#d97757 白底对比度仅 3.12:1（正文需 ≥4.5:1），故正文/强调文字用
+      同色相加深的 #a8502a（5.18:1）。**官方橙本身也不做装饰位**：它落在米白底只有
+      2.96:1，差一点没到 WCAG 非文本 3:1，故 focus 环取同色相再深一档的 #d5734f（3.12:1）。
+      全部比值由代码实测（见报告与 theme-claude.test.ts），不是目测。
+
+   ②b 边框不得比现状更差：mono 的边框对比度是 light 1.17/1.90、dark 1.49/2.69
+      （本仓既有基线）。初版 claude 的 dark 边框只有 1.30/1.80 —— 比现状还弱，
+      被 theme-claude.test.ts 的「不得劣于 mono」用例抓出后已提到 1.56/2.70。
+
+   ③ 两套都做：浅色 = [data-theme="claude"]；深色 = 同一选择器 + 系统深色偏好
+      （@media (prefers-color-scheme: dark)）。理由：主题机制是 <html data-theme> 单属性
+      （theme.ts），没有「深浅」第二维度；而 Anthropic 深色底必须与浅色**同一个 id** 才能
+      走既有的切换/持久化链路，故用系统偏好选择，组件零改动。
    ============================================================================ */
+
+/* ------------------------------------------------ 浅色：Anthropic 暖米白 */
+[data-theme="claude"] {
+  color-scheme: light;
+
+  /* static 层：官方品牌色直接落位 */
+  --s-white: #ffffff;
+  --s-gray-25: #faf9f5;   /* 官方 Light —— 页面底 */
+  --s-gray-50: #f2f0e9;   /* 官方 Light Gray #e8e6dc 的提亮档（代码底/次级面） */
+  --s-gray-100: #e8e6dc;  /* 官方 Light Gray —— 边框 */
+  --s-gray-300: #b4b09e;  /* 强边框（1.98:1，对齐 mono 的 1.90 —— 原 #c9c5b6 只有 1.64，比现状还弱） */
+  --s-gray-500: #6e6b60;  /* 三级文字（实测 ≥4.5:1，见报告） */
+  --s-gray-600: #5c5a51;  /* warn 文字 */
+  --s-gray-700: #4a4842;  /* 二级文字 */
+  --s-gray-900: #141413;  /* 官方 Dark —— 主文字 */
+  --s-black: #141413;
+  --s-green-500: #3f7d4e; /* 官方 Green #788c5d 的加深档（sage 太浅，文字不可读） */
+  --s-orange-500: #a8502a; /* 官方 Orange #d97757 的加深档 —— 正文级强调色 */
+  --s-red-600: #a8331f;
+
+  --bg-layer-2: rgba(20, 20, 19, 0.045);
+  --bg-code: #f2f0e9;
+
+  /* 代码高亮：以官方 Orange / Blue / Green 为锚的浅底可读版 */
+  --hl-comment: #6b6a60;
+  --hl-keyword: #8a3fa8;
+  --hl-string: #1d6b4a;
+  --hl-number: #2a5ea8;
+  --hl-title: #8a5a00;
+  --hl-attr: #a8502a;
+  --hl-builtin: #0f6d78;
+  --hl-literal: #2a5ea8;
+  --hl-meta: #6a4a9c;
+  --hl-type: #1d6b4a;
+
+  --interactive-accent: #a8502a;
+  --interactive-accent-strong: #8a3f1f;
+  --interactive-accent-soft: rgba(168, 80, 42, 0.09);
+  --interactive-accent-ring: #d5734f;  /* 官方 Orange #d97757 提深 1 档 —— 官方值在米白底只有 2.96:1，
+                                          差一点没到 WCAG 非文本 3:1；本值 3.12:1 且色相不变 */
+  --interactive-accent-fg: #ffffff;
+  --interactive-bg-hover: #f2f0e9;
+  --overlay: rgba(20, 20, 19, 0.4);
+  --scroll-thumb: #d5d1c4;
+  --state-ok: #4d6b3c;
+  --state-warn: #7a5a1e;
+  --state-err: #a8331f;
+
+  /* 下面这几个在 mono 块里是**硬编码**、没有被 alias 重指（dark 也没覆盖
+     --c-grant-danger / --c-grant-idle），不显式覆盖会漏出灰阶值。 */
+  --c-ok-dim: rgba(77, 107, 60, 0.12);
+  --c-err-dim: rgba(168, 51, 31, 0.12);
+  --c-warn-dim: rgba(122, 90, 30, 0.12);
+  --c-live-dim: rgba(63, 125, 78, 0.16);
+  --c-grant-soft: rgba(168, 80, 42, 0.12);
+  --c-grant-danger: #a8331f;
+  --c-grant-idle: #b0aea5;  /* 官方 Mid Gray */
+  --c-sweep: rgba(20, 20, 19, 0.07);
+  --shadow-panel: 0 1px 2px rgba(20, 20, 19, 0.06), 0 8px 24px rgba(20, 20, 19, 0.1);
+}
+
+/* ------------------------------------------------ 深色：暖灰（非纯黑）
+   官方品牌色只给了浅色底；深色底取自 Dark #141413 的暖调提亮轴（R>G>B 保暖），
+   而不是把浅色反相。橙色在深底上改用官方 #d97757 的提亮档。 */
+@media (prefers-color-scheme: dark) {
+  [data-theme="claude"] {
+    color-scheme: dark;
+
+    --s-white: #262521;
+    --s-gray-25: #1f1e1b;
+    --s-gray-50: #2e2d29;
+    --s-gray-100: #403e38;   /* 边框：1.56:1，对齐 mono dark 的 1.49（原 #34322d 只有 1.30） */
+    --s-gray-300: #64615a;   /* 强边框：2.70:1，对齐 mono dark 的 2.69（原 #4a4740 只有 1.80） */
+    --s-gray-500: #a5a196;
+    --s-gray-600: #c6c2b6;
+    --s-gray-700: #c6c2b6;
+    --s-gray-900: #f5f3ec;
+    --s-black: #faf9f5;      /* 官方 Light —— 深色下的最亮文字 */
+    --s-green-500: #8fce9c;
+    --s-orange-500: #e08a66;
+    --s-red-600: #f0917d;
+
+    --bg-layer-2: rgba(250, 249, 245, 0.06);
+    --bg-code: #171614;
+
+    --hl-comment: #a3a094;
+    --hl-keyword: #e59ad6;
+    --hl-string: #a8d5a2;
+    --hl-number: #9cc4f0;
+    --hl-title: #e8c07d;
+    --hl-attr: #f0b48c;
+    --hl-builtin: #8fd4d0;
+    --hl-literal: #9cc4f0;
+    --hl-meta: #c3a8e8;
+    --hl-type: #a8d5a2;
+
+    --interactive-accent: #e08a66;
+    --interactive-accent-strong: #f0a184;
+    --interactive-accent-soft: rgba(224, 138, 102, 0.14);
+    --interactive-accent-ring: #d5734f;  /* 与浅色同一个 focus 指示色，深底 5.08:1 */
+    --interactive-accent-fg: #262521;
+    --interactive-bg-hover: #2e2d29;
+    --overlay: rgba(0, 0, 0, 0.55);
+    --scroll-thumb: #3f3d37;
+    --state-ok: #9fbe83;
+    --state-warn: #dcc07a;
+    --state-err: #f0917d;
+
+    --c-ok-dim: rgba(159, 190, 131, 0.14);
+    --c-err-dim: rgba(240, 145, 125, 0.14);
+    --c-warn-dim: rgba(220, 192, 122, 0.14);
+    --c-live-dim: rgba(143, 206, 156, 0.18);
+    --c-grant-soft: rgba(224, 138, 102, 0.16);
+    --c-grant-danger: #f0917d;
+    --c-grant-idle: #6b6862;
+    --c-sweep: rgba(250, 249, 245, 0.09);
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+}

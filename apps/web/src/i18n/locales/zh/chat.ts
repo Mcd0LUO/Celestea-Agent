@@ -279,6 +279,8 @@ export const chat = {
   'theme.mono.hint': '黑白 ins 风 · 纯灰阶浅色，零彩色点缀',
   'theme.dark.label': '暗色',
   'theme.dark.hint': '深灰多层级 · 语义 token 覆盖',
+  'theme.claude.label': 'Claude',
+  'theme.claude.hint': 'Claude Code 风 · Anthropic 暖米白与陶土橙，深浅随系统',
   'theme.title': '主题 · {hint}{suffix}',
   'theme.clickToSwitch': '（点击切换）',
   'theme.onlyTheme': '（当前唯一主题）',
