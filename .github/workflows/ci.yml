@@ -14,6 +14,13 @@ name: ci
 on:
   push:
     branches: [main]
+    # Tags too, and not for decoration: a release tag is a PUBLISHED artifact's
+    # identity (the frontend version derives from `git describe --tags`), so
+    # "did this tag pass CI?" must be answerable by looking at the tag, not by
+    # tracing which main push happened to carry the same sha. W1519 learned this
+    # the hard way: v2.7.5 was tagged on a commit whose CI was red on
+    # windows-latest, and nothing about the tag said so.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 

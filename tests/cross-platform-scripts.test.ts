@@ -63,6 +63,20 @@ describe('W891 跨平台脚本', () => {
     expect(text, 'checkout 必须取全历史与 tag').toContain('fetch-depth: 0');
   });
 
+  it('CI 在 tag 推送时也跑 —— 发布产物的身份必须自带 CI 结论', () => {
+    const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+    // W1519 的真实事故：v2.7.5 打在 825e88a 上，而该提交的 CI 在 windows-latest 上是红的
+    // （测试文件里的 gitdir 解析在 win32 失效）。发布产物 @celestea/studio 的
+    // webdist/build-meta.json 记着 sha=825e88a —— 用户可见地指向一个 CI 红的提交。
+    // 当时 ci.yml 只监听 push.branches=[main]，**不含 tags**，所以「这个 tag 绿不绿」
+    // 在 tag 上查不到，只能回溯是哪次 main push 恰好带了同一个 sha。
+    // 这条断言钉住「tag 推送必须触发 CI」，删掉触发就红。
+    const push = /push:\s*\n\s*branches:\s*\[main\][\s\S]*?tags:\s*\[([^\]]+)\]/.exec(ci);
+    expect(push, 'ci.yml 的 push 触发必须同时覆盖 branches:[main] 与 tags:[v*]').not.toBeNull();
+    const tags = (push?.[1] ?? '').split(',').map((t) => t.trim().replace(/['"]/g, ''));
+    expect(tags, 'tag 触发必须覆盖 v* 版本 tag').toContain('v*');
+  });
+
   it('CI 测量 Node 支持带的两端，不跟随 .nvmrc 的单值', () => {
     const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
     // .nvmrc 只有一个数：拿它当 CI 输入 = 「声称支持整条带，只测过一个点」。

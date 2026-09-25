@@ -109,11 +109,23 @@ git commit -m 'chore(release): 2.7.3'
 git tag -a v2.7.3 -F <message-file>
 # 4) build + 机械发布门禁
 pnpm run release
-# 5) 发布 —— 需要主人授权（铁律 9）。必须走 pnpm：npm pack 不重写 workspace:*
+# 5) 等 CI 在这个 tag 上绿了再发布 —— tag 推送会触发 CI（见下）
+gh run list --branch v2.7.3        # 或看 GitHub Actions 页面
+# 6) 发布 —— 需要主人授权（铁律 9）。必须走 pnpm：npm pack 不重写 workspace:*
 CELESTEA_PUBLISH_AUTHORIZED=1 pnpm run publish
-# 6) 从**真实 registry** 装一遍验证（不是本地 tarball）
+# 7) 从**真实 registry** 装一遍验证（不是本地 tarball）
 npm install -g --prefix /tmp/x celestea-agent@2.7.3 && /tmp/x/bin/celestea --version
 ```
+
+**为什么第 5 步必须在第 6 步之前**（W1519 的真实事故）：v2.7.5 打在 `825e88a` 上，
+而该提交的 CI 在 **windows-latest 两个 job 上红** —— 根因是那次提交里
+`tests/lib/checkout-path.ts` 用 `gitdir.split('/')` 手工切分路径，Windows 上失效。
+测试文件的缺陷不入发布产物（`release-check` 的 FORBIDDEN 排除 `tests/`，实测 tarball 里
+0 个 `tests/` 条目），**但 `@celestea/studio` 随包发布的 `webdist/build-meta.json` 记着
+`sha=825e88a`** —— 用户可见地指向一个 CI 红的提交。而当时 `ci.yml` 只监听
+`push.branches=[main]`、**不含 tags**，所以「这个 tag 绿不绿」在 tag 上查不到。
+现在 `ci.yml` 已加 `tags: ['v*']`（由 `tests/cross-platform-scripts.test.ts` 钉住），
+tag 一推就有自己的 CI 结论；**等它绿了再 `publish`** 才是完整流程。
 
 **为什么先 tag 再 build**：前端版本来自 `git describe --tags`。先 build 后 tag 会让 2.7.1 的包自称 2.7.0 —— `scripts/release-check.mjs` 现在会拦这一条。
 
