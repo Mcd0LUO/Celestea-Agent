@@ -63,7 +63,10 @@
   /* 位置走 transform（合成层，不触发布局）；--caret-x/-y 由 JS 写入 px。 */
   transform: translate3d(var(--caret-x, 0px), var(--caret-y, 0px), 0);
   background: var(--c-accent);
-  border-radius: 1px;
+  /* 圆角走刻度 token（W847 W8 门禁：styles 下不许硬编码 px 圆角）。
+     光标是 --caret-w:2px 的细条，6px 会被浏览器按「不超过短边一半」钳到 1px ——
+     真机 CDP 逐像素比对确认与原来的 1px 渲染**完全一致**（截图字节相同）。 */
+  border-radius: var(--r-sm);
   opacity: 0;
   /* 平滑移动 = VSCode 的 cursorSmoothCaretAnimation。高度与位移分开给时长：
      高度变化只发生在换行/字号变化时，跟着位移一起过渡反而更自然。 */
