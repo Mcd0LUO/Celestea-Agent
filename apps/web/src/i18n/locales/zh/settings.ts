@@ -171,6 +171,7 @@ export const settings = {
   'settings.providers.contextPlaceholder': '上下文窗口（如 1000000 / 1m / 128k）',
   'settings.providers.maxOutPlaceholder': '最大输出 tokens（如 8192 / 8k）',
   'settings.providers.reasoningEffort': '推理强度',
+  'settings.providers.removeEffortTier': '删除推理档位 {tier}',
   'settings.providers.modelContext': '模型上下文',
   'settings.providers.inputModalities': '输入类型',
   'settings.providers.outputModalities': '输出类型',

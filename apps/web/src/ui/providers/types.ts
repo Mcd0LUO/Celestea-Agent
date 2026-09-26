@@ -5,13 +5,15 @@
 import type { ProviderModelSpec } from '../../types';
 import type { ModalityGroup } from './modalities';
 
-/** 可点击多选档位片（toggle chips）：选中只切 class，不重建 DOM（铁律 4/8）。 */
+/** 推理强度档位片集合（W9107：出现的片一律选中；「×」销毁该片；「+」新增即选中）。
+ *  片内「×」的点击只改本集合，不重建 DOM（铁律 4/8）。 */
 export interface EffortChips {
   root: HTMLElement;
-  /** 回填选中态：非固定档位（存量 xhigh / 历史 medium）自动补一片并插在「+」左侧，
-   *  保证往返不丢数据、不被吞掉。 */
-  set(values: readonly string[]): void;
-  /** 当前选中档位（EFFORT_TIERS 顺序在前，非标准档位排后）。 */
+  /** 回填：**undefined = 未配置**（乐观默认 ⇒ 三片全选、不写盘）；
+   *  数组 = 显式配置（空数组 ⇒ 一片不留 = 该模型不支持推理，后端契约语义不变）。
+   *  非固定档位（存量 xhigh / 历史 medium）自动补一片并插在「+」左侧，保证往返不丢数据。 */
+  set(values: readonly string[] | undefined): void;
+  /** 当前出现的档位（展示顺序 = DOM 顺序；出现的片必然选中）。 */
   values(): string[];
 }
 

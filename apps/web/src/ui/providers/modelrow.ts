@@ -1,10 +1,18 @@
 // ============================================================================
 // ui/providers/modelrow.ts — 单模型行（含「高级」区与推理强度档位片）
-//   （W748 从 ui/providers.ts 拆出；纯搬运，DOM/类名/文案/事件未改）。
+//   W748 从 ui/providers.ts 拆出；W9107 改推理强度交互（见下）。
+// ----------------------------------------------------------------------------
+// W9107（用户口径）：出现的档位片**一律是选中态**，不再有「不勾选」态 ——
+//   · 「+」新增片 = 自动选中（同名去重逻辑照旧）；
+//   · 每片右上角「×」= **销毁该片**（不是取消勾选）；固定三档也能删，删完可用「+」加回；
+//   · 回填语义：未配置（undefined）⇒ 三片全选（乐观默认）；显式数组 ⇒ 就是那几片
+//     （空数组 ⇒ 一片不留）。**后端契约未动**：reasoning_efforts 为空数组仍是
+//     「该模型不支持推理」（apps/studio/src/handlers/config.ts 的 isReasoningCapable）。
 // ============================================================================
 import { el } from '../../utils/dom';
 import type { EditorRefs, EffortChips } from './types';
 import { addModalityGroup, INPUT_DEFAULT, INPUT_MODALITIES, OUTPUT_DEFAULT, OUTPUT_MODALITIES } from './modalities';
+import { syncModelDividers } from './divider';
 import { t } from '../../i18n';
 
 /**
@@ -27,10 +35,8 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   sum.textContent = t('settings.providers.advanced');
   det.appendChild(sum);
   const adv = el('div', 'prov-model-adv-body');
-  // W258 任务 3：推理强度改为可点击档位片（多选）；点击只切 class + aria-pressed，
-  // 不重建 DOM（铁律 4/8），点完通知内联面板重算 max-height。
-  // W261：固定片右侧加「+」按钮 → 行内输入框新增自定义档位（如 xhigh）；
-  // 自定义片与固定片同 class、同切换行为，values() 一并返回。
+  // W258 任务 3 / W9107：档位片集合。出现即选中；「×」销毁；「+」新增并选中。
+  // 点完通知内联面板重算 max-height（铁律 5），不重建 DOM（铁律 4）。
   const selected = new Set<string>();
   /** 归一化 key：忽略大小写与所有空白，仅用于去重（展示值保留用户输入）。 */
   const effortKey = (v: string): string => v.replace(/\s+/g, '').toLowerCase();
@@ -63,20 +69,40 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   };
 
-  /** 建一枚档位片并插到「+」左侧；同名（忽略大小写/空白）已存在则忽略。 */
-  const addChip = (value: string, on = false): void => {
+  /** 销毁一枚档位片（「×」与「显式配置」回填共用）。 */
+  const removeChip = (key: string): void => {
+    const chip = chipByKey.get(key);
+    if (!chip) return;
+    chipByKey.delete(key);
+    selected.delete(chip.dataset.effort ?? '');
+    chip.remove();
+  };
+
+  /** 建一枚档位片并插到「+」左侧；同名（忽略大小写/空白）已存在则忽略。出现即选中。 */
+  const addChip = (value: string): void => {
     const key = effortKey(value);
     if (key === '' || chipByKey.has(key)) return;
-    const b = el('button', 'prov-effort-chip', value) as HTMLButtonElement;
+    const b = el('button', 'prov-effort-chip') as HTMLButtonElement;
     b.type = 'button';
     b.dataset.effort = value;
-    b.addEventListener('click', () => {
-      setChipOn(b, !selected.has(b.dataset.effort ?? ''));
+    // 片内结构：档位名 + 右上角「×」（无包裹：无边框无底色，hover 才显形/显色）。
+    // 片本体**不再**是开关 —— 点击不改状态，改集合只有「×」（删）与「+」（加）两条路，
+    // 于是「出现的片一律选中」不可能被点坏（用户口径：删掉不勾选的状态）。
+    const label = el('span', 'prov-effort-label', value);
+    const kill = el('button', 'prov-effort-kill', '×') as HTMLButtonElement;
+    kill.type = 'button';
+    kill.setAttribute('aria-label', t('settings.providers.removeEffortTier', { tier: value }));
+    kill.addEventListener('click', (ev: MouseEvent) => {
+      // 不冒泡到片本体 / 行本体（行本体点击会展开收起面板）
+      ev.stopPropagation();
+      removeChip(key);
       e.onLayout?.();
     });
+    b.appendChild(label);
+    b.appendChild(kill);
     chipByKey.set(key, b);
     chipsRoot.insertBefore(b, plusBtn);
-    setChipOn(b, on);
+    setChipOn(b, true);
   };
 
   const setHint = (text: string): void => {
@@ -98,7 +124,7 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
           setHint(t('settings.providers.tierExists', { tier: value })); // 轻微提示，不重复添加
         } else {
           setHint('');
-          addChip(value, true); // 新增片默认选中
+          addChip(value); // 新增片一律选中
         }
       }
     }
@@ -130,29 +156,29 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   for (const tier of EFFORT_TIERS) addChip(tier);
   const chips: EffortChips = {
     root: chipsRoot,
-    set(values: readonly string[]): void {
-      // 归一化去重后回填：非标准档位（存量 xhigh / 历史 medium 等）补片保留，
-      // 补出的片同样插在「+」左侧，绝不被吞掉。
+    set(values: readonly string[] | undefined): void {
+      // undefined（未配置）⇒ 三片全选；数组 ⇒ 就是这几片（空数组 = 一片不留）。
+      // 存量非标准档位（xhigh / 历史 medium 等）照旧补片保留，绝不被吞掉。
       const want = new Map<string, string>(); // key → 展示值
-      for (const raw of values) {
+      for (const raw of values ?? EFFORT_TIERS) {
         const v = raw.trim();
         if (v === '') continue;
         const k = effortKey(v);
         if (!want.has(k)) want.set(k, v);
       }
+      // 显式配置态：清掉不在集合里的片（否则「×」删掉的档位保存往返会复活）。
+      // 缺省态不清：默认三片必须都在（乐观默认）。
+      if (values !== undefined) for (const k of [...chipByKey.keys()]) if (!want.has(k)) removeChip(k);
       for (const [k, v] of want) if (!chipByKey.has(k)) addChip(v);
       selected.clear();
       for (const [k, b] of chipByKey) setChipOn(b, want.has(k));
     },
     values(): string[] {
+      // 展示顺序（= DOM 顺序）返回选中档位。
       const out: string[] = [];
-      for (const t of EFFORT_TIERS) {
-        const v = chipByKey.get(effortKey(t))?.dataset.effort;
-        if (v !== undefined && selected.has(v)) out.push(v);
-      }
       for (const b of chipByKey.values()) {
         const v = b.dataset.effort ?? '';
-        if (v !== '' && !EFFORT_TIERS.includes(v) && selected.has(v)) out.push(v);
+        if (v !== '' && selected.has(v)) out.push(v);
       }
       return out;
     },
@@ -197,6 +223,7 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   del.addEventListener('click', () => {
     li.remove();
     e.rows = e.rows.filter((r) => r.li !== li);
+    syncModelDividers(e.modelsBox); // 行没了：分界线跟着重排（末尾不再有线）
     e.onLayout?.();
   });
   li.appendChild(rid);
@@ -205,5 +232,6 @@ export function addModelRow(e: EditorRefs, id = '', name = ''): void {
   li.appendChild(del);
   e.modelsBox.appendChild(li);
   e.rows.push({ id: rid, name: rname, efforts: chips, ctx, maxOut, inputModalities, outputModalities, li });
+  syncModelDividers(e.modelsBox); // 新行与上一行之间补一条分界线
   e.onLayout?.();
 }

@@ -1,11 +1,84 @@
 /* ============================================================================
-   styles/provider-edit.css — W1529 提供商「模型输入输出类型」编辑（W1536 落内容）
+   styles/provider-edit.css — 提供商编辑专用样式
    ----------------------------------------------------------------------------
+   W1529/W1536：模型「输入/输出类型」多选组。
+   W9107：① 同一提供商内相邻模型块之间的**淡**分隔线；② 推理强度档位片右上角的
+   「×」（销毁该片）。
+
    见 taskpanel.css 顶部说明：共享 CSS 文件谁都不改，新能力一律新文件。
    宿主 .prov-model-adv-body 是两列网格（120px 标签 + 1fr 控件）。新组**横跨两列**
    并自带同样的两列内网格 —— 否则它会以「第 7/8 个网格项」的身份被塞进 120px 的
    标签列，类型片被迫竖排（真机实测踩到，见报告）。
    ============================================================================ */
+
+/* ---- W9107 ①：相邻模型块之间的淡分隔线（中间粗、两端渐隐） ----
+   手法：1px 渐变条（两端透明、中段实）叠一条 2px 短中线 ⇒ 「中间粗、两边细」，
+   低调但有设计感。纯装饰节点（aria-hidden），样式全走 token，圆角走 var(--r-*)。
+   最后一个模型块之后不画 —— 由 divider.ts 只插在相邻行之间保证。 */
+.prov-model-div {
+  position: relative;
+  height: 1px;
+  margin: 2px 0 8px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--c-border-strong) 22%,
+    var(--c-border-strong) 78%,
+    transparent 100%
+  );
+  border-radius: var(--r-pill);
+}
+/* 中段 2px 短中线：把「中间粗」做实，两端细由上面的渐变收尾。 */
+.prov-model-div::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -0.5px;
+  width: 56px;
+  height: 2px;
+  transform: translateX(-50%);
+  background: var(--c-border-strong);
+  border-radius: var(--r-pill);
+}
+
+/* ---- W9107 ②：档位片右上角的「×」（无包裹：无边框、无底色） ----
+   与 settings.css 的 .prov-effort-chip 同源（那边不改，这里只补片内结构）。
+   片本体改为非交互容器（点击不再改状态），所以覆盖掉它的 cursor: pointer。 */
+.prov-effort-chip {
+  position: relative;
+  cursor: default;
+  padding-right: 18px;
+}
+.prov-effort-label { pointer-events: none; }
+.prov-effort-kill {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--c-grant-danger);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  /* 常态隐形：低调，不抢档位名的注意力；hover / 键盘聚焦才显形。 */
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.prov-effort-chip:hover .prov-effort-kill,
+.prov-effort-kill:focus-visible {
+  opacity: 1;
+}
+.prov-effort-kill:focus-visible {
+  outline: 2px solid var(--c-accent-ring);
+  outline-offset: 1px;
+  border-radius: var(--r-sm);
+}
 
 /* ---- 输入/输出类型多选组（W1536） ---- */
 .prov-modalities {
@@ -35,7 +108,7 @@
 }
 .prov-modality-chip.on::before { content: '✓ '; }
 /* 未写盘的乐观默认态：左侧实心强调条 + 说明文字，与「已显式固定」明确可辨。
-   ★ 这里原用非实线线型描边，违反 W847 W8 / W858 的「styles 下不得出现虚线段线型」
+   ★ 这里原用非实线线型描边，违反 W847 W8 / W858 的「styles 下不得出现非实线线型」
    机械门禁（禁的是**两种**非实线线型、不是只禁其中一种；且它逐行扫原文，
    连注释里的字面词也算 —— 所以此处刻意不复写那两个词）。改为与仓库既有同语义
    先例一致的手法：settings.css 的 .prov-table tr.is-default 也用 border-left

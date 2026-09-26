@@ -147,8 +147,11 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
   for (const m of p?.models ?? []) {
     addModelRow(e, m.id, m.name);
     const r = e.rows[e.rows.length - 1]!;
-    // W258 任务 3：已有模型的 reasoning_efforts 映射到对应档位片选中
-    r.efforts.set(m.reasoning_efforts ?? []);
+    // W258 任务 3 / W9107：已有模型的 reasoning_efforts 映射到对应档位片。
+    // **不写 ?? []** —— 缺省（undefined）与显式空数组是两件事：
+    //   · undefined（providers.json 里没有这个键 / 老数据）= 未配置 ⇒ 乐观默认三片全选；
+    //   · [] = 用户显式声明「该模型不支持推理」⇒ 一片不留（后端 isReasoningCapable 的真实语义）。
+    r.efforts.set(m.reasoning_efforts);
     // W1536：能力位回填。undefined（providers.json 里没有这个键）= 乐观默认态，
     // 组件会显示默认勾选并打上 is-default 标记；显式数组 = 用户配置态。
     r.inputModalities.set(m.input_modalities);

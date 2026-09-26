@@ -171,6 +171,7 @@ export const settings = {
   'settings.providers.contextPlaceholder': 'Context window (e.g. 1000000 / 1m / 128k)',
   'settings.providers.maxOutPlaceholder': 'Max output tokens (e.g. 8192 / 8k)',
   'settings.providers.reasoningEffort': 'Reasoning effort',
+  'settings.providers.removeEffortTier': 'Remove reasoning tier {tier}',
   'settings.providers.modelContext': 'Model context',
   'settings.providers.inputModalities': 'Input types',
   'settings.providers.outputModalities': 'Output types',
