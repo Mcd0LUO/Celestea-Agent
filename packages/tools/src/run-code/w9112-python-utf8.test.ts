@@ -149,7 +149,7 @@ describe.skipIf(!h.pythonReady)("W9112 Python run_code speaks UTF-8 (Windows ANS
     expect(value.stdout).toBe(CHINESE);
   });
 
-  it("⑤ the child's sys.stdout/stdin encoding IS UTF-8 and utf8_mode is on (the mechanism)", async () => {
+  it("⑤ the child's stdio IS UTF-8 (the outcome that prevents corruption)", async () => {
     const tool = h.mount(realRegistry());
     const code = [
       "async def main():",
@@ -161,13 +161,32 @@ describe.skipIf(!h.pythonReady)("W9112 Python run_code speaks UTF-8 (Windows ANS
     ].join("\n");
     const out = await run(tool, "w9112-enc", { code, language: "python" });
     const value = out.value as Record<string, unknown>;
-    expect(value["stdout"]).toBe("utf-8");
-    expect(value["stdin"]).toBe("utf-8");
-    expect(value["stderr"]).toBe("utf-8");
-    expect(value["utf8_mode"]).toBe(1);
+    // Compare the CODEC, not its spelling: CPython's normalizer answers "utf-8"
+    // while glibc's nl_langinfo answers "UTF-8" on Linux. The bug was about which
+    // codec is in force, so the assertion must not depend on the capitalisation.
+    // "UTF-8" / "utf_8" / "utf8" are all the SAME codec (codecs.lookup agrees);
+    // only the spelling differs by platform. Normalising them cannot mask
+    // corruption: every genuinely wrong codec (cp936/gbk/cp1252/ascii/…) keeps a
+    // distinct name and still fails below.
+    const codec = (v: unknown): string =>
+      String(v).toLowerCase().replace(/_/g, "-").replace(/^utf8$/, "utf-8");
+    expect(codec(value["stdout"])).toBe("utf-8");
+    expect(codec(value["stdin"])).toBe("utf-8");
+    expect(codec(value["stderr"])).toBe("utf-8");
     // The decisive difference from PYTHONIOENCODING: the DEFAULT open() encoding
     // is UTF-8 too, so a program writing its own file is not left corrupt.
-    expect(value["preferred"]).toBe("utf-8");
+    expect(codec(value["preferred"])).toBe("utf-8");
+    // sys.flags.utf8_mode is the WINDOWS MECHANISM, not a cross-platform
+    // invariant — and pinning it here is what turned BOTH ubuntu CI jobs red
+    // (node 24 and 26) while windows stayed green:
+    //   · win32: WE switch it on by injecting PYTHONUTF8=1 → 1;
+    //   · POSIX: the locale is already UTF-8, so the encodings above are utf-8
+    //     while utf8_mode is 0 (it is the bare C/POSIX locale that auto-enables
+    //     UTF-8 mode, not our env). Asserting 1 there asserts an implementation
+    //     detail of the OTHER platform.
+    // The POSIX half of "we do not inject the variable" is pinned by the
+    // platform-scoped test below, where it belongs.
+    if (process.platform === "win32") expect(value["utf8_mode"]).toBe(1);
   });
 });
 
