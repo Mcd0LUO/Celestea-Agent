@@ -6,6 +6,7 @@ import { settings } from './settings';
 import { chat } from './chat';
 import { shell } from './shell';
 import { grants } from './grants';
+import { usage } from './usage'; // W9103：设置页「使用统计」
 
-export const zh = { ...common, ...api, ...statusline, ...settings, ...chat, ...shell, ...grants } as const;
+export const zh = { ...common, ...api, ...statusline, ...settings, ...chat, ...shell, ...grants, ...usage } as const;
 export type Key = keyof typeof zh;

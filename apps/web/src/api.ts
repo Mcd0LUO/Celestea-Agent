@@ -58,6 +58,8 @@ import type {
   PermissionPresetsResp,
   SessionPermissionResp,
 } from './types/permission';
+// W9103：用量账本 + 登录态（设置页「使用统计」与左下角设置入口的用户名）。
+import type { AuthCheckResp, UsageLedgerResp } from './types/usage';
 import { t } from './i18n'; // i18n P0：用户可见文案走字典
 
 export class ApiError extends Error {
@@ -397,4 +399,15 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     }),
+  // ---- W9103：用量账本聚合 + 登录态（设置页「使用统计」/ 左下角设置入口的用户名） ----
+  /** GET /api/usage/ledger；`since`/`until` 是 epoch 秒，`ok:false` = 这里没有账本。 */
+  usageLedger: (q: { group_by: 'day' | 'day_model' | 'model' | 'session'; since?: number; until?: number }) =>
+    requestJson<UsageLedgerResp>(
+      '/api/usage/ledger?group_by=' +
+        q.group_by +
+        (q.since === undefined ? '' : '&since=' + String(q.since)) +
+        (q.until === undefined ? '' : '&until=' + String(q.until)),
+    ),
+  /** GET /auth/check —— 登录用户名；未登录 401（ApiError）⇒ 调用方不显示用户名，不编占位名。 */
+  authCheck: () => requestJson<AuthCheckResp>('/auth/check'),
 };

@@ -111,7 +111,12 @@ body.resizing .sidebar-resizer {
 body.resizing { cursor: col-resize; user-select: none; }
 
 .side-sec { padding: 4px 0 10px; }
-.side-sec-foot { border-bottom: none; padding: 8px 12px; }
+/* W9103：`margin-top:auto` 把设置入口那一块**推到侧栏底部**（用户要的「左下角」）。
+   为什么必须显式推：#sidebar 是 flex column，但两个 .side-sec 都是内容高 ——
+   会话树只占上面一小段时 footer 会紧跟在它后面、浮在侧栏中段（真机 CDP 实测
+   入口距侧栏底 403px，见 results/w9103-shots/01-sidebar-entry.png）。
+   auto 外边距吃掉剩余空间；内容比视口高时它自动退化为 0，footer 照常跟在内容之后。 */
+.side-sec-foot { border-bottom: none; padding: 8px 12px; margin-top: auto; }
 .side-sec-head {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px 6px;
@@ -125,6 +130,41 @@ body.resizing { cursor: col-resize; user-select: none; }
 .side-body { padding: 0 12px; display: flex; flex-direction: column; gap: 6px; }
 .side-note { color: var(--c-text-3); font-size: 12px; padding: 2px 0; }
 .side-note.err { color: var(--c-err); }
+
+/* ---- W9103：左下角设置入口（图标 + 「设置」+ 用户名） ----
+   为什么在左下角：用户要求把顶栏右端那个「配置」按钮挪到这里（原 #btnConfig 已删除）。
+   几何不变量（照 WorkspaceSidebarFooter.tsx:232-233 踩过的坑）：
+     · 整块是 button，必须 min-width:0 —— 否则 flex 项按内容宽撑开侧栏；
+     · 文本列各自单行截断（overflow:hidden + text-overflow:ellipsis + white-space:nowrap），
+       超长用户名因此**截断**而不是把侧栏撑宽（tests/w9103-settings-entry-dom.test.ts
+       钉住 scrollWidth <= clientWidth）。
+   侧栏收起时（#app.sidebar-collapsed #sidebar{display:none}）本块随侧栏一起消失 ——
+   这是「拿到左下角」的可接受代价；移动端抽屉态侧栏仍显示（responsive.css:159）。 */
+.side-settings {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; min-width: 0;
+  margin-top: 8px;
+  padding: 7px 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  color: var(--c-text-2);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.side-settings:hover { background: var(--c-accent-soft); border-color: var(--c-accent-ring); color: var(--c-text-1); }
+.side-settings-ico { flex: 0 0 auto; display: block; }
+.side-settings-text { flex: 0 0 auto; font-weight: 600; }
+/* 用户名：吃掉剩余宽度、单行截断（超长绝不撑破侧栏）。 */
+.side-settings-user {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--c-text-3); font-family: var(--mono); font-size: 11.5px;
+  text-align: right;
+}
 
 /* ---- 主区 ---- */
 #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

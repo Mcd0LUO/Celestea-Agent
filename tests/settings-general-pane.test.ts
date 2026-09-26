@@ -20,6 +20,7 @@ const HTML =
   '<button class="settings-nav-item" type="button" data-page="prompts"></button>' +
   '<button class="settings-nav-item" type="button" data-page="permissions"></button>' +
   '<button class="settings-nav-item" type="button" data-page="plugins"></button>' +
+  '<button class="settings-nav-item" type="button" data-page="usage"></button>' +
   '</nav>' +
   '<section class="settings-pane" data-pane="general"><h4 data-i18n="settings.general.title"></h4><div class="settings-pane-body" id="settingsGeneral"></div></section>' +
   '<section class="settings-pane active" data-pane="config"><div id="settingsConfig"></div><div id="settingsHint"></div></section>' +
@@ -29,7 +30,9 @@ const HTML =
   '<section class="settings-pane" data-pane="prompts"><div id="promptsWrap"></div><div id="settingsPrompts"></div></section>' +
   '<section class="settings-pane" data-pane="permissions"><div id="settingsPermissions"></div></section>' +
   '<section class="settings-pane" data-pane="plugins"><div id="settingsPlugins"></div></section>' +
-  '<button id="btnConfig"></button><button id="btnSettingsClose"></button><button id="btnSettingsReload"></button>' +
+  '<section class="settings-pane" data-pane="usage"><div id="settingsUsage"></div></section>' +
+  // W9103：设置入口从顶栏 #btnConfig 挪到左下角 #btnSettingsEntry（断言语义未改）
+  '<button id="btnSettingsEntry"></button><button id="btnSettingsClose"></button><button id="btnSettingsReload"></button>' +
   '<button id="btnAddProvider"></button><button id="btnNewPrompt"></button>' +
   '</div>';
 

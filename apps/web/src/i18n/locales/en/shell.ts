@@ -71,8 +71,10 @@ export const shell = {
   'mode.note.busy': 'A turn is running; the mode cannot be switched',
   'mode.note.unsupported': 'This version does not support switching the work mode',
   'mode.note.invalid': 'Invalid work mode value; please choose again',
-  'shell.topbar.config': 'Settings',
-  'shell.topbar.configTitle': 'Runtime settings (model / reasoning effort / keys, etc.)',
+  // W9103: the settings entry moved from the topbar to the sidebar footer.
+  'shell.sidebar.settings': 'Settings',
+  'shell.sidebar.settingsTitle': 'Settings (runtime config / tools / usage, etc.)',
+  'shell.sidebar.settingsAria': 'Open settings',
   'shell.topbar.workbenchTitle': 'Open a panel (file manager / terminal / browser)',
   'shell.topbar.workbenchAria': 'Open a panel',
   'shell.topbar.versionTitle': 'Celestea Studio build version',

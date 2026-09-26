@@ -71,8 +71,11 @@ export const shell = {
   'mode.note.busy': 'turn 进行中，无法切换模式',
   'mode.note.unsupported': '当前版本不支持切换工作方式',
   'mode.note.invalid': '工作方式取值无效，请重新选择',
-  'shell.topbar.config': '配置',
-  'shell.topbar.configTitle': '运行配置（模型 / 推理档位 / 密钥等）',
+  // W9103：设置入口从顶栏挪到左侧栏左下角（原 shell.topbar.config* 两键随之删除 ——
+  // 护栏 C 会判定「定义了但无消费方」为死键）。
+  'shell.sidebar.settings': '设置',
+  'shell.sidebar.settingsTitle': '设置（通用配置 / 工具 / 使用统计等）',
+  'shell.sidebar.settingsAria': '打开设置',
   'shell.topbar.workbenchTitle': '打开面板（文件管理器 / 终端 / 浏览器）',
   'shell.topbar.workbenchAria': '打开面板',
   'shell.topbar.versionTitle': 'Celestea Studio 构建版本',

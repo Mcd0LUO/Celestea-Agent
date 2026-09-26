@@ -1,0 +1,154 @@
+/* ============================================================================
+ * W9103 · 设置页「使用统计」pane
+ * ----------------------------------------------------------------------------
+ * 全部走 tokens.css 的 --c-* 令牌，本文件不写死颜色（浅/深主题与 Claude 色卡
+ * 自动跟随）。几何不变量：
+ *   · 热力图 52 列用 `repeat(52, minmax(0, 1fr))` **等分容器**，格子 aspect-ratio:1
+ *     自动成为正方形 —— 固定列宽会让 52 周网格在窄屏溢出（参考实现正是为此从
+ *     固定 14px 改成可收缩 1fr），因此这里不设 min-width，也不产生第二个横向滚动区；
+ *   · 趋势图 SVG 用 viewBox + preserveAspectRatio:none 拉伸到 100% 宽，不需要任何
+ *     布局测量（无 ResizeObserver），窗口缩放由浏览器负责。
+ * ========================================================================== */
+
+.usage-body { display: flex; flex-direction: column; gap: 14px; }
+.usage-charts { display: flex; flex-direction: column; gap: 14px; }
+.usage-card {
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  padding: 10px 12px 12px;
+}
+.usage-sec-title { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--c-text-1); }
+
+/* ---- ① 摘要条（5 格，横向，分隔线） ---- */
+.usage-summary {
+  display: flex; align-items: stretch;
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  overflow: hidden;
+}
+.usage-summary-cell { flex: 1 1 0; min-width: 0; padding: 10px 8px; text-align: center; }
+.usage-summary-value {
+  font-size: 17px; font-weight: 600; color: var(--c-text-1);
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.usage-summary-label {
+  margin-top: 4px; font-size: 11px; color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 分隔线：一条 1px 竖线，高度收窄（照参考实现的 h-7 w-px）。 */
+.usage-summary-sep {
+  flex: 0 0 auto; width: 1px; align-self: center; height: 28px;
+  background: var(--c-border-subtle);
+}
+
+/* ---- 费用行：未知价格不是 0（`未定价` 用弱化色，不与金额抢注意力） ---- */
+.usage-cost {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+.usage-cost-label { font-size: 11.5px; color: var(--c-text-3); }
+.usage-cost-value {
+  font-size: 13px; font-weight: 600; color: var(--c-text-1);
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+.usage-cost-value.unpriced { color: var(--c-text-3); font-weight: 500; }
+
+/* ---- ② 热力图 ---- */.usage-heat-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 10px;
+}
+.usage-heat-body { display: flex; flex-direction: column; gap: 6px; }
+.usage-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(52, minmax(0, 1fr));
+  gap: 2px;
+}
+.usage-heat-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.usage-heat-cell {
+  width: 100%; aspect-ratio: 1 / 1; min-width: 0;
+  /* 圆角走语义 token（W847 W8 门禁：styles 下不得出现硬编码 px 圆角）。
+     小方格用最小的 --r-sm：格子本身只有十几像素，token 值即可。 */
+  border-radius: var(--r-sm);
+  background: var(--c-accent-soft);
+}
+/* 0–4 五档：0 档 = 空（几乎不可见），1–4 递增深度。
+   用 currentColor 之外的中性色阶（黑白主题下靠明度区分）。 */
+.usage-heat-cell.lv0 { background: var(--c-accent-soft); }
+.usage-heat-cell.lv1 { background: color-mix(in srgb, var(--c-accent) 22%, transparent); }
+.usage-heat-cell.lv2 { background: color-mix(in srgb, var(--c-accent) 42%, transparent); }
+.usage-heat-cell.lv3 { background: color-mix(in srgb, var(--c-accent) 64%, transparent); }
+.usage-heat-cell.lv4 { background: color-mix(in srgb, var(--c-accent) 88%, transparent); }
+.usage-heat-cell:hover { outline: 1px solid var(--c-accent-ring); outline-offset: 1px; }
+
+.usage-heat-months {
+  display: grid;
+  grid-template-columns: repeat(52, minmax(0, 1fr));
+  gap: 2px;
+}
+.usage-heat-month {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10px; color: var(--c-text-3);
+}
+.usage-heat-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
+.usage-heat-legend { display: flex; align-items: center; gap: 4px; }
+.usage-heat-legend .usage-heat-cell { width: 10px; flex: 0 0 auto; }
+.usage-heat-legend-label { font-size: 10.5px; color: var(--c-text-3); }
+
+/* ---- ③ 时间范围 + 刷新 ---- */
+.usage-range-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.usage-range-title { font-size: 12.5px; font-weight: 600; color: var(--c-text-1); }
+.usage-spacer { flex: 1 1 auto; }
+
+/* ---- tab（热力图三档 + 时间范围两档，同一形态） ---- */
+.usage-tabs {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 999px;
+  background: var(--c-surface);
+}
+.usage-tab {
+  border: 1px solid transparent; border-radius: 999px;
+  background: transparent; color: var(--c-text-3);
+  font-family: var(--sans); font-size: 11.5px; font-weight: 500;
+  padding: 3px 10px; cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.usage-tab:hover { color: var(--c-text-1); }
+.usage-tab.active { background: var(--c-surface-raised); color: var(--c-text-1); font-weight: 600; }
+
+/* ---- ④ 趋势图（手写 SVG） ---- */
+.usage-trend-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.usage-trend-svg { display: block; width: 100%; height: 220px; }
+.usage-trend-grid { stroke: var(--c-border-subtle); stroke-width: 1; stroke-dasharray: 3 3; }
+.usage-trend-tick { fill: var(--c-text-3); font-size: 10px; font-family: var(--mono); }
+.usage-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 6px; }
+.usage-legend-item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.usage-legend-swatch { flex: 0 0 auto; width: 9px; height: 9px; border-radius: var(--r-sm); }
+.usage-legend-label {
+  min-width: 0; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; color: var(--c-text-3);
+}
+
+/* ---- 空态 / 降级说明 ----
+   W9103 收口：原先的边框样式被 W847 W8 的「styles 下不得出现虚线段式」机械门禁拦下
+   （仓库既有审美口径，本页不破例）。改实线 + 更浅的边框色；空态与普通卡片的区分
+   靠留白与灰字，不靠线型。注意该门禁是**逐行正则**，注释里也不能出现那两个词。 */
+.usage-empty, .usage-notice {
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-lg);
+  padding: 26px 16px;
+  text-align: center;
+}
+.usage-notice { padding: 18px 14px; }
+.usage-empty-title, .usage-notice-text { font-size: 12.5px; font-weight: 600; color: var(--c-text-2); }
+.usage-empty-desc { margin-top: 6px; font-size: 12px; color: var(--c-text-3); }
+
+/* ---- 窄屏：摘要条竖排，热力图保持 52 列等分（不横向滚动） ---- */
+@media (max-width: 640px) {
+  .usage-summary { flex-direction: column; }
+  .usage-summary-sep { width: auto; height: 1px; align-self: stretch; }
+  .usage-trend-svg { height: 160px; }
+}

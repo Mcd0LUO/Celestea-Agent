@@ -16,6 +16,7 @@ import { initPromptsSection, loadPrompts } from './prompts';
 import { loadPermissionsSection } from './permissions';
 import { loadPluginsSection } from './plugins'; // W859 设置页「插件」（客户端热开关 + 宿主只读）
 import { installI18nSettings, mountGeneralPane } from '../i18n/settings'; // i18n：通用偏好 pane
+import { mountUsagePane } from './usage/panel'; // W9103：使用统计 pane
 import { t } from '../i18n';
 
 const page = need<HTMLElement>('#settingsPage');
@@ -236,7 +237,7 @@ export async function loadConfig(opts: { refresh?: boolean } = {}): Promise<void
 
 // ---- 左导航 + 右内容 -----------------------------------------------------------
 
-const PANES = ['general', 'config', 'tools', 'archive', 'providers', 'prompts', 'permissions', 'plugins'] as const;
+const PANES = ['general', 'config', 'tools', 'archive', 'providers', 'prompts', 'permissions', 'plugins', 'usage'] as const;
 type PaneName = (typeof PANES)[number];
 
 let currentPane: PaneName = 'config';
@@ -273,6 +274,9 @@ function loadPane(name: PaneName): void {
   } else if (name === 'permissions') {
     // W858：「权限预设」（内置三档 + 自定义档 + 会话档位选择器的取数口）
     void loadPermissionsSection();
+  } else if (name === 'usage') {
+    // W9103：「使用统计」（摘要条 + 热力图 + 趋势图；数据来自已有的用量账本聚合）
+    mountUsagePane();
   } else {
     // W859：「插件」（客户端插件热开关 + 服务端插件只读清单）
     void loadPluginsSection();
@@ -324,8 +328,34 @@ export function closeSettings(): void {
   page.classList.add('hidden');
 }
 
+/**
+ * W9103：左下角设置入口的用户名。
+ *   取数失败（未登录 401 / 老服务没有这个端点 / 网络不通）一律**不显示**用户名 ——
+ *   只留图标 + 「设置」。刻意不编占位名（如「未登录」「访客」）：那句话在
+ *   「端点不存在」与「确实没登录」两种情况下都是猜测，而这里没有区分它们的信息。
+ *   只在**取到非空用户名**时才把 `.hidden` 摘掉（节点常驻，只切 class）。
+ */
+function loadSettingsUser(): void {
+  const node = document.getElementById('settingsUser');
+  if (!node) return;
+  void api
+    .authCheck()
+    .then((r) => {
+      const user = typeof r.user === 'string' ? r.user.trim() : '';
+      if (user === '') return;
+      node.textContent = user;
+      // title 给完整名字（可见文本可能被单行截断）。
+      node.title = user;
+      node.classList.remove('hidden');
+    })
+    .catch(() => {
+      /* 未登录 / 端点缺失：保持隐藏，不编名字 */
+    });
+}
+
 export function initSettingsPage(): void {
-  need<HTMLElement>('#btnConfig').addEventListener('click', openSettings);
+  // W9103：设置入口从顶栏（原 #btnConfig，已删除）挪到左侧栏左下角。
+  need<HTMLElement>('#btnSettingsEntry').addEventListener('click', openSettings);
   need<HTMLElement>('#btnSettingsClose').addEventListener('click', closeSettings);
   need<HTMLElement>('#btnSettingsReload').addEventListener('click', reloadCurrentPane);
   for (const n of PANES) {
@@ -335,4 +365,5 @@ export function initSettingsPage(): void {
   installI18nSettings(); // i18n：静态 data-i18n 文案 + 语言切换重画
   initProvidersSection(); // #btnAddProvider
   initPromptsSection(); // #btnNewPrompt + scope 切换
+  loadSettingsUser(); // W9103：左下角入口的用户名（取不到就不显示）
 }

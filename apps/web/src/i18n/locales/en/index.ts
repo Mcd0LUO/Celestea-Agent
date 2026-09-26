@@ -8,5 +8,6 @@ import { settings } from './settings';
 import { chat } from './chat';
 import { shell } from './shell';
 import { grants } from './grants';
+import { usage } from './usage'; // W9103：设置页「使用统计」
 
-export const en: Record<Key, string> = { ...common, ...api, ...statusline, ...settings, ...chat, ...shell, ...grants };
+export const en: Record<Key, string> = { ...common, ...api, ...statusline, ...settings, ...chat, ...shell, ...grants, ...usage };

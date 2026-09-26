@@ -36,6 +36,7 @@ import './styles/codeblock.css'; // W-C 代码块
 import './styles/taskpanel.css'; // 任务面板（todo list）
 import './styles/provider-edit.css'; // 提供商模型输入输出类型
 import './styles/theme-claude.css'; // Claude Code 风格色卡
+import './styles/usage.css'; // W9103 设置页「使用统计」（摘要条 / 热力图 / 趋势图）
 
 import { api } from './api';
 import { connectSse, initChat } from './chat';

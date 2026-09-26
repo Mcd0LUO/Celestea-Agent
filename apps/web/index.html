@@ -22,7 +22,6 @@
         </button>
         <button id="btnTheme" class="btn btn-quiet btn-theme" title="主题（黑白 · 唯一主题）">黑白</button>
         <button id="btnSidebar" class="btn btn-quiet" title="收起/展开左侧面板">收起</button>
-        <button id="btnConfig" class="btn btn-quiet" data-i18n="shell.topbar.config" data-i18n-title="shell.topbar.configTitle">配置</button>
       </div>
     </header>
 
@@ -42,6 +41,19 @@
 
         <section class="side-sec side-sec-foot">
           <div class="side-note" id="sideFoot">—</div>
+          <!-- W9103：设置入口从顶栏挪到左下角（用户要求）——图标 + 「设置」+ 用户名。
+               整块可点（button），调 openSettings()。用户名由 ui/config.ts 从
+               GET /auth/check 取；未登录（401）时**不显示**用户名（只留图标 + 设置），
+               不编占位名。用户名超长单行截断，不许撑破侧栏（见 layout.css 的
+               .side-settings-user：min-width:0 + overflow:hidden + text-overflow:ellipsis）。
+               图标是内联 SVG（stroke="currentColor"），照 #btnWorkbench / #slGrant 的写法。
+               侧栏收起时（#app.sidebar-collapsed）本块随侧栏一起 display:none —— 这是
+               用户明确要的「拿到左下角」的可接受代价；移动端抽屉态侧栏仍显示，入口可见。 -->
+          <button id="btnSettingsEntry" class="side-settings" type="button" data-i18n-title="shell.sidebar.settingsTitle" data-i18n-aria-label="shell.sidebar.settingsAria">
+            <svg class="side-settings-ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M8 10.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z" fill="none" stroke="currentColor" stroke-width="1.3"></path><path d="M13.1 9.4a1.1 1.1 0 0 0 .22 1.21l.04.04a1.33 1.33 0 1 1-1.88 1.88l-.04-.04a1.1 1.1 0 0 0-1.21-.22 1.1 1.1 0 0 0-.67 1.01v.11a1.33 1.33 0 1 1-2.66 0v-.06a1.1 1.1 0 0 0-.72-1.01 1.1 1.1 0 0 0-1.21.22l-.04.04a1.33 1.33 0 1 1-1.88-1.88l.04-.04a1.1 1.1 0 0 0 .22-1.21 1.1 1.1 0 0 0-1.01-.67h-.11a1.33 1.33 0 1 1 0-2.66h.06a1.1 1.1 0 0 0 1.01-.72 1.1 1.1 0 0 0-.22-1.21l-.04-.04a1.33 1.33 0 1 1 1.88-1.88l.04.04a1.1 1.1 0 0 0 1.21.22h.05a1.1 1.1 0 0 0 .67-1.01v-.11a1.33 1.33 0 1 1 2.66 0v.06a1.1 1.1 0 0 0 .67 1.01 1.1 1.1 0 0 0 1.21-.22l.04-.04a1.33 1.33 0 1 1 1.88 1.88l-.04.04a1.1 1.1 0 0 0-.22 1.21v.05a1.1 1.1 0 0 0 1.01.67h.11a1.33 1.33 0 1 1 0 2.66h-.06a1.1 1.1 0 0 0-1.01.67z" fill="none" stroke="currentColor" stroke-width="1.2"></path></svg>
+            <span class="side-settings-text" data-i18n="shell.sidebar.settings"></span>
+            <span class="side-settings-user hidden" id="settingsUser"></span>
+          </button>
         </section>
       </aside>
 
@@ -200,6 +212,8 @@
           <button class="settings-nav-item" type="button" data-page="prompts">提示词</button>
           <button class="settings-nav-item" type="button" data-page="permissions">权限预设</button>
           <button class="settings-nav-item" type="button" data-page="plugins">插件</button>
+          <!-- W9103：使用统计（文案走 i18n；本格由 ui/usage/panel.ts 挂载） -->
+          <button class="settings-nav-item" type="button" data-page="usage" data-i18n="usage.nav.title"></button>
         </nav>
         <div class="settings-content">
           <section class="settings-pane" data-pane="general">
@@ -262,6 +276,14 @@
               <span class="settings-sec-note">客户端插件即时生效；服务端插件只读</span>
             </header>
             <div class="settings-pane-body" id="settingsPlugins"></div>
+          </section>
+          <!-- W9103：使用统计（数据来自已有的用量账本聚合；本格由 ui/usage/panel.ts 挂载） -->
+          <section class="settings-pane" data-pane="usage">
+            <header class="settings-pane-head">
+              <h4 data-i18n="usage.nav.title"></h4>
+              <span class="settings-sec-note" data-i18n="usage.nav.note"></span>
+            </header>
+            <div class="settings-pane-body" id="settingsUsage"></div>
           </section>
         </div>
       </div>
