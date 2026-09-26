@@ -95,3 +95,60 @@ describe("R3 W838-F7 · web check 内置 BUNDLE STRICT", () => {
   });
 });
 
+/**
+ * W9112 follow-up · 产物体积门禁的**跨平台容差**。
+ *
+ * 为什么需要这组断言：CI 实测 ubuntu 的 css 合计 gzip 比 windows 大 2 字节
+ * （raw 完全相同），根因是 esbuild 的原生二进制与 zlib 实现都按平台分。容差
+ * 一旦没有边界断言，它就会慢慢变成「随便超都不红」——那等于删掉门禁。
+ *
+ * 三条边界，缺一不可：
+ *   ① 容差内（超出 2）⇒ 通过（exit 0），且**如实打印** ⚠（不许静默）；
+ *   ② 容差外（超出 129）⇒ 失败（exit 1）；
+ *   ③ 恰好等于容差（超出 128）⇒ 通过（闭区间上界，边界值写进断言）。
+ */
+function bundleSandbox(limitCss: number): string {
+  const dir = sandbox();
+  copyFileSync(join(TOOLS, "check-bundle-size.mjs"), join(dir, "tools", "check-bundle-size.mjs"));
+  mkdirSync(join(dir, "dist", "assets"), { recursive: true });
+  // 一个可压缩的确定性产物；具体字节数不重要，门禁比的是「实际 vs 上限」。
+  // Must gzip to > 128 bytes so that a "beyond tolerance" limit stays POSITIVE
+  // (the gate rejects a non-positive baseline, which would test the wrong path).
+  writeFileSync(join(dir, "dist", "assets", "index-abc.css"), "abcdefghij".repeat(8192));
+  writeFileSync(
+    join(dir, "tools", "bundle-size-baseline.json"),
+    JSON.stringify({ kind: "frontend-bundle-size-baseline", gzipLevel: 9, gzip: { js: 1_000_000, css: limitCss } }),
+  );
+  return join(dir, "tools", "check-bundle-size.mjs");
+}
+
+describe("W9112 follow-up · bundle-size 跨平台容差（边界有牙）", () => {
+  it("① 容差内（超出 2 字节）⇒ 通过，但如实打印 ⚠（不静默）", () => {
+    // 先量出真实 gzip，再把上限设成「真实 - 2」制造「超出 2」。
+    const probe = bundleSandbox(1_000_000); // huge limit: the gate passes and prints the real number
+    const gz = Number(/css (\d+)\//.exec(run(probe).out)?.[1] ?? 0);
+    expect(gz, "探针要能量到真实 css gzip").toBeGreaterThan(0);
+    const script = bundleSandbox(gz - 2);
+    const r = run(script);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("容差");
+    expect(r.out).toContain("平台噪声");
+  });
+
+  it("② 容差外（超出 129 字节）⇒ 失败", () => {
+    const probe = bundleSandbox(1_000_000); // huge limit: the gate passes and prints the real number
+    const gz = Number(/css (\d+)\//.exec(run(probe).out)?.[1] ?? 0);
+    const script = bundleSandbox(gz - 129);
+    const r = run(script);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("未通过");
+  });
+
+  it("③ 恰好等于容差（超出 128 字节）⇒ 通过（闭区间上界）", () => {
+    const probe = bundleSandbox(1_000_000); // huge limit: the gate passes and prints the real number
+    const gz = Number(/css (\d+)\//.exec(run(probe).out)?.[1] ?? 0);
+    const script = bundleSandbox(gz - 128);
+    const r = run(script);
+    expect(r.code).toBe(0);
+  });
+});
