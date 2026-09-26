@@ -13,6 +13,7 @@
  */
 
 import type { Readable } from "node:stream";
+import { TextDecoder } from "node:util";
 
 import { TIMED_OUT } from "../sandbox/async.js";
 
@@ -20,11 +21,24 @@ import { TIMED_OUT } from "../sandbox/async.js";
 export interface BoundedLine {
   text: string;
   truncated: boolean;
+  /**
+   * W9112: the bytes were NOT valid UTF-8 (see [isMalformedUtf8]). The protocol
+   * is UTF-8 on the wire, so a line that fails to decode is not a protocol line:
+   * the broker fails the run instead of consuming U+FFFD as a value.
+   */
+  malformed: boolean;
+  /**
+   * W9112: the first raw bytes of a malformed line, hex — what the interpreter
+   * ACTUALLY wrote, for the failure message. Empty for a well-formed line.
+   */
+  malformedHex: string;
 }
 
 const NEWLINE = 0x0a;
 /** Longest UTF-8 sequence (a 4-byte code point) — the cut look-back window. */
 const MAX_UTF8_SEQUENCE = 4;
+/** How many raw bytes of a malformed line the failure message shows (W9112). */
+const MALFORMED_PREVIEW_BYTES = 32;
 
 /**
  * `\n`-framed reader over a byte stream with a per-line cap and a deadline.
@@ -136,7 +150,14 @@ export class LineReader {
   }
 
   private complete(): void {
-    this.queued.push({ text: safeUtf8(Buffer.concat(this.parts)), truncated: this.cut });
+    const bytes = Buffer.concat(this.parts);
+    const malformed = isMalformedUtf8(bytes);
+    this.queued.push({
+      text: safeUtf8(bytes),
+      truncated: this.cut,
+      malformed,
+      malformedHex: malformed ? bytes.subarray(0, MALFORMED_PREVIEW_BYTES).toString("hex") : "",
+    });
     this.parts.length = 0;
     this.bytes = 0;
     this.cut = false;
@@ -149,15 +170,45 @@ export class LineReader {
  * `"h\uFFFD"`).
  */
 export function safeUtf8(buffer: Buffer): string {
+  return buffer.subarray(0, completePrefixLength(buffer)).toString("utf8");
+}
+
+/**
+ * Byte length of the longest prefix ending on a code-point boundary — the
+ * same rule [safeUtf8] uses to drop a budget-cut tail. Kept as one function so
+ * the decoder and the validator cannot disagree about where the body ends.
+ */
+function completePrefixLength(buffer: Buffer): number {
   for (let back = 0; back < MAX_UTF8_SEQUENCE && back < buffer.length; back += 1) {
     const byte = buffer[buffer.length - 1 - back] ?? 0;
-    if ((byte & 0xc0) === 0x80) continue; // continuation byte: keep looking back
-    if ((byte & 0x80) === 0) return buffer.toString("utf8"); // ASCII tail: complete
+    if ((byte & 0xc0) === 0x80) continue;
+    if ((byte & 0x80) === 0) return buffer.length;
     const need = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : 2;
-    if (back + 1 === need) return buffer.toString("utf8"); // complete code point
-    return buffer.subarray(0, buffer.length - 1 - back).toString("utf8"); // cut inside it
+    return back + 1 === need ? buffer.length : buffer.length - 1 - back;
   }
-  return buffer.toString("utf8");
+  return buffer.length;
+}
+
+/**
+ * W9112: true when `buffer` is NOT valid UTF-8.
+ *
+ * Uses the platform's own strict decoder (`new TextDecoder("utf-8", { fatal: true })`)
+ * rather than a hand-rolled scanner, and validates the SAME byte body [safeUtf8]
+ * decodes — so a multi-byte character cut by the byte budget is never mistaken
+ * for corruption, while a genuinely invalid sequence (GBK bytes, a lone
+ * continuation byte, an overlong form) is.
+ *
+ * This is a DETECTOR, never a repair: the caller must FAIL the run, not use the
+ * replaced text as a value.
+ */
+export function isMalformedUtf8(buffer: Buffer): boolean {
+  const body = buffer.subarray(0, completePrefixLength(buffer));
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(body);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /** UTF-8 safe prefix of `text` at most `maxBytes` bytes long. */
@@ -180,11 +231,11 @@ export function jsonByteLength(value: unknown): number | null {
 
 /** Append up to `maxBytes` of `chunk` to `current` (UTF-8 safe, parity). */
 export function appendBounded(current: string, chunk: string, maxBytes: number): BoundedLine {
-  if (chunk === "") return { text: current, truncated: false };
+  if (chunk === "") return { text: current, truncated: false, malformed: false, malformedHex: "" };
   const room = maxBytes - Buffer.byteLength(current, "utf8");
   const size = Buffer.byteLength(chunk, "utf8");
-  if (size <= room) return { text: current + chunk, truncated: false };
-  return { text: current + utf8Prefix(chunk, Math.max(room, 0)), truncated: true };
+  if (size <= room) return { text: current + chunk, truncated: false, malformed: false, malformedHex: "" };
+  return { text: current + utf8Prefix(chunk, Math.max(room, 0)), truncated: true, malformed: false, malformedHex: "" };
 }
 
 /**

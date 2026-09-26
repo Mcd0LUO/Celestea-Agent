@@ -31,30 +31,30 @@ describe("LineReader", () => {
     stream.write("he");
     stream.write("llo\nwo");
     stream.write("rld\n");
-    expect(await r.next(200)).toEqual({ text: "hello", truncated: false });
-    expect(await r.next(200)).toEqual({ text: "world", truncated: false });
+    expect(await r.next(200)).toEqual({ text: "hello", truncated: false, malformed: false, malformedHex: "" });
+    expect(await r.next(200)).toEqual({ text: "world", truncated: false, malformed: false, malformedHex: "" });
   });
 
   it("reports EOF (null) and drops a partial tail without a newline", async () => {
     const { reader: r, stream } = reader();
     stream.write("complete\npartial");
     stream.end();
-    expect(await r.next(200)).toEqual({ text: "complete", truncated: false });
+    expect(await r.next(200)).toEqual({ text: "complete", truncated: false, malformed: false, malformedHex: "" });
     expect(await r.next(200)).toBeNull();
   });
 
   it("truncates an over-long line, drains it and keeps parsing after it", async () => {
     const { reader: r, stream } = reader(4);
     stream.write("abcdefgh\nnext\n");
-    expect(await r.next(200)).toEqual({ text: "abcd", truncated: true });
-    expect(await r.next(200)).toEqual({ text: "next", truncated: false });
+    expect(await r.next(200)).toEqual({ text: "abcd", truncated: true, malformed: false, malformedHex: "" });
+    expect(await r.next(200)).toEqual({ text: "next", truncated: false, malformed: false, malformedHex: "" });
   });
 
   it("returns TIMED_OUT while the child stays silent", async () => {
     const { reader: r, stream } = reader();
     expect(await r.next(30)).toBe(TIMED_OUT);
     stream.write("late\n");
-    expect(await r.next(200)).toEqual({ text: "late", truncated: false });
+    expect(await r.next(200)).toEqual({ text: "late", truncated: false, malformed: false, malformedHex: "" });
   });
 
   it("treats a null stream as immediate EOF (no stdout pipe)", async () => {
@@ -76,13 +76,13 @@ describe("UTF-8 safe budgets", () => {
 
   it("appends up to the byte budget and reports the cut", () => {
     const grown = appendBounded("ab", "cd", 8);
-    expect(grown).toEqual({ text: "abcd", truncated: false });
+    expect(grown).toEqual({ text: "abcd", truncated: false, malformed: false, malformedHex: "" });
     const cut = appendBounded("ab", "cdef", 4);
-    expect(cut).toEqual({ text: "abcd", truncated: true });
+    expect(cut).toEqual({ text: "abcd", truncated: true, malformed: false, malformedHex: "" });
     const full = appendBounded("abcd", "ef", 4);
-    expect(full).toEqual({ text: "abcd", truncated: true });
-    expect(appendBounded("ab", "", 4)).toEqual({ text: "ab", truncated: false });
-    expect(appendBounded("", "héllo", 3)).toEqual({ text: "hé", truncated: true });
+    expect(full).toEqual({ text: "abcd", truncated: true, malformed: false, malformedHex: "" });
+    expect(appendBounded("ab", "", 4)).toEqual({ text: "ab", truncated: false, malformed: false, malformedHex: "" });
+    expect(appendBounded("", "héllo", 3)).toEqual({ text: "hé", truncated: true, malformed: false, malformedHex: "" });
   });
 
   it("measures serialized values in bytes and rejects non-JSON values", () => {

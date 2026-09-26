@@ -365,6 +365,14 @@ async function handleLine(
   state: RunState,
 ): Promise<"stop" | "continue"> {
   const trimmed = line.text.trimEnd();
+  // W9112: the protocol is UTF-8 on the wire. A line whose bytes do not decode
+  // as UTF-8 is NOT a log line and NOT a protocol frame — it is a child writing
+  // in a different encoding (the Windows GBK case that silently corrupted every
+  // Chinese character into U+FFFD while `error` stayed null). Fail closed with
+  // the raw bytes in the message instead of consuming the replacement text.
+  // Checked BEFORE the truncation branch so a malformed line cannot slip into
+  // the log as U+FFFD merely because it was also over the line budget.
+  if (line.malformed) throw malformedProtocolLine(line);
   if (line.truncated) {
     logLine(state, ctx.config, trimmed, true);
     return "continue";
@@ -390,6 +398,23 @@ async function handleLine(
   }
   await answerSubCall(ctx, child, request, state);
   return "continue";
+}
+
+/**
+ * W9112: a stdout line that is not valid UTF-8. The message names the raw bytes
+ * so the cause is diagnosable from the failure alone, and points at the fix
+ * (the interpreter must run in UTF-8 mode) rather than guessing at the content.
+ */
+function malformedProtocolLine(line: BoundedLine): ToolFailure {
+  const shown = line.malformedHex === "" ? "<empty>" : line.malformedHex;
+  return runCodeFailure(
+    "protocol",
+    "the program wrote a stdout line that is not valid UTF-8 " +
+      "(raw bytes: " + shown + "); the run_code protocol is UTF-8 in both " +
+      "directions, so a different interpreter encoding (for example the " +
+      "Windows ANSI code page) would corrupt every non-ASCII value. " +
+      "Set PYTHONUTF8=1 for a Python child.",
+  );
 }
 
 /** Objects only: a JSON scalar / array on stdout is a log line (parity). */
@@ -584,5 +609,3 @@ function withLogs(error: unknown, ctx: BrokerContext, state: RunState): Error {
   const text = withLogsText(errorText(error), composeRender(ctx.config, state));
   return error instanceof ToolFailure ? new ToolFailure(error.kind, text) : new ToolFailure(RUN_CODE_ERROR_PREFIX, text);
 }
-
-

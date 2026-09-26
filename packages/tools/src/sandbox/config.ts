@@ -35,6 +35,64 @@ export const DEFAULT_MAX_TIMEOUT_MS = 300_000;
 export const DEFAULT_MAX_CPU_SEC = 600;
 export const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
 
+/**
+ * W9112: the interpreter env that makes a PYTHON child speak UTF-8.
+ *
+ * Root cause of the silent data corruption this fixes (measured, Windows 11 /
+ * Python 3.11): with no env, a Python child on Windows inherits the ANSI code
+ * page — `sys.stdout.encoding == sys.stdin.encoding == "gbk"`, and
+ * `locale.getpreferredencoding(False) == "cp936"`. The `run_code` protocol is
+ * UTF-8 on the wire in BOTH directions, so:
+ *
+ * - the child writes GBK bytes to stdout, the broker decodes them as UTF-8
+ *   (`safeUtf8`) and every Chinese character silently becomes U+FFFD — the JSON
+ *   frame stays valid, so `error === null` and the corruption is invisible;
+ * - the parent writes UTF-8 bytes to the child's stdin, Python decodes them as
+ *   GBK, and `tools.read_file` answers mojibake (the opposite direction, same
+ *   root cause);
+ * - a character GBK cannot encode (emoji) raises `UnicodeEncodeError` instead.
+ *
+ * `PYTHONUTF8=1` is Python's official UTF-8 Mode (3.7+). It is the variable
+ * chosen over `PYTHONIOENCODING=utf-8` because it fixes the WHOLE interpreter
+ * and not only the three stdio streams (both measured):
+ *
+ * | `sys.stdout.encoding` | `locale.getpreferredencoding(False)` | bare `open(p, "w")` bytes |
+ * |---|---|---|
+ * | (nothing)              | `gbk` | `cp936` | GBK — corrupt |
+ * | `PYTHONIOENCODING`     | `utf-8` | `cp936` | **GBK — still corrupt** |
+ * | `PYTHONUTF8=1`         | `utf-8` | `utf-8` | UTF-8 |
+ *
+ * A program that writes its own file with plain `open()` is exactly the
+ * "题库" case that was corrupted, so the stdio-only variable would have left the
+ * most damaging path broken. UTF-8 Mode also sets `sys.flags.utf8_mode == 1`,
+ * which is the honest, machine-checkable statement of "this child is UTF-8".
+ *
+ * Scope of the side effects (why this is safe): only a Python interpreter reads
+ * the variable, so it is a no-op for a Node child and for `run_shell` commands;
+ * and on POSIX `python3` already runs in UTF-8 mode, so a Linux/macOS child's
+ * environment and behaviour are byte-for-byte unchanged. It is injected for
+ * EVERY Windows sandbox child rather than only the `run_code` Python one
+ * because the whole tools layer is UTF-8 end to end: a nested `python` launched
+ * through `run_shell` hits the identical corruption, and leaving it on the ANSI
+ * code page while the broker speaks UTF-8 would only move the bug one layer
+ * down. See [windowsUtf8Env] for the pure seam and [sanitizedEnv] for how the
+ * value reaches the child.
+ */
+export const PYTHON_UTF8_ENV: ReadonlyArray<readonly [string, string]> = [["PYTHONUTF8", "1"]];
+
+/**
+ * W9112: the extra child env a platform needs so a Python interpreter speaks
+ * UTF-8 — the pure, injectable seam the POSIX-invariance test pins.
+ *
+ * Windows answers [PYTHON_UTF8_ENV]; every other platform answers an empty
+ * list, so a Linux/macOS child environment is byte-for-byte what it was before
+ * this change. `platform` is an argument (the W885 seam) so the win32 answer is
+ * unit-tested on Linux.
+ */
+export function windowsUtf8Env(platform: string = process.platform): ReadonlyArray<readonly [string, string]> {
+  return platform === "win32" ? PYTHON_UTF8_ENV : [];
+}
+
 /** Host env vars passed through to the child on POSIX (whitelist, not blacklist). */
 export const ENV_ALLOWLIST: readonly string[] = [
   "PATH",
@@ -124,6 +182,12 @@ export interface SandboxConfigOverrides {
   /** W880: override the run_code program directory (tests / embeddings). */
   programDir?: string;
   extraEnv?: ReadonlyArray<readonly [string, string]>;
+  /**
+   * W9112: the platform the config is built for; selects [windowsUtf8Env].
+   * Defaults to the host's, and is injectable so the win32 branch is
+   * unit-tested on Linux (the W885 seam).
+   */
+  platform?: string;
 }
 
 /**
@@ -145,6 +209,9 @@ export function sandboxConfigFromEnv(env: NodeJS.ProcessEnv = process.env, overr
     root: resolveOrCwd(overrides.root ?? envString(env, ENV_SHELL_ROOT) ?? gitToplevelOr(workdir)),
     // W880: run_code programs live under CELESTEA_HOME, never in the workspace.
     programDir: overrides.programDir ?? workspaceSubdir(workdir, CELESTEA_RUN_CODE_DIR, { env }),
+    // W9112: the platform seam travels with the overrides so a caller (tests)
+    // can pin the win32 answer while running on Linux.
+    ...(overrides.platform === undefined ? {} : { platform: overrides.platform }),
   });
 }
 
@@ -170,7 +237,12 @@ export function buildSandboxConfig(overrides: SandboxConfigOverrides = {}): Sand
     // Explicit construction (tests / embeddings) keeps the historical in-workspace
     // default; the ENV posture above is the one that uses CELESTEA_HOME.
     programDir: overrides.programDir ?? join(workdir, ".celestea", "run-code"),
-    extraEnv: overrides.extraEnv ?? [],
+    // W9112: the UTF-8 interpreter env rides on top of the operator's `extraEnv`.
+    // It MUST travel in `extraEnv` rather than the host env the allowlist
+    // filters: `sanitizedEnv` applies `extraEnv` AFTER the allowlist, so the
+    // value reaches the child on every platform without depending on being
+    // allow-listed (ENV_ALLOWLIST_WIN32 is a closed whitelist).
+    extraEnv: [...windowsUtf8Env(overrides.platform), ...(overrides.extraEnv ?? [])],
   };
 }
 
