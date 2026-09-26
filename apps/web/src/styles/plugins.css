@@ -202,3 +202,122 @@
 .plug-status.err {
   color: var(--state-err, var(--c-err));
 }
+/* ---- 4) W9108 行内配置面板（形状与交互同「模型提供商」的行内面板） ---------- */
+/*
+ * 每行的 DOM 结构（.plug-entry 包住「行 + 面板」）：
+ *   .plug-entry[data-id]
+ *     .plug-row（既有骨架：展开控件 / 名称 / 说明 / 开关）
+ *     .plug-panel > .plug-panel-inner > .plug-cfg（描述驱动的控件）
+ * 展开/收起只切 .open 与内联 max-height（同 providers 的 .prov-inline）——
+ * 不重建列表、不重画行。
+ */
+.plug-entry {
+  display: flex;
+  flex-direction: column;
+}
+.plug-expand {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.plug-expand svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.16s ease;
+}
+/* 方向由 aria 状态定（读屏与视觉同一真源），不靠字形旋转的巧合。 */
+.plug-expand[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+.plug-expand:hover {
+  color: var(--c-text-1);
+  background: var(--bg-layer-3);
+}
+.plug-expand:focus-visible {
+  outline: 1px solid var(--interactive-accent-ring);
+  outline-offset: 1px;
+}
+/* ★ 折叠的高度约束必须落在**同一个**被 JS 驱动 max-height 的元素上：
+   真机实测踩到过 —— 把 max-height:0 写在 .plug-panel（外层）而 JS 写 .plug-panel-inner，
+   结果是「加了 open 类、aria 也是 true，但几何永远 0」（面板不可见）。 */
+/* ★ 被 JS 驱动 max-height 的元素**不得带 padding**：max-height 夹的是内容盒，
+   而 padding 落在它外面 —— 真机实测（h=14px）就是「收起态还剩一条 padding 高度」。
+   providers 的行内面板同此形状（.prov-inline 无 padding，padding 在内层 .prov-form）。 */
+.plug-panel-inner {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  /* 铁律 4：折叠/展开只切 class + transition，不删建子节点 */
+  transition: max-height 0.22s ease, opacity 0.18s ease, visibility 0s linear 0.22s;
+}
+.plug-panel.open .plug-panel-inner {
+  opacity: 1;
+  visibility: visible;
+  transition: max-height 0.22s ease, opacity 0.18s ease, visibility 0s linear 0s;
+}
+.plug-cfg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 12px 12px 34px;
+}
+.plug-cfg-item {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+}
+.plug-cfg-label {
+  font-size: 12px;
+  color: var(--c-text-2);
+}
+.plug-cfg-hint {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--c-text-3);
+}
+.plug-cfg-bool,
+.plug-cfg-enum,
+.plug-cfg-text,
+.plug-cfg-number {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--c-text-1);
+  background: var(--bg-layer-1);
+  border: var(--hairline) solid var(--border-l1);
+  border-radius: var(--r-sm);
+  padding: 3px 7px;
+  min-width: 0;
+  max-width: 220px;
+}
+.plug-cfg-bool {
+  justify-self: start;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  accent-color: var(--interactive-accent);
+}
+.plug-cfg-enum:focus-visible,
+.plug-cfg-text:focus-visible,
+.plug-cfg-number:focus-visible {
+  outline: 1px solid var(--interactive-accent-ring);
+  outline-offset: 1px;
+}
+.plug-cfg-empty {
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+/* 过滤时连面板一起藏（面板与行是一个整体）。必须排在 .plug-panel.open 之后。 */
+.plug-panel.hidden {
+  display: none;
+}

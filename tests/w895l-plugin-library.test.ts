@@ -75,16 +75,16 @@ describe("W895-L 插件库视图", () => {
     expect(qa("#settingsPlugins .plug-cat-title").map((n) => n.textContent)).toEqual([
       "阅读", "结构", "媒体", "交互",
     ]);
-    // 阅读 = rail-preview + codeCopy + codeExtras（JSON 树已移除）
+    // 阅读 = W9108 内置两遍（高亮 / 数学）+ rail-preview + codeCopy + codeExtras
     const first = cats[0]!;
     expect(Array.from(first.querySelectorAll(".plug-row")).map((r) => r.dataset["id"]).sort()).toEqual([
-      "display.codeCopy", "display.codeExtras", "rail-preview",
+      "builtin.hljs", "builtin.math", "display.codeCopy", "display.codeExtras", "rail-preview",
     ]);
   });
 
   it("计数与「全部开启/关闭」按钮就位", async () => {
     await openPlugins();
-    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("6/6 已开启");
+    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("8/8 已开启");
     expect(qa("#settingsPlugins .plug-bulk").length).toBe(2);
   });
 
@@ -95,10 +95,11 @@ describe("W895-L 插件库视图", () => {
     await flush();
     expect(server.puts.length).toBe(1);
     expect(server.puts[0]!.sort()).toEqual([
+      "builtin.hljs", "builtin.math",
       "display.codeCopy", "display.codeExtras", "display.csvTable", "display.imageZoom",
       "hint-text-card", "rail-preview",
     ]);
-    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("0/6 已开启");
+    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("0/8 已开启");
     for (const i of qa("#settingsPlugins .plug-switch-input") as InputLike[]) expect(i.checked).toBe(false);
   });
 
@@ -107,7 +108,7 @@ describe("W895-L 插件库视图", () => {
     server.failPut = true;
     qa("#settingsPlugins .plug-bulk")[1]!.dispatchEvent(new Ev("click"));
     await flush();
-    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("6/6 已开启");
+    expect(q("#settingsPlugins .plug-count")?.textContent).toBe("8/8 已开启");
     for (const i of qa("#settingsPlugins .plug-switch-input") as InputLike[]) expect(i.checked).toBe(true);
     expect(q("#settingsPlugins .plug-status")?.textContent ?? "").not.toBe("");
   });

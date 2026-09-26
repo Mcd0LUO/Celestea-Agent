@@ -7,7 +7,15 @@
 import { registerBuiltinEnhancers } from "./builtin";
 
 export { registerEnhancer, runEnhancers, enhancerIds, type Enhancer } from "./registry";
-export { registerBuiltinEnhancers, HLJS_ENHANCER_ID, MATH_ENHANCER_ID } from "./builtin";
+export {
+  registerBuiltinEnhancers,
+  hljsEnhancer,
+  mathEnhancer,
+  HLJS_ENHANCER_ID,
+  MATH_ENHANCER_ID,
+  ORDER_HLJS,
+  ORDER_MATH,
+} from "./builtin";
 
 /** 装配内置增强遍。必须在客户端插件装配之前调用：内置遍要先于可选组件入链。 */
 export function initEnhancers(): void {

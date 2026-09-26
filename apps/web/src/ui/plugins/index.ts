@@ -1,12 +1,14 @@
 // ============================================================================
-// ui/plugins/index.ts — 设置页「插件」一格的装配（W859）。
+// ui/plugins/index.ts — 设置页「插件」一格的装配（W859 · W9108）。
 // ----------------------------------------------------------------------------
 //   容器结构（离屏构建、单次替换）：
 //     #settingsPlugins
 //       .plug-bar（W895-L 插件库工具条：搜索 + 计数 + 全部开/关）
 //       .plug-sec（客户端插件；W895-L 按**分类**分组）
 //         .plug-cat-head（分类名 + 该类计数）
-//         .plug-list > .plug-row[data-id]（开关 = 真注册/真注销，见 src/plugins/）
+//         .plug-list > .plug-entry[data-id]
+//                        .plug-row（开关 = 真注册/真注销，见 src/plugins/）
+//                        .plug-panel（W9108 内联配置面板；与行**相邻**，同 providers）
 //       .plug-status 就地说明（切换结果 / 失败原因）
 //       .plug-sec（服务端插件，只读）
 //         .plug-host-list > .plug-host（名字 + 「服务端内置 · 进程内不可热拔插」）
@@ -14,24 +16,28 @@
 //   铁律：首屏不写「加载中」占位 —— 客户端一段同步画出终态；宿主一段在清单回来前
 //   保持空（回来即画，失败画如实空态）。
 //   W895-L：搜索/分类是**纯视图**——只过滤已画的 DOM，不重新取表、不重建记录。
+//   W9108：展开面板 DOM 每行只建一次；展开/收起只切 class + max-height 过渡，
+//          不重建列表（同 ui/providers/panel.ts 的行内面板）。
 // ============================================================================
 import { userErrorText } from '../../api';
 import {
   CLIENT_PLUGIN_CATEGORIES,
   categoryLabelKey,
+  clientPluginConfigValues,
   clientPlugins,
   isClientPluginOn,
   setClientPlugin,
+  setClientPluginConfig,
   setClientPlugins,
   whenClientPluginsReady,
 } from '../../plugins';
 import type { ClientPluginDescriptor } from '../../plugins';
 import { el, need } from '../../utils/dom';
+import { applyValues, buildConfigPanel, syncPanelHeight, type PluginPanelState } from './config-panel';
 import { fetchHostPlugins, type HostPluginRow } from './host';
 import { t } from '../../i18n';
 
 const HOST = '#settingsPlugins';
-/** 宿主清单不可用（端点缺失/不可达/清单为空）时的如实空态。 */
 
 function section(title: string, note: string): HTMLElement {
   const sec = el('section', 'plug-sec');
@@ -42,10 +48,50 @@ function section(title: string, note: string): HTMLElement {
   return sec;
 }
 
-/** 一行客户端插件 + 开关（开关初值 = 此刻真实挂载状态）。 */
-function clientRow(d: ClientPluginDescriptor, status: (t: string, ok: boolean) => void): HTMLElement {
+/** 展开控件的内联 chevron（方向由 CSS 按 aria-expanded 定，不靠字形）。 */
+function chevron(): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', 'M4 2.5 L8 6 L4 9.5');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.6');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(path);
+  return svg;
+}
+
+/** 一行客户端插件（开关初值 = 此刻真实挂载状态）+ 内联配置面板。 */
+function clientRow(
+  d: ClientPluginDescriptor,
+  status: (text: string, ok: boolean) => void,
+  onPanelLayout: (state: PluginPanelState) => void,
+): { entry: HTMLElement; row: HTMLElement; panel: HTMLElement; state: PluginPanelState; content: HTMLElement } {
+  const entry = el('div', 'plug-entry');
+  entry.dataset['id'] = d.id;
+
   const row = el('div', 'plug-row');
   row.dataset['id'] = d.id;
+
+  // 展开控件与面板：值取**生效配置**（默认值 + 已保存值），写入走 apply 层。
+  const built = buildConfigPanel(d.label, d.config, clientPluginConfigValues(d.id), (key, value) => {
+    void (async () => {
+      const r = await setClientPluginConfig(d.id, key, value);
+      // 失败 ⇒ 把控件拨回**服务端真值**（内存镜像没动），并如实说明。
+      applyValues(built.content, clientPluginConfigValues(d.id));
+      status(r.text, r.ok);
+      onPanelLayout(built.state);
+    })();
+  });
+  const state = built.state;
+  row.appendChild(built.toggle);
+  built.toggle.appendChild(chevron());
+
   const main = el('div', 'plug-row-main');
   main.appendChild(el('div', 'plug-row-label', d.label));
   main.appendChild(el('div', 'plug-row-hint', d.hint));
@@ -68,7 +114,10 @@ function clientRow(d: ClientPluginDescriptor, status: (t: string, ok: boolean) =
   wrap.appendChild(input);
   wrap.appendChild(el('span', 'plug-switch-track'));
   row.appendChild(wrap);
-  return row;
+
+  entry.appendChild(row);
+  entry.appendChild(built.panel);
+  return { entry, row, panel: built.panel, state, content: built.content };
 }
 
 /** 一行宿主插件（只读：没有开关，只有名字/版本/说明 + 不可热拔插标注）。 */
@@ -100,6 +149,17 @@ function matches(d: ClientPluginDescriptor, q: string): boolean {
   if (q === '') return true;
   const hay = (d.label + ' ' + d.hint).toLowerCase();
   return hay.includes(q.toLowerCase());
+}
+
+/** 已建好的一行（W9108：连同它的面板状态与配置内容节点）。 */
+interface RowEntry {
+  d: ClientPluginDescriptor;
+  row: HTMLElement;
+  panel: HTMLElement;
+  state: PluginPanelState;
+  content: HTMLElement;
+  /** 该行当前归属的分类（用于分组计数）。 */
+  cat: string;
 }
 
 /**
@@ -146,12 +206,15 @@ function buildLibrary(setStatus: (t: string, ok: boolean) => void): HTMLElement 
     groups.push({ cat, sec, list, head: n });
   }
 
-  const rows = new Map<string, { row: HTMLElement; d: ClientPluginDescriptor }>();
+  const rows: RowEntry[] = [];
+  const byId = new Map<string, RowEntry>();
   for (const d of all) {
-    const row = clientRow(d, setStatus);
-    rows.set(d.id, { row, d });
-    const g = groups.find((x) => x.cat === d.category);
-    (g ?? groups[0]!).list.appendChild(row);
+    const g = groups.find((x) => x.cat === d.category) ?? groups[0]!;
+    const built = clientRow(d, setStatus, (state) => syncPanelHeight(state));
+    const entry: RowEntry = { d, row: built.row, panel: built.panel, state: built.state, content: built.content, cat: g.cat };
+    rows.push(entry);
+    byId.set(d.id, entry);
+    g.list.appendChild(built.entry);
   }
 
   // 用**独占**的 class：`.plug-empty` 已被宿主一段的「清单不可用」占用 ——
@@ -165,14 +228,16 @@ function buildLibrary(setStatus: (t: string, ok: boolean) => void): HTMLElement 
     const q = search.value.trim();
     let shown = 0;
     let on = 0;
-    for (const [, { row, d }] of rows) {
-      const hit = matches(d, q);
-      row.classList.toggle('hidden', !hit);
+    for (const entry of rows) {
+      const hit = matches(entry.d, q);
+      entry.row.classList.toggle('hidden', !hit);
+      // 被过滤掉的行不得把它的展开面板留在原地（面板与行是一个整体）。
+      entry.panel.classList.toggle('hidden', !hit);
       if (hit) shown += 1;
-      if (isClientPluginOn(d.id)) on += 1;
+      if (isClientPluginOn(entry.d.id)) on += 1;
     }
     for (const g of groups) {
-      const visible = Array.from(g.list.children).filter((c) => !c.classList.contains('hidden')).length;
+      const visible = rows.filter((r) => r.cat === g.cat && !r.row.classList.contains('hidden')).length;
       g.sec.classList.toggle('hidden', visible === 0);
       g.head.textContent = String(visible);
     }
@@ -183,13 +248,15 @@ function buildLibrary(setStatus: (t: string, ok: boolean) => void): HTMLElement 
   search.addEventListener('input', apply);
   const bulk = (on: boolean) => {
     // 对**当前可见**的行批量（搜索过滤后只影响看到的那批，符合用户预期）。
-    const ids = Array.from(rows.values()).filter((r) => !r.row.classList.contains('hidden')).map((r) => r.d.id);
+    const ids = rows.filter((r) => !r.row.classList.contains('hidden')).map((r) => r.d.id);
     void (async () => {
       const r = await setClientPlugins(ids, on);
       // 无论成败都以**真实挂载状态**重画开关初值（失败时状态没变）。
-      for (const [id, entry] of rows) {
+      for (const entry of rows) {
         const input = entry.row.querySelector('.plug-switch-input') as HTMLInputElement | null;
-        if (input) input.checked = isClientPluginOn(id);
+        if (input) input.checked = isClientPluginOn(entry.d.id);
+        // 配置值不受开关影响，但服务端整表替换后重新对齐一次更安全（幂等）。
+        applyValues(entry.content, clientPluginConfigValues(entry.d.id));
       }
       apply();
       setStatus(r.text, r.ok);

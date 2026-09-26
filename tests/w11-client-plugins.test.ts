@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 /**
  * W859 · 设置页「插件」一格（apps/web）：
- *   ① 客户端插件两行 + 开关默认开（且与真实提示注册表一致）；
+ *   ① 客户端插件全部列出 + 开关默认开（且与真实提示/增强注册表一致）；
  *   ② 关掉「文字卡片」→ **真实解析**不再走它（注册表里没有、resolveHint 返回 null、
  *      提示回退原生 title），重开恢复；
  *   ③ 关闭状态持久化（模块表重建 = 模拟重开页面，仍为关）；
  *   ④ 坏 JSON / 未知 id fail-safe（不崩、未知被忽略、不误关已知插件）；
  *   ⑤ 宿主清单：有数据逐项渲染并标「不可热拔插」；404 → 如实空态、不报错、不伪造；
  *   ⑥ 样式机械门禁（无 dashed/dotted、圆角无硬编码 px）+ 新样式已被 main.ts 引入。
+ *
+ * W9108：清单多了两个**内置增强遍**（代码高亮 / 数学），它们也是可开关的客户端插件。
  *
  * 说明：本文件自己补设置页宿主（resetHarness 之后 doc.body.insertAdjacentHTML 真实
  * index.html 的 #app 壳），不改 tests/lib/w795-dom.ts（并行任务在动它）。
@@ -45,6 +47,13 @@ interface LsLike {
   removeItem(k: string): void;
   clear(): void;
 }
+
+/** W9108：全部客户端插件（2 内置增强 + 2 提示 + 4 可选增强）。 */
+const ALL_IDS = [
+  'builtin.hljs', 'builtin.math',
+  'display.codeCopy', 'display.codeExtras', 'display.csvTable', 'display.imageZoom',
+  'hint-text-card', 'rail-preview',
+];
 
 const STYLES = join(WEB, 'src', 'styles');
 const ls = (globalThis as unknown as { localStorage: LsLike }).localStorage;
@@ -89,8 +98,9 @@ const statusText = (): string => q('#settingsPlugins .plug-status')?.textContent
 /**
  * W895-C1：显示组件启用表的打桩服务端。默认在夹具 fetch 之上再包一层
  * （/api/display-plugins 走这里，其余仍走夹具），这样设置页读到的就是服务端真值。
+ * W9108：同一端点还承载插件配置（config 字段），失败旋钮对两者一体生效。
  */
-const displayServer = { disabled: [] as string[], failGet: false, failPut: false };
+const displayServer = { disabled: [] as string[], config: {} as Record<string, Record<string, string>>, failGet: false, failPut: false };
 function stubDisplay(opts: { get?: boolean; put?: boolean } = {}): void {
   displayServer.failGet = opts.get === true;
   displayServer.failPut = opts.put === true;
@@ -100,12 +110,16 @@ function stubDisplay(opts: { get?: boolean; put?: boolean } = {}): void {
     const method = String(init?.method ?? 'GET').toUpperCase();
     if (method === 'PUT') {
       if (displayServer.failPut) return Promise.resolve(reply(500, { ok: false, error: 'write failed' }));
-      const parsed = JSON.parse(String(init?.body ?? '{}')) as { disabled?: unknown };
+      const parsed = JSON.parse(String(init?.body ?? '{}')) as { disabled?: unknown; config?: unknown };
       displayServer.disabled = Array.isArray(parsed.disabled) ? (parsed.disabled as string[]) : [];
-      return Promise.resolve(reply(200, { ok: true, disabled: displayServer.disabled }));
+      // W9108：config 缺省 = 保留原值（与真实服务端同一语义）。
+      if (parsed.config !== undefined) {
+        displayServer.config = (parsed.config ?? {}) as Record<string, Record<string, string>>;
+      }
+      return Promise.resolve(reply(200, { ok: true, disabled: displayServer.disabled, config: displayServer.config }));
     }
     if (displayServer.failGet) return Promise.resolve(reply(404, { ok: false }));
-    return Promise.resolve(reply(200, { ok: true, disabled: displayServer.disabled }));
+    return Promise.resolve(reply(200, { ok: true, disabled: displayServer.disabled, config: displayServer.config }));
   });
 }
 
@@ -121,6 +135,7 @@ beforeEach(() => {
   resetHarness();
   ls.clear();
   displayServer.disabled = [];
+  displayServer.config = {};
   stubDisplay(); // W895-C1：默认服务端启用表为空 = 全开
   bootSettings();
 });
@@ -130,20 +145,19 @@ afterEach(() => {
 });
 
 describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
-  it('① 列出全部客户端插件（2 提示 + 4 增强），开关默认开，且与真实提示注册表一致', async () => {
+  it('① 列出全部客户端插件（2 内置增强 + 2 提示 + 4 增强），开关默认开，且与真实注册表一致', async () => {
     const hints = await openPlugins();
     const rows = qa('#settingsPlugins .plug-row');
     // W895-L：插件库**按分类分组**渲染，所以 DOM 顺序 = 分类顺序（不再是登记表顺序）。
     // 这里断言「集合完整」，顺序由下一条（分组）用例钉住。
-    // JSON 树组件已按用户要求移除，故为 2 提示 + 4 增强。
-    expect(rows.map((r) => r.dataset['id']).sort()).toEqual([
-      'display.codeCopy', 'display.codeExtras', 'display.csvTable', 'display.imageZoom',
-      'hint-text-card', 'rail-preview',
-    ]);
+    // W9108：内置增强两遍（代码高亮 / 数学）也进登记表，故为 2 + 2 + 4。
+    expect(rows.map((r) => r.dataset['id']).sort()).toEqual([...ALL_IDS].sort());
     expect(qa('#settingsPlugins .plug-row-label').map((n) => n.textContent).sort()).toEqual([
       '代码块复制',
       '代码块增强',
+      '代码高亮',
       '图片灯箱',
+      '数学公式',
       '预览卡片',
       '文字卡片',
       '表格视图',
@@ -152,6 +166,9 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
       expect((r.querySelector('.plug-switch-input') as InputLike).checked).toBe(true);
     }
     expect(hints.hintPlugins().map((p) => p.id).sort()).toEqual(['hint-text-card', 'rail-preview']);
+    const enhance = (await import(/* @vite-ignore */ at('ui/enhance/index.ts'))) as { enhancerIds(): string[] };
+    expect(enhance.enhancerIds()).toContain('builtin.hljs');
+    expect(enhance.enhancerIds()).toContain('builtin.math');
     const html = readFileSync(join(WEB, 'index.html'), 'utf8');
     for (const needle of ['data-page="plugins"', 'data-pane="plugins"', 'id="settingsPlugins"']) {
       expect(html).toContain(needle);
@@ -241,7 +258,7 @@ describe('W859 设置页「插件」· 客户端插件真实热开关', () => {
     await flush();
     expect(q('#settingsPlugins .plug-empty')?.textContent).toBe('服务端未提供插件清单');
     expect(qa('#settingsPlugins .plug-host').length).toBe(0);
-    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(6);
+    expect(qa('#settingsPlugins .plug-switch-input').length).toBe(ALL_IDS.length);
   });
   it('⑦ W895：新增的「增强」类组件关掉后真的从增强缝注销（与提示类同一套开关）', async () => {
     await openPlugins();

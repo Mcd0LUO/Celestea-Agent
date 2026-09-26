@@ -23,9 +23,27 @@ export interface Enhancer {
   id: string;
   /** 就地增强容器（不得返回替代节点 —— 调用方不做替换）。 */
   enhance(container: Element): void;
+  /**
+   * W9108：**执行顺序键**（小者先跑；缺省 100）。同键按注册顺序（sort 稳定）。
+   *
+   * 为什么必须有它（而不是靠「谁先注册」）：内置两遍（高亮 / 数学）现在也是
+   * **可热开关的客户端插件**，关掉再打开 = 注销 + 重新注册 —— 重新注册必然排在
+   * 当时已注册的其它遍之后。而 hljs 必须先于 code-extras（否则 code-extras 切好的
+   * 行号会被 hljs 的 `highlightElement` 整体替换 innerHTML 而**静默抹掉**）。
+   * 把顺序从「注册时机」变成「声明的常量」，重挂载就再也不可能破坏它。
+   */
+  order?: number;
 }
 
+/** 顺序键缺省值：未声明的遍排在内置两遍之后（保持既有相对顺序）。 */
+const DEFAULT_ORDER = 100;
+
 const enhancers: Enhancer[] = [];
+
+/** 按顺序键排序（稳定：同键保持注册先后）。 */
+function resort(): void {
+  enhancers.sort((a, b) => (a.order ?? DEFAULT_ORDER) - (b.order ?? DEFAULT_ORDER));
+}
 
 /**
  * 注册一个增强遍，返回注销器（对齐 DSH `register(...) -> dispose`）。
@@ -35,6 +53,7 @@ export function registerEnhancer(e: Enhancer): () => void {
   const i = enhancers.findIndex((x) => x.id === e.id);
   if (i >= 0) enhancers[i] = e;
   else enhancers.push(e);
+  resort();
   return () => {
     const j = enhancers.indexOf(e);
     if (j >= 0) enhancers.splice(j, 1);

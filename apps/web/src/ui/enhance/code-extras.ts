@@ -22,8 +22,28 @@ import type { Enhancer } from "./registry";
 
 /** 登记表 / 设置页 / 测试共用的身份。 */
 export const CODE_EXTRAS_ID = "display.codeExtras";
-/** 超过这个行数默认折叠。 */
+/** 超过这个行数默认折叠（**配置项的默认值**；实际阈值见 currentFoldLines()）。 */
 export const CODE_FOLD_LINES = 30;
+/**
+ * W9108：折叠阈值是**可配置**的（设置页「代码块增强」展开区里的数字项）。
+ *
+ * 为什么这个模块自己持有一份「当前生效值」：增强遍在渲染管线里被调用
+ * （`runEnhancers`），而管线不认识插件配置 —— 若让渲染器去查配置，就是把
+ * 插件知识漏进渲染层。这里保留一个**模块级镜像**，由 plugins/apply.ts 在装配
+ * 与每次配置写入后灌入（`setCodeFoldLines`）。镜像的默认值 = 常量，所以
+ * 「没人配过」与「配置读取失败」都落回既有行为，逐字不变。
+ */
+let foldLines = CODE_FOLD_LINES;
+
+/** 当前生效的折叠阈值（>=1；非有限值回落默认）。 */
+export function currentFoldLines(): number {
+  return foldLines;
+}
+
+/** 灌入折叠阈值（配置写入 / 装配对齐时调用；非法值回落默认，不抛错）。 */
+export function setCodeFoldLines(n: number): void {
+  foldLines = Number.isFinite(n) && n >= 1 ? Math.floor(n) : CODE_FOLD_LINES;
+}
 /**
  * W1485：单个代码块的**渲染上限**（字符）。超过就不做行号切分/行号栏 —— 切分要
  * 遍历整棵子树并按行建 span，一个 200K 字符的块会产出上万个节点（真实日志里最大
@@ -165,7 +185,7 @@ function renderLineSpans(code: Element): void {
 function addFold(wrap: HTMLElement, pre: HTMLElement, code: Element): void {
   // 先判「要不要折叠」再建工具条：没东西可放时不留空工具条（DOM 里不留空节点）。
   const count = code.querySelectorAll(".cl").length;
-  if (count <= CODE_FOLD_LINES) return;
+  if (count <= currentFoldLines()) return;
   const head = ensureHead(wrap);
   if (childWithClass(head, "code-fold") !== null) return;
   pre.classList.add("code-folded");
