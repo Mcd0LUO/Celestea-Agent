@@ -30,8 +30,6 @@ const name = argv.slice(0, sep).join(" ");
 const line = argv.slice(sep + 1).join(" ");
 
 const r = spawnSync(line, { encoding: "utf8", shell: true });
-if (r.stdout) process.stdout.write(r.stdout);
-if (r.stderr) process.stderr.write(r.stderr);
 
 if (r.status !== 0) {
   const all = ((r.stderr || "") + "\n" + (r.stdout || "")).split(/\r?\n/).filter((l) => l.trim() !== "");
@@ -51,7 +49,18 @@ if (r.status !== 0) {
   let body = chosen.join("\n");
   if (body.length > 40000) body = body.slice(0, 40000) + "\n…(truncated)";
   const esc = body.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A");
-  console.log("::error title=gate failed: " + name + "::" + esc);
-  process.exit(typeof r.status === "number" ? r.status : 1);
+  // A workflow command is only recognised at the START OF A LINE, and the child's
+  // output does not necessarily end with a newline — emitting this after the
+  // output could append it to a partial line, where GitHub silently ignores it.
+  // (Real cost: the annotation stayed "exit code 1" through two ubuntu runs.)
+  // So: emit the annotation FIRST, with a leading newline for good measure, and
+  // only then dump the captured output.
+  process.stdout.write("\n::error title=gate failed: " + name + "::" + esc + "\n");
 }
+
+// Dump the child's output AFTER any annotation, so ordering can never swallow it.
+if (r.stdout) process.stdout.write(r.stdout);
+if (r.stderr) process.stderr.write(r.stderr);
+
+if (r.status !== 0) process.exit(typeof r.status === "number" ? r.status : 1);
 console.log("✓ gate passed: " + name);
