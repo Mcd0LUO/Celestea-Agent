@@ -14,7 +14,7 @@
 1. **依赖只能向下**：`core ← session / llm / tools / agent-loop / workers ← runtime ← apps/studio`。反向依赖、同层横向依赖、跨层上跳都是错误。
 2. **跨包只走包入口**：只允许 `import ... from "@celestea/<pkg>"`；`@celestea/<pkg>/src/...`（深层导入）和 `../../other/src/x.js`（相对路径跨包）一律拒绝。
 3. **公开 API 收口在 `src/index.ts`**：包外能看到的只有该包入口导出的符号。
-4. **规模硬线**：单文件 ≤ 400 行（建议 ≤ 300）、单函数 ≤ 80 行、控制流嵌套 ≤ 4 层、形参 ≤ 5 个、回调嵌套 ≤ 4 层。
+4. **规模硬线**：单文件 ≤ 450 行（建议 ≤ 300）、单函数 ≤ 80 行、控制流嵌套 ≤ 4 层、形参 ≤ 5 个、回调嵌套 ≤ 4 层。
 5. **一切皆插件**：新能力 = 新增 seam 实现 + 在 compose 处注册。禁止在 `core` 里写 `if (provider === "x")` 这类分支。
 6. **注释与空行不计入行数**——写注释永远不亏。
 7. **例外只能登记**在 `eslint.config.js` 的 `ARCH_EXCEPTIONS` 与本文 §5 表中，逐条写明「原因 / 拆分方案 / 移除阶段」；**禁止就地 `// eslint-disable`**。
@@ -170,7 +170,7 @@ apps/studio → runtime.compose(profile)
 
 | 指标 | 上限 | 建议 | ESLint 规则 | 备注 |
 |---|---|---|---|---|
-| 单文件行数 | **400** | ≤ 300 | `max-lines` | `skipBlankLines + skipComments`：空行、注释不计费 |
+| 单文件行数 | **450** | ≤ 300 | `max-lines` | `skipBlankLines + skipComments`：空行、注释不计费（W9103：400 → 450） |
 | 单函数行数 | **80** | ≤ 50 | `max-lines-per-function` | 同样跳过空行与注释；**测试文件放宽到 150**（见下） |
 | 控制流嵌套 | **4** | ≤ 3 | `max-depth` | if/for/while/switch/try 的嵌套层数 |
 | 形参个数 | **5** | ≤ 3 | `max-params` | 参数过多通常说明该抽配置对象或该拆函数 |
@@ -179,7 +179,7 @@ apps/studio → runtime.compose(profile)
 > 规模的目的是**可读与可替换**，不是数字本身。把 5 个函数压成一行、或把所有参数塞进一个 `any` 对象去绕过 `max-params`，都视为违规。
 >
 > **测试文件的唯一放宽**：单条用例（`it(...)` 的回调）是线性的 arrange-act-assert，块上限放宽到 **150 行**（`arch/size-tests`）。
-> 文件级 400 行、嵌套深度、参数个数、回调嵌套对测试**同样生效**；超过 150 行的用例应拆成多条 `it()`，而不是把断言堆在一起。
+> 文件级 450 行、嵌套深度、参数个数、回调嵌套对测试**同样生效**；超过 150 行的用例应拆成多条 `it()`，而不是把断言堆在一起。
 
 ### 4.2 超限时的四种拆分范式（按优先级）
 
@@ -312,7 +312,7 @@ apps/studio → runtime.compose(profile)
 原文说「全部由 `pnpm lint` 机械检查」，这不准确。实际：
 - `SOURCE_GLOBS` = `packages/*/src`、`apps/studio/src`、**`apps/cli/src`**、`scripts/**/*.ts`、`tests/**/*.ts`。
   （`apps/cli` 曾遗漏，W889 审计后补入；补入时 eslint 0 错误、`ARCH_STRICT=1` 仍恰 4 文件 8 错误。）
-- **`apps/web` 不在其中**：前端规模由 `apps/web/tools/check-module-size.mjs` 管，默认上限同为 400 行，
+- **`apps/web` 不在其中**：前端规模由 `apps/web/tools/check-module-size.mjs` 管，默认上限同为 450 行（W9103 与根 `MAX_LINES` 同步上调），
   但**计数口径是原始 `wc -l`**（**不**跳过空行与注释），并有按文件的例外表（棘轮只减不增）。
   两套口径不同是**有意的**：前端那份还要管「例外表不得放松」。
 - 非 `.ts` 的脚本（`.mjs`/`.sh`/`.py`）不受行数门禁约束。
@@ -448,7 +448,7 @@ ARCH_STRICT=1 pnpm lint   # 复核例外清单是否还有必要（见 §5）
 
 | 规则 | 检查器 | 规则名 |
 |---|---|---|
-| 单文件 ≤400 行 | ESLint | `max-lines` |
+| 单文件 ≤450 行 | ESLint | `max-lines` |
 | 单函数 ≤80 行 | ESLint | `max-lines-per-function` |
 | 嵌套 ≤4 | ESLint | `max-depth` |
 | 参数 ≤5 | ESLint | `max-params` |

@@ -2,7 +2,8 @@
 /**
  * 门禁 · 前端模块体积棘轮（W758）。
  *
- * 规矩：src 下每个 .ts 单文件默认上限 400 行（默认值写在本文件 DEFAULT_LIMIT）。
+ * 规矩：src 下每个 .ts 单文件默认上限 450 行（默认值写在本文件 DEFAULT_LIMIT；
+ * W9103：400 → 450，与根 eslint.config.js 的 MAX_LINES 同步）。
  * 已经超大、但本轮不拆的文件登记在 `tools/module-size-baseline.json` 的
  * `limits` 表里，上限 = 登记时的真实行数（**棘轮：只许降不许升**）：
  *   · 任一文件超过自己的上限          → 打印 `文件:当前/上限`，退出码 1；
@@ -28,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'src');
-const DEFAULT_LIMIT = 400;
+const DEFAULT_LIMIT = 450;
 const BASELINE = process.env['CELESTEA_MODULE_SIZE_BASELINE']
   ? path.resolve(process.env['CELESTEA_MODULE_SIZE_BASELINE'])
   : path.join(ROOT, 'tools', 'module-size-baseline.json');

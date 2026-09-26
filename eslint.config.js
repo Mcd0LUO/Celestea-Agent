@@ -12,8 +12,8 @@
  */
 import tseslint from "typescript-eslint";
 
-/** 单文件规模上限（跳过空行与注释）。 */
-const MAX_LINES = 400;
+/** 单文件规模上限（跳过空行与注释）。W9103：400 → 450（用户裁决）。 */
+const MAX_LINES = 450;
 /** 单函数规模上限（跳过空行与注释）。 */
 const MAX_LINES_PER_FUNCTION = 80;
 /** 控制流嵌套上限。 */

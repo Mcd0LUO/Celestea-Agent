@@ -91,6 +91,42 @@ describe("POST /api/turn over the real engine", () => {
     expect(engineOf(h).lastTurnOutcome()).toBe("completed");
   });
 
+  /**
+   * A FAILED turn returns an outcome, it does not throw — and the reason must
+   * reach the wire.
+   *
+   * Before this test: `drive` emitted only `outcomePhaseOf(outcome)`, so a
+   * gateway timeout / torn stream produced `phase:"error"` with NO `error`
+   * field. The UI's fallback ("未知错误"/"unknown error") was then all the user
+   * saw, even though the session log had the real message — the exact shape
+   * reported from a real 504/timeout session.
+   */
+  it("a failed turn publishes its reason on the terminal status frame", async () => {
+    const h = make({ sessions: { s1: [] }, llm: { script: [{ fail: "stream request failed: 504 Gateway Timeout" }] } });
+    await activate(h, "sample-ws/s1");
+    const res = await runTurnWithFrames(h, "hi");
+    expect(res.status).toBe(202);
+
+    const closing = res.frames[res.frames.length - 1];
+    expect(closing?.event).toBe("status");
+    expect(closing?.payload["phase"]).toBe("error");
+    // The regression this test exists for: the reason must be ON the frame.
+    expect(closing?.payload["error"]).toBe("stream request failed: 504 Gateway Timeout");
+    // The log carries the same reason (both readers agree).
+    expect(engineOf(h).lastTurnOutcome()).toMatchObject({ error: { message: "stream request failed: 504 Gateway Timeout" } });
+  });
+
+  it("a HEALTHY turn does not grow an error key on its closing frame", async () => {
+    // The contract declares `error` optional, and clients read its PRESENCE as
+    // failure — so the fix above must not start attaching it to good turns.
+    const h = make({ sessions: { s1: [] } });
+    await activate(h, "sample-ws/s1");
+    const res = await runTurnWithFrames(h, "hi");
+    const closing = res.frames[res.frames.length - 1];
+    expect(closing?.payload["phase"]).toBe("completed");
+    expect("error" in (closing?.payload ?? {})).toBe(false);
+  });
+
   it("W513: a concurrent turn becomes an interjection, then cancels cooperatively", async () => {
     const h = make({ sessions: { s1: [] }, llm: { script: [{ text: "x".repeat(4000) }], deltaMs: 3, chunkChars: 8 } });
     await activate(h, "sample-ws/s1");

@@ -41,6 +41,7 @@
  * (`llm-assembly.ts`), i.e. production is a real model.
  */
 
+import { outcomeErrorParts } from "@celestea/core";
 import type { AskUserQuestionAnswerItem, ImageRef, InjectionPlacement, InjectionLane, PendingInjection, SseEventName, Statusline, TurnOutcome } from "@celestea/core";
 import type { Watchdog, WorkerRecoveryReport, WorkerRegistry } from "@celestea/workers";
 import { createSessionInbox, type InjectedMessage, type SessionInbox } from "@celestea/runtime";
@@ -513,7 +514,8 @@ class RealEngine implements RealRuntimeAdapter {
         ...(attachments === undefined ? {} : { attachments }),
       });
       this.registry.endTurn(entry, outcome);
-      this.emitStatus(entry, turn, outcomePhaseOf(outcome));
+      // A FAILED turn RETURNS an outcome, it does not throw (see errorExtraOf).
+      this.emitStatus(entry, turn, outcomePhaseOf(outcome), this.errorExtraOf(outcome));
     } catch (e) {
       this.registry.endTurn(entry, null);
       this.emitStatus(entry, turn, "error", { error: e instanceof Error ? e.message : String(e) });
@@ -567,6 +569,21 @@ class RealEngine implements RealRuntimeAdapter {
 
   /** The session's live worker registry, or null when it has no instance. */
   workersOf(session?: string | null): WorkerRegistry | null { return this.registry.peek(session ?? null)?.runtime.workers ?? null; }
+
+  /**
+   * The terminal `status` frame's `error`, for a turn that failed by RETURNING
+   * an outcome rather than by throwing.
+   *
+   * The loop turns its own failures (LLM timeout, torn stream, gateway 504) into
+   * `{error:{kind,message}}` and returns them, so emitting only the phase left
+   * the UI showing its "未知错误"/"unknown error" placeholder while the session
+   * log held the real reason. `{}` for a healthy turn: the contract declares
+   * `error` optional and clients read its PRESENCE as failure.
+   */
+  private errorExtraOf(outcome: TurnOutcome): StatusExtra {
+    const parts = outcomeErrorParts(outcome);
+    return parts === null ? {} : { error: parts.message };
+  }
 
   private emitStatus(entry: SessionRuntime, turn: number, phase: string, extra: StatusExtra = {}): void {
     // W833 (R3 B8): a drive tail can land after the generation was released
