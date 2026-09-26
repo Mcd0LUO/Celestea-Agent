@@ -63,18 +63,39 @@ jobs:
       # gate is for. The commands are the same ones `pnpm check` runs, in the
       # same order; `pnpm check` itself is unchanged for local use.
       - name: typecheck
-        run: pnpm typecheck
+        run: node scripts/run-gate.mjs typecheck -- pnpm typecheck
       - name: lint
-        run: pnpm lint
+        run: node scripts/run-gate.mjs lint -- pnpm lint
       - name: lint:arch
-        run: pnpm lint:arch
+        run: node scripts/run-gate.mjs lint:arch -- pnpm lint:arch
       - name: check:tmpdir
-        run: pnpm check:tmpdir
+        run: node scripts/run-gate.mjs check:tmpdir -- pnpm check:tmpdir
       - name: test
-        run: pnpm test
+        run: node scripts/run-gate.mjs test -- pnpm test
         env:
           CI: 'true'
-      - name: check:web
-        run: pnpm check:web
-        env:
-          CI: 'true'
+      # check:web is itself a chain (build -> tsc -> 8 sub-gates -> bundle
+      # ratchet). Splitting it too, and routing each gate through
+      # scripts/run-gate.mjs so a failure emits its OWN message as a GitHub
+      # annotation: the run that first reached this stage reported only
+      # "exit code 1", and the job log needs admin rights to download.
+      - name: check:web build
+        run: node scripts/run-gate.mjs "check:web build" -- pnpm --dir apps/web run build
+      - name: check:web typecheck
+        run: node scripts/run-gate.mjs "check:web tsc" -- pnpm --dir apps/web exec tsc --noEmit
+      - name: check:web copy gate
+        run: node scripts/run-gate.mjs "check-ui-copy" -- node apps/web/tools/check-ui-copy.mjs
+      - name: check:web scope-hash
+        run: node scripts/run-gate.mjs "check-scope-hash" -- node apps/web/tools/check-scope-hash.mjs
+      - name: check:web sse-events
+        run: node scripts/run-gate.mjs "check-sse-events" -- node apps/web/tools/check-sse-events.mjs
+      - name: check:web fold-default
+        run: node scripts/run-gate.mjs "check-fold-default" -- node apps/web/tools/check-fold-default.mjs
+      - name: check:web grants-permanent
+        run: node scripts/run-gate.mjs "check-grants-permanent" -- node apps/web/tools/check-grants-permanent.mjs
+      - name: check:web module-size
+        run: node scripts/run-gate.mjs "check-module-size" -- node apps/web/tools/check-module-size.mjs
+      - name: check:web version
+        run: node scripts/run-gate.mjs "check-version" -- node apps/web/tools/check-version.mjs
+      - name: check:web bundle ratchet
+        run: node scripts/run-gate.mjs "check-bundle-size" -- node scripts/run-with-env.mjs CELESTEA_BUNDLE_STRICT=1 -- node apps/web/tools/check-bundle-size.mjs
