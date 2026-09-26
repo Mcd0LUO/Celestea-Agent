@@ -17,7 +17,7 @@
  *
  * A MALFORMED query is a 422 like every other handler (`field '<name>' must be …`,
  * `handlers/common.ts` style): `since`/`until` are SECONDS and must be integers
- * (`ts` of a ledger row), `group_by` must be one of session|turn|model|day.
+ * (`ts` of a ledger row), `group_by` must be one of session|turn|model|day|day_model.
  */
 
 import type { Context, Hono } from "hono";

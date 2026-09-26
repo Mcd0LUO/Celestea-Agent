@@ -6,7 +6,9 @@
  *
  *   - [queryLedger]      — `GET /api/usage/ledger`: the step rows of the ledger,
  *                          filtered (`session`/`since`/`until`) and folded into
- *                          one row per `session` | `turn` | `model` | `day`;
+ *                          one row per `session` | `turn` | `model` | `day` |
+ *                          `day_model` (the last is the day x model cross
+ *                          product the usage page's per-model trend needs, W9103);
  *   - [ledgerCostBlock]  — `/api/status.cost`: one session's running total, its
  *                          newest `turn_total` row and how many attempts bought it.
  *
@@ -30,7 +32,7 @@ import {
 } from "./ledger.js";
 
 /** The dimension one aggregate row is folded by (§3.2.4). */
-export type LedgerGroupBy = "session" | "turn" | "model" | "day";
+export type LedgerGroupBy = "session" | "turn" | "model" | "day" | "day_model";
 
 /** What `GET /api/usage/ledger` accepts. `since`/`until` are SECONDS, like `ts`. */
 export interface LedgerQuery {
@@ -49,6 +51,17 @@ export interface LedgerQueryRow {
   records: number;
   /** Rows that carried usage the table could not price. */
   unpriced_records: number;
+  /**
+   * The group's wall-clock span, in epoch SECONDS: the oldest and the newest
+   * `ts` among the rows that folded into it. A row exists only because at least
+   * one step folded into it, and every step carries a `ts`, so both are always
+   * numbers — the span of a ONE-step group is 0, not unknown.
+   *
+   * W9103: the usage page needs "how long was the longest session", which the
+   * token/cost accumulators alone cannot answer (they sum, they do not span).
+   */
+  first_ts: number;
+  last_ts: number;
 }
 
 /** The `GET /api/usage/ledger` body (P1 ①). */
@@ -86,7 +99,13 @@ export interface LedgerCostBlock {
 export const DEFAULT_LEDGER_GROUP_BY: LedgerGroupBy = "session";
 
 /** Every dimension the endpoint accepts, in contract order. */
-export const LEDGER_GROUP_BY_VALUES: readonly LedgerGroupBy[] = ["session", "turn", "model", "day"];
+export const LEDGER_GROUP_BY_VALUES: readonly LedgerGroupBy[] = [
+  "session",
+  "turn",
+  "model",
+  "day",
+  "day_model",
+];
 
 /** Label of a row whose model the provider never reported (§3.2.1). */
 export const UNKNOWN_MODEL_LABEL = "(unknown model)";
@@ -110,11 +129,19 @@ function inRange(record: UsageStepRecord, q: LedgerQuery): boolean {
   return true;
 }
 
+/** The UTC calendar day of a step row (§3.2.4's `day` key). */
+function dayKeyOf(record: UsageStepRecord): string {
+  return new Date(record.ts * 1000).toISOString().slice(0, 10);
+}
+
 /** The key one step row folds into for the requested dimension. */
 function groupKeyOf(record: UsageStepRecord, by: LedgerGroupBy): string {
   if (by === "model") return record.model ?? UNKNOWN_MODEL_LABEL;
   if (by === "turn") return `${record.session}|${record.turn_id ?? "-"}`;
-  if (by === "day") return new Date(record.ts * 1000).toISOString().slice(0, 10);
+  if (by === "day") return dayKeyOf(record);
+  // W9103: the day x model CROSS product — the usage page's trend chart is one
+  // line per model per day, which neither `day` nor `model` alone can express.
+  if (by === "day_model") return `${dayKeyOf(record)}|${record.model ?? UNKNOWN_MODEL_LABEL}`;
   return record.session;
 }
 
@@ -124,16 +151,35 @@ interface RowAcc {
   cost: LedgerCost | null;
   records: number;
   unpriced: number;
+  /** See [LedgerQueryRow.first_ts]/[LedgerQueryRow.last_ts]. */
+  firstTs: number;
+  lastTs: number;
 }
 
 /** Tokens, cost and the unpriced count all follow the SAME per-row rule. */
 function accumulate(acc: RowAcc, record: UsageStepRecord): void {
   acc.records += 1;
+  // Every step row carries a `ts` (it is the row's own write time), so the span
+  // is exact rather than inferred: min/max over the folded rows.
+  if (record.ts < acc.firstTs) acc.firstTs = record.ts;
+  if (record.ts > acc.lastTs) acc.lastTs = record.ts;
   if (record.usage !== null) {
     acc.tokens = usageAdd(acc.tokens, record.usage);
     if (record.priced_by === "unpriced") acc.unpriced += 1;
   }
   if (record.cost !== null) acc.cost = acc.cost === null ? record.cost : costAdd(acc.cost, record.cost);
+}
+
+/** A fresh accumulator seeded with the first row's timestamp. */
+function newAcc(record: UsageStepRecord): RowAcc {
+  return {
+    tokens: zeroUsage(),
+    cost: null,
+    records: 0,
+    unpriced: 0,
+    firstTs: record.ts,
+    lastTs: record.ts,
+  };
 }
 
 /** Stable, locale-independent key order (`<`/`>` on code units, ascending). */
@@ -147,13 +193,21 @@ function foldRows(selected: readonly UsageStepRecord[], by: LedgerGroupBy): Ledg
   const groups = new Map<string, RowAcc>();
   for (const record of selected) {
     const key = groupKeyOf(record, by);
-    const acc = groups.get(key) ?? { tokens: zeroUsage(), cost: null, records: 0, unpriced: 0 };
+    const acc = groups.get(key) ?? newAcc(record);
     accumulate(acc, record);
     groups.set(key, acc);
   }
   const rows: LedgerQueryRow[] = [];
   for (const [key, acc] of groups) {
-    rows.push({ key, tokens: acc.tokens, cost: acc.cost, records: acc.records, unpriced_records: acc.unpriced });
+    rows.push({
+      key,
+      tokens: acc.tokens,
+      cost: acc.cost,
+      records: acc.records,
+      unpriced_records: acc.unpriced,
+      first_ts: acc.firstTs,
+      last_ts: acc.lastTs,
+    });
   }
   return rows.sort(compareKeys);
 }

@@ -220,7 +220,10 @@ describe("health / status / tools / config", () => {
     // A malformed query is still the client's 422, capability or not.
     const bad = await getJson(h.app, "/api/usage/ledger?group_by=bogus");
     expect(bad.status).toBe(422);
-    expect(bad.body).toEqual({ ok: false, error: "field 'group_by' must be one of session, turn, model, day" });
+    expect(bad.body).toEqual({
+      ok: false,
+      error: "field 'group_by' must be one of session, turn, model, day, day_model",
+    });
     // And no adapter ledger means no `cost` key on /api/status (pure addition).
     expect((await getJson(h.app, "/api/status")).body["cost"]).toBeUndefined();
   });

@@ -3755,9 +3755,9 @@
           },
           {
             "name": "group_by",
-            "type": "\"session\"|\"turn\"|\"model\"|\"day\"",
+            "type": "\"session\"|\"turn\"|\"model\"|\"day\"|\"day_model\"",
             "required": false,
-            "note": "Fold dimension; absent/empty = `session`. `turn` keys are `<session>|<turn_id>` (a row whose turn_id is null uses `-`), `model` keys use `(unknown model)` when the provider reported none, `day` keys are the UTC date `YYYY-MM-DD` of `ts`."
+            "note": "Fold dimension; absent/empty = `session`. `turn` keys are `<session>|<turn_id>` (a row whose turn_id is null uses `-`), `model` keys use `(unknown model)` when the provider reported none, `day` keys are the UTC date `YYYY-MM-DD` of `ts`. W9103: `day_model` keys are `<YYYY-MM-DD>|<model>` (same `(unknown model)` label) — the day x model cross product the usage page's per-model trend chart needs; the fold rule is otherwise identical."
           }
         ]
       },
@@ -3785,7 +3785,7 @@
             "name": "rows",
             "type": "array<object>",
             "required": false,
-            "note": "One row per group key, key-ascending: `{key:string, tokens:{prompt_tokens,completion_tokens,total_tokens,cache_read,reasoning_tokens}, cost:{in,out,cache,total}|null, records:integer, unpriced_records:integer}`. `turn_total` rows are NEVER counted (they restate their steps, §3.2.1)."
+            "note": "One row per group key, key-ascending: `{key:string, tokens:{prompt_tokens,completion_tokens,total_tokens,cache_read,reasoning_tokens}, cost:{in,out,cache,total}|null, records:integer, unpriced_records:integer, first_ts:integer, last_ts:integer}`. `turn_total` rows are NEVER counted (they restate their steps, §3.2.1). W9103: `first_ts`/`last_ts` are the oldest/newest `ts` (epoch SECONDS) among the rows that folded into the group, so `last_ts - first_ts` is the group's wall-clock span (0 for a one-step group); PURE ADDITIONS — a client that ignores them is unaffected."
           },
           {
             "name": "totals",
@@ -3821,7 +3821,7 @@
         },
         {
           "status": 422,
-          "error": "field 'group_by' must be one of session, turn, model, day"
+          "error": "field 'group_by' must be one of session, turn, model, day, day_model"
         },
         {
           "status": 500,

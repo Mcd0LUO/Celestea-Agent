@@ -347,7 +347,10 @@ describe("aggregate view over the ledger file (W785 P1 ①/②)", () => {
 
       const bogus = await host.app.request("/api/usage/ledger?group_by=bogus");
       expect(bogus.status).toBe(422);
-      expect(await bogus.json()).toEqual({ ok: false, error: "field 'group_by' must be one of session, turn, model, day" });
+      expect(await bogus.json()).toEqual({
+        ok: false,
+        error: "field 'group_by' must be one of session, turn, model, day, day_model",
+      });
 
       const since = await host.app.request("/api/usage/ledger?since=yesterday");
       expect(since.status).toBe(422);

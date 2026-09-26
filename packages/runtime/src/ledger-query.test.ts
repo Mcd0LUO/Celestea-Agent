@@ -129,6 +129,60 @@ describe("queryLedger · folding", () => {
     expect(result.rows[0]?.records).toBe(2);
     expect(result.rows[1]?.records).toBe(2);
   });
+
+  /**
+   * W9103: the usage page's trend chart is one line per model per day, which
+   * neither `day` nor `model` alone can express — hence the cross product.
+   */
+  it("folds by `day_model` on `<YYYY-MM-DD>|<model>`", () => {
+    const result = queryLedger(corpus(), { group_by: "day_model" });
+    expect(result.rows.map((r) => r.key)).toEqual([
+      `2025-10-09|deepseek-chat`,
+      `2025-10-10|${UNKNOWN_MODEL_LABEL}`,
+      "2025-10-10|nope",
+    ]);
+    // The two same-day/same-model steps of ws/a collapse into ONE row...
+    expect(result.rows[0]?.records).toBe(2);
+    expect(result.rows[0]?.tokens).toEqual(usage(1500, 300));
+    // ...while a null model still lands on the shared unknown label, not on "".
+    expect(result.rows[1]?.records).toBe(1);
+    expect(result.rows[1]?.tokens).toEqual(usage(7, 3));
+    // The cross product partitions the same rows: no double counting, no loss.
+    expect(result.rows.reduce((n, r) => n + r.records, 0)).toBe(result.totals.records);
+  });
+});
+
+/**
+ * W9103: the group's wall-clock span. The token/cost accumulators SUM, so they
+ * cannot answer "how long was the longest session" — these two fields can.
+ */
+describe("queryLedger · per-row time span", () => {
+  it("reports the oldest and newest `ts` of the folded rows", () => {
+    const records = [
+      step({ ts: TS, session: "ws/a", usage: usage(1, 1), cost: cost(0.1) }),
+      step({ ts: TS + 500, session: "ws/a", usage: usage(1, 1), cost: cost(0.1) }),
+      step({ ts: TS + 100, session: "ws/a", usage: usage(1, 1), cost: cost(0.1) }),
+    ];
+    const row = queryLedger(records, { group_by: "session" }).rows[0];
+    // Not the file order: the MIN and the MAX of the folded `ts` values.
+    expect(row?.first_ts).toBe(TS);
+    expect(row?.last_ts).toBe(TS + 500);
+    expect((row?.last_ts ?? 0) - (row?.first_ts ?? 0)).toBe(500);
+  });
+
+  it("gives a one-step group a span of 0, never an unknown", () => {
+    const row = queryLedger([step({ ts: TS })], { group_by: "session" }).rows[0];
+    expect(row?.first_ts).toBe(TS);
+    expect(row?.last_ts).toBe(TS);
+  });
+
+  it("spans per dimension: one day's rows stay inside that day", () => {
+    const rows = queryLedger(corpus(), { group_by: "day" }).rows;
+    expect(rows[0]?.first_ts).toBe(TS);
+    expect(rows[0]?.last_ts).toBe(TS);
+    expect(rows[1]?.first_ts).toBe(TS + 86_400);
+    expect(rows[1]?.last_ts).toBe(TS + 86_400);
+  });
 });
 
 describe("queryLedger · filter, unpriced and empty", () => {
