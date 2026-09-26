@@ -65,6 +65,28 @@ describe("W9210 · grant roots are compared under the platform's case rules", ()
     expect(insidePath("/home/a/b", "/HOME/A", "linux")).toBe(false);
   });
 
+  /**
+   * The assertion above is only meaningful if the injected `platform` also picks
+   * the path SEPARATOR. It originally did not: `insidePath` forwarded the platform
+   * to the case folding but `isInside` kept using the HOST's `sep`, so on Linux it
+   * built `"c:\\users\\a/"` for a Windows root and answered false. The case above
+   * therefore PASSED on Windows and FAILED on ubuntu — a green local run that hid a
+   * broken cross-platform seam.
+   *
+   * This pins the separator itself, so the defect cannot come back silently: each
+   * spelling is asserted under its OWN platform on every host.
+   */
+  it("the injected platform also picks the separator (not the host's)", () => {
+    // Windows: backslash is the separator, and a bare prefix is not containment.
+    expect(insidePath("c:\\users\\a\\b", "c:\\users\\a", "win32")).toBe(true);
+    expect(insidePath("c:\\users\\ab", "c:\\users\\a", "win32")).toBe(false);
+    expect(insidePath("c:\\users\\a", "c:\\users\\a", "win32")).toBe(true);
+    // POSIX: slash is the separator, with the same non-prefix rule.
+    expect(insidePath("/home/a/b", "/home/a", "linux")).toBe(true);
+    expect(insidePath("/home/ab", "/home/a", "linux")).toBe(false);
+    expect(insidePath("/home/a", "/home/a", "linux")).toBe(true);
+  });
+
   it("still accepts an unrelated directory (the refusals are not a blanket ban)", async () => {
     const h = harness();
     const neutral = h.root + "-neutral";

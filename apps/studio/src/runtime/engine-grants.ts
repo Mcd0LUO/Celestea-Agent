@@ -375,9 +375,16 @@ export function samePath(a: string, b: string, platform: string = process.platfo
   return foldPath(a, platform) === foldPath(b, platform);
 }
 
-/** `isInside` under the platform's case rules (equality included, as there). */
+/**
+ * `isInside` under the platform's case rules (equality included, as there).
+ *
+ * The `platform` argument must reach `isInside` too: that is what picks the path
+ * SEPARATOR. Forwarding only the case folding left a Windows root compared with
+ * the HOST's separator, so the injected-platform assertion passed on Windows and
+ * failed on ubuntu CI.
+ */
 export function insidePath(child: string, root: string, platform: string = process.platform): boolean {
-  return isInside(foldPath(child, platform), foldPath(root, platform));
+  return isInside(foldPath(child, platform), foldPath(root, platform), platform);
 }
 
 function foldPath(path: string, platform: string): string {

@@ -15,7 +15,9 @@
  */
 
 import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, isAbsolute, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
+
+import { isWindows } from "../platform/paths.js";
 
 /** `realpath` or `null` when the path does not exist / cannot be resolved. */
 export function canonicalExisting(target: string): string | null {
@@ -31,10 +33,20 @@ export function absolutize(target: string, workspace: string): string {
   return isAbsolute(target) ? resolve(target) : resolve(workspace, target);
 }
 
-/** Containment test on canonical paths (segment-aware, not string-prefix). */
-export function isInside(child: string, root: string): boolean {
+/**
+ * Containment test on canonical paths (segment-aware, not string-prefix).
+ *
+ * `platform` selects the SEPARATOR, exactly like [pathApi] does for the other
+ * path helpers. It matters because callers can inject a platform that is not the
+ * host's: `engine-grants.insidePath(..., "win32")` proves the win32 case on a
+ * Linux CI runner. Using the host's `sep` there built `"c:\\users\\a/"` for a
+ * Windows root and the containment test silently answered false — the assertion
+ * passed on Windows and failed on ubuntu, which is how it was found.
+ */
+export function isInside(child: string, root: string, platform: string = process.platform): boolean {
   if (child === root) return true;
-  const prefix = root.endsWith(sep) ? root : `${root}${sep}`;
+  const s = isWindows(platform) ? "\\" : "/";
+  const prefix = root.endsWith(s) ? root : `${root}${s}`;
   return child.startsWith(prefix);
 }
 
