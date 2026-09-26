@@ -312,10 +312,35 @@
   --mi-cohere: #2f8f4e;
   --mi-ollama: #6b7280;
 }
-/* 当前唯一主题（mono）把 color-scheme 钉在 light，这一支今天不会命中；
-   保留它是为了将来出现深色主题时图标自动换成亮一档的变体。 */
+/* W9203 修复：暗色图标表原先挂在 `@media (prefers-color-scheme: dark)` 上，
+   而本仓主题的真机制是 `[data-theme="…"]`（见 tokens.css:65/232、codeblock.css:88/101）。
+   两者是**两把不同的钥匙**，于是出现两种错配（真机实测，图标底 = --composer-bg = #fff/#1c1c1c）：
+     · 系统深色 + 默认 mono 主题（color-scheme 钉 light、底是 #fff）
+       ⇒ 拿亮色图标画在**白底**上：12/12 家族低于 3:1，最低 cohere 1.71:1；
+     · 系统浅色 + dark 主题（底 #1c1c1c）
+       ⇒ 拿暗色图标画在**深底**上：grok 1.63:1、meta 2.59:1。
+   图标是区分模型家族的唯一载体（.sl-model 的文字是模型名），WCAG 1.4.11 要求非文本对比度 ≥3:1。
+   改为跟随 data-theme 后，四套配色的最差家族分别是 3.45 / 6.69 / 3.45 / 6.02，全部达标。
+   注意 claude 的深浅**由它自己**用 prefers-color-scheme 决定（theme-claude.css:98），
+   所以图标必须跟它同一把钥匙 —— 否则「claude + 系统深色」会拿到亮色图标画在深底上。
+   这一段与下面 `:root` 的亮色表刻意重复 12 行：CSS 没有「把同一组声明同时挂到
+   「属性选择器」与「媒体查询内属性选择器」」的写法，而多一层变量间接会让取值难读。 */
+[data-theme="dark"] {
+  --mi-deepseek: #8fa4ff;
+  --mi-openai: #4fc3a6;
+  --mi-glm: #a992ff;
+  --mi-claude: #e79b78;
+  --mi-gemini: #7cc0ff;
+  --mi-qwen: #e79bff;
+  --mi-meta: #7fa8ff;
+  --mi-mistral: #ff9a66;
+  --mi-grok: #c4c4cc;
+  --mi-kimi: #5fd0e0;
+  --mi-cohere: #7ed99a;
+  --mi-ollama: #a8b4c4;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  [data-theme="claude"] {
     --mi-deepseek: #8fa4ff;
     --mi-openai: #4fc3a6;
     --mi-glm: #a992ff;
@@ -362,7 +387,13 @@
 .sl-popup-textrow { display: flex; gap: 6px; padding: 2px; }
 .sl-popup-input { flex: 1; min-width: 0; }
 
-.sl-grant { height: 28px; border-radius: var(--r-badge); }
+/* W9203：本行原为 `.sl-grant { height: 28px; border-radius: var(--r-badge); }`（W847 W12 加）。
+   它与 grants.css:15-31 的 `.sl-grant` **特异性相同**，而 grants.css 在 main.ts 里后加载
+   ⇒ 这一行从未生效（真机/jsdom 实测计算值 height 18px、border-radius 6px）。
+   同一控件的几何被两个文件各写一遍、靠加载顺序决胜，本身就是缺陷：任何一次 import 顺序
+   调整（例如把 responsive.css 移到末尾）都会让盾牌静默变形。故删除本行，几何归
+   grants.css 独占。W847 的提交信息把 #slGrant 与 28px 的 .sl-model/.sl-effort/.sl-mode
+   并列 —— 若确认盾牌也该是 28px，请改 grants.css:22/27，**不要**在这里再写一遍。 */
 /* W12：容器查询 —— 窄屏（≤360px）徽标只留图标/缩短，避免挤走右端取消键。 */
 @container (max-width: 360px) {
   .sl-mode-label, .sl-grant-tier { display: none; }

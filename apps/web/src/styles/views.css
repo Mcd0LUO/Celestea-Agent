@@ -248,14 +248,20 @@ body.resizing-col { cursor: col-resize; user-select: none; }
   background: var(--c-surface);
   box-shadow: inset 3px 0 0 var(--c-accent-ring);
 }
-.msg.user.steering .who::after { content: ' · 下一步送达'; color: var(--c-text-3); font-weight: 400; }
+/* W9203：车道后缀的文案住在 i18n 字典（chat.lane.nextStep / nextTurn）——
+   ::after 的 content 读 CSS 变量，值由 i18n/dom.ts 的 applyCssCopyVars 写入。
+   为什么不能在这里写死：本仓 i18n 纪律是「文案只住 locales」，而伪元素 content 既不是
+   DOM 文本节点、也不是 .ts 字面量 —— 这两句中文因此同时逃过护栏 A（只扫 src 下的 .ts）
+   与护栏 D（原先只扫 index.html），并随产物发布（英文界面下每个插话/排队气泡都显示中文）。
+   变量未写入时回落空串 ⇒ 最坏情况是少一个后缀，绝不会显示错误语言。 */
+.msg.user.steering .who::after { content: var(--i18n-lane-steer, ''); color: var(--c-text-3); font-weight: 400; }
 
 .msg.user.queued .bubble {
   border: 1px solid var(--c-border-strong);
   background: var(--c-bg);
   box-shadow: inset 3px 0 0 var(--c-border-strong);
 }
-.msg.user.queued .who::after { content: ' · 下一回合送达'; color: var(--c-text-3); font-weight: 400; }
+.msg.user.queued .who::after { content: var(--i18n-lane-queued, ''); color: var(--c-text-3); font-weight: 400; }
 
 /* inbox 条目（worker 回执 / 系统注入）：与用户消息、系统 info 块都不同——
    顶部双线 + 等宽小字 + 左侧粗标记，明确「不是用户说的话」。 */

@@ -19,12 +19,18 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 18px;
+  /* W9203 修复：18px 是 W781 初次并入时的值，W847 W12 已明确要求
+     「#slModel/#slEffort/#slMode/#slGrant 统一 28px 高 + radius 24」，
+     但那条声明写在 statusline.css、与这里**特异性相同**，而 grants.css 后加载
+     ⇒ 它从未生效（真机 1280 实测：盾牌 top=10/高 18，三个兄弟 top=5/高 28）。
+     28px 是本控件唯一能与同行兄弟对齐的值，故在此落定；statusline.css 里的
+     重复声明已删除，几何自此只由本文件持有（响应式档见 responsive.css ≤1024px → 44px）。 */
+  height: 28px;
   padding: 0 4px;
   background: transparent;
   /* W1297：扁平化 —— 去掉描边，盾牌只以图标/状态色区分。 */
   border: none;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-badge);
   color: var(--c-grant-idle);
   cursor: pointer;
   line-height: 0;

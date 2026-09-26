@@ -17,8 +17,37 @@ export function applyDocumentLang(doc: Document): void {
   doc.documentElement.lang = getLocale() === 'zh' ? 'zh-CN' : 'en';
 }
 
+/**
+ * 伪元素（`::after`）的 `content` 读不到 i18n 字典 —— 把这类文案写进 CSS 变量，
+ * 由 styles 侧取值（当前唯一消费者：views.css 的
+ * `.msg.user.steering/.queued .who::after`）。
+ *
+ * 为什么值要过 `JSON.stringify`：`content: var(--x)` 只接受**字符串 token**。
+ * 实测（Chrome headless）：变量值写成裸文本 ` · 下一步送达` ⇒ 计算值 `content: none`
+ * （后缀根本不生成）；写成带引号的 `" · 下一步送达"` ⇒ 计算值 `" · 下一步送达"`。
+ * JSON.stringify 产出的正是带双引号、转义正确的 CSS 字符串字面量。
+ *
+ * 为什么写在 documentElement：自定义属性沿 DOM 继承，一处写入即全页可见；
+ * 语言切换是整页重载（见 i18n/settings.ts 的方案 A），启动那一帧写一次就够。
+ */
+const CSS_COPY_VARS: ReadonlyArray<readonly [string, Key]> = [
+  ['--i18n-lane-steer', 'chat.lane.nextStep'],
+  ['--i18n-lane-queued', 'chat.lane.nextTurn'],
+];
+
+/** 把「只能由 CSS 消费」的文案写进 documentElement 的自定义属性。 */
+function applyCssCopyVars(root: ParentNode): void {
+  const asDoc = root as Partial<Document>;
+  const html = asDoc.documentElement ?? (root as Partial<Element>).ownerDocument?.documentElement;
+  if (!html) return;
+  for (const [name, key] of CSS_COPY_VARS) {
+    html.style.setProperty(name, JSON.stringify(' · ' + t(key)));
+  }
+}
+
 /** 把 root 内所有带 data-i18n* 属性的元素设为对应 key 的当前语言文案。 */
 export function applyI18n(root: ParentNode): void {
+  applyCssCopyVars(root);
   for (const node of root.querySelectorAll('[data-i18n]')) {
     const key = node.getAttribute('data-i18n');
     if (key) node.textContent = t(key as Key);

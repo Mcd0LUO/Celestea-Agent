@@ -53,8 +53,25 @@ const ALLOW_MARK = 'copy-gate-allow';
 // CI 可置 CELESTEA_COPY_STRICT=1 强制「只减不增」。
 const STRICT = process.env['CELESTEA_COPY_STRICT'] === '1';
 
-/** 只扫含中文的字面量；下面是禁用词表（词 → 正则）。 */
+/**
+ * 汉字区（guard A / guard C / 棘轮用）。
+ *   **刻意不含全角标点**：`'、'` / `'：'` / `'（）'` 这类分隔符在 TS 里是合法的
+ *   排版字符（实测 12 处，如 ui/usage/panel.ts:76 的 `join('、')`），把它们当「未抽到
+ *   i18n 的中文」是误报 —— guard A 拦的是「整句中文文案」，不是标点。
+ */
 const CJK = /[\u3400-\u9fff]/;
+
+/**
+ * 界面文案面（guard D 用）—— 汉字 + 假名 + 韩文 + 全角标点/半角片假名。
+ *
+ * 为什么这里可以比 CJK 宽：guard D 扫的是**已经渲染给用户的位点**（HTML 属性/文本节点、
+ * CSS content），全角标点出现在这些位置就是中文残留（英文界面不该有 `、` `：` `（）`），
+ * 而在 TS 源码里它常常只是 `join` 的分隔符。实测：换成这一套后真实树的新增命中为
+ * HTML 0 处、CSS 2 处（正是 views.css 的两句中文），无误报。
+ *
+ * `\u3000`（表意空格）刻意排除：它是纯排版空白，与文案无关。
+ */
+const CJK_UI = /[\u3001-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uFF01-\uFFEF\uFF61-\uFF9F]/;
 export const RULES = [
   ['/api/', /\/api\//],
   ['SSE', /SSE/],
@@ -306,6 +323,76 @@ function htmlScanText(file) {
   return { body: blankHtmlComments(raw), rawLines: raw.split('\n') };
 }
 
+/**
+ * 剥 CSS 注释，同样**等长替换**（换行保留）—— 与 blankHtmlComments 同一理由：
+ * styles 下 30% 的字节是注释、且注释里大量出现中文（views.css 一个文件就有 382 个
+ * CJK 字符全是注释）。若直接删注释，行号会整体前移，报告里的 `:行号` 全部指错。
+ */
+function blankCssComments(raw) {
+  return raw.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+}
+
+/** 解码 HTML 实体（命名 5 个 + 十进制 + 十六进制）。
+ *  为什么必须解：`&#x901a;&#x7528;` 在源码里是纯 ASCII，CJK 正则看不见它，
+ *  但浏览器会渲染成「通用」—— 实测这是 guard D 最现实的绕过路径。 */
+function decodeEntities(text) {
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, h) => {
+      const cp = parseInt(h, 16);
+      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
+    .replace(/&#(\d+);/g, (m, d) => {
+      const cp = parseInt(d, 10);
+      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
+    .replace(/&nbsp;/g, '\u00a0')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+}
+
+/** 解码 CSS 字符串里的转义（`\4e0b` / `\00b7`）。
+ *  为什么必须解：CSS 允许用十六进制转义写任意字符，`content: '\4e0b\4e00\6b65'`
+ *  源码里同样全是 ASCII —— 与 HTML 实体是同一类绕过。 */
+function decodeCssEscapes(text) {
+  return text.replace(/\\([0-9a-fA-F]{1,6})[ ]?/g, (m, h) => {
+    const cp = parseInt(h, 16);
+    return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+  });
+}
+
+/**
+ * 非文案属性白名单（**结构/技术**属性，其值不是给用户看的文字）。
+ *   · class/id/style/src/href/... 是机器标识或资源地址；
+ *   · data-i18n* 的值是 **key**（不是文案）—— key 的存在性由
+ *     tests/w9109-i18n-static-dom.test.ts 与 guard B 分别兜住，本处不重复判；
+ *   · aria-hidden/role/tabindex/... 是语义开关，值取自固定枚举。
+ * 默认**全扫**（fail-safe）：将来新增的文案属性（如 aria-valuetext）自动被覆盖，
+ * 只有显式登记在这里的属性才跳过。
+ */
+const NOT_COPY_ATTRS = new Set([
+  'class', 'id', 'style', 'src', 'href', 'name', 'type', 'rel', 'charset', 'content',
+  'tabindex', 'role', 'spellcheck', 'focusable', 'lang',
+  'data-theme', 'data-page', 'data-pane',
+  'data-i18n', 'data-i18n-title', 'data-i18n-aria-label', 'data-i18n-placeholder',
+  'aria-hidden', 'aria-haspopup', 'aria-live', 'aria-atomic', 'aria-orientation',
+  'aria-modal', 'aria-labelledby',
+  'viewBox', 'transform', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'width', 'height',
+  'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+]);
+
+/** 取 HTML 里**所有文案位点**（属性值 + 文本节点），值已做实体解码。 */
+function* htmlCopySites(body) {
+  for (const m of body.matchAll(/\s([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    if (NOT_COPY_ATTRS.has(m[1])) continue;
+    yield { text: decodeEntities(m[2] ?? m[3] ?? ''), index: m.index, attr: m[1] };
+  }
+  for (const m of body.matchAll(/>([^<>]+)</g)) {
+    yield { text: decodeEntities(m[1]).trim(), index: m.index, attr: null };
+  }
+}
+
 function scanHtml(problems, file, root = ROOT) {
   const { body, rawLines } = htmlScanText(file);
   const rel = relOf(root, file);
@@ -337,14 +424,46 @@ function scanHtmlCjk(problems, file, root = ROOT) {
   const rel = relOf(root, file);
   const lineOf = (idx) => body.slice(0, idx).split('\n').length;
   const lineTextOf = (idx) => rawLines[lineOf(idx) - 1] ?? '';
-  const check = (text, idx) => {
+  const check = (text, idx, attr) => {
     const value = text.trim();
-    if (value === '' || !CJK.test(value)) return;
+    if (value === '' || !CJK_UI.test(value)) return;
     if (lineTextOf(idx).includes(ALLOW_MARK)) return;
-    report(problems, rel + ':' + lineOf(idx), '中文未抽到 i18n（护栏 D）', value);
+    const where = attr === null ? '' : ' @' + attr;
+    report(problems, rel + ':' + lineOf(idx) + where, '中文未抽到 i18n（护栏 D）', value);
   };
-  for (const m of body.matchAll(/(?:title|placeholder|aria-label)\s*=\s*"([^"]*)"/g)) check(m[1], m.index);
-  for (const m of body.matchAll(/>([^<>]+)</g)) check(m[1], m.index);
+  for (const site of htmlCopySites(body)) check(site.text, site.index, site.attr);
+}
+
+/**
+ * 护栏 D 的 **CSS 面**（W9203）：styles 下的 `content:` 文案不得含 CJK。
+ *
+ * 为什么必须有：`.who::after { content: ' · 下一步送达' }` 这类中文既不是 DOM 文本节点、
+ * 也不是 .ts 字面量 —— guard A 的 walk() 只 yield `*.ts`，guard D 原先只读 index.html，
+ * 于是它**同时**落在两道护栏的缝里，并随产物发布（dist 的 CSS 里实测 11 个 CJK 字符，
+ * 英文界面下每个插话/排队气泡的用户名后面都跟着中文后缀）。
+ *
+ * 口径（与 HTML 面共用同一套判定）：
+ *   · 先**等长**剥注释（styles 下 30% 字节是注释，且注释里大量中文 —— 直接删会挪行号）；
+ *   · 只取**带引号的字符串**（`content: '…'` / `"…"`），并解 CSS 十六进制转义
+ *     （`\4e0b` 与 HTML 实体是同一类绕过）；
+ *   · 空串 / 纯符号（`'·'` `'▸'` `'\00b7'`）天然不含 CJK，不会误报；
+ *   · 同行含 copy-gate-allow ⇒ 豁免（与 guard A/D 同语义）。
+ *
+ * 不扫 CSS 的注释、选择器、属性名与数值 —— 那些不是文案，且实测真实树 0 命中。
+ */
+function scanCssCjk(problems, file, root = ROOT) {
+  const raw = readFileSync(file, 'utf8');
+  const body = blankCssComments(raw);
+  const rawLines = raw.split('\n');
+  const rel = relOf(root, file);
+  const lineOf = (idx) => body.slice(0, idx).split('\n').length;
+  const check = (text, idx) => {
+    const value = decodeCssEscapes(text).trim();
+    if (value === '' || !CJK_UI.test(value)) return;
+    if ((rawLines[lineOf(idx) - 1] ?? '').includes(ALLOW_MARK)) return;
+    report(problems, rel + ':' + lineOf(idx), '中文未抽到 i18n（护栏 D · CSS）', value);
+  };
+  for (const m of body.matchAll(/'([^'\n]*)'|"([^"\n]*)"/g)) check(m[1] ?? m[2] ?? '', m.index);
 }
 
 /**
@@ -374,6 +493,18 @@ export function runGate(root = ROOT) {
   }
   scanHtml(problems, html, root);
   scanHtmlCjk(problems, html, root); // 护栏 D：静态骨架不得含未抽到 i18n 的中文
+  // 护栏 D · CSS 面（W9203）：styles 的 content 文案同样不得含未抽到 i18n 的中文。
+  // 注意 styles 目录**不在** walk(src) 里（那个 walk 只 yield *.ts），故这里单独遍历。
+  const stylesDir = path.join(src, 'styles');
+  try {
+    for (const name of readdirSync(stylesDir).sort()) {
+      if (!name.endsWith('.css')) continue;
+      stats.cssFiles = (stats.cssFiles ?? 0) + 1;
+      scanCssCjk(problems, path.join(stylesDir, name), src);
+    }
+  } catch {
+    /* 没有 styles 目录（fixture 树常见）不阻塞 */
+  }
   // 护栏 B：zh 与 en 的 key 集合必须一致。
   const zh = [...new Set(zhKeys)].sort();
   const en = [...new Set(enKeys)].sort();
@@ -447,7 +578,8 @@ function main() {
   for (const w of warnings) console.log('  ⚠ ' + w);
   console.log('✓ UI 文案门禁通过：locales 值（zh ' + stats.zhKeys + ' / en ' + stats.enKeys + ' 条，中英同扫）无实现细节词；' +
     'src 组件无绕过 i18n 的中文（待迁移白名单 ' + stats.pending + ' 个，其中仍有中文 ' + stats.remaining + ' 个，陈旧 ' + stats.stale + ' 个）；' +
-    'index.html 文本/属性无未抽到 i18n 的中文（护栏 D）；' +
+    'index.html 文本/属性（全属性 + 单双引号 + 实体解码）与 styles 的 content（' +
+    (stats.cssFiles ?? 0) + ' 个 CSS）无未抽到 i18n 的中文（护栏 D）；' +
     'zh/en key 集合一致；死键 ' + (stats.deadKeys ?? 0) + ' 个。');
 }
 
