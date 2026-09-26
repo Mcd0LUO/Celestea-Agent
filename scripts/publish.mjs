@@ -80,4 +80,10 @@ if (head !== tagCommit) {
 console.log(`[publish] authorized by CELESTEA_PUBLISH_AUTHORIZED=1`);
 console.log(`[publish] tree clean, HEAD == ${tag} (${head.slice(0, 7)})`);
 console.log(`[publish] publishing 9 packages at ${version} ...`);
-execFileSync("pnpm", ["-r", "publish", "--access", "public"], { cwd: REPO, stdio: "inherit" });
+// shell on Windows only: pnpm is a .cmd shim there, and execFileSync does not
+// apply PATHEXT — spawning the bare name raises ENOENT. Same rule as run-with-env.
+execFileSync("pnpm", ["-r", "publish", "--access", "public"], {
+  cwd: REPO,
+  stdio: "inherit",
+  shell: process.platform === "win32",
+});

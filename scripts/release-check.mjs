@@ -25,7 +25,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readTarball, readText } from "./lib/tar.mjs";
 
@@ -146,7 +146,17 @@ function checkManifests() {
         fix("manifest", `${name}: bin ${binName} -> ${rel} does not exist`, "pnpm run build");
         continue;
       }
-      if ((statSync(file).mode & 0o111) === 0) {
+      // The exec bit is a POSIX concept: NTFS has none, so `chmod 0o755` is a no-op
+      // there and `statSync().mode` stays 0o100666 forever. Checking it on Windows
+      // could never pass — it reported "is not executable" for a build that had
+      // just chmod'd the file.
+      //
+      // What actually reaches a user is the TARBALL member mode, and `pnpm pack`
+      // synthesises 0o755 for every declared `bin` entry on every platform
+      // (verified: a Windows pack still records `-rwxr-xr-x`). That is asserted in
+      // checkTarballs, which is the check that matters; this one only guards the
+      // local tree where the concept exists.
+      if (process.platform !== "win32" && (statSync(file).mode & 0o111) === 0) {
         fix("manifest", `${name}: bin ${binName} -> ${rel} is not executable`, "pnpm run build");
       }
     }
@@ -166,10 +176,20 @@ function checkVersions() {
 function checkOneTarball(dir, name, tmp) {
   let tarball;
   try {
-    const stdout = execFileSync("pnpm", ["pack", "--pack-destination", tmp], { cwd: join(REPO, dir), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    // shell on Windows only: pnpm is a .cmd shim there, and execFileSync does not
+    // apply PATHEXT — spawning the bare name raises ENOENT ("pnpm pack failed").
+    const stdout = execFileSync("pnpm", ["pack", "--pack-destination", tmp], {
+      cwd: join(REPO, dir),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: process.platform === "win32",
+    });
     const line = stdout.split("\n").map((l) => l.trim()).filter((l) => l.endsWith(".tgz")).pop();
     if (line === undefined) throw new Error("pnpm pack printed no .tgz path");
-    tarball = line.startsWith("/") ? line : join(tmp, line);
+    // `pnpm pack` may print an ABSOLUTE path — on Windows that is `C:\\...`, which does
+    // NOT start with "/", so the old test joined it onto `tmp` and produced a doubled
+    // path ("<tmp>\C:\...\x.tgz"). Use the platform's own absolute test.
+    tarball = isAbsolute(line) ? line : join(tmp, line);
   } catch (e) {
     fix("tarball", `${name}: pnpm pack failed: ${e instanceof Error ? e.message : String(e)}`, "pnpm run build");
     return;

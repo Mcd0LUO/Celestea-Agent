@@ -25,7 +25,14 @@ const TARGET = join(REPO_ROOT, "apps", "studio", "webdist");
 
 if (process.env["CELESTEA_SKIP_WEB_BUILD"] !== "1") {
   console.log("[build-webdist] building apps/web (freshness is the point of this step)");
-  execFileSync("pnpm", ["--dir", "apps/web", "run", "build"], { cwd: REPO_ROOT, stdio: "inherit" });
+  // shell on Windows only: pnpm is a .cmd shim there, and execFileSync does not
+  // apply PATHEXT — spawning the bare name raises ENOENT. Same rule (and same
+  // reason) as scripts/run-with-env.mjs.
+  execFileSync("pnpm", ["--dir", "apps/web", "run", "build"], {
+    cwd: REPO_ROOT,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
 } else {
   console.log("[build-webdist] CELESTEA_SKIP_WEB_BUILD=1 — staging the existing apps/web/dist");
 }

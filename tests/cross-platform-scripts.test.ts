@@ -94,4 +94,46 @@ describe('W891 跨平台脚本', () => {
     expect(minMajor, 'engines.node 必须声明下界').not.toBe('');
     expect(versions, 'CI 矩阵必须覆盖 engines.node 的下界').toContain(minMajor);
   });
+
+  /**
+   * W9203 follow-up（发布路径的 Windows 缺陷，实测四条）：
+   * `pnpm run release` 在 Windows 上**从未成功过**，而 CI 不跑 release，所以一直没人发现。
+   * 四条根因同属一类「把 POSIX 事实当成跨平台事实」：
+   *   ① package.json 的 build 用单引号 —— cmd.exe 不把 `'` 当引号，filter 带着引号传给 pnpm，
+   *      报 "No projects matched the filters"，构建整个跳过；
+   *   ② scripts/{build-webdist,release-check,publish}.mjs 用 `execFileSync("pnpm", …)` ——
+   *      Windows 上 pnpm 是 `pnpm.cmd`，execFileSync 不走 PATHEXT ⇒ ENOENT；
+   *   ③ release-check 用 `line.startsWith("/")` 判「是否绝对路径」——
+   *      `pnpm pack` 在 Windows 打印 `C:\…`，于是被 join 两次，路径翻倍；
+   *   ④ release-check 检查 bin 的 POSIX 执行位 —— NTFS 没有这个概念，`chmod 0o755` 是空操作，
+   *      该断言在 Windows 上永远不可能通过。
+   * 四条都只有干净机器/别的 OS 才现形，所以必须机械判定（同 W891 的理由）。
+   */
+  it('发布路径在 Windows 上也能跑：不依赖 POSIX 引号 / 绝对路径 / 执行位', () => {
+    const root = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+
+    // ① 单引号在 cmd.exe 里不是引号：pnpm 的 --filter 参数必须用双引号（或完全不加引号）。
+    //    双引号在 POSIX sh 与 cmd.exe 下都被剥掉，是唯一跨平台安全的写法。
+    const build = root.scripts['build'] ?? '';
+    expect(build, 'build 脚本必须存在').not.toBe('');
+    expect(build, 'build 的 --filter 不许用单引号（cmd.exe 不认，会报 No projects matched）').not.toMatch(/--filter\s+'/);
+
+    // ② 任何 spawn pnpm 的脚本都必须带 Windows 的 shell 兜底。
+    //    与 scripts/run-with-env.mjs 同一约定：shell 只在 win32 打开。
+    for (const rel of ['scripts/build-webdist.mjs', 'scripts/release-check.mjs', 'scripts/publish.mjs']) {
+      const text = readFileSync(join(ROOT, rel), 'utf8');
+      if (!/execFileSync\("pnpm"/.test(text)) continue;
+      expect(text, rel + ': spawn pnpm 必须带 shell: process.platform === "win32"').toContain(
+        'shell: process.platform === "win32"',
+      );
+    }
+
+    // ③ 「是否绝对路径」是平台问题，不许用 startsWith("/") 判（W885 已在别处修过同一写法）。
+    const releaseCheck = readFileSync(join(ROOT, 'scripts/release-check.mjs'), 'utf8');
+    expect(releaseCheck, 'release-check 不许用 startsWith("/") 当绝对路径判据').not.toMatch(/startsWith\("\/"\)/);
+    expect(releaseCheck, 'release-check 必须用 path.isAbsolute').toContain('isAbsolute');
+
+    // ④ 执行位是 POSIX 概念：该断言必须在 win32 上短路，否则发布门禁在 Windows 必红。
+    expect(releaseCheck, '执行位检查必须在 win32 上短路').toMatch(/process\.platform !== "win32"[\s\S]{0,160}0o111/);
+  });
 });
