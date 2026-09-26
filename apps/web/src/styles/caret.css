@@ -79,6 +79,23 @@
   opacity: 1;
   animation: caret-blink var(--caret-blink) steps(1, end) infinite;
 }
+/* ---- 2.1 移动期间停闪（W9105） --------------------------------------------
+   症状：光标在 90ms 的平滑移动里仍按 1.06s 闪 —— 「一边滑一边闪」。VSCode 的行为是：
+   移动期间不闪，落位后**从亮重新计时**。
+
+   实现（只有两条规则，JS 只切一个类）：过渡期间 JS 加 `.is-moving`，本规则把它压成
+   animation:none ⇒ 落到 `.caret-fake.on` 的 opacity:1，**移动中光标恒亮**；过渡结束
+   （transitionend 或 --caret-dur 兜底）JS 摘掉 `.is-moving` ⇒ animation-name 从 none
+   变回 caret-blink ⇒ 按 CSS Animations 规范那是**新建**一条动画，从 0% 起，而 0% 是
+   opacity:1 = 亮。这就是「落位后从亮重新计时」，全程不需要 JS 碰 animation。
+
+   特异性说明：`.caret-fake.on.is-moving`（0,3,0）必须写成三段 —— 写成
+   `.caret-fake.is-moving`（0,2,0）会**输给** `.caret-fake.on`（0,2,0），animation 压
+   不住，用户看到的就还是「边滑边闪」（真机变异实测：42 个暗帧）。同特异性下靠顺序
+   取胜，所以这条必须排在 `.caret-fake.on` 之后。 */
+.caret-fake.on.is-moving {
+  animation: none;
+}
 /* 远距离跳转（点击重定位 / 换行 / 跳到文首）：瞬移，不滑过整屏。
    JS 在设置新坐标前加这个类，强制一次样式落地后再摘掉。 */
 .caret-fake.no-anim {
@@ -132,6 +149,8 @@
   .caret-fake {
     transition: none;
   }
+  /* 光标常亮：animation 声明在 .caret-fake.on 上，这里按同一条选择器压掉（W9105 之后
+     动画仍然只有 .on 一个宿主，所以这条就是精确的对应关系）。 */
   .caret-fake.on {
     animation: none !important;
     opacity: 1 !important;

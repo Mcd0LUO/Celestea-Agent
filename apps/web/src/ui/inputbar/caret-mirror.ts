@@ -54,6 +54,13 @@ const MAX_PREFIX = 4096;
 /** 位移超过这么多像素就不做过渡（跨行跳转 / 点击重定位时滑过去很怪，VSCode 也是瞬移）。 */
 const SNAP_PX = 120;
 
+/** 读 --caret-dur（真源在 caret.css）；读不到（jsdom / 样式未加载）走兜底 90ms。 */
+function readCaretDurMs(stateEl: HTMLElement | null): number {
+  const raw = stateEl ? getComputedStyle(stateEl).getPropertyValue('--caret-dur').trim() : '';
+  const n = parseFloat(raw);
+  return !Number.isFinite(n) || n <= 0 ? 90 : raw.endsWith('ms') ? n : raw.endsWith('s') ? n * 1000 : 90;
+}
+
 const clamp = (n: number, lo: number, hi: number): number => (n < lo ? lo : n > hi ? hi : n);
 
 export interface CaretMirror {
@@ -68,32 +75,108 @@ export interface CaretMirror {
 interface CaretOrigin { x: number; y: number; h: number }
 
 /**
- * 接管判定的**纯函数**（把「什么时候可以用假光标」从 DOM 里择出来）。
- * 为什么要单独一个可导出的纯函数：这几条边界全都只在**真机**才表现得出差异
- * （jsdom 无排版 ⇒ 探测恒失败 ⇒ 无论判定写成什么，最终都是「不接管」）——
- * 于是任何针对 sync() 的 jsdom 断言都会**空转**（真实教训：把
- * `input.value.length` 改成截断后的 `text.length`，单元测试照样全绿，
- * 只有真机才抓到）。择成纯函数后，判定本身就能被机械钉死。
+ * 接管判定的**纯函数**（把「什么时候可以用假光标」从 DOM 里择出来）。为什么必须择成
+ * 纯函数：这几条边界只在**真机**才表现得出差异（jsdom 无排版 ⇒ 探测恒失败 ⇒ 无论判定写成
+ * 什么，最终都是「不接管」），针对 sync() 的 jsdom 断言都会**空转**（真实教训：把
+ * `input.value.length` 改成截断后的 `text.length`，单元测试照样全绿，只有真机才抓到）。
  */
-export function shouldTakeOver(o: {
-  /** 镜像层探测通过（同宽同原点、能量出插入点盒）。 */
-  probed: boolean;
-  /** textarea 是否持有焦点。 */
-  focused: boolean;
-  /** 是否处于 IME 组合中（预编辑串不在 value 里，按 selection 定位会偏）。 */
-  composing: boolean;
-  /** **input.value** 的长度（不是镜像层截断后的长度）。 */
-  valueLen: number;
-}): boolean {
+export function shouldTakeOver(o: { probed: boolean; focused: boolean; composing: boolean; valueLen: number }): boolean {
   return o.probed && o.focused && !o.composing && o.valueLen <= MAX_PREFIX;
 }
 
+/** 光标本次位移该怎么走：瞬移 / 真的动了 / 没动。 */
+export type CaretMotion = 'snap' | 'animate' | 'hold';
+
 /**
- * 挂载镜像层与假光标。
- * @param input 真 textarea（几何与选区的唯一真源）
- * @param host  挂载容器。**必须**能当绝对定位的包含块；为 static 时就地补一条
- *              relative（旧夹具 / 异常结构下也不会把光标甩到视口左上角）。
+ * 位移种类的**纯函数**（W9105「移动中不要闪」的判定核心）。择成纯函数的理由同
+ * shouldTakeOver：jsdom 走不到这一步，针对 sync() 的 jsdom 断言都是空转的。
+ *   · 'snap'    差超过 SNAP_PX，或还没量到过位置（首帧 / 回落态后的第一次接管）⇒ 瞬移，
+ *               且**不重启**闪烁（那会凭空制造一次无位移的闪烁脉冲）。
+ *   · 'animate' 真的动了 ⇒ 过渡期间停闪，落位后从**亮**重新计时（用户要的行为）。
+ *   · 'hold'    一模一样 ⇒ 什么都不做。**这条不是优化是正确性**：方向键按到行首/行尾边界、
+ *               点一下已经贴着光标的文字、ResizeObserver 因宽度没变又回调一次，都会带着
+ *               同一个坐标走进 sync()；若按 'animate' 处理，每次都「停闪 → 90ms 后重启」，
+ *               光标就**周期性地亮一下** —— 正是用户报的「闪」。高度也算动（textarea 自动
+ *               增高 / 换行时 --caret-h 同样在过渡）；0.5px 容差与 probe() 比几何同量级。
  */
+export function motionKind(o: {
+  lastX: number; lastY: number; lastH: number; x: number; y: number; h: number;
+}): CaretMotion {
+  if (!Number.isFinite(o.lastX) || !Number.isFinite(o.lastY) || !Number.isFinite(o.lastH)) return 'snap';
+  if (Math.abs(o.x - o.lastX) > SNAP_PX || Math.abs(o.y - o.lastY) > SNAP_PX) return 'snap';
+  const moved = Math.abs(o.x - o.lastX) > 0.5 || Math.abs(o.y - o.lastY) > 0.5 || Math.abs(o.h - o.lastH) > 0.5;
+  return moved ? 'animate' : 'hold';
+}
+
+/** 闪烁控制器：把「过渡期间不闪、落位后从亮重新计时」这条时序收在一个可测对象里。 */
+export interface CaretBlink {
+  /** 过渡开始：停闪；过渡结束（或超时兜底）后相位从亮重来。 */
+  restart(): boolean;
+  /** transitionend：立刻收尾（摘停闪类）。幂等。 */
+  done(): void;
+  /** 没有过渡可等（瞬移 / 回落 / 卸载）：撤掉计时器，且确保不留在停闪态。 */
+  halt(): void;
+}
+
+/**
+ * 闪烁控制器（**注入式**：DOM 副作用全由调用方给的闭包提供）。单独立一个对象是为了可测：
+ * sync() 在 jsdom 里走不到，而「过渡期间不闪、落位后从亮重新计时」这条**时序**正是本次
+ * 改动的全部内容 —— 择出来才能用假定时器钉死。
+ *
+ * transitionend 会**缺席**：同一帧既改 transform 又改 height 时 Blink 只发一次事件、且只带
+ * 其中一个属性名，只听 propertyName 会漏掉另一半，光标就永远不闪（比原来更糟）。所以每次
+ * 都排一个 --caret-dur 兜底定时器，谁先到谁收尾；收尾回调还**自己保证恢复**（带着排它时的
+ * 代号醒来，代号对不上直接返回）—— 无论定时器 / transitionend / halt() 以什么顺序到达，
+ * 光标都不会被永久留在「不闪」态（宁可闪，不可不闪）。
+ *
+ * 为什么「摘掉停闪类」= 「相位从亮重新计时」：动画声明写在 `.caret-fake.on` 上，停闪只靠更高
+ * 特异性的 `.caret-fake.on.is-moving { animation: none }`。摘掉 is-moving 让 animation-name 从
+ * none 变回 caret-blink —— 按 CSS Animations 规范那是**新建**一条动画，从 0% 起（= opacity:1
+ * = 亮）；两次声明变化至少隔一帧（transitionend 与 90ms 定时器都在后面的任务里），不存在
+ * 「同帧摘了又加被合并、接着跑旧相位」的风险。顺带：停闪期间 animation:none 落到 `.caret-fake.on` 的
+ * opacity:1 ⇒ **移动中光标恒亮**（正是用户要的观感），摘类不可能产生脉冲（亮 → 亮）。
+ */
+export function createCaretBlink(opts: {
+  el: HTMLElement; movingClass: string; // caret.css 里由 .caret-fake.on.is-moving 压掉 animation
+  /** 兜底延时（ms），应与 --caret-dur 同值。定时器可注入（测试用假定时器）。 */
+  durationMs: number; setTimer?: (fn: () => void, ms: number) => number; clearTimer?: (id: number) => void;
+}): CaretBlink {
+  let pending: number | null = null; // 在途收尾定时器；null = 没有在停闪
+  let gen = 0; // 代号：只有「当代」的回调才允许动 DOM（见上文 ③）
+  const setTimer = opts.setTimer ?? ((fn: () => void, ms: number): number => window.setTimeout(fn, ms));
+  const clearTimer = opts.clearTimer ?? ((id: number): void => window.clearTimeout(id));
+  function clear(): void {
+    if (pending === null) return;
+    clearTimer(pending);
+    pending = null;
+    gen += 1;
+  }
+  function settle(token: number): void {
+    // 两道幂等门：pending === null = 已收过尾；token !== gen = 迟到回调。少了第一道，done()
+    // 就不幂等 —— 迟到的 transitionend 会掀掉新一段移动的停闪态（= 边滑边闪回归）。
+    if (pending === null || token !== gen) return;
+    clear();
+    opts.el.classList.remove(opts.movingClass);
+  }
+  return {
+    restart: () => {
+      // 连续按键：上一段还没落位就来了下一段 —— 光标已经停着，只把收尾时刻往后推。
+      const wasIdle = pending === null;
+      if (wasIdle) opts.el.classList.add(opts.movingClass);
+      clear();
+      const token = gen;
+      pending = setTimer(() => settle(token), Math.max(1, opts.durationMs));
+      return wasIdle;
+    },
+    done: () => settle(gen),
+    halt: () => {
+      clear();
+      opts.el.classList.remove(opts.movingClass);
+    },
+  };
+}
+
+/** 挂载镜像层与假光标。host 必须能当绝对定位的包含块；为 static 时就地补一条 relative。 */
 export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement | null): CaretMirror {
   const doc = input.ownerDocument;
   const root: HTMLElement = host ?? (input.parentElement as HTMLElement | null) ?? doc.body;
@@ -121,6 +204,7 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
   let ready = false;
   let lastX = Number.NaN;
   let lastY = Number.NaN;
+  let lastH = Number.NaN; // --caret-h 同样在过渡：textarea 自动增高 / 换行时闪烁也得停
 
   /**
    * 把真 textarea 的排版度量抄到镜像层。
@@ -146,11 +230,7 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
     mirror.style.setProperty('top', r.top - rr.top - bt + 'px');
   }
 
-  /**
-   * 滚动同步：镜像层与 textarea 的滚动位必须一致，否则文字一滚假光标就停在原地。
-   * 输入框恒 `white-space: pre-wrap` + `overflow-wrap: break-word` ⇒ 不会横向溢出，
-   * scrollLeft 恒 0；仍然抄过来，是为了不依赖那个前提。
-   */
+  /** 滚动同步：镜像层与 textarea 的滚动位必须一致，否则文字一滚假光标就停在原地。 */
   function syncScroll(): void {
     if (mirror.scrollTop !== input.scrollTop) mirror.scrollTop = input.scrollTop;
     if (mirror.scrollLeft !== input.scrollLeft) mirror.scrollLeft = input.scrollLeft;
@@ -205,10 +285,8 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
     return null;
   }
 
-  /**
-   * 可用性探测（fail-closed）：只有**实测**镜像层与输入框同宽、且能给出非零高的
-   * 插入点矩形时才接管。任何一条不成立 ⇒ 回落原生插入符（caret.css 的回落分支）。
-   */
+  /** 可用性探测（fail-closed）：只有**实测**镜像层与输入框同宽同原点、且能给出非零高的
+   * 插入点矩形时才接管。任何一条不成立 ⇒ 回落原生插入符（caret.css 的回落分支）。 */
   function probe(): boolean {
     if (!node || !stateEl) return false;
     // 镜像层必须仍在文档里，且 caret.css **确实生效**（position:absolute 是它独有的
@@ -224,11 +302,17 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
     return rectAt(0) !== null;
   }
 
+  // 闪烁控制器（W9105）：过渡时长读自 caret.css 的 --caret-dur（读不到才走兜底，见 readCaretDurMs）。
+  const blink = createCaretBlink({ el: caret, movingClass: 'is-moving', durationMs: readCaretDurMs(stateEl) });
+
   /** 唯一的接管开关：文字透明 ⇄ 假光标可见，永远同进同出（不留中间态）。 */
   function paint(active: boolean): void {
     const on = active && stateEl !== null;
     stateEl?.classList.toggle('has-fake-caret', on);
     caret.classList.toggle('on', on);
+    // 回落态没有假光标可闪：撤掉在途收尾定时器并摘掉停闪类，下次接管时相位才干净
+    // （回落后再接管如果留着 .is-moving，光标会一直不闪 —— 那是一个新的 bug）。
+    if (!on) blink.halt();
   }
 
   function sync(): void {
@@ -247,6 +331,7 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
     if (!active) {
       lastX = Number.NaN;
       lastY = Number.NaN;
+      lastH = Number.NaN;
       paint(false);
       return;
     }
@@ -271,14 +356,22 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
     const y = r.y - origin.top + mirror.scrollTop;
     // 远距离跳转（点击重定位 / 换行）瞬移，近距离（打字 / 方向键）才过渡 ——
     // 全程过渡会把「跳到文首」变成一条横扫屏幕的动画。
-    const far2 = !Number.isFinite(lastX) || Math.abs(x - lastX) > SNAP_PX || Math.abs(y - lastY) > SNAP_PX;
-    if (far2) {
+    const kind = motionKind({ lastX, lastY, lastH, x, y, h: r.h });
+    if (kind === 'snap') {
       caret.classList.add('no-anim');
       void caret.offsetWidth; // 强制样式落地，保证这一帧真的不带过渡
       requestAnimationFrame(() => caret.classList.remove('no-anim'));
+      // 瞬移**不重启**闪烁：位置没在过渡，重启只会让光标凭空亮一下（用户报的
+      // 「闪」的一种）。只保证它落位后是亮的（.on 的 opacity:1）。
+      blink.halt();
+    } else if (kind === 'animate') {
+      // 过渡期间停闪（.is-moving 压掉 animation），transitionend / 兜底定时器一到
+      // 就摘类并从亮重新计时。这就是「移动过程中不要闪烁」的实现。
+      blink.restart();
     }
     lastX = x;
     lastY = y;
+    lastH = r.h;
     caret.style.setProperty('--caret-x', x + 'px');
     caret.style.setProperty('--caret-y', y + 'px');
     caret.style.setProperty('--caret-h', r.h + 'px');
@@ -318,6 +411,16 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
   const onWinResize = (): void => sync();
   win.addEventListener('resize', onWinResize);
 
+  // 过渡结束 → 恢复闪烁（相位从亮重新计时）。**只**听 transform/height：opacity 也在这条
+  // transition 列表里（接管态的淡入），它结束不该被当成「落位」。这只是「提前收尾」的
+  // 优化，不是唯一路径 —— Blink 同时排了 --caret-dur 的兜底定时器。
+  const onCaretTransitionEnd = (e: Event): void => {
+    const prop = (e as TransitionEvent).propertyName;
+    if (prop !== 'transform' && prop !== 'height') return;
+    blink.done();
+  };
+  caret.addEventListener('transitionend', onCaretTransitionEnd);
+
   const api: CaretMirror = {
     sync,
     ok: () => ready,
@@ -332,7 +435,9 @@ export function mountCaretMirror(input: HTMLTextAreaElement, host: HTMLElement |
       input.removeEventListener('compositionend', onComposeEnd);
       doc.removeEventListener('selectionchange', onSelChange);
       win.removeEventListener('resize', onWinResize);
+      caret.removeEventListener('transitionend', onCaretTransitionEnd);
       ro?.disconnect();
+      blink.halt(); // 撤掉兜底计时器，卸载后不再有 DOM 写入
       stateEl?.classList.remove('has-fake-caret');
       mirror.remove();
     },

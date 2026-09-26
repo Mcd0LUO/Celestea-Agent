@@ -344,3 +344,216 @@ describe('W1525 · 回落是结构性的：CSS 不依赖 JS 记得清类', () =>
     expect((block as RegExpExecArray)[1]).toMatch(/animation:\s*none/);
   });
 });
+// ----------------------------------------------------------------------------
+// W9105 · 光标「移动过程中不要闪烁」
+// ----------------------------------------------------------------------------
+// 用户原话：「输入框的 ux: 光标在移动过程中不要闪烁」。
+//
+// 症状：假光标在 --caret-dur(90ms) 的平滑位移里**仍在**按 --caret-blink(1.06s) 闪 ——
+// 「一边滑一边闪」。VSCode 的行为是：移动期间暂停闪烁，落位后从**亮**重新计时。
+//
+// 为什么本节的断言不能写在 sync() 上：jsdom 无排版 ⇒ probe() 恒失败 ⇒ sync() 永远走不到
+// 「算位移」那一步（与 shouldTakeOver 那条注释同一个理由）。所以把两件事各自择成可测单元：
+//   · motionKind()       —— 纯函数，判「瞬移 / 真的动了 / 没动」；
+//   · createCaretBlink() —— 注入式状态机，判「过渡期间停闪、落位后重启」的时序。
+// 真机证据（computed opacity 采样 + 截图）在 results/W9105-光标移动不闪.md。
+
+/** 只读源码文本（**剥掉注释**，避免注释里的字面词骗过门禁）。 */
+const src = (rel: string): string =>
+  readFileSync(join(WEB, 'src', rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+/**
+ * 可注入的假定时器：让「过渡时长」变成确定性的，不依赖真实时钟。
+ * 刻意**保留**被 clearTimer 撤掉的回调（fireStale）：真实世界里 setTimeout 的回调
+ * 可能已经在事件队列里排队，clearTimeout 拦不住它 —— 状态机必须靠自己「代号」兜住
+ * 这种迟到回调，否则一次旧回调就能把新一段移动的停闪态掀掉（= 边滑边闪回归）。
+ */
+function fakeTimers() {
+  let seq = 0;
+  const live = new Map<number, { fn: () => void; ms: number }>();
+  const cancelled: { fn: () => void; ms: number }[] = [];
+  return {
+    setTimer: (fn: () => void, ms: number): number => {
+      seq += 1;
+      live.set(seq, { fn, ms });
+      return seq;
+    },
+    clearTimer: (id: number): void => {
+      const t = live.get(id);
+      if (t !== undefined) cancelled.push(t);
+      live.delete(id);
+    },
+    /** 仍在途的定时器（含它们被排时的延时）。 */
+    pending: (): { id: number; ms: number }[] => [...live.entries()].map(([id, t]) => ({ id, ms: t.ms })),
+    /** 触发全部在途定时器（模拟 --caret-dur 到期）。 */
+    fire: (): void => {
+      const all = [...live.values()];
+      live.clear();
+      for (const t of all) t.fn();
+    },
+    /** 触发所有**已被撤掉**的回调（模拟 clearTimeout 没拦住已在队列里的那个）。 */
+    fireStale: (): void => {
+      const all = cancelled.splice(0, cancelled.length);
+      for (const t of all) t.fn();
+    },
+  };
+}
+
+describe('W9105 · 位移判定（纯函数 motionKind）：瞬移 / 真的动了 / 没动', () => {
+  it('三种位移逐条钉死（含 0.5px 容差与 SNAP_PX 边界）', async () => {
+    const mod = (await import(/* @vite-ignore */ at('ui/inputbar/caret-mirror.ts'))) as {
+      motionKind(o: { lastX: number; lastY: number; lastH: number; x: number; y: number; h: number }): string;
+    };
+    const base = { lastX: 10, lastY: 20, lastH: 16, x: 10, y: 20, h: 16 };
+    expect(mod.motionKind(base), '一模一样 ⇒ hold（否则每次无关回调都会停闪+重启=周期性亮一下）').toBe('hold');
+    expect(mod.motionKind({ ...base, x: 10.4 }), '亚像素抖动 ⇒ hold').toBe('hold');
+    expect(mod.motionKind({ ...base, x: 10.6 }), '真的动了 ⇒ animate').toBe('animate');
+    expect(mod.motionKind({ ...base, y: 21 }), '纵向动了 ⇒ animate').toBe('animate');
+    expect(mod.motionKind({ ...base, h: 24 }), '只变高度也算动（换行/自动增高同样在过渡）').toBe('animate');
+    expect(mod.motionKind({ ...base, x: 130 }), '恰好 SNAP_PX ⇒ animate（边界不含）').toBe('animate');
+    expect(mod.motionKind({ ...base, x: 131 }), '超过 SNAP_PX ⇒ snap').toBe('snap');
+    expect(mod.motionKind({ ...base, y: 141 }), '纵向超限 ⇒ snap').toBe('snap');
+    expect(mod.motionKind({ ...base, lastX: Number.NaN }), '还没量到过位置（首帧）⇒ snap').toBe('snap');
+    expect(mod.motionKind({ ...base, lastY: Number.NaN }), '还没量到过位置 ⇒ snap').toBe('snap');
+    expect(mod.motionKind({ ...base, lastH: Number.NaN }), '还没量到过高度 ⇒ snap').toBe('snap');
+  });
+});
+
+describe('W9105 · 闪烁状态机（createCaretBlink）：过渡期间不闪，落位后从亮重新计时', () => {
+  type BlinkMod = {
+    createCaretBlink(o: {
+      el: ElLike; movingClass: string; durationMs: number;
+      setTimer?: (fn: () => void, ms: number) => number;
+      clearTimer?: (id: number) => void;
+    }): { restart(): boolean; done(): void; halt(): void };
+  };
+  const mod = async (): Promise<BlinkMod> => (await import(/* @vite-ignore */ at('ui/inputbar/caret-mirror.ts'))) as unknown as BlinkMod;
+  const moving = (el: ElLike): boolean => el.classList.contains('is-moving');
+
+  it('restart() 立刻停闪（.is-moving），并**只在**过渡时长到期后摘掉', async () => {
+    const m = await mod();
+    const t = fakeTimers();
+    const el = g.document.createElement('div');
+    const b = m.createCaretBlink({ el, movingClass: 'is-moving', durationMs: 90, setTimer: t.setTimer, clearTimer: t.clearTimer });
+    expect(moving(el), '初始不在停闪态').toBe(false);
+    expect(b.restart(), '第一次 restart 真的开了一次停闪').toBe(true);
+    expect(moving(el), '过渡开始 ⇒ 必须停闪（这就是「移动中不闪」）').toBe(true);
+    expect(t.pending().map((x) => x.ms), '兜底定时器 = --caret-dur').toEqual([90]);
+    t.fire();
+    expect(moving(el), '过渡结束 ⇒ 恢复闪烁（相位从亮重新计时由 CSS 声明重现保证）').toBe(false);
+    expect(t.pending().length, '收尾后不再有在途定时器').toBe(0);
+  });
+
+  it('连续按键：重复 restart 不重复停闪，只把收尾时刻往后推，且仍能自己恢复', async () => {
+    const m = await mod();
+    const t = fakeTimers();
+    const el = g.document.createElement('div');
+    const b = m.createCaretBlink({ el, movingClass: 'is-moving', durationMs: 90, setTimer: t.setTimer, clearTimer: t.clearTimer });
+    b.restart();
+    expect(b.restart(), '上一段还没落位 ⇒ 不算新开一次').toBe(false);
+    expect(b.restart()).toBe(false);
+    expect(moving(el)).toBe(true);
+    expect(t.pending().length, '同一时刻只有一个在途收尾定时器（否则会多次摘类）').toBe(1);
+    t.fire();
+    expect(moving(el), '无论如何都要能自己恢复（宁可闪，不可不闪）').toBe(false);
+  });
+
+  it('transitionend（done）先到：立刻收尾，随后的兜底定时器不再动 DOM', async () => {
+    const m = await mod();
+    const t = fakeTimers();
+    const el = g.document.createElement('div');
+    const b = m.createCaretBlink({ el, movingClass: 'is-moving', durationMs: 90, setTimer: t.setTimer, clearTimer: t.clearTimer });
+    b.restart();
+    b.done(); // transitionend（transform/height 之一）先到
+    expect(moving(el), 'transitionend ⇒ 立即恢复闪烁，不等 90ms').toBe(false);
+    b.done(); // 第二个属性的 transitionend（同一帧两个属性时浏览器只发一次，这里防御性重复）
+    expect(moving(el)).toBe(false);
+    t.fire(); // 兜底定时器此刻才到期
+    expect(moving(el), '已收尾 ⇒ 迟到的兜底回调不得再动 DOM').toBe(false);
+  });
+
+  it('迟到的旧回调（clearTimeout 没拦住）不得掀掉新一段移动的停闪态', async () => {
+    const m = await mod();
+    const t = fakeTimers();
+    const el = g.document.createElement('div');
+    const b = m.createCaretBlink({ el, movingClass: 'is-moving', durationMs: 90, setTimer: t.setTimer, clearTimer: t.clearTimer });
+    b.restart(); // 第一段移动（回调 A 已排出）
+    b.halt(); // 瞬移 / 回落：撤掉 A（真实世界 A 可能仍在队列里）
+    b.restart(); // 第二段移动（回调 B）
+    expect(moving(el), '第二段移动中必须停闪').toBe(true);
+    t.fireStale(); // A 迟到到达
+    expect(moving(el), '代号对不上的旧回调必须被忽略 —— 否则新一段移动会当场恢复闪烁').toBe(true);
+    t.fire(); // B 正常到期
+    expect(moving(el)).toBe(false);
+  });
+
+  it('halt()（瞬移/回落/卸载）：停闪但不留计时器，且之后仍能重新进入移动态', async () => {
+    const m = await mod();
+    const t = fakeTimers();
+    const el = g.document.createElement('div');
+    const b = m.createCaretBlink({ el, movingClass: 'is-moving', durationMs: 90, setTimer: t.setTimer, clearTimer: t.clearTimer });
+    b.halt();
+    expect(moving(el), '瞬移本身没有过渡可等 ⇒ 不能留在停闪态（否则光标永远不闪）').toBe(false);
+    expect(t.pending().length, 'halt 后不留计时器（卸载后不许再写 DOM）').toBe(0);
+    b.restart();
+    expect(moving(el)).toBe(true);
+    b.halt();
+    expect(moving(el)).toBe(false);
+    t.fire();
+    expect(moving(el), 'halt 之后再无残留回调能改状态').toBe(false);
+  });
+});
+
+describe('W9105 · CSS 契约：.is-moving 必须压得住 .caret-fake.on 的闪烁动画', () => {
+  it('动画声明挂在 .caret-fake.on 上（相位重置靠 .is-moving 摘掉后声明重现）', () => {
+    const text = css('caret.css');
+    const anim = [...text.matchAll(/([^{}]+)\{([^}]*animation:\s*caret-blink[^}]*)\}/g)].map((m) => (m[1] ?? '').trim());
+    expect(anim.length, '必须有且只有一条声明闪烁动画的规则').toBe(1);
+    expect(anim[0], '动画宿主必须是 .caret-fake.on').toBe('.caret-fake.on');
+  });
+
+  it('停闪规则的**特异性必须压过**动画规则（写成两段会输给 .on ⇒ 边滑边闪回归）', () => {
+    const text = css('caret.css');
+    const m = /\.caret-fake\.on\.is-moving\s*\{([^}]*)\}/.exec(text);
+    expect(m, '必须有 .caret-fake.on.is-moving 规则（三段：0,3,0）').not.toBeNull();
+    expect((m as RegExpExecArray)[1], '停闪 = animation: none').toMatch(/animation:\s*none/);
+    // 同特异性下靠顺序取胜：停闪规则必须排在动画规则之后。
+    expect(text.indexOf('.caret-fake.on.is-moving'), '停闪规则必须排在 .caret-fake.on 之后').toBeGreaterThan(
+      text.indexOf('.caret-fake.on {'),
+    );
+  });
+
+  it('reduced-motion 分支压住 .caret-fake.on（光标常亮，不许回退）', () => {
+    const text = css('caret.css');
+    const block = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(text);
+    expect(block, 'caret.css 必须自带 reduced-motion 分支').not.toBeNull();
+    const body = (block as RegExpExecArray)[1] ?? '';
+    expect(body, '必须点名动画宿主 .caret-fake.on').toContain('.caret-fake.on');
+    expect(body).toMatch(/animation:\s*none\s*!important/);
+    expect(body).toMatch(/opacity:\s*1\s*!important/);
+  });
+
+  it('接线：animate 分支 restart、snap 分支 halt（jsdom 到不了那里，故查源码）', () => {
+    const text = src('ui/inputbar/caret-mirror.ts');
+    expect(text, '位移判定必须走纯函数，不许内联阈值').toMatch(/motionKind\(\{/);
+    expect(text, 'transitionend 必须接回状态机').toMatch(/addEventListener\('transitionend'/);
+    expect(text, '回落/卸载必须撤掉停闪态').toMatch(/if \(!on\) blink\.halt\(\)/);
+    // 两个分支各自的行为必须互斥：snap 只 halt（不重启），animate 只 restart（停闪+重启）。
+    const snapAt = text.indexOf("kind === 'snap'");
+    const animAt = text.indexOf("kind === 'animate'");
+    expect(snapAt, '找不到 snap 分支').toBeGreaterThan(-1);
+    expect(animAt, '找不到 animate 分支').toBeGreaterThan(snapAt);
+    const snapBranch = text.slice(snapAt, animAt);
+    const animBranch = text.slice(animAt, text.indexOf('lastX = x;', animAt));
+    expect(snapBranch, 'snap 分支必须只停闪').toMatch(/blink\.halt\(\)/);
+    expect(snapBranch, 'snap 分支**不得**重启闪烁（否则瞬移也闪一下）').not.toMatch(/blink\.restart\(\)/);
+    expect(animBranch, 'animate 分支必须停闪+重启').toMatch(/blink\.restart\(\)/);
+    expect(animBranch, 'animate 分支不得走 halt（否则永远不闪）').not.toMatch(/blink\.halt\(\)/);
+    // 相位重置必须**只**由「CSS 声明重现」完成：JS 不许自己碰 animation / opacity。
+    // 一旦有人改成 el.style.animation='none' / opacity=0，CSS 状态机就不再是唯一真源，
+    // 那条「摘类即从亮重来」的推理也就失效了。
+    expect(text, 'JS 不得直接操作 animation').not.toMatch(/style\.animation/);
+    expect(text, 'JS 不得直接操作 opacity（可见性只由 .on 决定）').not.toMatch(/style\.opacity/);
+    expect(text, 'JS 不得用 Web Animations API 另起一套').not.toMatch(/\.animate\(/);
+  });
+});
