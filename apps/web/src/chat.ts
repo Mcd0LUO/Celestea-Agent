@@ -71,6 +71,7 @@ import {
 import { railActivate, railRebind } from './ui/rail';
 import { updateSessionBar } from './ui/sessionbar';
 import { updateWorkerStrip } from './ui/worker-strip'; // W866：本会话 worker 快捷条
+import { createFrameBudget } from './ui/messages/frame-budget'; // W9113（P0-1）：帧内预算
 import { t } from './i18n';
 
 /** 终态标签（函数：语言切换后必须跟着变；A1：completed 与「空闲」等价，不再产生文案）。 */
@@ -274,6 +275,19 @@ function onDone(ctx: SessionPane, p: DonePayload): void {
 
 export function connectSse(): SseClient {
   const sse = new SseClient();
+  // W9113（P0-1）：轮次帧的 UI 工作统一过一个**帧内预算**队列 —— 症状（一帧 584 个
+  // 回调 / 7.9–9.4 秒冻结）、K 的取法、「为什么保序」「为什么在这一层接线」全部写在
+  // ./ui/messages/frame-budget.ts 的模块头，这里只留接线与错误隔离。
+  const budget = createFrameBudget();
+  const paced = (label: string, run: () => void): void => {
+    budget.push(() => {
+      try {
+        run();
+      } catch (err) {
+        console.warn(label, err);
+      }
+    });
+  };
   sse.onConn((state) => {
     S.conn = state;
     if (state === 'online') {
@@ -301,41 +315,26 @@ export function connectSse(): SseClient {
       console.warn('SSE status', err);
     }
   });
+  // ★ 下面五条**轮次帧**（text/thinking/tool/tool_result/done）走 budget：它们都会写
+  //   DOM。status/compact/question 不走 —— 前两者不碰消息容器，后者是用户交互卡片，
+  //   推迟它没有收益。
   sse.on('text', (p) => {
-    try {
-      onText(ctxFor(p), p);
-    } catch (err) {
-      console.warn('SSE text', err);
-    }
+    paced('SSE text', () => onText(ctxFor(p), p));
   });
   sse.on('thinking', (p) => {
-    try {
-      onThinking(ctxFor(p), p);
-    } catch (err) {
-      console.warn('SSE thinking', err);
-    }
+    paced('SSE thinking', () => onThinking(ctxFor(p), p));
   });
   sse.on('tool', (p) => {
-    try {
-      onTool(ctxFor(p), p);
-    } catch (err) {
-      console.warn('SSE tool', err);
-    }
+    paced('SSE tool', () => onTool(ctxFor(p), p));
   });
   sse.on('tool_result', (p) => {
-    try {
-      onToolResult(ctxFor(p), p);
-    } catch (err) {
-      console.warn('SSE tool_result', err);
-    }
+    paced('SSE tool_result', () => onToolResult(ctxFor(p), p));
   });
   sse.on('done', (p) => {
-    try {
+    paced('SSE done', () => {
       statusline.onSseDone();
       onDone(ctxFor(p), p);
-    } catch (err) {
-      console.warn('SSE done', err);
-    }
+    });
   });
   sse.on('compact', (p) => {
     try {

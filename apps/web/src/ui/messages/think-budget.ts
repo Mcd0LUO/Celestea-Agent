@@ -46,3 +46,34 @@ export function addThinkRetained(container: HTMLElement, delta: number): void {
 export function thinkOverBudget(container: HTMLElement): boolean {
   return thinkRetained(container) > THINK_CONTAINER_LIMIT;
 }
+
+// ---- W9113：列 → 保留正文长度的登记（供 dom-cap 的摘列回收减账） ----------------
+//
+// 为什么这份登记住在账本模块：`dom-cap.ts` 摘思考列时要**按列**把保留量减回去，
+// 而「列 → 思考段」的映射本来在 ui/messages.ts 的 thinkFolds 里。让 dom-cap 去
+// import ui/messages.ts 会形成 messages → assistant → dom-cap → messages 的**循环
+// 依赖**（lint:arch 的 depcruise 会红）。所以只把「需要多少字符」这一面对外开放：
+// 登记用结构类型，ThinkSegDom 天然满足，不需要把整个零件类型搬过来。
+
+/** 账本只需要知道「这一段现在保留了多少字符」。 */
+export interface ThinkLedgerEntry {
+  /** 保留的思考正文（W1505 起它的长度上限就是 THINK_RENDER_LIMIT）。 */
+  text: string;
+}
+
+/** root（.mcol）→ 该思考段的保留量来源（随节点一起被 GC）。 */
+const ledgerEntries = new WeakMap<HTMLElement, ThinkLedgerEntry>();
+
+/** 登记一个已构建的思考段（buildThinkSeg 里调一次；同 root 幂等覆盖）。 */
+export function registerThinkSeg(root: HTMLElement, entry: ThinkLedgerEntry): void {
+  ledgerEntries.set(root, entry);
+}
+
+/**
+ * 该列当前**保留**的思考正文字符数（0 = 不是思考列，或正文已被回收）。
+ *
+ * W9113：摘列时用它把账本减回去 —— 与 pruneToolCards 的「节点归属」判据对称。
+ */
+export function retainedThinkChars(root: HTMLElement): number {
+  return ledgerEntries.get(root)?.text.length ?? 0;
+}

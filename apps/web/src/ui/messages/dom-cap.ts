@@ -32,6 +32,9 @@
 // ============================================================================
 import type { SessionPane } from '../viewctx';
 import { railDropCols } from '../rail';
+// W9113（P1-3）：账本的减账入口。**只依赖账本模块**（不 import ui/messages.ts）——
+// 否则 messages → assistant → dom-cap → messages 会成环，lint:arch 的 depcruise 会红。
+import { addThinkRetained, retainedThinkChars } from './think-budget';
 
 /**
  * 单容器保留的消息列上限。
@@ -40,27 +43,80 @@ import { railDropCols } from '../rail';
  * 1000+ 列；600 足够覆盖「往回翻几屏」的真实阅读需求，又把 DOM 规模钉在常数上。
  */
 export const MAX_DOM_COLS = 600;
-/** 一次回收多少条（批量回收，避免每来一条就动一次 DOM）。 */
+/**
+ * 一次回收多少条的**下限**（批量回收，避免每来一条就动一次 DOM）。
+ *
+ * ★ W9113（P0-2）：这不再是**全部**的回收能力。实测（results/W9111.md §5/§6）：
+ *   高速工具流下新增 900 列只要 3.6 秒，而「100 条/秒」要 9 秒才回收完 —— 名义上限
+ *   600 要 5–10 秒才收敛，收敛期间 DOM 一路冲到 600+。回收速率是**绝对**的，与新增
+ *   速率无关，这才是缺口。现在按超出量自适应（见 [pruneBatchFor]）。
+ */
 export const DOM_PRUNE_BATCH = 100;
+/**
+ * W9113：单次回收的**硬顶**。
+ *
+ * 取 600 = MAX_DOM_COLS。理由：一次扫描最多把「超出上限的量」全部回收掉，绝不多摘
+ * —— 上限本身才是那个不该越过的线，单批比它还大没有意义，只会让一次扫描的
+ * removeChild 循环变长（那本身就是本任务要消灭的同步工作量）。
+ */
+export const MAX_PRUNE_BATCH = 600;
 /**
  * 两次扫描之间的最小间隔（ms）。裁剪是**安全阀**而不是每帧不变量：`querySelectorAll`
  * 要遍历容器里全部节点，在流式渲染（每 12ms 一次）里每 tick 都扫一遍是纯浪费。
  * 用时间窗把它摊薄；force=true 供恢复收尾与测试使用。
  */
 export const PRUNE_INTERVAL_MS = 1000;
+/**
+ * W9113：超出量超过 [PRUNE_INTERVAL_TIGHTEN_ABOVE] 时把扫描间隔收紧到这个值（ms）。
+ *
+ * 为什么是 100ms 而不是每帧：`querySelectorAll` 遍历全容器是真实成本，扫描本身不能
+ * 变成每帧不变量（见上面那条注释的取舍）。100ms ≈ 6 帧一次 —— 足够把「超出 300+ 列」
+ * 这种紧急状态在 ~1 秒内收敛（10 次扫描 × 600 条/次），又不会把扫描塞进每一帧。
+ */
+export const PRUNE_INTERVAL_TIGHT_MS = 100;
+/** 超出量超过多少就收紧扫描间隔（条）。取 300 = MAX_DOM_COLS 的一半。 */
+export const PRUNE_INTERVAL_TIGHTEN_ABOVE = 300;
+
+/**
+ * W9113（P0-2）：单批回收量 = clamp(excess, DOM_PRUNE_BATCH, MAX_PRUNE_BATCH)。
+ *
+ * 纯函数（便于单测与变异）。三个性质：
+ *   · 超出量**小** → 仍守 [DOM_PRUNE_BATCH] 下限（一次摘一批，不逐条动 DOM）；
+ *   · 超出量**大** → 单批跟着超出量涨（新增多快、回收就多快），这正是缺口所在；
+ *   · 任何情况不超过 [MAX_PRUNE_BATCH]（一次扫描的同步工作量有界）。
+ */
+export function pruneBatchFor(excess: number): number {
+  if (!Number.isFinite(excess) || excess <= 0) return DOM_PRUNE_BATCH;
+  return Math.min(MAX_PRUNE_BATCH, Math.max(DOM_PRUNE_BATCH, Math.floor(excess)));
+}
+
+/**
+ * W9113（P0-2）：两次扫描之间的间隔（ms）—— 超出量大时收紧到 [PRUNE_INTERVAL_TIGHT_MS]。
+ *
+ * 判据用**上一次**的超出量（调用方在扫描前无法知道本次超出多少，而扫描前先做一次
+ * querySelectorAll 恰恰是节流要避免的成本）。上一次超了 ⇒ 这一次提前扫；收敛后
+ * 自动回到常规间隔，不会常驻高频扫描。
+ */
+export function pruneIntervalFor(lastExcess: number): number {
+  return lastExcess > PRUNE_INTERVAL_TIGHTEN_ABOVE ? PRUNE_INTERVAL_TIGHT_MS : PRUNE_INTERVAL_MS;
+}
 
 /** 上次扫描时刻（每容器一份；容器被 GC 时随之消失）。 */
 const lastRun = new WeakMap<SessionPane, number>();
+/** 上次扫描看到的超出量（决定下一次扫描的间隔；见 [pruneIntervalFor]）。 */
+const lastExcess = new WeakMap<SessionPane, number>();
 
-/** 裁剪判定与执行（纯 DOM 操作 + rail 记账同步）。返回本次回收的条数。 *//** 裁剪判定与执行（纯 DOM 操作 + rail 记账同步）。返回本次回收的条数。 */
+/** 裁剪判定与执行（纯 DOM 操作 + rail 记账同步）。返回本次回收的条数。 */
 export function prunePaneDom(ctx: SessionPane, force = false): number {
   const now = Date.now();
-  if (!force && now - (lastRun.get(ctx) ?? 0) < PRUNE_INTERVAL_MS) return 0;
+  // 间隔用「上一次的超出量」判定：必须在 querySelectorAll **之前**早退，否则节流形同虚设。
+  if (!force && now - (lastRun.get(ctx) ?? 0) < pruneIntervalFor(lastExcess.get(ctx) ?? 0)) return 0;
   lastRun.set(ctx, now);
   const cols = Array.from(ctx.el.querySelectorAll<HTMLElement>('.mcol'));
   const excess = cols.length - MAX_DOM_COLS;
+  lastExcess.set(ctx, Math.max(0, excess));
   if (excess <= 0) return 0;
-  const doomed = cols.slice(0, Math.min(excess, DOM_PRUNE_BATCH));
+  const doomed = cols.slice(0, Math.min(excess, pruneBatchFor(excess)));
   if (doomed.length === 0) return 0;
   // 先把长条记账摘干净（长条按列的 rect 定位，列没了它就没有意义），再摘节点。
   railDropCols(ctx, doomed);
@@ -80,7 +136,36 @@ export function prunePaneDom(ctx: SessionPane, force = false): number {
   // ★ 必须在**摘完节点之后**调用：pruneToolCards 的判据是 `ctx.el.contains(anchor)`，
   //   节点还在容器里时它永远为真，提前调用等于空转（主会话写这段时先踩了一次）。
   const dropped = pruneToolCards(ctx);
+  // W9113（P1-3）：思考列的账本也要一起减 —— 与上面 pruneToolCards 完全对称。
+  // 改动前 dom-cap.ts 全文**没有任何** addThinkRetained 调用：摘掉思考列时账本不减，
+  // 之所以实测没发散，只是因为 enforceThinkBudget 的回收会把账本**反向钳回** DOM 真实值
+  // （闭环自纠）。那是副作用而不是记账正确：一旦回收条件放宽（例如只回收折叠段），
+  // 账本就会单向偏高、新段被立刻误回收。这里把它变成不变式。
+  pruneThinkBudget(ctx, doomed);
+  // 返回值语义保持改动前不变（回收的**条数**）：思考列的减账量是字符数，与条数不同量纲，
+  // 混进来会让调用方（如 `while (prunePaneDom(...) > 0)`）的读法失真。
   return doomed.length + dropped;
+}
+
+/**
+ * W9113（P1-3）：摘掉思考列时把保留量从账本里减回去，返回**减掉的字符数**。
+ *
+ * 判据与 pruneToolCards 同一手法：按**列**（doomed 的 .mcol）而不是全局 querySelectorAll
+ * —— 被摘掉的就是这批，逐列查登记表即可（O(doomed)，不遍历全容器）。
+ * `retainedThinkChars` 读的是该段当前**还保留着**的正文长度：已被 enforceThinkBudget
+ * 回收过的段是 0（正文已释放），此时无需重复减账 —— 这正是「只增只减、不重算」的账本语义。
+ *
+ * 为什么导出：它是这条不变式的**可观测面**（单测直接调，真机探针也可调）。
+ */
+export function pruneThinkBudget(ctx: SessionPane, doomed: HTMLElement[]): number {
+  let released = 0;
+  for (const col of doomed) {
+    const chars = retainedThinkChars(col);
+    if (chars === 0) continue;
+    addThinkRetained(ctx.el, -chars);
+    released += chars;
+  }
+  return released;
 }
 
 /**

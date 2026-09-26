@@ -26,10 +26,11 @@ import {
   buildThinkSeg,
   ensureAssistant,
   finalizeAssistant,
-  noteRestoredThinking,
+  noteRestoredThinkingBatch,
   renderEmptyHint,
   renderInboxMessage,
   type MsgKind,
+  type ThinkSegDom,
 } from './messages';
 import { parseQuoteBlocks } from './quote/model'; // F1：历史回放解析引用块
 import { railReset, railSync } from './rail';
@@ -139,6 +140,7 @@ function renderOne(
   m: HistoryMsg,
   container: HTMLElement,
   questions: Map<string, HistoryQuestion>,
+  pending: ThinkSegDom[],
 ): void {
   const content = String(m.content ?? '');
   // W784：提问行 → 提问卡片（未结算的渲染成「已过期 · 未作答」终态，§7.2 规则 4）；
@@ -173,7 +175,7 @@ function renderOne(
     return;
   }
   if (m.role === 'thinking') {
-    renderThinkingHistory(content, container);
+    renderThinkingHistory(content, container, pending);
     return;
   }
   renderToolMessage(ctx, m, container);
@@ -182,13 +184,16 @@ function renderOne(
 /**
  * 历史思考条目：与 live **同一构建函数** buildThinkSeg（默认折叠态因此不可能分叉）。
  * 历史恢复 = 静态内容，永远用默认态（collapsed: true），不随 live 流式状态变化。
+ *
+ * ★ W9113（P1-2）：这里**只收集**，不记账。记账必须发生在
+ *   `ctx.el.replaceChildren(...off.childNodes)` **之后** —— 改动前记在离屏 off 上，
+ *   搬家后 off 被丢弃，于是 `thinkRetained(ctx.el)` 恒为 0（刷新后的会话在下一个 live
+ *   思考段到达前完全不受容器预算约束）。见 restoreSessionHistory 的收尾段。
  */
-function renderThinkingHistory(content: string, container: HTMLElement): void {
+function renderThinkingHistory(content: string, container: HTMLElement, pending: ThinkSegDom[]): void {
   const seg = buildThinkSeg({ text: content, collapsed: true });
+  pending.push(seg);
   container.appendChild(seg.root);
-  // W1512：历史恢复与 live 走**同一个容器预算**。若只守 live，刷新后同一个会话会突然
-  // 变重（同步渲染 200 条），W895-R 的「实时与重放逐字一致」也随之破。
-  noteRestoredThinking(container, seg);
 }
 
 function appendNote(ctx: SessionPane, text: string): void {
@@ -233,6 +238,8 @@ export async function restoreSessionHistory(
     );
   }
   const recent = all.length > MAX_RESTORE ? all.slice(all.length - MAX_RESTORE) : all;
+  // W9113（P1-2）：历史思考段**先收集**（容器还是离屏的 off），搬家之后再记账。
+  const pendingThink: ThinkSegDom[] = [];
   // W784 §7.2：提问/回答两行按 question_id 配对（有问无答 = 该提问不可再答）。
   const questions = new Map(historyQuestionsOf(recent).map((row) => [row.id, row]));
   // W1485：分片渲染（片间让出事件循环）—— 200 条重消息不再一次性占满主线程。
@@ -243,7 +250,7 @@ export async function restoreSessionHistory(
       if (guard && !guard()) return; // 期间切了会话：丢弃半成品（离屏容器随之被 GC）
       if (ctx.streaming) return;     // 期间开跑了：不打断实时流（与开头同一判据）
     }
-    for (const m of recent.slice(i, i + RESTORE_CHUNK)) renderOne(ctx, m, off, questions);
+    for (const m of recent.slice(i, i + RESTORE_CHUNK)) renderOne(ctx, m, off, questions, pendingThink);
   }
   if (ctx.restoreOps.size) {
     for (const ref of ctx.restoreOps.values()) {
@@ -272,6 +279,10 @@ export async function restoreSessionHistory(
   ctx.dedup.guardBuf = '';
   ctx.dedup.guardAll = false;
   ctx.restored = true;
+  // W9113（P1-2）：**搬家之后**才记账 —— 账本必须记在真正持有这些节点的容器上。
+  // 改动前记在离屏 off 上，而 off 在这一行之后就被丢弃，于是 thinkRetained(ctx.el) 恒 0。
+  // 刷新路径与 live 路径的记账口径自此一致（W895-R 的「逐字一致」精神）。
+  noteRestoredThinkingBatch(ctx.el, pendingThink);
   // W1485：恢复收尾统一裁一次 DOM（force：不参与 assistant 那条时间窗节流）。
   // 历史本身已按 MAX_RESTORE 条截断，这一步兜的是「服务端一次给回上千条」的情形。
   prunePaneDom(ctx, true);

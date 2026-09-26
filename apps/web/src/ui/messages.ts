@@ -28,7 +28,7 @@ import type { SessionPane } from './viewctx';
 import { railSync } from './rail';
 import { autoscroll, hideEmptyHint } from './messages/scroll';
 import { buildTruncatedNote, setOmittedCount } from './messages/oversize';
-import { addThinkRetained, thinkOverBudget } from './messages/think-budget';
+import { addThinkRetained, registerThinkSeg, thinkOverBudget } from './messages/think-budget';
 import { t } from '../i18n';
 // W1512：预算账本住在 ./messages/think-budget.ts，但公开面仍留在 messages.ts
 // （调用方与测试只认这个入口，与 W867 把 cadence 拆出去时同一取舍）。
@@ -80,8 +80,20 @@ export const THINK_RENDER_LIMIT = 65536;
  * 自己的记账，不调本函数。
  */
 export function noteRestoredThinking(container: HTMLElement, seg: ThinkSegDom): void {
-  addThinkRetained(container, seg.text.length);
-  enforceThinkBudget(container);
+  noteRestoredThinkingBatch(container, [seg]);
+}
+
+/**
+ * W9113（P1-2）：**批量**记账 —— 先一次性把保留量记进容器，再守一次预算。
+ *
+ * 为什么必须是批量而不是逐段调 [noteRestoredThinking]：历史恢复的容器是**已挂载**的
+ * ctx.el（见 restore.ts 的调用点），逐段调会让 enforceThinkBudget 的
+ * `querySelectorAll('.msg.think-seg')` 对 200 条历史跑 200 次 —— O(n²)。
+ * 批量版把「记账」与「守预算」各做一次，语义不变（账本只增只减、不重算）。
+ */
+export function noteRestoredThinkingBatch(container: HTMLElement, segs: ThinkSegDom[]): void {
+  for (const seg of segs) addThinkRetained(container, seg.text.length);
+  if (segs.length > 0) enforceThinkBudget(container);
 }
 
 function enforceThinkBudget(container: HTMLElement): void {
@@ -257,10 +269,14 @@ export function buildThinkSeg(
   const kept = initial.length > THINK_RENDER_LIMIT ? initial.slice(0, THINK_RENDER_LIMIT) : initial;
   const seg: ThinkSegDom = { root, msg, head: cap, body, foldMark, text: kept, dropped: initial.length - kept.length };
   thinkFolds.set(root, seg);
+  // W9113（P1-3）：把「这一列保留了多少字符」登记到账本模块 —— dom-cap.ts 摘列时
+  // 按列减账要用它。只登记**读法**（结构类型），不 import 本模块，故不成环。
+  registerThinkSeg(root, seg);
   // W1512：构造路径不在这里记账 —— 本函数只造节点，容器由调用方 append，此刻还拿不到
   // 稳定的容器键。两条挂载路径各自记账并各守一次预算：
   //   · live：appendThinking 用 ctx.el 记账 + enforceThinkBudget(ctx.el)；
-  //   · 历史恢复：restore.ts 挂到 container 后调 noteRestoredThinking(container, seg)。
+  //   · 历史恢复：restore.ts 在**搬家之后**调 noteRestoredThinkingBatch(ctx.el, segs)
+  //     （W9113/P1-2：改动前记在离屏 off 上，搬家后账本随之丢失 → thinkRetained 恒 0）。
   // 若只守 live，刷新后的同一会话会突然变重（W895-R 的逐字一致也会破）。
   paintThinkBody(seg);
   setThinkCollapsed(seg, opts.collapsed !== false);
