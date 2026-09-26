@@ -136,6 +136,7 @@ export type {
   FallbackStepSink,
   FailureInfo,
   LlmTarget,
+  StatusTable,
 } from "./fallback.js";
 export {
   createFallbackLlm,
@@ -146,6 +147,12 @@ export {
   isProducedEvent,
   orderTargets,
 } from "./fallback.js";
+
+// Same-target retry (W9104): the decorator that re-issues ONE target's request,
+// its default policy and the two pure helpers the host/tests assert on. It
+// consumes the trigger table above instead of owning a second one.
+export type { RetryAttemptInfo, RetryLlm, RetryLlmOptions, RetryPolicy } from "./retry.js";
+export { clampRetries, createRetryLlm, DEFAULT_RETRY_POLICY, MAX_RETRIES, retryDelayMs } from "./retry.js";
 export type { FallbackConfig } from "./fallback-config.js";
 export {
   configProblems,

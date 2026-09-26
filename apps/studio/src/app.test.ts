@@ -158,6 +158,7 @@ describe("health / status / tools / config", () => {
       "context_window",
       "max_output_tokens",
       "max_parallel_tool_calls",
+      "max_retries",
       "max_steps",
       "model",
       "reasoning_effort",

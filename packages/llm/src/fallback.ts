@@ -379,6 +379,14 @@ async function* consume(
   }
 }
 
+/**
+ * The slice of the trigger table a classifier reads. W9104: the same-target
+ * retry decorator (`retry.ts`) reuses this table, and it must not have to carry
+ * the fallback policy's `maxAttempts`/`cooldownMs`/`failureThreshold` to do it —
+ * one home for the statuses, two policies consuming it.
+ */
+export type StatusTable = Pick<FallbackPolicy, "notRetryableStatuses" | "retryableStatuses">;
+
 /** One attempt's failure, in the vocabulary of §4.2.2's table. */
 export interface FailureInfo {
   reason: string;
@@ -402,7 +410,7 @@ export function isProducedEvent(event: StreamEvent): boolean {
 export function describeFailure(
   error: unknown,
   produced: number,
-  policy: FallbackPolicy = DEFAULT_FALLBACK_POLICY,
+  policy: StatusTable = DEFAULT_FALLBACK_POLICY,
 ): FailureInfo {
   const rec = typeof error === "object" && error !== null ? (error as Record<string, unknown>) : {};
   const message = typeof rec["message"] === "string" ? rec["message"] : String(error);
@@ -443,7 +451,7 @@ function reasonOf(status: number | null, isTimeout: boolean, stage: TimeoutStage
 }
 
 /** A status is worth another target unless it is a request/credential problem. */
-function statusRetryable(status: number, policy: FallbackPolicy): boolean {
+function statusRetryable(status: number, policy: StatusTable): boolean {
   if (policy.notRetryableStatuses.includes(status)) return false;
   return status >= 500 || policy.retryableStatuses.includes(status);
 }

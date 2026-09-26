@@ -21,7 +21,7 @@ import type { PromptScope } from "../store/prompts.js";
 import { assembleSystemPrompt, resolveActivePrompt, toPromptVars } from "../store/prompts-compose.js";
 import { readSessionMeta } from "../store/session-meta.js";
 import { sessionWorkspaceOf, type ResolvedSession } from "../store/sessions.js";
-import type { ToolInfo } from "../runtime-adapter.js";
+import { clampRetries, DEFAULT_RETRY_POLICY, type ToolInfo } from "../runtime-adapter.js";
 import type { Deps, JsonObject } from "./common.js";
 import { activeSession } from "./common.js";
 
@@ -250,6 +250,9 @@ export function configView(deps: Deps): JsonObject {
     max_output_tokens: profile.max_output_tokens,
     context_window: profile.context_window,
     system_prompt: assembleSystemPromptFor(deps),
+    // W9104: the same-target retry budget, echoed so the caller can read back
+    // what the engine will actually do (the POST response is this same view).
+    max_retries: clampRetries(profile.max_retries ?? DEFAULT_RETRY_POLICY.maxRetries),
     api_key_env: deps.config.apiKeyEnv,
     available: { models: availableModels(deps), efforts: [...EFFORTS] },
   };

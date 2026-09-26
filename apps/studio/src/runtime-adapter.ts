@@ -83,6 +83,14 @@ export class CapacityError extends Error {
   }
 }
 
+/**
+ * W9104: the retry budget's legal range and default have ONE home
+ * (`@celestea/llm`), re-exported here because this module is the host view the
+ * config handlers already import — a handler that echoes the value must not
+ * need a second import line to reach the constant.
+ */
+export { clampRetries, DEFAULT_RETRY_POLICY, MAX_RETRIES } from "@celestea/llm";
+
 export interface EngineProfile {
   model: string;
   base_url: string;
@@ -94,6 +102,17 @@ export interface EngineProfile {
   api_key_env: string;
   /** Registry-assembled (or overridden) system prompt. */
   system_prompt: string;
+  /**
+   * W9104: EXTRA same-target LLM attempts after a retryable failure, before the
+   * model-fallback chain hands over to the next target. Integer 0..3 (hard cap),
+   * default 1 — so `max_retries: 3` means up to 4 attempts on one endpoint.
+   *
+   * OPTIONAL on purpose: the frozen runtime `Profile` is a 12-key contract and
+   * this knob is host policy (like `system_prompt`'s override), so a caller that
+   * never mentions it keeps the default and every pre-W9104 literal still
+   * typechecks. `POST /api/config` validates it and `GET /api/config` echoes it.
+   */
+  max_retries?: number;
 }
 
 /** `POST /api/config` accepted patch: the host validates, the engine applies. */
@@ -107,6 +126,8 @@ export interface ProfilePatch {
   max_output_tokens?: number | null;
   context_window?: number;
   system_prompt?: string;
+  /** W9104: same-target retry budget, integer 0..3 (the host already validated). */
+  max_retries?: number;
 }
 
 export interface ToolInfo {

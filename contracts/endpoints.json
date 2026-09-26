@@ -467,6 +467,12 @@
             "required": false
           },
           {
+            "name": "max_retries",
+            "type": "integer",
+            "required": false,
+            "note": "W9104: EXTRA same-target attempts after a retryable failure (0..3, default 1; 3 = up to 4 attempts on one target). It is the retry budget, never the total attempt count. Bounded by a product rule: the engine clamps to MAX_RETRIES=3 even if a caller passes more."
+          },
+          {
             "name": "max_parallel_tool_calls",
             "type": "integer",
             "required": false
@@ -506,6 +512,7 @@
       "errors": [],
       "notes": [
         "Always 200. Never contains api_key. available.models is rebuilt from the live providers store on every read.",
+        "W9104: same-target retry composes INSIDE the fallback chain: the retry decorator re-issues against the CURRENT target, and only a target that fails maxRetries+1 times in a row is handed over to the next one (see packages/llm/src/retry.ts). Retryable = the failure table shared with the fallback decorator (408/425/429/5xx, timeouts, transport); 400/401/403/404/422, a caller abort and any attempt that already produced text/thinking deltas are NEVER retried.",
         "W750: available.models carries ONE row per (provider, model) pair — de-duplication is per provider, never global, because the same model id can be served by two providers over different endpoints (the provider decides where the request goes).",
         "W750: each row carries provider_id (the provider's stable id, for switches) beside provider (the display name), plus active = this exact pair is the composed one (same model id AND same endpoint as the live profile; when no endpoint matches, a model id is marked active only if it is unambiguous)."
       ],
@@ -562,12 +569,18 @@
             "required": false
           },
           {
+            "name": "max_retries",
+            "type": "number",
+            "required": false,
+            "note": "W9104: EXTRA same-target attempts after a retryable failure (0..3, default 1; 3 = up to 4 attempts on one target). It is the retry budget, never the total attempt count. Out-of-range is REFUSED (400), never silently clamped: the caller asked for something the product does not offer. A non-integer is truncated like the other numeric knobs."
+          },
+          {
             "name": "system_prompt",
             "type": "string",
             "required": false
           }
         ],
-        "note": "all fields optional; trim-empty model = not provided; reasoning_effort ''/'off' = clear; base_url '' = clear override; max_output_tokens 0 = clear cap; context_window 0 = disable trimming; max_steps 0 = 400, otherwise max(n,4096); system_prompt '' = clear in-memory override"
+        "note": "all fields optional; trim-empty model = not provided; reasoning_effort ''/'off' = clear; base_url '' = clear override; max_output_tokens 0 = clear cap; context_window 0 = disable trimming; max_steps 0 = 400, otherwise max(n,4096); max_retries outside 0..3 = 400, otherwise truncated; system_prompt '' = clear in-memory override"
       },
       "response": {
         "status": 200,
@@ -608,6 +621,10 @@
         {
           "status": 400,
           "error": "max_steps must be >= 1"
+        },
+        {
+          "status": 400,
+          "error": "max_retries must be between 0 and 3"
         },
         {
           "status": 500,
@@ -4347,13 +4364,20 @@
             "type": "array<string>",
             "required": true,
             "note": "W895-C1: the ids the user switched OFF. The server is the source of truth; a newly added component is absent here => ON."
+          },
+          {
+            "name": "config",
+            "type": "object",
+            "required": true,
+            "note": "W9108: per-plugin saved settings, shaped {pluginId: {itemKey: string}}. Stored OPAQUELY: the server normalizes keys/values to non-empty strings and never invents a plugin id or item key (which plugins/items exist is the frontend's knowledge, exactly like the disabled list). Empty object when nothing is configured. Values are strings so the JSON round-trip has no type ambiguity (booleans are 'on'/'off')."
           }
         ]
       },
       "errors": [],
       "notes": [
         "W895-C1: replaces the browser localStorage key 'celestea-studio.client-plugins-disabled'. The payload is the SAME disabled-id array, so the one-time client migration is an identity mapping.",
-        "BOUNDARY: ids only. Labels/hints are the frontend's i18n and are never sent by the server."
+        "W9108: 'config' is ADDITIVE and OPTIONAL on disk — a file written before W9108 simply has no 'config' key and reads back as an empty map, never a warning. The response always carries it (possibly empty) so a client never has to distinguish 'absent' from 'none configured'.",
+        "BOUNDARY: ids and opaque setting strings only. Labels/hints are the frontend's i18n and are never sent by the server."
       ],
       "probe": {
         "checked": false,
@@ -4375,6 +4399,12 @@
             "type": "array<string>",
             "required": true,
             "note": "the full disabled-id list (replace semantics)"
+          },
+          {
+            "name": "config",
+            "type": "object",
+            "required": false,
+            "note": "W9108: {pluginId: {itemKey: string}}, replace semantics for the settings map. OPTIONAL, and its ABSENCE has a specific meaning: 'the client did not send settings' => the stored settings are PRESERVED, so a plain switch toggle (which sends only 'disabled') can never silently wipe the user's settings. An empty object therefore means 'clear every setting', which is different from omitting the key."
           }
         ]
       },
@@ -4392,6 +4422,12 @@
             "type": "array<string>",
             "required": true,
             "note": "the normalized list that was persisted"
+          },
+          {
+            "name": "config",
+            "type": "object",
+            "required": true,
+            "note": "W9108: the normalized settings map that was persisted (the kept one when the request omitted 'config')"
           }
         ]
       },
@@ -4403,11 +4439,21 @@
         {
           "status": 422,
           "error": "field 'disabled' must not contain an empty id"
+        },
+        {
+          "status": 422,
+          "error": "field 'config' must be an object of objects of strings"
+        },
+        {
+          "status": 422,
+          "error": "field 'config' must not contain an empty plugin id"
         }
       ],
       "notes": [
         "W895-C1: replace semantics (like PUT /api/sessions/{id}/tools). A corrupt file on read degrades to the empty disabled set (every component ON), never a repair.",
-        "Concurrent PUTs are serialized, so the last submitted write wins without losing an update."
+        "Concurrent PUTs are serialized, so the last submitted write wins without losing an update.",
+        "W9108: 'config' is validated as an object of objects of strings; the 422 wording for a bad inner value is \"field 'config.<id>.<key>' must be a string\" and for a bad inner object \"field 'config.<id>' must be an object of strings\" (the two family errors above cover the top-level shape and the empty-id case). Stored opaquely, exactly like GET.",
+        "W9108 back-compat is DELIBERATE and both directions: an older client that sends no 'config' keeps the stored settings; a newer client replaces them wholesale."
       ],
       "probe": {
         "checked": false,

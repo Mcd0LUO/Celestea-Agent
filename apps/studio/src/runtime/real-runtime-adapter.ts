@@ -90,7 +90,7 @@ import { AdapterFallback, type FallbackStatusView } from "./fallback-host.js";
 import { createImageDowngradeReporter } from "./image-downgrade.js";
 import type { StudioBus } from "../sse.js";
 import { contextViewOf } from "./context-snapshot.js";
-import { applyProfilePatch, defaultEngineProfile, engineProfileOf, profileFromEngine } from "./engine-profile.js";
+import { applyProfilePatch, clampRetries, defaultEngineProfile, engineProfileOf, profileFromEngine, retriesOf } from "./engine-profile.js";
 import { SESSION_LOG_NAME, type SessionTarget } from "./engine-session.js";
 import {
   capacityErrorOf,
@@ -182,6 +182,13 @@ class RealEngine implements RealRuntimeAdapter {
   private readonly composer: SessionComposer;
   private readonly registry: SessionRuntimeRegistry;
   private profileValue: Profile;
+  /**
+   * W9104: the same-target retry budget. It is NOT a `Profile` key — the runtime
+   * profile is the frozen 12-key contract — so the adapter owns the live value
+   * and overlays it on the host view (`profile()`), which is what `GET /api/config`
+   * echoes and what the fallback wiring reads at every wrap.
+   */
+  private maxRetries: number;
   private bus: StudioBus | null = null;
   private baseEpoch = 0;
   private toolCalls = 0;
@@ -217,7 +224,9 @@ class RealEngine implements RealRuntimeAdapter {
       lookup: (session) => autowakeStateOf(this.registry.peek(session)),
       wake: (session, input) => this.startAutowakeTurn(session, input),
     });
-    this.profileValue = profileFromEngine(opts.profile ?? defaultEngineProfile(this.env, "CELESTEA_API_KEY"));
+    const startup = opts.profile ?? defaultEngineProfile(this.env, "CELESTEA_API_KEY");
+    this.profileValue = profileFromEngine(startup);
+    this.maxRetries = retriesOf(startup);
     this.workerTable = workerTablePath({
       env: this.env,
       dataDir: opts.dataDir ?? null,
@@ -226,7 +235,7 @@ class RealEngine implements RealRuntimeAdapter {
     });
     // E §4 P1 (W785): OFF unless `CELESTEA_LLM_FALLBACK` says on — `wrap()`
     // then returns null and the composer keeps the pre-P1 path (D9).
-    this.fallback = new AdapterFallback({ dataDir: opts.dataDir ?? null, ledgerFile: opts.ledgerFile ?? null, env: this.env, bus: () => this.bus, peek: (s) => this.registry.peek(s), ...(opts.now === undefined ? {} : { now: opts.now }) });
+    this.fallback = new AdapterFallback({ dataDir: opts.dataDir ?? null, ledgerFile: opts.ledgerFile ?? null, env: this.env, bus: () => this.bus, peek: (s) => this.registry.peek(s), maxRetries: () => this.maxRetries, ...(opts.now === undefined ? {} : { now: opts.now }) });
     this.composer = new SessionComposer({
       ...opts,
       env: this.env,
@@ -596,7 +605,7 @@ class RealEngine implements RealRuntimeAdapter {
 
   // --- host views --------------------------------------------------------
 
-  profile(): EngineProfile { return engineProfileOf(this.profileValue); }
+  profile(): EngineProfile { return { ...engineProfileOf(this.profileValue), max_retries: this.maxRetries }; }
 
   /**
    * W725: the session's model-visible context (`GET /api/sessions/{id}/context`).
@@ -637,6 +646,7 @@ class RealEngine implements RealRuntimeAdapter {
   async configure(patch: ProfilePatch): Promise<EngineProfile> {
     if (patch.api_key !== undefined && patch.api_key !== "") this.env[this.profileValue.api_key_env] = patch.api_key;
     this.profileValue = applyProfilePatch(this.profileValue, patch);
+    if (patch.max_retries !== undefined) this.maxRetries = clampRetries(patch.max_retries);
     this.bumpEpoch();
     return this.profile();
   }

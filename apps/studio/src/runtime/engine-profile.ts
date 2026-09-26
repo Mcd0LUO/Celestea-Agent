@@ -10,6 +10,10 @@
  */
 
 import { defaultAgentConfig } from "@celestea/core";
+import { clampRetries, DEFAULT_RETRY_POLICY } from "@celestea/llm";
+
+/** Re-exported for the adapter (its own import line is line-anchor sensitive). */
+export { clampRetries } from "@celestea/llm";
 import type { Profile } from "@celestea/runtime";
 import { CONTEXT_WINDOW, MIN_STEPS } from "../config.js";
 import type { EngineProfile, ProfilePatch } from "../runtime-adapter.js";
@@ -29,6 +33,10 @@ export function engineProfileOf(profile: Profile): EngineProfile {
     context_window: profile.context_window_tokens,
     api_key_env: profile.api_key_env,
     system_prompt: profile.system_prompt,
+    // W9104: the retry budget is NOT a `Profile` key (the runtime profile is the
+    // frozen 12-key contract), so this view reports the default and the adapter
+    // overlays the live value it owns (see real-runtime-adapter.profile()).
+    max_retries: DEFAULT_RETRY_POLICY.maxRetries,
   };
 }
 
@@ -65,6 +73,11 @@ export function applyProfilePatch(profile: Profile, patch: ProfilePatch): Profil
   return next;
 }
 
+/** W9104: the retry budget lives OUTSIDE the frozen profile (see the module doc). */
+export function retriesOf(engine: EngineProfile): number {
+  return clampRetries(engine.max_retries ?? DEFAULT_RETRY_POLICY.maxRetries);
+}
+
 /**
  * The startup profile: the host's frozen constants (`MIN_STEPS`,
  * `CONTEXT_WINDOW`, both read off the frozen `/api/config` snapshot) plus the env
@@ -86,5 +99,16 @@ export function defaultEngineProfile(env: NodeJS.ProcessEnv, apiKeyEnv: string):
     context_window: contextWindow === undefined ? CONTEXT_WINDOW : Number(contextWindow) || CONTEXT_WINDOW,
     api_key_env: apiKeyEnv,
     system_prompt: base.system_prompt,
+    // W9104: the same-target retry budget is host policy, not a `Profile` key
+    // (the runtime profile is the frozen 12-key contract). The env override
+    // exists for the same reason every other startup knob has one; the value is
+    // re-clamped by the validator and by the decorator itself.
+    max_retries: clampRetries(retriesFromEnv(env)),
   };
+}
+
+/** The startup retry budget: env override, else the decorator's own default. */
+function retriesFromEnv(env: NodeJS.ProcessEnv): number {
+  const raw = env["CELESTEA_LLM_MAX_RETRIES"];
+  return raw === undefined ? DEFAULT_RETRY_POLICY.maxRetries : Number(raw);
 }

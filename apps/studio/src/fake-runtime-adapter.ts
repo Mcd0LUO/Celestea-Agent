@@ -91,6 +91,9 @@ function defaultProfile(over: Partial<EngineProfile>): EngineProfile {
     context_window: 1_000_000,
     api_key_env: "CELESTEA_API_KEY",
     system_prompt: "",
+    // W9104: the fake mirrors the real adapter's default so the HTTP tests see
+    // the same config view production serves.
+    max_retries: 1,
     ...over,
   };
 }

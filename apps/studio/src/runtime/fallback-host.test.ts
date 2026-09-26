@@ -75,6 +75,10 @@ describe("D5 — visibility of a hand-over (§4.2.3)", () => {
       dataDir,
       env: { CELESTEA_LLM_FALLBACK: "on", CELESTEA_LLM_FALLBACKS: CONFIG },
       emit: (session, frame) => frames.push({ session, frame }),
+      // W9104: this test is about ONE HAND-OVER, so the same-target retry is
+      // pinned off here; the retry frames have their own file
+      // (`retry-host.test.ts`), where "one retry = one frame" is pinned.
+      maxRetries: () => 0,
       clientFor: (target) =>
         target.name === "primary"
           ? scripted({ error: statusError(503, "Service Unavailable", "upstream said no") })

@@ -15,7 +15,7 @@ import { configView } from "./config-shape.js";
 import { failJson, numField, readJsonBody, strField, type Deps, type JsonObject } from "./common.js";
 import { validateModelName } from "../store/validate.js";
 import { MIN_STEPS } from "../config.js";
-import type { ProfilePatch, RuntimeAdapter } from "../runtime-adapter.js";
+import { MAX_RETRIES, type ProfilePatch, type RuntimeAdapter } from "../runtime-adapter.js";
 
 const U32_MAX = 4_294_967_295;
 
@@ -57,6 +57,18 @@ function numericPatch(c: Parameters<typeof failJson>[0], body: JsonObject, patch
   if (steps.value !== undefined) {
     if (steps.value === 0) return failJson(c, 400, "max_steps must be >= 1");
     patch.max_steps = Math.max(Math.trunc(steps.value), MIN_STEPS);
+  }
+  const retries = numField(c, body, "max_retries");
+  if (!retries.ok) return retries.response;
+  if (retries.value !== undefined) {
+    // W9104: the budget is a small, bounded product rule. A non-integer is
+    // truncated (like the other numeric knobs) but out-of-range is REFUSED
+    // instead of silently clamped: the caller asked for something the product
+    // does not offer, and a silent clamp would hide that.
+    if (retries.value < 0 || retries.value > MAX_RETRIES) {
+      return failJson(c, 400, `max_retries must be between 0 and ${MAX_RETRIES}`);
+    }
+    patch.max_retries = Math.trunc(retries.value);
   }
   return null;
 }

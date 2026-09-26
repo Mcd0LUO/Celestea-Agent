@@ -23,14 +23,18 @@
 import { appendFileSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+  clampRetries,
   configProblems,
   type FallbackConfig,
   createFallbackLlm,
+  createRetryLlm,
+  DEFAULT_RETRY_POLICY,
   FallbackState,
   loadFallbackConfig,
   type FallbackAttemptInfo,
   type FallbackStepSink,
   type LlmTarget,
+  type RetryAttemptInfo,
 } from "@celestea/llm";
 import type { Llm, Statusline } from "@celestea/core";
 import type { StudioBus } from "../sse.js";
@@ -49,7 +53,13 @@ export const ENV_CENTER_TOKEN = "CELESTEA_CENTER_TOKEN";
 /** One audit line: target NAMES and reasons only, never a key or a prompt. */
 export interface FallbackAuditEvent {
   ts: number;
-  event: "fallback" | "target_unavailable" | "platform_audit_failed";
+  /**
+   * W9104 adds `retry` (one line per SAME-TARGET re-issue). The vocabulary is
+   * additive: an existing reader that only knows the three older values ignores
+   * the new line, and the file's shape (target NAMES + reasons, never a key or a
+   * prompt) is unchanged.
+   */
+  event: "fallback" | "retry" | "target_unavailable" | "platform_audit_failed";
   session: string | null;
   /** The five hand-over fields exist on `fallback` lines; they are absent on
    * operational lines (`target_unavailable`, `platform_audit_failed`). */
@@ -117,12 +127,15 @@ export class AdapterFallback {
     now?: () => number;
     bus: () => StudioBus | null;
     peek: (sessionId: string | null) => { turnNo: number; runtime: { statusline(): Statusline } } | null;
+    /** W9104: the live `POST /api/config.max_retries` (see FallbackHostOptions). */
+    maxRetries?: () => number;
   }) {
     this.wiring = createFallbackWiring({
       dataDir: deps.dataDir ?? (deps.ledgerFile == null ? null : dirname(deps.ledgerFile.path)),
       env: deps.env,
       emit: (sessionId, frame) => this.emit(sessionId, frame),
       ...(deps.now === undefined ? {} : { now: deps.now }),
+      ...(deps.maxRetries === undefined ? {} : { maxRetries: deps.maxRetries }),
     });
   }
 
@@ -177,6 +190,12 @@ export interface FallbackHostOptions {
   clientFor?: (target: LlmTarget, profile: Profile) => Llm;
   /** Injectable platform transport (tests); default `fetch`. */
   post?: (url: string, body: string, headers: Record<string, string>) => Promise<{ ok: boolean; status: number }>;
+  /**
+   * W9104: the LIVE same-target retry budget (0..3), read at every `wrap()` so
+   * a `POST /api/config.max_retries` change applies to the NEXT composed
+   * generation without rebuilding this wiring. Absent = the decorator default.
+   */
+  maxRetries?: () => number;
 }
 
 /** What `/api/status` reports while the capability is off (never null there). */
@@ -238,6 +257,62 @@ interface WiringDeps {
   config: FallbackConfig;
 }
 
+/**
+ * W9104: ONE target's client, with same-target retry IN FRONT of the chain's
+ * hand-over. This is the ordering the design fixes — a transient 503/429/timeout
+ * is re-issued against the SAME endpoint (the user's configured model keeps
+ * serving) and only an endpoint that fails `maxRetries + 1` times in a row is
+ * left behind for the next target. Every retry is visible on both channels the
+ * hand-over uses (audit line + SSE `status` frame), so a retry is never silent.
+ */
+function retryingClient(deps: WiringDeps, input: FallbackWrapInput, target: LlmTarget): ProviderLlm {
+  const maxRetries = clampRetries(deps.opts.maxRetries?.() ?? DEFAULT_RETRY_POLICY.maxRetries);
+  const client = asProviderSeam(deps.opts.clientFor?.(target, input.profile) ?? liveEngineLlmFor(input.profile, target, deps.env));
+  if (maxRetries <= 0) return client;
+  return createRetryLlm({
+    inner: client,
+    target: target.name,
+    model: target.model,
+    policy: { maxRetries },
+    ...(deps.opts.sleep === undefined ? {} : { sleep: deps.opts.sleep }),
+    onRetry: (info) => reportRetry(deps, input.sessionId, info),
+  });
+}
+
+/**
+ * W9104 §3: one retry reaches the audit channel AND the bus, never just one.
+ *
+ * The SSE half reuses the ALREADY-DECLARED `phase:"fallback"` payload with
+ * `from === to` — the contract freezes both keys as strings and `contracts/**`
+ * is off-limits for this cut, so "same target, attempt N+1" is expressed with
+ * the vocabulary the frozen frame already has instead of a new key. The
+ * discriminating fact ("this was a retry, not a hand-over") is `from === to`,
+ * and the audit line below spells it out with `event:"retry"`.
+ */
+function reportRetry(deps: WiringDeps, sessionId: string | null, info: RetryAttemptInfo): void {
+  if (info.target !== null) {
+    deps.sessions.set(sessionKey(sessionId), { model: info.model ?? "", name: info.target, reason: info.reason });
+    deps.opts.emit?.(sessionId, {
+      phase: "fallback",
+      from: info.target,
+      to: info.target,
+      reason: info.reason,
+      attempt: info.attempt,
+      effective_model: info.model ?? "",
+    });
+  }
+  deps.audit.write({
+    event: "retry",
+    session: sessionId,
+    from: info.target,
+    to: info.target,
+    reason: info.reason,
+    attempt: info.attempt,
+    model: info.model,
+    detail: `retry after ${info.delayMs}ms (http_status=${info.httpStatus ?? "-"})`,
+  });
+}
+
 /** The chain: the configured targets, or the composed profile as its own target. */
 function chainOf(deps: WiringDeps, profile: Profile): LlmTarget[] {
   const configured = deps.config.targets;
@@ -265,8 +340,7 @@ function armedLlm(deps: WiringDeps, input: FallbackWrapInput): Llm {
     targets,
     state: deps.state,
     policy: deps.config.policy,
-    clientFor: (target) =>
-      asProviderSeam(deps.opts.clientFor?.(target, input.profile) ?? liveEngineLlmFor(input.profile, target, deps.env)),
+    clientFor: (target) => retryingClient(deps, input, target),
     steps: input.steps,
     ...(deps.opts.now === undefined ? {} : { now: deps.opts.now }),
     ...(deps.opts.sleep === undefined ? {} : { sleep: deps.opts.sleep }),
