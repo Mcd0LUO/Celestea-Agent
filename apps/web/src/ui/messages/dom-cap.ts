@@ -120,17 +120,29 @@ export function prunePaneDom(ctx: SessionPane, force = false): number {
   if (doomed.length === 0) return 0;
   // 先把长条记账摘干净（长条按列的 rect 定位，列没了它就没有意义），再摘节点。
   railDropCols(ctx, doomed);
-  // 连续区间删除：从首条到末条的下一个兄弟为止（中间的注释哨兵/分隔线一并清掉）。
-  const first = doomed[0]!;
-  const parent = first.parentNode;
-  if (parent === null) return 0;
-  const stop = doomed[doomed.length - 1]!.nextSibling;
-  let node: Node | null = first;
-  while (node !== null && node !== stop) {
-    const next: Node | null = node.nextSibling;
-    parent.removeChild(node);
-    node = next;
-  }
+  // ★ W9201（P0 修复）：**逐条按 doomed 数组删，不跨父边界**。
+  //
+  //   旧实现是「连续区间删除」：拿 `doomed[0].parentNode` 当唯一 parent、
+  //   `doomed[last].nextSibling` 当 stop，沿 nextSibling 一路 removeChild。
+  //   它隐含一条**从未被任何测试碰过**的假设：doomed 全在同一父节点下。
+  //   而 W1467 的 run_code 子调用把 `.mcol` **嵌套**进父列的 `.toolcard-subs` 里
+  //   （toolcards.ts:278 mountToolCard；restore-tool.ts:72 同构；tooltree.css:15
+  //   的注释明写「可再嵌套」），于是 querySelectorAll 的**文档序**是
+  //     [顶层父列 A, A 的子列…, 顶层列 B, …]
+  //   回收边界一旦落在 A 的子列上：
+  //     · 先删 A —— A 的整棵子树（含那些子列）随它一起离开容器；
+  //     · `node = A.nextSibling` 已经是**顶层**的 B，而 `stop` 指向一个**已经不在
+  //       容器里**的节点 ⇒ `node !== stop` 永远为真 ⇒ 一路删到 `node === null`。
+  //   实测（jsdom，直接 import 真实 prunePaneDom；605 个 .mcol，其中一个顶层父列
+  //   带 4 个 .toolcard-subs 子列）：childrenBefore=601 → pruned=5 → **childrenAfter=0**；
+  //   扁平对照（无嵌套）601 → 600，不受影响。返回值仍是「正常」的条数（5）——
+  //   调用方（assistant.ts:158 每节拍、restore.ts:288 收尾）完全无从察觉。
+  //   逐条 remove() 与顺序无关、跨父安全，也不再需要 stop/parent 这两个前提。
+  //
+  //   代价（如实记账）：不再顺手清掉区间里的**非 .mcol 兄弟**（注释哨兵/分隔线）。
+  //   本仓没有「每条消息都插一个非 .mcol 哨兵」的路径（.restore-fold / .live-sep
+  //   都是每次恢复最多一个），所以这不是一个有界性问题；换来的是不再可能误删整容器。
+  for (const col of doomed) col.remove();
   // W1502：**堆也要一起放**。ops 持有卡片的 DOM 节点，只 removeChild 不删 ops 会让
   // 被摘掉的卡片树继续被 Map 强引用（绘制有界、堆无界）。
   // ★ 必须在**摘完节点之后**调用：pruneToolCards 的判据是 `ctx.el.contains(anchor)`，

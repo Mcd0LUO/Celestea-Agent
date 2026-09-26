@@ -16,12 +16,14 @@
 //   · pruneThinkBudget 直接 return 0（不减账）→ ④ 红。
 // ============================================================================
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { at, doc, resetHarness } from './lib/w795-dom.js';
+import { at, doc, resetHarness, type ElLike } from './lib/w795-dom.js';
 
-interface El {
-  appendChild(n: unknown): unknown;
-  querySelectorAll(sel: string): ArrayLike<El>;
-}
+/**
+ * W9201：本文件原本自带一个只有 `appendChild`/`querySelectorAll` 的极简 `El`。
+ * 嵌套夹具要读 `children` / `parentElement` / `contains`（判断「列还在不在容器里」），
+ * 所以直接复用夹具的 `ElLike`（它是超集，既有用法逐字兼容）。
+ */
+type El = ElLike;
 interface Pane {
   el: El;
   ops: Map<string, unknown>;
@@ -66,6 +68,41 @@ function addCols(pane: Pane, n: number, cls = 'mcol'): void {
     col.className = cls;
     pane.el.appendChild(col);
   }
+}
+
+/**
+ * W9201：造一个**带嵌套子列**的顶层列 —— 复刻 W1467 的 run_code 子调用树
+ * （toolcards.ts:239-240 建 `.toolcard-subs`，:278 把子列的 `.mcol` 挂进去；
+ * restore-tool.ts:72 同构；tooltree.css:15 的注释明写「可再嵌套」）。
+ *
+ * 为什么必须有这个夹具：改动前的 `prunePaneDom` 用「连续区间删除」，它隐含
+ * 「doomed 全在同一父节点下」这条**从未被任何测试碰过**的假设。本文件原先只用
+ * 扁平的 `addCols`，所以那个 P0（回收边界切到子列时把整个容器删空）**结构上**
+ * 不可能被触发。这个助手就是那条缺失的覆盖。
+ */
+/**
+ * 容器的**直接子节点**（ElLike 没有 `children` 访问器；用 parentElement 反查等价）。
+ * 「容器非空」这条断言要的就是直接子节点数 —— 递归会数到嵌套子列，量纲不对。
+ */
+function directChildren(host: El): El[] {
+  return Array.from(host.querySelectorAll('*')).filter((n) => n.parentElement === host);
+}
+
+function addNestedCol(pane: Pane, subs: number): { parent: El; children: El[] } {
+  const parent = doc.createElement('div');
+  parent.className = 'mcol';
+  const box = doc.createElement('div');
+  box.className = 'toolcard-subs';
+  parent.appendChild(box);
+  const children: El[] = [];
+  for (let i = 0; i < subs; i += 1) {
+    const sub = doc.createElement('div');
+    sub.className = 'mcol';
+    box.appendChild(sub);
+    children.push(sub);
+  }
+  pane.el.appendChild(parent);
+  return { parent, children };
 }
 
 describe('W9113 · ① 自适应口径是纯函数：超出量越大，单批越大，且有上下限', () => {
@@ -122,6 +159,81 @@ describe('W9113 · ② 真机路径：超出量大时单次回收量 > DOM_PRUNE
     const dropped = cap.prunePaneDom(pane, true);
     expect(dropped).toBe(5);
     expect(pane.el.querySelectorAll('.mcol').length).toBe(cap.MAX_DOM_COLS);
+  });
+});
+
+describe('W9201 · ②b 嵌套子列（P0 回归）：回收边界切到子列时不得删空容器', () => {
+  beforeEach(() => { resetHarness(); });
+  afterEach(() => { doc.body.replaceChildren(); });
+
+  /**
+   * 真实缺陷形状（jsdom 实测，逐字复制改动前的循环）：
+   *   [顶层父列 A(.mcol) > .toolcard-subs > A子1(.mcol), A子2(.mcol)] 然后 5 个顶层列
+   *   → querySelectorAll('.mcol') = [A, A子1, A子2, 顶层1..5]（**文档序**）
+   *   → excess = 9 - 6 = 3 ⇒ doomed = [A, A子1, A子2]
+   *   → 删 A（A 整棵子树离开容器）后 node = A.nextSibling = 顶层1，而 stop 指向
+   *     「A子2 的下一个兄弟」——**已不在容器里** ⇒ node !== stop 永真 ⇒ 一路删到 null。
+   *   实测：pane.children 601 → **0**；返回值仍是「正常」的 3。
+   *
+   * 本用例同时钉两件事：① 容器**非空**；② 剩余列数正好是「上限 + 未被回收的」。
+   */
+  it('边界落在子列上：容器非空，且恰好回收 doomed 那 3 条', () => {
+    const pane = bootPane('ws/nested-boundary');
+    const nested = addNestedCol(pane, 2);          // A + A子1 + A子2
+    addCols(pane, 5);                              // 顶层 1..5
+    // 超上限 3 条（总 8 列，MAX_DOM_COLS 通常 600 —— 这里按真实上限补齐）
+    addCols(pane, cap.MAX_DOM_COLS - 5);           // 总列数 = 3 + 5 + (MAX-5) = MAX + 3
+    const total = pane.el.querySelectorAll('.mcol').length;
+    expect(total, '总列数 = 上限 + 3').toBe(cap.MAX_DOM_COLS + 3);
+
+    const dropped = cap.prunePaneDom(pane, true);
+    expect(dropped, '超出 3 条 → 回收 3 条').toBe(3);
+    // ★ 主断言：改动前这里是 0（容器被整段删空）。
+    expect(directChildren(pane.el).length, '容器绝不允许被删空').toBeGreaterThan(0);
+    expect(pane.el.querySelectorAll('.mcol').length, '剩余列数 = 总数 − 回收数').toBe(total - 3);
+    // 被回收的正是文档序前 3 条：父列 A 与它的两个子列。
+    expect(nested.children.every((c) => c.parentElement === null || !pane.el.contains(c)), '两个子列随父列一起离开').toBe(true);
+  });
+
+  it('边界落在父列上（子列不在 doomed 里）：只摘顶层列，子列随父列一起走', () => {
+    const pane = bootPane('ws/nested-parent');
+    addNestedCol(pane, 4);                          // A + 4 个子列 = 5 列
+    addCols(pane, cap.MAX_DOM_COLS);                // 顶层若干
+    const total = pane.el.querySelectorAll('.mcol').length;
+    const dropped = cap.prunePaneDom(pane, true);   // excess = total - MAX = 5
+    expect(dropped).toBe(5);
+    expect(directChildren(pane.el).length, '容器绝不允许被删空').toBeGreaterThan(0);
+    expect(pane.el.querySelectorAll('.mcol').length).toBe(total - 5);
+  });
+
+  /**
+   * tooltree.css:15 的注释明写「`.toolcard-subs` 可再嵌套」（子调用里再 run_code）。
+   * 深度 ≥2 时「末条」的 nextSibling 落在**最内层**容器里，旧区间删除同样会一路删到 null。
+   * 这条覆盖的是「嵌套深度不是 1」这一支 —— 与上面两条是不同的形状。
+   */
+  it('嵌套深度 ≥2：边界落在最内层子列上时，容器非空且只回收 doomed', () => {
+    const pane = bootPane('ws/nested-deep');
+    // A > .toolcard-subs > (A子1 > .toolcard-subs > A子1子1), A子2
+    const outer = addNestedCol(pane, 1);              // A + A子1
+    const innerBox = doc.createElement('div');
+    innerBox.className = 'toolcard-subs';
+    const grand = doc.createElement('div');
+    grand.className = 'mcol';
+    innerBox.appendChild(grand);
+    (outer.children[0] as unknown as { appendChild(n: unknown): unknown }).appendChild(innerBox);
+    const second = doc.createElement('div');
+    second.className = 'mcol';
+    // ★ second 必须是**顶层**兄弟（挂到 pane.el），不能挂到 A 里 ——
+    //   否则它会随 A 的子树一起消失，被回收数就不再等于 doomed.length（夹具自身的坑）。
+    (pane.el as unknown as { appendChild(n: unknown): unknown }).appendChild(second);
+    addCols(pane, cap.MAX_DOM_COLS - 1);              // 已有 4 列 → 补齐到 上限+3
+    const total = pane.el.querySelectorAll('.mcol').length;
+    expect(total, '总列数 = 上限 + 3').toBe(cap.MAX_DOM_COLS + 3);
+
+    const dropped = cap.prunePaneDom(pane, true);
+    expect(dropped).toBe(3);
+    expect(directChildren(pane.el).length, '容器绝不允许被删空').toBeGreaterThan(0);
+    expect(pane.el.querySelectorAll('.mcol').length).toBe(total - 3);
   });
 });
 

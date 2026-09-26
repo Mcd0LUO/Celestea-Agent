@@ -238,3 +238,61 @@ describe('W9113 · ③ 真实 SSE 接线：一帧内到达的 200 个 tool 帧�
     }
   });
 });
+
+// ---- ④ W9201：status **也**过预算（F-03 的接线回归） ------------------------------
+
+describe('W9201 · ④ status 帧同样受帧内预算约束', () => {
+  beforeEach(() => {
+    lastES = null;
+    doc.body.innerHTML = HTML;
+    vi.resetModules();
+    vi.stubGlobal('ResizeObserver', class { observe(): void {} unobserve(): void {} disconnect(): void {} });
+    vi.stubGlobal('EventSource', FakeES);
+    vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({ ok: true, questions: [], messages: [] }) }));
+  });
+  afterEach(() => { vi.unstubAllGlobals(); doc.body.replaceChildren(); });
+
+  /**
+   * 为什么这条必须存在：改动前 status 是**直连**的（不走 paced），而它是唯一会同时写
+   * 「消息容器 + 状态栏 + 会话条」的事件（onStatus → finalizeTurn / renderInfoBlock；
+   * onStatusInbox → renderInboxMessage 追加一整条 .mcol）。一个帧里同步 emit 一批
+   * status 就能重现 W9111 的整帧串行，且会破坏「本帧一旦有积压其后一律排队」的
+   * 全局保序（frame-budget.ts:34-36 的硬不变量）。
+   *
+   * 判据用**信息块条数**（.msg.info 是 onStatus 里 renderInfoBlock 的产物，每个带
+   * hint 的 status 一条）—— 它比 .mcol 更窄：不会把别的写入路径算进来。
+   */
+  it('一帧内投递 200 个带 hint 的 status：同步落地量被切开，排空后 200 条全到且保序', async () => {
+    const V = (await import(/* @vite-ignore */ at('ui/viewctx.ts'))) as {
+      initViewCtx(): void; ensurePane(id: string, k?: string, t?: string): { el: unknown };
+      activatePane(id: string, k?: string, t?: string): unknown;
+    };
+    V.initViewCtx();
+    const pane = V.ensurePane(LIVE, 'session', '甲会话');
+    V.activatePane(LIVE, 'session', '甲会话');
+    // ★ 刻意**不**装配 rail：status 路径（onStatus → renderInfoBlock / finalizeTurn）
+    //   不碰轨道，而 rail.ts 是别的 worker 正在重写的文件 —— 少一条跨格耦合，
+    //   这条门禁就不会被别人的中间态搞红。
+    const chat = (await import(/* @vite-ignore */ at('chat.ts'))) as { connectSse(): void };
+    chat.connectSse();
+
+    const el = pane.el as unknown as { querySelectorAll(s: string): ArrayLike<{ textContent: string | null }> };
+    for (let i = 0; i < 200; i += 1) {
+      lastES?.fire('status', { phase: 'progress', turn: 1, statusline: {}, hint: 'hint-' + i });
+    }
+    const inline = el.querySelectorAll('.msg.info').length;
+    // ★ 主断言：改动前这里是 200（status 直连、一个帧里全部落地）。
+    expect(inline, 'status 也必须被预算切开').toBeLessThan(200);
+    expect(inline, '但仍要保证当帧有产出（不许全推给下一帧）').toBeGreaterThan(0);
+
+    const infos = (): number => el.querySelectorAll('.msg.info').length;
+    await drainMacrotasks(() => infos() === 200);
+    expect(infos(), '排空后一个都不能丢').toBe(200);
+    // 保序：hint-i 的块必须按投递顺序出现。
+    const texts = Array.from(el.querySelectorAll('.msg.info')).map((n) => n.textContent ?? '');
+    for (let i = 1; i < 200; i += 1) {
+      expect(texts.findIndex((t) => t.includes('hint-' + i)), '第 ' + i + ' 条不得越过第 ' + (i - 1) + ' 条')
+        .toBeGreaterThan(texts.findIndex((t) => t.includes('hint-' + (i - 1))));
+    }
+  });
+});

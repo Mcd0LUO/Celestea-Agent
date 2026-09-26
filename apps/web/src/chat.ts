@@ -74,6 +74,19 @@ import { updateWorkerStrip } from './ui/worker-strip'; // W866：本会话 worke
 import { createFrameBudget } from './ui/messages/frame-budget'; // W9113（P0-1）：帧内预算
 import { t } from './i18n';
 
+/**
+ * 契约里的**全部**终态 phase（contracts/sse-events.json:167）。
+ * W9201：旧代码手写 `completed || cancelled || error`，于是 step_limit / interrupted
+ * 到达时不调 finalizeTurn ⇒ 会话永久卡「运行中」。提成常量是因为它同时是**门禁的
+ * 可断言面**（测试直接读它，不复刻字面量清单）。契约 JSON 不进前端产物，对拍在测试里。
+ */
+export const TERMINAL_PHASES: readonly string[] = ['completed', 'cancelled', 'error', 'step_limit', 'interrupted'];
+
+/** 该 phase 是否是轮次终态（非终态：start / progress / lagged / fallback）。 */
+export function isTerminalPhase(phase: unknown): boolean {
+  return typeof phase === 'string' && TERMINAL_PHASES.includes(phase);
+}
+
 /** 终态标签（函数：语言切换后必须跟着变；A1：completed 与「空闲」等价，不再产生文案）。 */
 function phaseLabels(): Record<string, string> {
   return { cancelled: t('chat.phase.cancelled'), error: t('chat.phase.error') };
@@ -190,7 +203,12 @@ export function onStatus(ctx: SessionPane, p: StatusPayload): void { // export�
   if (p.turn !== undefined && p.turn !== null && ctx.turn !== null && p.turn !== ctx.turn) {
     return;
   }
-  if (p.phase === 'completed' || p.phase === 'cancelled' || p.phase === 'error') {
+  // ★ W9201：终态**以契约为准**（5 个，见 TERMINAL_PHASES）。旧代码只认三个，于是
+  //   step_limit（步数耗尽）与 interrupted（流被撕断）到达时不调 finalizeTurn ⇒
+  //   ctx.streaming 永远 true、气泡永远 streaming、输入栏永远「插话」——只能刷新脱困。
+  //   后端来源：TurnOutcome → real-runtime-adapter.ts:527 outcomePhaseOf 原样透传。
+  //   文案：只有 cancelled/error 有词条，其余回落空串=空闲态（与 completed 同口径，A1）。
+  if (isTerminalPhase(p.phase)) {
     finalizeTurn(ctx, p.phase || '');
     if (p.phase === 'error') {
       renderInfoBlock(ctx, t('chat.status.turnError', { reason: p.error || t('chat.status.unknownError') }), 'err');
@@ -296,8 +314,15 @@ export function connectSse(): SseClient {
       setStatus(t('shell.status.reconnecting'), 'err');
     }
   });
+  // ★ W9201：status **也走 budget**。旧注释「前两者不碰消息容器」是错的：status 是唯一
+  //   同时写「消息容器 + 状态栏 + 会话条」的事件（onStatus → finalizeTurn/renderInfoBlock；
+  //   onStatusInbox → renderInboxMessage 追加一整条 .mcol）。后端 status 速率不低
+  //   （adapter:388 / fallback-host:150），一次宏任务里同步 emit 一批就是 W9111 的形状。
+  //   更关键是**全局保序**（frame-budget.ts:34-36）：status 直连时 `status:completed` 能插到
+  //   已排队的 `tool_result` 之前落地（finalizeTurn 先跑、applyToolResult 后跑）。
+  //   compact/question 仍不走：前者重载消息区（自带 await），后者是用户交互卡片。
   sse.on('status', (p) => {
-    try {
+    paced('SSE status', () => {
       const ctx = ctxFor(p);
       if (isActivePane(ctx)) {
         statusline.fromSse(p);
@@ -311,13 +336,10 @@ export function connectSse(): SseClient {
       // `inbox` event, which the server can never emit, so live injection showed
       // up only after a refresh replayed the transcript.
       onStatusInbox(ctx, p);
-    } catch (err) {
-      console.warn('SSE status', err);
-    }
+    });
   });
-  // ★ 下面五条**轮次帧**（text/thinking/tool/tool_result/done）走 budget：它们都会写
-  //   DOM。status/compact/question 不走 —— 前两者不碰消息容器，后者是用户交互卡片，
-  //   推迟它没有收益。
+  // ★ 下面五条**轮次帧**（text/thinking/tool/tool_result/done）与 status 走同一条
+  //   budget（它们都会写 DOM）；compact/question 不走，理由见上面 status 那段注释。
   sse.on('text', (p) => {
     paced('SSE text', () => onText(ctxFor(p), p));
   });

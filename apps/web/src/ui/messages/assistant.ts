@@ -259,7 +259,24 @@ export function appendText(ctx: SessionPane, view: AssistantView, delta: string)
  *   6 跑 0 红）。修在这里而不是去调窗口：**turn 结束本来就该立刻对齐终态**，与窗口多长无关。
  */
 export function applyFinalText(ctx: SessionPane, view: AssistantView, text: string): void {
-  if (typeof text !== 'string' || !text) return;
+  if (typeof text !== 'string') return;
+  // ★ W9201（P1 修复）：空文本**也要**冲刷排队中的那次渲染。
+  //
+  //   旧实现在这一行就 `!text → return` 了，而上面 W1524 的整个论证是
+  //   「done 到达时完全可能有一次渲染还排在窗口里，turn 结束本来就该立刻对齐终态」。
+  //   空文本的 done 恰恰是最需要这条保证的一类：工具步的 done、被掐断的流、
+  //   provider 只回完整文本的兜底 —— 它们都不带正文，于是终态 DOM 会停在旧内容上，
+  //   最长再等一个合并窗口（RENDER_WINDOW_MAX=50ms），而 chat.ts 紧接着就
+  //   autoscroll 了（滚到底、DOM 却是旧的）。
+  //
+  //   ★ 不造空气泡：这里**只**冲刷「已经排队的那次渲染」，既不碰 view.text、
+  //     也不新建任何节点 —— 空文本的语义（「本步没有正文」）一字未变。
+  //     没有排队渲染时是纯空转（ctx.render.timer === null），所以「done 带空文本」
+  //     不会凭空多出一次全量重排。
+  if (text === '') {
+    if (ctx.render.timer !== null) flushTextView(ctx, view);
+    return;
+  }
   if (view.text === text) {
     // 内容没变，但可能有排队未落的渲染 → 立刻冲刷，别让终态等一个窗口。
     if (ctx.render.timer !== null) flushTextView(ctx, view);
