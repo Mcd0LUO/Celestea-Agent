@@ -43,6 +43,11 @@ export interface ConfigInfo {
   context_window?: number | null;
   context_window_tokens?: number | null;
   max_steps?: number | null;
+  /**
+   * W9104：同目标自动重试的**额外**尝试次数（0..3，默认 1；3 = 同一目标最多 4 次尝试）。
+   * 它是重试预算，不是总尝试数。旧服务无此字段 → 前端不渲染该字段（不伪造默认值）。
+   */
+  max_retries?: number | null;
   max_parallel_tool_calls?: number | null;
   reasoning_effort?: string | null;
   max_output_tokens?: number | null;
@@ -57,6 +62,8 @@ export interface ConfigPatch {
   api_key?: string;
   context_window?: number | null;
   max_steps?: number | null;
+  /** W9104：同目标自动重试的额外次数（0..3）。范围外由后端 400 拒绝，不静默夹住。 */
+  max_retries?: number;
   reasoning_effort?: string | null;
   max_output_tokens?: number | null;
   system_prompt?: string;

@@ -20,6 +20,8 @@ export const settings = {
   'settings.field.maxOutputTokens': '最大输出 tokens',
   'settings.config.notSet': '未设置',
   'settings.field.maxSteps': '最大步数',
+  'settings.field.maxRetries': '自动重试次数',
+  'settings.config.maxRetriesHint': '同一模型失败后自动重试的额外次数（0–3，默认 1；3 = 最多尝试 4 次）',
   'settings.config.systemPromptPlaceholder': '系统提示词（留空 = 保持默认）',
   'settings.field.systemPrompt': '系统提示词',
   'settings.config.systemPromptHint': '发送给模型的指令前缀',

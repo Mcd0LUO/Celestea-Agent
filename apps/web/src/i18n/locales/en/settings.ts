@@ -20,6 +20,8 @@ export const settings = {
   'settings.field.maxOutputTokens': 'Max output tokens',
   'settings.config.notSet': 'Not set',
   'settings.field.maxSteps': 'Max steps',
+  'settings.field.maxRetries': 'Automatic retries',
+  'settings.config.maxRetriesHint': 'Extra attempts after the same model fails (0–3, default 1; 3 = up to 4 attempts)',
   'settings.config.systemPromptPlaceholder': 'System prompt (blank = keep default)',
   'settings.field.systemPrompt': 'System prompt',
   'settings.config.systemPromptHint': 'Instruction prefix sent to the model',

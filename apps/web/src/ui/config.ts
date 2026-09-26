@@ -116,6 +116,16 @@ function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTM
   const maxStepsCtl = ctl.num(cfg.max_steps ?? null, t('settings.config.notSet'));
   form.appendChild(ctl.field(t('settings.field.maxSteps'), maxStepsCtl));
 
+  // W9104：自动重试次数。**只有后端发布了这个字段才渲染** —— 旧服务不认它，
+  // 渲染一个控件再被 400 拒绝是骗人的；不渲染比渲染一个假的默认值诚实。
+  const hasRetries = typeof cfg.max_retries === 'number';
+  const maxRetriesCtl = ctl.num(hasRetries ? cfg.max_retries : null, '1');
+  maxRetriesCtl.min = '0';
+  maxRetriesCtl.max = '3';
+  if (hasRetries) {
+    form.appendChild(ctl.field(t('settings.field.maxRetries'), maxRetriesCtl, t('settings.config.maxRetriesHint')));
+  }
+
   const sysCtl = el('textarea', 'cfg-input cfg-sys') as HTMLTextAreaElement;
   sysCtl.rows = 6;
   sysCtl.placeholder = t('settings.config.systemPromptPlaceholder');
@@ -162,6 +172,12 @@ function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTM
     patch.context_window = parseNum(ctxCtl, t('settings.field.contextWindow'));
     patch.max_output_tokens = parseNum(maxOutCtl, t('settings.field.maxOutputTokens'));
     patch.max_steps = parseNum(maxStepsCtl, t('settings.field.maxSteps'));
+    // W9104：只在字段真的渲染了、且用户改过时才带上它（后端把「缺省」定义为不改）。
+    // 越界不在这里夹 —— 交给后端 400，前端不替产品规则做静默修正。
+    if (hasRetries) {
+      const retries = parseNum(maxRetriesCtl, t('settings.field.maxRetries'));
+      if (retries !== null && retries !== cfg.max_retries) patch.max_retries = retries;
+    }
     patch.system_prompt = sysCtl.value;
 
     saveBtn.disabled = true;
