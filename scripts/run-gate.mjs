@@ -34,13 +34,23 @@ if (r.stdout) process.stdout.write(r.stdout);
 if (r.stderr) process.stderr.write(r.stderr);
 
 if (r.status !== 0) {
-  const lines = ((r.stderr || "") + "\n" + (r.stdout || ""))
-    .split(/\r?\n/)
-    .filter((l) => l.trim() !== "");
-  const tail = lines.slice(-12).join("\n");
-  // ::error:: is a GitHub workflow command → becomes a check-run annotation.
-  // Escape %, CR, LF per the workflow-command spec.
-  const esc = tail.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A");
+  const all = ((r.stderr || "") + "\n" + (r.stdout || "")).split(/\r?\n/).filter((l) => l.trim() !== "");
+  // The TAIL alone is not enough: a test runner prints thousands of lines, and
+  // the annotation message has a length cap — the tail is all summary lines and
+  // the FAILING TEST NAME gets cut. (Real cost: two ubuntu-only failures took
+  // extra round trips to diagnose because the annotation said only
+  // "Process completed with exit code 1".)
+  //
+  // So: prefer the lines that actually identify a failure, and fall back to the
+  // tail when nothing matches.
+  const FAIL_RE = /^\s*(?:FAIL|✗|×|not ok)\b|AssertionError|^\s*Error:|expected .* to (?:be|equal)/;
+  const hits = all.filter((l) => FAIL_RE.test(l));
+  const chosen = hits.length > 0 ? hits.slice(0, 40) : all.slice(-12);
+  // Keep the whole annotation under the workflow-command cap (64 KiB) with room
+  // to spare; ~40 failure lines is plenty to identify the cause.
+  let body = chosen.join("\n");
+  if (body.length > 40000) body = body.slice(0, 40000) + "\n…(truncated)";
+  const esc = body.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A");
   console.log("::error title=gate failed: " + name + "::" + esc);
   process.exit(typeof r.status === "number" ? r.status : 1);
 }
