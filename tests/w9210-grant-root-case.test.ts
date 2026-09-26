@@ -105,9 +105,17 @@ describe("W9210 · effectiveGrantsOf applies the same rule to a hand-written fil
       expect(out.grants.writeRoots, "a case-varied $HOME is still $HOME").toEqual([]);
       expect(out.warnings.join(" | ")).toContain("$HOME");
     } else {
-      // POSIX: the upper-case path is a DIFFERENT directory, so it is legitimately
-      // accepted — the fix must not become a blanket refusal.
-      expect(out.grants.writeRoots).toEqual([root]);
+      // POSIX: the ternary above does NOT upper-case, so `root` IS `home` — the
+      // exact-spelling $HOME refusal fires, the same rule as the first test's
+      // control. (Case folding is a win32 concern; the POSIX half of the platform
+      // seam is proven separately by the injected-`platform` assertions, which run
+      // on every host.)
+      //
+      // The earlier version asserted `[root]` here ("a case-varied path is a
+      // different directory") — unsatisfiable on Linux, because on POSIX there is
+      // no case-varied spelling of the same path to accept. Caught by ubuntu CI.
+      expect(out.grants.writeRoots).toEqual([]);
+      expect(out.warnings.join(" | ")).toContain("$HOME");
     }
     rmSync(dataDir, { recursive: true, force: true });
   });
