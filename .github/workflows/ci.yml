@@ -55,7 +55,26 @@ jobs:
           cache: pnpm
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
-      - name: Check
-        run: pnpm check
+      # W9112 follow-up: ONE `pnpm check` step meant a red run reported only
+      # "Process completed with exit code 1" — the failing GATE was not
+      # identifiable from the annotations at all, and the job logs need admin
+      # rights to download. Splitting the chain into one step per gate makes
+      # every failure name itself in the run summary, which is exactly what a
+      # gate is for. The commands are the same ones `pnpm check` runs, in the
+      # same order; `pnpm check` itself is unchanged for local use.
+      - name: typecheck
+        run: pnpm typecheck
+      - name: lint
+        run: pnpm lint
+      - name: lint:arch
+        run: pnpm lint:arch
+      - name: check:tmpdir
+        run: pnpm check:tmpdir
+      - name: test
+        run: pnpm test
+        env:
+          CI: 'true'
+      - name: check:web
+        run: pnpm check:web
         env:
           CI: 'true'
