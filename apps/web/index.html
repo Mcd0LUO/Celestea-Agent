@@ -20,8 +20,8 @@
         <button id="btnWorkbench" class="btn btn-quiet btn-workbench" data-i18n-title="shell.topbar.workbenchTitle" data-i18n-aria-label="shell.topbar.workbenchAria">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M6.5 2.5v11" fill="none" stroke="currentColor" stroke-width="1.3"></path><path d="M8.5 5.5h4M8.5 8h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg>
         </button>
-        <button id="btnTheme" class="btn btn-quiet btn-theme" title="主题（黑白 · 唯一主题）">黑白</button>
-        <button id="btnSidebar" class="btn btn-quiet" title="收起/展开左侧面板">收起</button>
+        <button id="btnTheme" class="btn btn-quiet btn-theme" data-i18n-title="shell.topbar.themeTitle" data-i18n="shell.topbar.themeLabel"></button>
+        <button id="btnSidebar" class="btn btn-quiet" data-i18n-title="shell.sidebar.toggleTitle" data-i18n="shell.sidebar.toggleLabel"></button>
       </div>
     </header>
 
@@ -33,7 +33,7 @@
 
         <section class="side-sec" id="sec-sessions">
           <header class="side-sec-head">
-            <h3>工作区 · 会话</h3>
+            <h3 data-i18n="shell.sessions.sectionTitle"></h3>
             <span class="sec-note" id="sessionCount">…</span>
           </header>
           <div class="side-body" id="sessionTree"></div>
@@ -58,7 +58,7 @@
       </aside>
 
       <!-- ---------- 侧栏/主区分隔条（可拖动调宽 · 双击复位） ---------- -->
-      <div id="sidebarResizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" title="拖动调整侧栏宽度 · 双击复位"></div>
+      <div id="sidebarResizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" data-i18n-title="shell.sidebar.resizerTitle"></div>
 
       <!-- W765：移动端会话抽屉的遮罩（点它关闭抽屉；桌面端恒为 .hidden，不参与布局） -->
       <div id="sidebarScrim" class="sidebar-scrim hidden" aria-hidden="true"></div>
@@ -78,9 +78,9 @@
              （子元素自带不透明的 --composer-bg，不带角会盖住外框的圆角）。 -->
         <section class="chat-shell">
         <!-- ---------- statusline（模型 / 上下文环 / 吞吐，发送栏正上方） ---------- -->
-        <div id="statusline" class="statusline" title="上下文占用 · 模型 · 思考强度 · 吞吐 · 缓存命中">
+        <div id="statusline" class="statusline" data-i18n-title="statusline.tooltip">
           <div class="sl-row sl-row-main">
-            <span class="sl-ring" id="slRing" role="button" tabindex="0" aria-haspopup="dialog" title="上下文占用">
+            <span class="sl-ring" id="slRing" role="button" tabindex="0" aria-haspopup="dialog" data-i18n-title="shell.statusline.ringTitle">
               <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
                 <circle class="sl-ring-track" cx="7" cy="7" r="5.5" transform="rotate(-90 7 7)"></circle>
                 <circle class="sl-ring-prog" cx="7" cy="7" r="5.5" transform="rotate(-90 7 7)"></circle>
@@ -88,13 +88,13 @@
             </span>
             <span class="sl-ctx" id="slCtx">—/—</span>
             <span class="sl-sep">·</span>
-            <button class="sl-model" id="slModel" title="当前模型（点击快速切换）">—</button>
+            <button class="sl-model" id="slModel" data-i18n-title="shell.statusline.modelTitle">—</button>
             <span class="sl-sep">·</span>
-            <button class="sl-effort" id="slEffort" title="思考强度（点击快速切换）">—</button>
+            <button class="sl-effort" id="slEffort" data-i18n-title="shell.statusline.effortTitle">—</button>
             <span class="sl-sep">·</span>
             <!-- W788：会话工作方式（只读徽标「标准」/「执行」；点击弹层切换）。
                  显隐真源 = statusline/mode.ts —— 快照里没有 mode（老服务）时保持 .hidden。 -->
-            <button class="sl-mode hidden" id="slMode" type="button" title="工作方式（点击切换）"></button>
+            <button class="sl-mode hidden" id="slMode" type="button" data-i18n-title="shell.statusline.modeTitle"></button>
             <!-- W847：右端集群（权限盾牌 / 车道切换 / 停止 / 提示）包进 .sl-end。
                  flex:0 0 auto + margin-left:auto 取代原 .sl-spacer：集群恒贴右缘，
                  行超宽时由 .sl-row-main 的 overflow 先裁左边的用量/模型信息，
@@ -108,7 +108,7 @@
                    显隐真源 = ui/grants.ts 的 capabilities.grants —— 能力位未就绪时保持
                    .hidden（入口隐藏，不置灰报错）；无活动会话/无档位端点时只撤掉档位段，
                    入口可见性不变（合并前两处各自的降级纪律，见 docs/feature-permission-entry-merge.md §4 I2）。 -->
-              <button id="slGrant" class="sl-grant hidden" type="button" title="本会话权限：默认（仅工作区，无网络）" aria-label="本会话权限">
+              <button id="slGrant" class="sl-grant hidden" type="button" data-i18n-title="grants.shield.default" data-i18n-aria-label="grants.shield.default">
                 <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 1.6 13.2 3.4v4.2c0 3.1-2.1 5.6-5.2 6.8-3.1-1.2-5.2-3.7-5.2-6.8V3.4z"></path></svg>
                 <span class="sl-grant-tier" id="slGrantTier"></span>
                 <span class="sl-grant-badge" id="slGrantBadge"></span>
@@ -117,11 +117,11 @@
               <!-- W846：运行态的提交车道切换（插话/排队）从输入栏移到本行右端，与停止键同组。
                    显隐真源仍是 ui/inputbar.setInputMode。W847：≤640 只留内联箭头图标
                    （文字视觉隐藏、无障碍名保留），不占整块宽度，不为它牺牲取消键。 -->
-              <button id="btnMode" class="sl-mode-btn hidden" type="button" title="提交车道：插话 / 排队">
+              <button id="btnMode" class="sl-mode-btn hidden" type="button" data-i18n-title="shell.statusline.laneTitle">
                 <svg class="sl-mode-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M2.5 5.5h10M10 3l2.5 2.5L10 8M13.5 10.5h-10M6 8l-2.5 2.5L6 13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                <span class="sl-mode-label">插话</span>
+                <span class="sl-mode-label" data-i18n="chat.input.interject"></span>
               </button>
-              <button id="slGoal" class="sl-goal hidden" type="button" title="当前目标" aria-label="当前目标">
+              <button id="slGoal" class="sl-goal hidden" type="button" data-i18n-title="shell.statusline.goalTitle" data-i18n-aria-label="shell.statusline.goalTitle">
                 <span class="sl-goal-badge" id="slGoalBadge"></span>
               </button>
               <span class="sl-hint" id="slHint"></span>
@@ -138,7 +138,7 @@
           <!-- W867（追加）：附件收纳展示夹 —— 由 ui/inputbar.ts 注入到 .input-box 内，
                **绝对定位浮在输入框上方**（出流）⇒ 展开/收起都不改变 #input 宽度。 -->
           <div class="input-box">
-            <textarea id="input" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
+            <textarea id="input" rows="2" data-i18n-placeholder="chat.input.placeholderIdle" spellcheck="false"></textarea>
           </div>
           <!-- W1512：发送与终止是**同一个控件的两种状态**（照 DSH）：空闲 = 发送（↑），
                运行中 = 终止（■）。为什么合并：原先终止键挂在 statusline 右端，窄屏下被
@@ -149,7 +149,7 @@
                title / aria-label 上（由 ui/inputbar 的 paintSendButton 按语言写入）。
                显隐真源仍是 ui/inputbar.setBusy；Enter 仍可插话（按钮只负责终止）。 -->
           <div class="input-side">
-            <button id="btnSend" class="btn btn-accent btn-run" type="button" title="发送（Enter）" aria-label="发送">
+            <button id="btnSend" class="btn btn-accent btn-run" type="button" data-i18n-title="chat.input.sendTitle" data-i18n-aria-label="chat.input.send">
               <svg class="ico-send" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 13.2V3.2M8 3.2 3.4 7.8M8 3.2l4.6 4.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
               <svg class="ico-stop" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3.6" y="3.6" width="8.8" height="8.8" rx="1.6" fill="currentColor"></rect></svg>
             </button>
@@ -165,19 +165,19 @@
              这些 id 是运行时与行为测试的取节点真源，层级可动、id 不可丢。 -->
         <footer id="statusbar">
           <div class="sb-left">
-            <div id="sessionBar" class="session-bar" title="当前聚焦会话 · 可切换其它运行中的会话"></div>
+            <div id="sessionBar" class="session-bar" data-i18n-title="shell.statusbar.sessionTitle"></div>
             <span class="sl-sep">·</span>
             <span class="sl-tps" id="slTps">— tok/s</span>
             <span class="sl-sep">·</span>
-            <span class="sl-cache" id="slCache" title="缓存命中：最近一次请求">缓存 —</span>
+            <span class="sl-cache" id="slCache" data-i18n-title="shell.statusbar.cacheTitle" data-i18n="statusline.cache.none"></span>
             <span class="sl-sep">·</span>
-            <span class="sl-steps" id="slSteps">— 步</span>
+            <span class="sl-steps" id="slSteps" data-i18n="statusline.stepsNone"></span>
           </div>
           <div class="sb-right">
             <span class="dot" id="statusDot"></span>
-            <span id="statusText">连接中…</span>
+            <span id="statusText" data-i18n="shell.statusbar.connecting"></span>
             <span class="sb-sep">·</span>
-            <span id="statusTurn">第 — 轮</span>
+            <span id="statusTurn" data-i18n="shell.status.turnNone"></span>
             <span class="sb-sep">·</span>
             <span id="statusTime">00:00</span>
           </div>
@@ -195,23 +195,23 @@
   <div id="settingsPage" class="settings-page hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="settings-shell">
       <header class="settings-head">
-        <h3 id="settingsTitle">通用设置</h3>
+        <h3 id="settingsTitle" data-i18n="shell.settings.title"></h3>
         <div class="settings-actions">
-          <button class="btn-mini" id="btnSettingsReload" title="重新载入当前页内容">重新载入</button>
-          <button class="btn-mini" id="btnSettingsClose">关闭</button>
+          <button class="btn-mini" id="btnSettingsReload" data-i18n-title="shell.settings.reloadTitle" data-i18n="settings.action.reload"></button>
+          <button class="btn-mini" id="btnSettingsClose" data-i18n="shell.settings.close"></button>
         </div>
       </header>
       <div class="settings-layout">
-        <nav class="settings-nav" aria-label="设置导航">
+        <nav class="settings-nav" data-i18n-aria-label="shell.settings.navAria">
           <!-- i18n：文案由 i18n/settings.ts 的 applyI18n 按 data-i18n 填充（不写死中文） -->
           <button class="settings-nav-item" type="button" data-page="general" data-i18n="settings.general.title"></button>
-          <button class="settings-nav-item active" type="button" data-page="config">通用配置</button>
-          <button class="settings-nav-item" type="button" data-page="tools">工具</button>
-          <button class="settings-nav-item" type="button" data-page="archive">归档会话</button>
-          <button class="settings-nav-item" type="button" data-page="providers">模型提供商</button>
-          <button class="settings-nav-item" type="button" data-page="prompts">提示词</button>
-          <button class="settings-nav-item" type="button" data-page="permissions">权限预设</button>
-          <button class="settings-nav-item" type="button" data-page="plugins">插件</button>
+          <button class="settings-nav-item active" type="button" data-page="config" data-i18n="shell.settings.tab.config"></button>
+          <button class="settings-nav-item" type="button" data-page="tools" data-i18n="shell.settings.tab.tools"></button>
+          <button class="settings-nav-item" type="button" data-page="archive" data-i18n="shell.settings.tab.archive"></button>
+          <button class="settings-nav-item" type="button" data-page="providers" data-i18n="shell.settings.tab.providers"></button>
+          <button class="settings-nav-item" type="button" data-page="prompts" data-i18n="shell.settings.tab.prompts"></button>
+          <button class="settings-nav-item" type="button" data-page="permissions" data-i18n="shell.settings.tab.permissions"></button>
+          <button class="settings-nav-item" type="button" data-page="plugins" data-i18n="shell.settings.tab.plugins"></button>
           <!-- W9103：使用统计（文案走 i18n；本格由 ui/usage/panel.ts 挂载） -->
           <button class="settings-nav-item" type="button" data-page="usage" data-i18n="usage.nav.title"></button>
         </nav>
@@ -225,22 +225,22 @@
           </section>
           <section class="settings-pane active" data-pane="config">
             <header class="settings-pane-head">
-              <h4>运行配置</h4>
-              <span class="settings-sec-note">保存后下一轮生效</span>
+              <h4 data-i18n="shell.settings.pane.config"></h4>
+              <span class="settings-sec-note" data-i18n="shell.settings.pane.configNote"></span>
             </header>
             <div class="settings-pane-body" id="settingsConfig"></div>
             <div class="cfg-hintline" id="settingsHint"></div>
           </section>
           <section class="settings-pane" data-pane="tools">
             <header class="settings-pane-head">
-              <h4>工具列表</h4>
+              <h4 data-i18n="shell.settings.pane.tools"></h4>
               <span class="sec-note" id="toolsCount">…</span>
             </header>
             <div class="settings-pane-body" id="settingsTools"></div>
           </section>
           <section class="settings-pane" data-pane="archive">
             <header class="settings-pane-head">
-              <h4>归档会话管理</h4>
+              <h4 data-i18n="shell.settings.pane.archive"></h4>
               <span class="sec-note" id="settingsArchiveCount">…</span>
             </header>
             <div class="settings-pane-body" id="settingsArchive"></div>
@@ -248,15 +248,15 @@
           </section>
           <section class="settings-pane" data-pane="providers">
             <header class="settings-pane-head">
-              <h4>模型提供商</h4>
-              <button class="btn-mini" id="btnAddProvider" type="button">添加提供商</button>
+              <h4 data-i18n="shell.settings.tab.providers"></h4>
+              <button class="btn-mini" id="btnAddProvider" type="button" data-i18n="settings.providers.add"></button>
             </header>
             <div class="settings-pane-body" id="settingsProviders"></div>
           </section>
           <section class="settings-pane" data-pane="prompts">
             <header class="settings-pane-head">
-              <h4>提示词</h4>
-              <button class="btn-mini" id="btnNewPrompt" type="button">新建提示词</button>
+              <h4 data-i18n="shell.settings.tab.prompts"></h4>
+              <button class="btn-mini" id="btnNewPrompt" type="button" data-i18n="settings.prompts.newPrompt"></button>
             </header>
             <div class="settings-pane-body">
               <div id="promptsWrap"></div>
@@ -265,15 +265,15 @@
           </section>
           <section class="settings-pane" data-pane="permissions">
             <header class="settings-pane-head">
-              <h4>权限预设</h4>
-              <span class="settings-sec-note">默认 Full Access；可自组合预设，运行时封顶会收窄</span>
+              <h4 data-i18n="shell.settings.tab.permissions"></h4>
+              <span class="settings-sec-note" data-i18n="shell.settings.pane.permissionsNote"></span>
             </header>
             <div class="settings-pane-body" id="settingsPermissions"></div>
           </section>
           <section class="settings-pane" data-pane="plugins">
             <header class="settings-pane-head">
-              <h4>插件</h4>
-              <span class="settings-sec-note">客户端插件即时生效；服务端插件只读</span>
+              <h4 data-i18n="shell.settings.tab.plugins"></h4>
+              <span class="settings-sec-note" data-i18n="shell.settings.pane.pluginsNote"></span>
             </header>
             <div class="settings-pane-body" id="settingsPlugins"></div>
           </section>

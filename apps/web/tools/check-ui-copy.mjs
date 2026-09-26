@@ -19,6 +19,13 @@
  *   ③ **护栏 B（跑脚本再兜一道）**：zh 与 en 的 key 集合必须一致（不只靠编译期）；
  *   ④ 现有 RULES 一条未删，copy-gate-allow 逃生标记语义不变（整行豁免）。
  *
+ * 护栏 D（W9109）——**HTML 里的 CJK**：index.html 的**文本节点 / title / placeholder /
+ *   aria-label** 含中文即失败（同行 copy-gate-allow 豁免；HTML 注释不算文案）。
+ *   为什么需要：护栏 A 只扫 apps/web/src/** 的字符串字面量，**不含 .html** —— 静态骨架里
+ *   的硬编码中文因此完全逃过「必须走 i18n」的机械检查，这正是设置页在英文界面下残留
+ *   中文能攒下来的结构性原因（W9109 实测：index.html 里 50 处 CJK，只有 11 个
+ *   data-i18n* 属性）。文案一律走 data-i18n* + locales（locales 是唯一允许中文的地方）。
+ *
  * 护栏 A 的过渡机制（方案 a：显式待迁移白名单）：i18n 是分批做的，还有约 90+ 个
  * 文件没抽完。PENDING_MIGRATION 逐文件列出「仍允许含中文」的组件，**棘轮只减不增**：
  *   · 不在名单里却出现中文 ⇒ 失败（新代码绕过 i18n）；
@@ -90,7 +97,7 @@ export const PENDING_MIGRATION = [
   // ↑ 仍含 4 处 wire 格式 token（注入块定界行 / 转义标记 /「[文件 …]」头）：协议不译
 ];
 
-/** 相对 SRC 的 POSIX 路径。 */
+/** 相对 srcDir 的 POSIX 路径。 */
 function relOf(srcDir, file) {
   return path.relative(srcDir, file).split(path.sep).join('/');
 }
@@ -282,17 +289,62 @@ function* walk(dir) {
   }
 }
 
-function scanHtml(problems, file) {
-  const raw = readFileSync(file, 'utf8').replace(/<!--[\s\S]*?-->/g, ''); // 注释不算文案
-  const rel = path.relative(ROOT, file);
-  const lineOf = (idx) => raw.slice(0, idx).split('\n').length;
-  const lineTextOf = (idx) => raw.split('\n')[lineOf(idx) - 1] ?? '';
-  for (const m of raw.matchAll(/(?:title|placeholder|aria-label)\s*=\s*"([^"]*)"/g)) {
+/**
+ * 剥 HTML 注释，但**保持字符偏移与行号**：每个注释换成等长的空格（换行保留）。
+ *
+ * 为什么不能直接删（旧的 `replace(/<!--[\s\S]*?-->/g, '')`）：删掉多行注释会挪动
+ * 后续所有字符的偏移与行号，报告里的 `:行号` 会指到别的行。等长替换后偏移与行号
+ * 都与原文一致，**行文本仍取自原文**（这样 `copy-gate-allow` 写在 HTML 注释里也认）。
+ */
+function blankHtmlComments(raw) {
+  return raw.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' '));
+}
+
+/** HTML 扫描的公共取数：注释已抹平的正文 + 原文行表（行号/行文本同源）。 */
+function htmlScanText(file) {
+  const raw = readFileSync(file, 'utf8');
+  return { body: blankHtmlComments(raw), rawLines: raw.split('\n') };
+}
+
+function scanHtml(problems, file, root = ROOT) {
+  const { body, rawLines } = htmlScanText(file);
+  const rel = relOf(root, file);
+  const lineOf = (idx) => body.slice(0, idx).split('\n').length;
+  const lineTextOf = (idx) => rawLines[lineOf(idx) - 1] ?? '';
+  for (const m of body.matchAll(/(?:title|placeholder|aria-label)\s*=\s*"([^"]*)"/g)) {
     rulesOf(problems, m[1], rel + ':' + lineOf(m.index), lineTextOf(m.index).includes(ALLOW_MARK));
   }
-  for (const m of raw.matchAll(/>([^<>]+)</g)) {
+  for (const m of body.matchAll(/>([^<>]+)</g)) {
     rulesOf(problems, m[1].trim(), rel + ':' + lineOf(m.index), lineTextOf(m.index).includes(ALLOW_MARK));
   }
+}
+
+/**
+ * 护栏 D（W9109）：index.html 里**面向用户**的文本节点 / title / placeholder / aria-label
+ * 不得含 CJK。
+ *
+ * 口径（与 scanHtml 共用同一套提取，保证「规则一扫到的」与「护栏 D 扫到的」是同一批文本）：
+ *   · 先剥 HTML 注释（注释是给维护者看的，不是文案，剥法与 scanHtml 逐字相同）；
+ *   · 属性取 title / placeholder / aria-label；文本节点取 >…< 之间的内容；
+ *   · 同行含 copy-gate-allow ⇒ 整条豁免（逃生标记语义与护栏 A 一致，不新增口径）；
+ *   · 只拦 CJK：英文界面下的残留中文是本次要治的病；英文文案由规则一继续管。
+ *
+ * 不查 data-i18n* 的**值**（那是 key，不是文案）——key 的存在性/双语覆盖由
+ * tests/w9109-i18n-static-dom.test.ts 与护栏 B 分别机械兜住。
+ */
+function scanHtmlCjk(problems, file, root = ROOT) {
+  const { body, rawLines } = htmlScanText(file);
+  const rel = relOf(root, file);
+  const lineOf = (idx) => body.slice(0, idx).split('\n').length;
+  const lineTextOf = (idx) => rawLines[lineOf(idx) - 1] ?? '';
+  const check = (text, idx) => {
+    const value = text.trim();
+    if (value === '' || !CJK.test(value)) return;
+    if (lineTextOf(idx).includes(ALLOW_MARK)) return;
+    report(problems, rel + ':' + lineOf(idx), '中文未抽到 i18n（护栏 D）', value);
+  };
+  for (const m of body.matchAll(/(?:title|placeholder|aria-label)\s*=\s*"([^"]*)"/g)) check(m[1], m.index);
+  for (const m of body.matchAll(/>([^<>]+)</g)) check(m[1], m.index);
 }
 
 /**
@@ -320,7 +372,8 @@ export function runGate(root = ROOT) {
       scanComponent(problems, file, rel, allow);
     }
   }
-  scanHtml(problems, html);
+  scanHtml(problems, html, root);
+  scanHtmlCjk(problems, html, root); // 护栏 D：静态骨架不得含未抽到 i18n 的中文
   // 护栏 B：zh 与 en 的 key 集合必须一致。
   const zh = [...new Set(zhKeys)].sort();
   const en = [...new Set(enKeys)].sort();
@@ -394,6 +447,7 @@ function main() {
   for (const w of warnings) console.log('  ⚠ ' + w);
   console.log('✓ UI 文案门禁通过：locales 值（zh ' + stats.zhKeys + ' / en ' + stats.enKeys + ' 条，中英同扫）无实现细节词；' +
     'src 组件无绕过 i18n 的中文（待迁移白名单 ' + stats.pending + ' 个，其中仍有中文 ' + stats.remaining + ' 个，陈旧 ' + stats.stale + ' 个）；' +
+    'index.html 文本/属性无未抽到 i18n 的中文（护栏 D）；' +
     'zh/en key 集合一致；死键 ' + (stats.deadKeys ?? 0) + ' 个。');
 }
 

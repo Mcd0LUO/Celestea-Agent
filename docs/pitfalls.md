@@ -94,7 +94,7 @@ originalId: p?.id                          // 打开编辑器时记录
 3. 前端 `buildPayload` **跳过完全空白的模型行**（点了「+ 添加模型」但没填 id/名称的行），否则保存/获取模型会被后端 400 拒绝（`apps/web/src/ui/providers/form.ts:23-24`）；
 4. **后端不跳过**空行——它整请求失败。所以"跳过"是前端责任。
 
-**竞态**：连点「获取模型」时晚到的旧响应必须丢弃（`apps/web/src/ui/providers/form.ts:175-191` 的 `fetchSeq` 守卫，铁律 3）。
+**竞态**：连点「获取模型」时晚到的旧响应必须丢弃（`apps/web/src/ui/providers/form.ts:196-246` 的 `fetchSeq` 守卫，铁律 3）。
 
 ---
 

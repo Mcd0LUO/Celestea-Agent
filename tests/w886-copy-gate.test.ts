@@ -122,4 +122,56 @@ describe("W886 · check-ui-copy", () => {
     const r = gate.runGate(root);
     expect(r.problems).toEqual([]);
   });
+
+  /**
+   * W9109 · 护栏 D：**HTML 里的 CJK**。
+   *
+   * 为什么需要：护栏 A 只扫 apps/web/src/** 的字符串字面量，不含 .html —— 静态骨架
+   * index.html 里写死的中文因此完全逃过「必须走 i18n」的检查（本次实测 50 处）。
+   * 下列用例把口径逐条钉住：文本节点 / 三个属性都拦、注释放行、逃生标记放行。
+   */
+  describe("W9109 · 护栏 D（index.html 的 CJK）", () => {
+    /** 用给定的 index.html 正文建 fixture（其余同 fixture()）。 */
+    function htmlFixture(indexHtml: string): string {
+      const root = fixture({ "ui/keep.ts": "export const x = 1;\n" });
+      writeFileSync(join(root, "index.html"), indexHtml, "utf8");
+      return root;
+    }
+
+    it("文本节点含中文 ⇒ 红", () => {
+      const r = gate.runGate(htmlFixture('<!doctype html><body><div id="app">通用设置</div></body>'));
+      expect(r.problems.some((p) => p.includes("护栏 D") && p.includes("通用设置"))).toBe(true);
+    });
+
+    it("title / placeholder / aria-label 含中文 ⇒ 都红", () => {
+      const r = gate.runGate(
+        htmlFixture(
+          '<!doctype html><body><div id="app">' +
+            '<button title="重新载入">a</button>' +
+            '<input placeholder="输入消息" />' +
+            '<nav aria-label="设置导航"></nav>' +
+            "</div></body>",
+        ),
+      );
+      const d = r.problems.filter((p) => p.includes("护栏 D"));
+      expect(d.some((p) => p.includes("重新载入"))).toBe(true);
+      expect(d.some((p) => p.includes("输入消息"))).toBe(true);
+      expect(d.some((p) => p.includes("设置导航"))).toBe(true);
+    });
+
+    it("HTML 注释里的中文不算文案（脚本先剥注释）⇒ 绿", () => {
+      const r = gate.runGate(htmlFixture('<!doctype html><body><!-- 顶栏：通用设置 --><div id="app">Studio</div></body>'));
+      expect(r.problems.filter((p) => p.includes("护栏 D"))).toEqual([]);
+    });
+
+    it("同行 copy-gate-allow ⇒ 豁免（与护栏 A 同语义，不新增口径）", () => {
+      const r = gate.runGate(htmlFixture('<!doctype html><body><div id="app">通用设置</div><!-- copy-gate-allow --></body>'));
+      expect(r.problems).toEqual([]);
+    });
+
+    it("真实 index.html：护栏 D 无问题（迁移后必须为 0）", () => {
+      const r = gate.runGate(REAL_ROOT);
+      expect(r.problems.filter((p) => p.includes("护栏 D"))).toEqual([]);
+    });
+  });
 });
