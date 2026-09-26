@@ -32,6 +32,7 @@
  *   permissions.ts   W9: /api/permissions/presets (+{id}) | /api/sessions/{id}/permission
  *   session-tools.ts W860: GET+PUT /api/sessions/{id}/tools (the session's disabled list)
  *   session-model.ts W870: PUT /api/sessions/{id}/model (the session-level model switch)
+ *   session-goal.ts  W9209: POST /api/sessions/{id}/goal (the persistent session goal)
  *   plugins.ts       W860: GET /api/plugins (the host startup plugin inventory)
  *   display-plugins.ts W895-C1: GET+PUT /api/display-plugins (the server-side
  *                    source of truth for the client display-component switches)
@@ -57,6 +58,7 @@ import { registerPrompts } from "./prompts.js";
 import { registerProviders } from "./providers.js";
 import { registerQuestions } from "./questions.js";
 import { registerSessionMoves } from "./session-move.js";
+import { registerGoal } from "./session-goal.js";
 import { registerSessionModel } from "./session-model.js";
 import { registerSessionTools } from "./session-tools.js";
 import { registerSessions } from "./sessions.js";
@@ -102,6 +104,10 @@ export function registerHandlers(app: Hono, deps: Deps, table: RouteTable): stri
     // W870: the session-scoped model switch (60 -> 61) — the statusline picker's
     // target; POST /api/config keeps meaning "the global default".
     registerSessionModel(app, deps, table),
+    // W9209: the persistent session goal (69 -> 70). The /goal command and the
+    // statusline badge have always called this; until now the endpoint did not
+    // exist and every call fell through to the /api/* 404 fallback.
+    ...registerGoal(app, deps, table),
   ];
 }
 

@@ -173,7 +173,9 @@ export const FROZEN_COUNTS = {
   // truth for the client display-component switches).
   // W1528: 66 -> 69 (POST /api/terminal + POST /api/terminal/{id}/input +
   // POST /api/terminal/{id}/close, the workbench terminal's real-PTY face).
-  endpoints: 69,
+  // W9209: 69 -> 70 (POST /api/sessions/{id}/goal, the persistent session goal the
+  // /goal slash command and the statusline badge have always called).
+  endpoints: 70,
   // W783: 8 -> 9 (`question`); W1528: 9 -> 10 (`terminal`, the first event that
   // is neither a turn event nor a host status frame).
   sseEvents: 10,

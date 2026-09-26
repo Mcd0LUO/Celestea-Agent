@@ -1,7 +1,7 @@
 /**
  * Route table derived from the frozen contract.
  *
- * 69 endpoints (73 method+path combos minus the 4 static routes).
+ * 70 endpoints (74 method+path combos minus the 4 static routes).
  * The contract path params use `{id}`; Hono uses `:id`, so paths are translated here
  * once and the translation is asserted in tests.
  *
@@ -20,7 +20,8 @@
  * (62 -> 63; immediate shell execution for the UI's /run and !, no model).
  * W1528 added `POST /api/terminal`, `POST /api/terminal/{id}/input` and
  * `POST /api/terminal/{id}/close` (66 -> 69; the workbench terminal's real-PTY
- * face — open / keystrokes / close). All of
+ * face — open / keystrokes / close). W9209 added `POST /api/sessions/{id}/goal`
+ * (69 -> 70; the persistent session goal the `/goal` command calls). All of
  * them have NO counterpart in the legacy backend:
  * `contracts/route-table.snapshot.json` keeps the frozen extraction intact and
  * lists the TypeScript-only additions separately.
@@ -60,7 +61,7 @@ export function studioRoutes(): RegisteredRoute[] {
   }));
 }
 
-export const API_ENDPOINT_COUNT = 69;
+export const API_ENDPOINT_COUNT = 70;
 export const STATIC_ROUTE_COUNT = 4;
 
 /** Id-keyed view of the contract routes: a handler asks for its id, never a path. */

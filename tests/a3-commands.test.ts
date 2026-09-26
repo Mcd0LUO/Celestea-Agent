@@ -32,32 +32,67 @@ function key(el: ElLike, k: string): void {
   el.dispatchEvent(ev);
 }
 
+interface GoalRequest { url: string; method: string; body: Record<string, unknown> }
+
+/**
+ * W9209：这条 stub 过去对**任何**以 `/goal` 结尾的 URL 都回捏造的 200，
+ * 于是 `/goal` 的后端端点根本不存在也测不出来（F-01 被它掩盖了整整一轮）。
+ *
+ * 现在它按**真实契约**应答（`contracts/endpoints.json#post_session_goal`）：
+ *   · 只认**确切路径** `/api/sessions/<id>/goal`（POST）——路径写错 = 404，
+ *     而不是「只要尾巴对就成功」；
+ *   · 请求体必须是 `{text: string}`，否则 422（契约的 422 文案）；
+ *   · 非空 text 回 `{ok,session,goal:{text,createdAt,updatedAt}}`；
+ *     空/纯空白 text 回 `{ok,session,goal:null}`（契约的清除语义）；
+ *   · 其余一切（含未知的 /api/... 路径）如实 404 —— 绝不「什么都说成功」。
+ */
+function contractFetch(calls: string[], goalRequests: GoalRequest[]) {
+  return async (url: unknown, init?: { method?: string; body?: unknown }) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes('/api/exec')) return reply(200, { ok: true, exit_code: 0, signal: null, stdout: 'hi\n', stderr: '', duration_ms: 12, sandbox: { provider: 'userspace', net_isolated: true, tmp_private: true, seccomp: false } });
+    if (/^\/api\/sessions\/.+\/goal$/.test(u)) {
+      const method = String(init?.method ?? 'GET');
+      let body: Record<string, unknown> = {};
+      try {
+        body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+      goalRequests.push({ url: u, method, body });
+      if (method !== 'POST') return reply(405, { error: 'not allowed' });
+      if (typeof body['text'] !== 'string') return reply(422, { ok: false, error: "field 'text' must be a string" });
+      const text = body['text'];
+      const session = decodeURIComponent((/^\/api\/sessions\/(.+)\/goal$/.exec(u) as RegExpExecArray)[1] as string);
+      return reply(200, { ok: true, session, goal: text.trim() === '' ? null : { text: text.trim(), createdAt: 'a', updatedAt: 'b' } });
+    }
+    if (u.includes('/api/turn')) return reply(200, { ok: true, turn: 1 });
+    return reply(404, { error: 'not found' });
+  };
+}
+
 describe('A3 · 斜杠命令补全框 + 派发', () => {
   beforeEach(() => { resetHarness(); });
   afterEach(() => { vi.unstubAllGlobals(); doc.body.replaceChildren(); });
 
-  async function boot(): Promise<{ cmd: CmdMod; ctx: unknown; input: ElLike; calls: string[] }> {
+  async function boot(): Promise<{
+    cmd: CmdMod;
+    ctx: unknown;
+    input: ElLike;
+    calls: string[];
+    goalRequests: Array<{ url: string; method: string; body: Record<string, unknown> }>;
+  }> {
     const ctxMod = (await import(/* @vite-ignore */ at('ui/viewctx.ts'))) as ViewCtxMod;
     ctxMod.initViewCtx();
     const pane = ctxMod.ensurePane('ws/s1', 'session', '甲会话');
     ctxMod.activatePane('ws/s1', 'session', '甲会话');
     const calls: string[] = [];
-    vi.stubGlobal('fetch', async (url: unknown, init?: { body?: unknown }) => {
-      const u = String(url);
-      calls.push(u);
-      if (u.includes('/api/exec')) return reply(200, { ok: true, exit_code: 0, signal: null, stdout: 'hi\n', stderr: '', duration_ms: 12, sandbox: { provider: 'userspace', net_isolated: true, tmp_private: true, seccomp: false } });
-      if (u.endsWith('/goal')) {
-        // 如实回声请求里的 text（空串 = 清除 → goal:null）。
-        const text = String((JSON.parse(String(init?.body ?? '{}')) as { text?: string }).text ?? '');
-        return reply(200, { ok: true, goal: text === '' ? null : { text, createdAt: 'a', updatedAt: 'b' } });
-      }
-      if (u.includes('/api/turn')) return reply(200, { ok: true, turn: 1 });
-      return reply(200, { ok: true });
-    });
+    const goalRequests: GoalRequest[] = [];
+    vi.stubGlobal('fetch', contractFetch(calls, goalRequests));
     const cmd = (await import(/* @vite-ignore */ at('ui/commands/index.ts'))) as CmdMod;
     cmd.installCommands();
     const input = doc.getElementById('input') as ElLike;
-    return { cmd, ctx: pane, input, calls };
+    return { cmd, ctx: pane, input, calls, goalRequests };
   }
 
   it('打 / 弹出补全列表，显示名字 + 一行说明 + 参数提示', async () => {
@@ -153,6 +188,29 @@ describe('A3 · 斜杠命令补全框 + 派发', () => {
     await cmd.dispatchCommand('/goal done');
     await flush();
     expect(doc.querySelector('.goal-bar')?.classList.contains('hidden')).toBe(true);
+  });
+
+  /**
+   * W9209（F-01 的掩盖机制）：这条用例把上一轮审计指出的假 mock 钉死。
+   * 它断言的是**请求本身与真实契约一致**（确切路径 / POST / body 形状），
+   * 而不是"界面看起来对了"。若前端把路径改成契约里不存在的地址，
+   * 上面那条 stub 会如实回 404 ⇒ 本用例必红。
+   */
+  it('/goal 打到契约里的确切端点，且请求体是 {text}（设置与清除各一次）', async () => {
+    const { cmd, goalRequests } = await boot();
+    await cmd.dispatchCommand('/goal 把 F2 做完');
+    await flush();
+    await cmd.dispatchCommand('/goal done');
+    await flush();
+    expect(goalRequests).toHaveLength(2);
+    for (const req of goalRequests) {
+      expect(req.method).toBe('POST');
+      expect(req.url).toBe('/api/sessions/' + encodeURIComponent('ws/s1') + '/goal');
+      expect(Object.keys(req.body)).toEqual(['text']);
+    }
+    expect(goalRequests[0]?.body['text']).toBe('把 F2 做完');
+    // 'done' 是清除：前端必须发空串，而不是某个 "done" 字面量。
+    expect(goalRequests[1]?.body['text']).toBe('');
   });
 
   it('未知命令给可读提示（不静默、不发 turn）', async () => {

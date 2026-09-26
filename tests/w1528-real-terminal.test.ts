@@ -100,7 +100,7 @@ describe("W1528 · contract consistency (the three-way count)", () => {
     const c = loadEndpoints();
     expect(API_ENDPOINT_COUNT).toBe(c.count);
     expect(c.endpoints).toHaveLength(c.count);
-    expect(c.count).toBe(69);
+    expect(c.count).toBe(70);
   });
 
   it("declares the three terminal endpoints with self-referencing docRefs", () => {

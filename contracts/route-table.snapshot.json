@@ -394,9 +394,14 @@
       "method": "POST",
       "path": "/api/terminal/{id}/close",
       "rustHandler": "(none - TypeScript-only, W1528)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{id}/goal",
+      "rustHandler": "(none - TypeScript-only, W9209)"
     }
   ],
-  "tsApiEndpoints": 69,
-  "tsMethodPathCombos": 73,
-  "tsOnlyNote": "W516/W725/W767: the sessions grants endpoints, GET /api/sessions/{id}/context and the three W767 login-cookie endpoints (/login, /auth/login, /auth/check) exist ONLY in the TypeScript backend. The frozen extraction above is kept verbatim; a contract endpoint must appear in `route W783 adds GET /api/questions (pending list) and POST /api/questions/{id}/answer. W785 adds GET /api/usage/ledger (the cost/usage ledger aggregate view). W791 adds POST /api/sessions/{id}/mode (the P1 session working mode; TS-only, U8). W860 adds GET|PUT /api/sessions/{id}/tools (session-level tool switches) and GET /api/plugins (host plugin inventory). W870 adds PUT /api/sessions/{id}/model (the session-scoped model switch; TS-only, W870). W1528 adds POST /api/terminal + POST /api/terminal/{id}/input + POST /api/terminal/{id}/close (the workbench terminal real-PTY face; TS-only)."
+  "tsApiEndpoints": 70,
+  "tsMethodPathCombos": 74,
+  "tsOnlyNote": "W516/W725/W767: the sessions grants endpoints, GET /api/sessions/{id}/context and the three W767 login-cookie endpoints (/login, /auth/login, /auth/check) exist ONLY in the TypeScript backend. The frozen extraction above is kept verbatim; a contract endpoint must appear in `route W783 adds GET /api/questions (pending list) and POST /api/questions/{id}/answer. W785 adds GET /api/usage/ledger (the cost/usage ledger aggregate view). W791 adds POST /api/sessions/{id}/mode (the P1 session working mode; TS-only, U8). W860 adds GET|PUT /api/sessions/{id}/tools (session-level tool switches) and GET /api/plugins (host plugin inventory). W870 adds PUT /api/sessions/{id}/model (the session-scoped model switch; TS-only, W870). W1528 adds POST /api/terminal + POST /api/terminal/{id}/input + POST /api/terminal/{id}/close (the workbench terminal real-PTY face; TS-only). W9209 adds POST /api/sessions/{id}/goal (the persistent session goal the /goal command has always called; TS-only)."
 }
