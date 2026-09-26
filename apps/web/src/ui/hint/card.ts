@@ -17,7 +17,11 @@ import { resolveHint, type HintHandle } from './registry';
 
 /** 提示文本挂在这个属性上（提供者只认属性、不认业务类名）。 */
 export const HINT_ATTR = 'data-hint';
-/** 悬停停留阈值（沿用 rail 已验证的 150ms；原生 title 约 1s）。 */
+/**
+ * 悬停停留阈值**缺省值**（沿用 rail 已验证的 150ms；原生 title 约 1s）。
+ * W9106：这是缺省，不是全站唯一值 —— 提供者可以按 handle/自身覆盖它
+ * （见 ./registry.ts 的 delayMs 与 ui/rail.ts 的 railHintPlugin：条带预览 = 0）。
+ */
 export const HINT_DELAY_MS = 150;
 const EDGE = 8;
 const GAP = 12;
@@ -47,17 +51,40 @@ export function setHint(target: HTMLElement, text: string | null): void {
 /** 直接驱动悬停意图（自算命中区的宿主用，例如 rail 的 fisheye 轨道）。 */
 export function hoverHint(target: HTMLElement | null): void {
   if (target === hovered) return;
-  cancel();
+  clearTimer(); // 换目标：旧的停留计时一律作废（不留悬挂的旧计时）
   hovered = target;
-  if (!target) return;
+  if (!target) {
+    cancel();
+    return;
+  }
   const text = target.getAttribute(HINT_ATTR) ?? '';
   const handle = resolveHint(target, text);
-  if (!handle) return; // 无提供者：交给原生 title（不是本引擎的活）
+  if (!handle) {
+    cancel(); // 无提供者：撤掉上一张卡，交给原生 title（不是本引擎的活）
+    return;
+  }
   if (target.hasAttribute('title')) target.removeAttribute('title');
+  if (hintDelayOf(handle) <= 0) {
+    show(target); // W9106：零停留（rail 预览）—— 当帧就弹；已有卡则**就地换内容**
+    return;
+  }
+  // 有停留（缺省 150ms 的密集控件）：换目标必须撤掉上一张卡再重新计时 —— 否则旧卡
+  // 会带着旧内容留在屏幕上等新计时结束（「扫过不弹」的既有手感，逐字不变）。
+  cancel();
   timer = window.setTimeout(() => {
     timer = null;
     show(target);
-  }, HINT_DELAY_MS);
+  }, hintDelayOf(handle));
+}
+
+/**
+ * W9106：生效的停留阈值（handle 级 > provider 级 > 引擎缺省，provider 级已由
+ * registry 的 resolveHint 合并进 handle）。非有限 / 负数一律回落到缺省 —— 提供者
+ * 写坏一个数字不该让提示永不出现（0 是**合法**值：立即弹，由调用点显式表达）。
+ */
+function hintDelayOf(handle: HintHandle): number {
+  const d = handle.delayMs;
+  return typeof d === 'number' && Number.isFinite(d) && d >= 0 ? d : HINT_DELAY_MS;
 }
 
 /** 立即撤卡（离开 / Esc / 滚动 / 尺寸变化 / 宿主主动收）。 */
@@ -66,12 +93,17 @@ export function hideHint(): void {
   hovered = null;
 }
 
-/** 立即撤卡但保留悬停指针（内容变化时重建用）。 */
-function cancel(): void {
+/** 作废停留计时（不动已挂的卡）。 */
+function clearTimer(): void {
   if (timer !== null) {
     window.clearTimeout(timer);
     timer = null;
   }
+}
+
+/** 立即撤卡但保留悬停指针（内容变化时重建用）。 */
+function cancel(): void {
+  clearTimer();
   if (card) {
     card.remove();
     card = null;
@@ -89,7 +121,11 @@ function show(target: HTMLElement): void {
   if (!handle) return;
   const built = handle.build();
   if (!built) return;
-  cancel();
+  // W9106：**就地换内容**（条带内从 A 条滑到 B 条，或同一锚点的文案变了）—— 旧卡节点
+  // 被新节点原子替换（一次 replaceWith），中间没有「卡已摘、新卡未挂」的空窗；撤卡再建
+  // 会让卡片闪一下、把落位从上一帧甩到新位置，用户看到的就不是「就地更新」。
+  clearTimer(); // 卡已经画出来了：不再需要任何停留计时
+  const prev = card;
   hovered = target;
   card = built;
   card.classList.add('hint-card');
@@ -101,7 +137,12 @@ function show(target: HTMLElement): void {
   //   卡片被夹到 EDGE=8 后画在 (330, 255.56)：横向落在主区、纵向骑在行外，
   //   用户看到的就是「提示错位」（fly out）。改成全站定位基准后侧栏与主区同坐标系。
   if (!host || !host.isConnected) host = document.body;
-  host.appendChild(card);
+  if (prev && prev.parentNode) prev.replaceWith(card);
+  else host.appendChild(card);
+  // W9106：instant（delay ≤ 0）的卡**不播入场动画** —— 卡要在指针移动的同一帧出现，
+  // 0.14s 的淡入会让「几乎立即」在观感上打回去（真机 CDP 量的是 DOM 出现时刻，
+  // 但用户看的是动画）。见 styles/hint.css 的 .hint-card-instant。
+  if (hintDelayOf(handle) <= 0) card.classList.add('hint-card-instant');
   place(card, target, handle);
 }
 

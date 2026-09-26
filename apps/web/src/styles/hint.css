@@ -27,6 +27,13 @@
 @keyframes hint-pop {
   from { opacity: 0; transform: translateY(3px); }
 }
+/* W9106：零停留的提示（灵动条预览）**不播入场动画** —— 卡必须与指针移动同一帧出现，
+   0.14s 的淡入会把「几乎立即」在观感上打回去（DOM 早已出现，用户却还没看到）。
+   只对提供者显式声明 delayMs ≤ 0 的目标生效（见 ui/hint/card.ts 的 hintDelayOf），
+   密集控件上的纯文本提示仍走 .hint-card 的 hint-pop，手感不变。 */
+.hint-card.hint-card-instant {
+  animation: none;
+}
 .hint-card-text {
   display: flex; align-items: baseline; gap: 6px;
 }

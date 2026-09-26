@@ -46,6 +46,31 @@ describe("W1479 hint seam: failure isolation", () => {
     }
   });
 
+  /**
+   * W9106：停留阈值是**提供者的属性**（handle 级 > provider 级 > 引擎缺省）。
+   * 这条用例钉住「合并」这一步真的发生了 —— 引擎只读 handle.delayMs，如果 registry
+   * 不把 provider 级的值带下来，rail 的零停留就会被静默丢掉（表现为回到 150ms）。
+   */
+  it("W9106 carries the provider delayMs onto the handle (handle-level wins)", () => {
+    const instant = registerHintPlugin({ id: "t.instant", priority: 5, delayMs: 0, claim: () => ({ build: () => null }) });
+    try {
+      expect(resolveHint(TARGET, "text")?.delayMs, "provider 级 0 必须带到 handle（0 不是「没写」）").toBe(0);
+    } finally { instant(); }
+    // handle 级更具体：与 provider 级同时存在时以 handle 为准
+    const mixed = registerHintPlugin({
+      id: "t.mixed", priority: 5, delayMs: 150,
+      claim: () => ({ build: () => null, delayMs: 7 }),
+    });
+    try {
+      expect(resolveHint(TARGET, "text")?.delayMs).toBe(7);
+    } finally { mixed(); }
+    // 两级都没写 → undefined（引擎据此回落 HINT_DELAY_MS，内置文本卡的 150ms 手感）
+    const plain = registerHintPlugin({ id: "t.plain", priority: 5, claim: () => ({ build: () => null }) });
+    try {
+      expect(resolveHint(TARGET, "text")?.delayMs).toBeUndefined();
+    } finally { plain(); }
+  });
+
   it("keeps asking providers when nobody claims (null = pass, not a failure)", () => {
     const log: string[] = [];
     const offA = registerHintPlugin(asked("t.a", log, 5));

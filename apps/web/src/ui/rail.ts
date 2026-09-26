@@ -13,7 +13,12 @@
 //   直驱悬停意图。本模块只负责「取内容 + 落位」，与原生 title 那套并存的历史取消。
 // ★ W872/W886：轨道的**中间判定**（视口垂直中央落在哪一根长条上）—— 命中条
 //   .is-center 态（只变色）+ 该条自身的悬停文案；W886 按用户要求删掉那条视口中间
-//   发丝指示线（判定本身保留）。纯函数 ./rail-center.ts，这里只接线。
+//   发丝指示线（判定本身保留）。判定纯函数在 ./rail-center.ts，呈现搬到
+//   ./rail-center-view.ts（W9106：与本轮的「预览零停留」无关的一整段，纯搬家）。
+// ★ W9106（用户：「thread-rail 灵动条，的预览对话应该几乎立即渲染才对」）：条带预览
+//   的悬停停留 = **0**（railHintPlugin.delayMs），与全站密集控件的 150ms 缺省分开；
+//   条带内换条由提示引擎就地换内容（不撤卡、不重新计时）。见 ui/hint/registry.ts 的
+//   delayMs 注释（那里是本口径的唯一真源）。
 // ★ W514 多会话：长条按「会话视图容器」分别保存（WeakMap<SessionPane, RailState>）。
 //   切换会话只做一次指针交换 + 元素搬家（appendChild 移动节点，不重建）：
 //   各会话的长条集合/折叠条随容器一起保存，切回立即可见，零重排重建。
@@ -41,8 +46,6 @@ let hoverItem: RailItem | null = null;
 let syncQueued = false;
 let midQueued = false;
 let moveQueued = false;
-/** W872：上一帧命中的条（换条时才动类与文案）。 */
-let centerItem: RailItem | null = null;
 let moveX = -1;
 let moveY = -1;
 
@@ -56,9 +59,10 @@ let modeAll = true;
 function curState(): ReturnType<typeof stateOf> | null {
   return cur ? stateOf(cur) : null;
 }
-import { railCenterHit, railCenterLabel } from './rail-center';
+// W9106：中间判定的**呈现**搬到 ./rail-center-view.ts（纯搬家，见该文件头注释）
+import { paintCenter, resetCenter } from './rail-center-view';
 import { buildRailCard } from './rail-card';
-import { docCenterY, viewWindow } from './rail-doc';
+import { viewWindow } from './rail-doc';
 // W1485：长条记账搬到 ./rail-state.ts（模块体积棘轮；纯搬家 + 一个摘除手术）
 import { allItems, bindItem, dropColsInState, itemOf, stateOf, stateOfOnly, type RailItem } from './rail-state';
 // W867：命中半径（hover 命中与点击命中共用同一口径；测试直接断言这个纯函数）。
@@ -79,23 +83,9 @@ function ensureTrack(): boolean {
   return true;
 }
 
+/** W9106：本模块只剩调用点；判定与呈现分别在 ./rail-center.ts / ./rail-center-view.ts。 */
 function syncCenter(shown: RailItem[]): void {
-  // shown 按时间自上而下；端点之外（视口中央在首/末条之外）返回 item = null ⇒ 没有条高亮。
-  if (!msgsEl || railW <= 0) return; // 轨道被藏起（留白不足）时不判
-  const hit = railCenterHit(shown.map((it) => ({ it, yDoc: docCenterY(msgsEl!, it.startCol) })), msgsEl.scrollTop + railH / 2);
-  const item = hit?.item?.it ?? null;
-  // 「居中」态 + 悬停文案：只在命中的那一根变化时动 DOM（几何一字不写）
-  if (item !== centerItem) {
-    if (centerItem) {
-      centerItem.el.classList.remove('is-center');
-      setHint(centerItem.el, centerItem.hint); // 复位为常驻文案
-    }
-    if (item && hit) {
-      item.el.classList.add('is-center');
-      setHint(item.el, railCenterLabel(hit, item.fold));
-    }
-  }
-  centerItem = item;
+  paintCenter(msgsEl, railH, railW, shown);
 }
 
 /** 留白带宽：.mcol 左缘 − #main 左缘（算式在 ./rail-geom.ts，这里只取 rect）。 */
@@ -221,6 +211,11 @@ export function railHintPlugin(): HintPlugin {
   return {
     id: RAIL_HINT_ID,
     priority: 10,
+    /**
+     * W9106：条带预览**零停留**（用户：「预览对话应该几乎立即渲染才对」）。
+     * 只覆盖本提供者认领的目标（rail 长条）；内置纯文本卡的 150ms 手感不变。
+     */
+    delayMs: 0,
     claim(target: HTMLElement): HintHandle | null {
       const it = itemOf(target);
       if (!it) return null;
@@ -283,7 +278,7 @@ function applyMove(): void {
   else clearHover(); // 死区：不吸附、不弹卡（下面的 .is-near 让「点它会点中谁」看得见）
   if (hit && hoverItem !== hit) {
     hoverItem = hit;
-    hoverHint(hit.el); // W790：停留 150ms → 提示引擎按提供者弹卡
+    hoverHint(hit.el); // W790：提示引擎按提供者弹卡；W9106 起 rail 提供者零停留
   }
   // W1546：死区里最近的那根条仍然点亮（.is-near，只改描边不改几何）—— 点下去命中的就是它。
   for (const it of bars) {
@@ -400,7 +395,7 @@ export function railDropCols(ctx: SessionPane, cols: readonly HTMLElement[]): nu
     // 悬停/居中态可能正指着刚被摘掉的那根 → 一并复位（否则下一次 layout 会读到
     // 一个已脱离文档的节点，长条与高亮对不上）。
     clearHover();
-    centerItem = null;
+    resetCenter(false); // W9106：命中条即将被摘掉，类随节点一起消失
     queueSync();
   }
   return dropped;
@@ -415,7 +410,7 @@ export function railReset(ctx: SessionPane): void {
   if (ctx === cur) {
     clearHover();
     hoverItem = null;
-    centerItem = null; // W872：命中条即将被清空，判定随之复位
+    resetCenter(false); // W872：命中条即将被清空，判定随之复位（W9106 起在 rail-center-view）
     if (track) track.textContent = '';
   }
 }
@@ -438,8 +433,7 @@ export function railActivate(ctx: SessionPane): void {
     const prev = stateOf(cur);
     // W872/W886：旧会话的「居中」条即将随整批搬家离开轨道。先把它的高亮摘掉再复位
     // 引用，否则切回该会话时新命中的条会与它同时带着 .is-center（同一轨两条高亮）。
-    if (centerItem) centerItem.el.classList.remove('is-center');
-    centerItem = null;
+    resetCenter(true); // W9106：搬家前摘高亮 + 丢引用（同上，搬到 rail-center-view）
     while (track.firstChild) prev.holder.appendChild(track.firstChild);
   }
   clearHover();
