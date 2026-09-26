@@ -151,7 +151,10 @@ export class LineReader {
 
   private complete(): void {
     const bytes = Buffer.concat(this.parts);
-    const malformed = isMalformedUtf8(bytes);
+    // W9205: tell the detector whether WE cut this line. `this.cut` is true only
+    // when the byte budget truncated it, and that is the one case where an
+    // incomplete trailing sequence is an artifact rather than corruption.
+    const malformed = isMalformedUtf8(bytes, this.cut);
     this.queued.push({
       text: safeUtf8(bytes),
       truncated: this.cut,
@@ -168,15 +171,26 @@ export class LineReader {
  * Decode UTF-8 bytes, dropping a trailing **incomplete** sequence (the budget
  * cut may land inside a multi-byte character: `"hé"[:3]` must not become
  * `"h\uFFFD"`).
+ *
+ * W9205: this is a DECODER, so it is deliberately forgiving — it trims one
+ * incomplete tail and lets `Buffer.toString("utf8")` produce U+FFFD for
+ * anything still invalid. That tolerance is exactly why the caller must run
+ * [isMalformedUtf8] FIRST and fail the run rather than pass this result up as a
+ * value; decoding alone cannot tell "the budget cut me" from "the child wrote a
+ * different encoding".
  */
 export function safeUtf8(buffer: Buffer): string {
   return buffer.subarray(0, completePrefixLength(buffer)).toString("utf8");
 }
 
 /**
- * Byte length of the longest prefix ending on a code-point boundary — the
- * same rule [safeUtf8] uses to drop a budget-cut tail. Kept as one function so
- * the decoder and the validator cannot disagree about where the body ends.
+ * Byte length of the longest prefix ending on a code-point boundary — the rule
+ * [safeUtf8] uses to drop a budget-cut tail.
+ *
+ * W9205: this is a DECODER concern only. It used to be shared with
+ * [isMalformedUtf8], and that sharing was the bug: a trimmer whose whole job is
+ * to forgive a cut tail cannot also decide whether a tail is corrupt. The
+ * validator now takes its tolerance as an explicit parameter instead.
  */
 function completePrefixLength(buffer: Buffer): number {
   for (let back = 0; back < MAX_UTF8_SEQUENCE && back < buffer.length; back += 1) {
@@ -190,19 +204,37 @@ function completePrefixLength(buffer: Buffer): number {
 }
 
 /**
- * W9112: true when `buffer` is NOT valid UTF-8.
+ * W9112/W9205: true when `buffer` is NOT valid UTF-8.
  *
  * Uses the platform's own strict decoder (`new TextDecoder("utf-8", { fatal: true })`)
- * rather than a hand-rolled scanner, and validates the SAME byte body [safeUtf8]
- * decodes — so a multi-byte character cut by the byte budget is never mistaken
- * for corruption, while a genuinely invalid sequence (GBK bytes, a lone
- * continuation byte, an overlong form) is.
+ * rather than a hand-rolled scanner, so a genuinely invalid sequence (GBK bytes,
+ * a lone continuation byte, an overlong form) is detected.
+ *
+ * W9205 — THE INCOMPLETE TAIL IS CONTROLLED BY THE CALLER, NOT ASSUMED.
+ *
+ * The W9112 shape ran the bytes through [completePrefixLength] first, i.e. it
+ * validated the same trimmed body [safeUtf8] DECODES. That trimmer exists to
+ * drop the tail the BYTE BUDGET cut — so reusing it here meant a stream that
+ * really ended mid-character (GBK `e4 b8`, a lone lead byte) was reported as
+ * VALID and then silently decoded to U+FFFD / "" by [safeUtf8]. The detector
+ * inherited a repair's tolerance and stopped detecting.
+ *
+ * The tolerance is therefore an explicit parameter:
+ *   - `false` (default) — validate the WHOLE buffer. A line the child actually
+ *     terminated with `\n` must be complete UTF-8, so an incomplete tail IS
+ *     corruption and the run fails with `code=protocol`. This is the case the
+ *     W9205 report measured as silently corrupting.
+ *   - `true` — the caller KNOWS it cut this line at the byte budget
+ *     ([LineReader.complete] passes its own `cut` flag), so the incomplete tail
+ *     is the cut's artifact, not corruption, and only the complete prefix is
+ *     validated. An over-long LOG line must not fail the run merely because the
+ *     budget landed inside a character.
  *
  * This is a DETECTOR, never a repair: the caller must FAIL the run, not use the
  * replaced text as a value.
  */
-export function isMalformedUtf8(buffer: Buffer): boolean {
-  const body = buffer.subarray(0, completePrefixLength(buffer));
+export function isMalformedUtf8(buffer: Buffer, tolerateIncompleteTail = false): boolean {
+  const body = tolerateIncompleteTail ? buffer.subarray(0, completePrefixLength(buffer)) : buffer;
   try {
     new TextDecoder("utf-8", { fatal: true }).decode(body);
     return false;

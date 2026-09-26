@@ -130,10 +130,38 @@ describe("W9110 allPaths — the capability covers every volume", () => {
     expect(viaEnv.checkWrite(join(outside, "celestea-w9110-env.txt"))).toEqual({ kind: "allow" });
   });
 
+  /**
+   * W9205 — a `"/"` READ root opens READS ONLY.
+   *
+   * The W9110 shape fed both lists into one combined flag, so a caller that
+   * named `"/"` as a read root silently acquired write access over the whole
+   * host. Read and write are separate capabilities now, and this is the
+   * assertion that keeps them separate.
+   */
+  it("a '/' READ root does NOT open writes", () => {
+    const readWide = new PathGuardPolicy({ workspace, readRoots: [ALL_PATHS_ROOT], workspaceWritable: false });
+    expect(readWide.allPathsRead).toBe(true);
+    expect(readWide.allPathsWrite).toBe(false);
+    // The combined summary must stay honest: only ONE half is open.
+    expect(readWide.allPaths).toBe(false);
+    expect(readWide.checkRead(outsideFile)).toEqual({ kind: "allow" });
+    expect(readWide.checkWrite(join(outside, "celestea-w9205-read-only.txt")).kind).toBe("deny");
+    // ...and the mirror image: a '/' WRITE root does not open reads.
+    const writeWide = new PathGuardPolicy({ workspace, writeRoots: [ALL_PATHS_ROOT], workspaceWritable: false });
+    expect(writeWide.allPathsRead).toBe(false);
+    expect(writeWide.allPathsWrite).toBe(true);
+    expect(writeWide.checkRead(outsideFile).kind).toBe("deny");
+    expect(writeWide.checkWrite(join(outside, "celestea-w9205-write-only.txt"))).toEqual({ kind: "allow" });
+  });
+
   it("POSIX is byte-identical: the sentinel IS the host root, so '/' keeps working", () => {
     // Requirement ③ — the POSIX answer must not move. On POSIX the sentinel and
     // the host root are the same string, so the old spelling keeps its exact
     // meaning and the roots list keeps its exact bytes.
+    //
+    // W9205: that identity is exactly why the spelling can no longer be the
+    // source of truth — the two readings DO collide on POSIX. See the
+    // "workspace === '/'" cases below; the byte itself is unchanged.
     expect(ALL_PATHS_ROOT).toBe("/");
     if (process.platform !== "win32") expect(parse(workspace).root).toBe(ALL_PATHS_ROOT);
     const wide = new PathGuardPolicy({ workspace, readRoots: [ALL_PATHS_ROOT], writeRoots: [ALL_PATHS_ROOT], workspaceWritable: false });
@@ -192,5 +220,103 @@ describe("W9110 allPaths — the security boundary is NOT widened", () => {
     expect(new PathGuardPolicy({ workspace, readRoots: [outside] }).allPaths).toBe(false);
     expect(new PathGuardPolicy({ workspace, writeRoots: [outside] }).allPaths).toBe(false);
     expect(PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace }).allPaths).toBe(false);
+  });
+});
+
+/**
+ * W9205 (P0) — the workspace can NEVER manufacture the capability.
+ *
+ * Root cause of the reported P0: `ALL_PATHS_ROOT` is `"/"`, `readRoots` always
+ * begins with the workspace, and the constructor asked `hasAllPathsRoot` about
+ * that COMPOSED list. So `workspace === "/"` made `allPaths` true and a policy
+ * declared `workspaceWritable: false` answered `checkWrite("/etc/cron.d/evil")`
+ * with `allow` — a read-only session with full-disk write access.
+ *
+ * The name is fixed, not the coincidence: the spelling is read off the DECLARED
+ * lists only, so no workspace value can imply it. `"/"` is a real workspace on
+ * POSIX (and `path.win32.resolve("/")` is the current drive root), so both
+ * spellings are asserted.
+ */
+describe("W9205 the workspace cannot imply allPaths", () => {
+  it("workspace === '/' + read-only denies every write (the reported P0)", () => {
+    const policy = new PathGuardPolicy({ workspace: "/", workspaceWritable: false });
+    expect(policy.allPaths).toBe(false);
+    expect(policy.allPathsRead).toBe(false);
+    expect(policy.allPathsWrite).toBe(false);
+    // The exact call from the report: no /etc write, no matter the workspace.
+    expect(policy.checkWrite("/etc/cron.d/evil").kind).toBe("deny");
+    expect(policy.checkWrite("/etc/shadow").kind).toBe("deny");
+    // Reads stay bounded too — the workspace IS "/" here, which is the whole
+    // point: "/" as a workspace is an ordinary (if very wide) read root.
+    expect(policy.readRoots).toEqual(["/"]);
+  });
+
+  it("workspace === '/' + read-only + a VALID root list still denies writes", () => {
+    // The production composition: a declared read root AND a read-only baseline.
+    // Before the fix the workspace alone was enough; now nothing here may write.
+    const policy = PathGuardPolicy.fromEnv(
+      { CELESTEA_TOOL_WORKDIR: "/", CELESTEA_TOOL_ROOTS: outside },
+      { workspaceWritable: false },
+    );
+    expect(policy.allPaths).toBe(false);
+    expect(policy.checkWrite("/etc/cron.d/evil").kind).toBe("deny");
+    expect(policy.checkWrite(join(outside, "celestea-w9205-ws-root.txt")).kind).toBe("deny");
+  });
+
+  it("a '/' READ root + read-only denies writes (the second half of the P0)", () => {
+    // The other route into the same bug: the operator/engine lists "/" as a
+    // READ root. Reads open; writes must not.
+    const policy = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace }, { readRoots: [ALL_PATHS_ROOT], workspaceWritable: false });
+    expect(policy.allPathsWrite).toBe(false);
+    expect(policy.checkWrite("/etc/cron.d/evil").kind).toBe("deny");
+    expect(policy.checkWrite(join(outside, "celestea-w9205-read-root.txt")).kind).toBe("deny");
+  });
+});
+
+/**
+ * W9205 (P0) — `fromEnv` must forward `workspaceWritable` on EVERY exit.
+ *
+ * `fromEnv` has three exits (no env roots / empty list / valid list). The third
+ * one dropped `workspaceWritable`, and `undefined` reads as "writable" in the
+ * constructor — so a READ-ONLY session became writable again as soon as
+ * `CELESTEA_TOOL_ROOTS` named one usable directory. That is the PRODUCTION case:
+ * `scripts/run-studio-ts.sh` always sets the variable.
+ *
+ * All three exits are asserted TOGETHER on purpose: the bug was one copy of a
+ * three-times-repeated literal, so a test that checks only the path it happened
+ * to be written against cannot see the next drift.
+ */
+describe("W9205 fromEnv forwards workspaceWritable on every exit", () => {
+  /** The read-only baseline (`store/permissions.ts` read-only preset). */
+  const readOnly = { workspaceWritable: false } as const;
+
+  it("valid root list: read-only denies the workspace write (the production path)", () => {
+    const policy = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace, CELESTEA_TOOL_ROOTS: outside }, readOnly);
+    expect(policy.failClosedReason).toBeNull();
+    expect(policy.writeRoots).toEqual([]);
+    expect(policy.checkWrite(join(workspace, "celestea-w9205-ro.txt")).kind).toBe("deny");
+    // The env root is still a READ root, and still not writable.
+    expect(policy.checkRead(outsideFile)).toEqual({ kind: "allow" });
+    expect(policy.checkWrite(join(outside, "celestea-w9205-ro-out.txt")).kind).toBe("deny");
+  });
+
+  it("no env roots: read-only denies the workspace write (the historical exit)", () => {
+    const policy = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace }, readOnly);
+    expect(policy.writeRoots).toEqual([]);
+    expect(policy.checkWrite(join(workspace, "celestea-w9205-ro-none.txt")).kind).toBe("deny");
+  });
+
+  it("empty root list: read-only denies the workspace write (the fail-closed exit)", () => {
+    const policy = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace, CELESTEA_TOOL_ROOTS: " , " }, readOnly);
+    expect(policy.failClosedReason).toContain("lists no directory");
+    expect(policy.writeRoots).toEqual([]);
+    // Fail-closed wins, so the denial code is the roots one — but it is a DENY.
+    expect(policy.checkWrite(join(workspace, "celestea-w9205-ro-empty.txt")).kind).toBe("deny");
+  });
+
+  it("a writable baseline is unaffected (the fix must not narrow anything)", () => {
+    const policy = PathGuardPolicy.fromEnv({ CELESTEA_TOOL_WORKDIR: workspace, CELESTEA_TOOL_ROOTS: outside }, { workspaceWritable: true });
+    expect(policy.writeRoots).toEqual([workspace]);
+    expect(policy.checkWrite(join(workspace, "celestea-w9205-rw.txt"))).toEqual({ kind: "allow" });
   });
 });

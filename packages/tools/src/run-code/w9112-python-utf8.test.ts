@@ -39,7 +39,7 @@ import { runShellTool } from "../tools/run-shell.js";
 import { writeFileTool } from "../tools/write-file.js";
 import { resolveInterpreter } from "./broker.js";
 import { startBrokerHarness, type BrokerHarness } from "./broker.test-util.js";
-import { LineReader, isMalformedUtf8 } from "./lines.js";
+import { LineReader, isMalformedUtf8, safeUtf8 } from "./lines.js";
 
 const h: BrokerHarness = await startBrokerHarness();
 const sandbox: Sandbox = h.sandbox;
@@ -216,8 +216,35 @@ describe("W9112 UTF-8 detection (pure)", () => {
     expect(isMalformedUtf8(Buffer.from("\uFFFD", "utf8"))).toBe(false);
     expect(isMalformedUtf8(Buffer.from([0xd6, 0xd0, 0xce, 0xc4]))).toBe(true); // GBK 中文
     expect(isMalformedUtf8(Buffer.from([0xff, 0xfe]))).toBe(true);
-    expect(isMalformedUtf8(Buffer.from([0xe4, 0xb8]))).toBe(false); // cut tail, not corruption
     expect(isMalformedUtf8(Buffer.alloc(0))).toBe(false);
+  });
+
+  /**
+   * W9205 — the tail of a `\n`-terminated line must be COMPLETE.
+   *
+   * The W9112 shape asserted `isMalformedUtf8(Buffer.from([0xe4, 0xb8])) === false`
+   * with the comment "cut tail, not corruption". That was the defect written down
+   * as an expectation: the child DID terminate this line, so the bytes really are
+   * an incomplete character, and `safeUtf8` then decoded them to "" / U+FFFD
+   * while the broker reported success. The tolerance belongs to the byte BUDGET,
+   * not to the protocol — see the `tolerateIncompleteTail` case below.
+   */
+  it("treats an INCOMPLETE trailing sequence as corruption (the whole-buffer default)", () => {
+    expect(isMalformedUtf8(Buffer.from([0xe4, 0xb8]))).toBe(true); // truncated 中
+    expect(isMalformedUtf8(Buffer.from([0xc3]))).toBe(true); // lone 2-byte lead
+    expect(isMalformedUtf8(Buffer.from([0xf0, 0x9f, 0x8e]))).toBe(true); // truncated 4-byte
+    // ...and the silent corruption it used to cause is now impossible to miss:
+    // the decoder still returns replacement text, which is exactly WHY the
+    // detector must reject the bytes rather than let them reach the value.
+    expect(safeUtf8(Buffer.from([0xe4, 0xb8]))).toBe("");
+  });
+
+  it("forgives an incomplete tail ONLY when the caller cut the line (byte budget)", () => {
+    // The same bytes are an artifact when `LineReader` cut them itself...
+    expect(isMalformedUtf8(Buffer.from([0xe4, 0xb8]), true)).toBe(false);
+    // ...but real corruption inside the complete prefix is still corruption.
+    expect(isMalformedUtf8(Buffer.from([0xd6, 0xd0, 0xce, 0xc4]), true)).toBe(true);
+    expect(isMalformedUtf8(Buffer.from([0xff, 0xfe]), true)).toBe(true);
   });
 
   it("a LineReader marks a GBK line malformed but leaves a valid one alone", async () => {
@@ -242,6 +269,24 @@ describe("W9112 UTF-8 detection (pure)", () => {
     // 4 bytes = exactly one complete 3-byte character plus one continuation; the
     // cut tail is dropped, never reported as corruption.
     expect(line).toMatchObject({ truncated: true, malformed: false });
+  });
+
+  /**
+   * W9205 — the end-to-end half of the fix: a line the child TERMINATED with
+   * `\n` but whose body ends mid-character is corruption, and the reader must
+   * say so instead of handing up replacement text.
+   *
+   * The byte budget here is generous (1024), so `cut` is false and the reader
+   * has no excuse to forgive the tail — this is the case the W9205 report
+   * measured as "error stayed null while every Chinese character became U+FFFD".
+   */
+  it("marks a \n-terminated line with an incomplete trailing character as malformed", async () => {
+    const stream = new PassThrough();
+    const reader = new LineReader(stream, 1024);
+    stream.write(Buffer.from([0xe4, 0xb8, 0x0a])); // truncated 中 + newline
+    const line = await reader.next(200);
+    expect(line).toMatchObject({ malformed: true, truncated: false });
+    expect((line as { malformedHex: string }).malformedHex).toBe("e4b8");
   });
 });
 

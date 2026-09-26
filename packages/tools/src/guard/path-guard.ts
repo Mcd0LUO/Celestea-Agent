@@ -124,30 +124,54 @@ export function parseToolRoots(value: string | undefined, platform: string = pro
 }
 
 /**
- * W9110 — the ALL-PATHS sentinel root: the one canonical name of "every path on
- * this host".
+ * W9110 — the ALL-PATHS *spelling*: the one canonical NAME of "every path on
+ * this host", as it appears inside a root LIST.
  *
- * "All paths" is a CAPABILITY, not a path. `"/"` is its canonical name because
- * on POSIX it *is* the single filesystem root, and on Windows no real path ever
- * canonicalizes to it (`path.win32.resolve("/")` is the current drive root), so
- * the two readings can never collide: a roots list carrying `"/"` means the
- * whole host and nothing else.
+ * "All paths" is a CAPABILITY, not a path. `"/"` is its name because on POSIX it
+ * *is* the single filesystem root, and on Windows no real path ever
+ * canonicalizes to it (`path.win32.resolve("/")` is the current drive root).
  *
- * Why this beats the alternatives:
- *   - the SESSION DRIVE root (the W891 shape, `C:\`): Windows has one root per
- *     volume, so a single drive root silently excluded every other drive — the
- *     exact P0 this replaces;
- *   - enumerating `A:\`…`Z:\`: it misses UNC shares and volumes mounted after
- *     boot, and it keeps disguising a capability as a bounded path list.
+ * W9205 — WHY THIS IS ONLY A SPELLING AND NEVER THE SOURCE OF TRUTH.
+ *
+ * A string that can also be a real path is not a safe sentinel. The W9110 shape
+ * read the capability out of the COMPOSED root list, and that list always begins
+ * with the workspace, so `workspace === "/"` silently manufactured the
+ * capability: a policy built with `workspaceWritable: false` — an explicitly
+ * READ-ONLY session — answered `checkWrite("/etc/cron.d/evil") = allow`. The
+ * doc-comment above used to claim "the two readings can never collide"; that
+ * claim was false, and the collision was the whole bug.
+ *
+ * The fix is structural:
+ *   - the capability is carried by explicit BOOLEANS
+ *     ([PathGuardPolicyInit.allPaths], and the split
+ *     `allPathsRead` / `allPathsWrite`);
+ *   - this spelling is honoured ONLY on the caller-DECLARED root lists
+ *     ([PathGuardPolicyInit.readRoots] / `writeRoots`) and NEVER on the implicit
+ *     workspace element, so no workspace value can imply it;
+ *   - READ and WRITE are SEPARATE capabilities. A `"/"` READ root opens reads
+ *     only, so a read-only baseline that happens to list `"/"` still denies
+ *     every write (the second half of the same P0).
+ *
+ * The `"/"` spelling is kept rather than deleted because two consumers OUTSIDE
+ * this package speak roots, not capabilities: the engine's composed grants
+ * serialise it into both lists, and bwrap's POSIX argv maps a `"/"` WRITE root
+ * onto `--bind / /`. Keeping the byte keeps those paths unchanged; the
+ * capability simply no longer depends on reading it back.
  *
  * [PathGuardPolicy] consumes it as a capability (checkRead/checkWrite short
  * circuit); it is NEVER matched as a string prefix.
  */
 export const ALL_PATHS_ROOT = "/";
 
-/** true when a roots list carries the all-paths sentinel (see [ALL_PATHS_ROOT]). */
-function hasAllPathsRoot(roots: readonly string[]): boolean {
-  return roots.includes(ALL_PATHS_ROOT);
+/**
+ * true when a CALLER-DECLARED root list carries the all-paths spelling.
+ *
+ * W9205: the caller must pass the list it DECLARED — never a composed list that
+ * already contains the workspace, which is exactly how `workspace === "/"`
+ * used to fabricate the capability (see [ALL_PATHS_ROOT]).
+ */
+function hasAllPathsRoot(declaredRoots: readonly string[]): boolean {
+  return declaredRoots.includes(ALL_PATHS_ROOT);
 }
 
 export interface PathGuardPolicyInit {
@@ -161,10 +185,14 @@ export interface PathGuardPolicyInit {
   /** W9: false = a read-only permission; the workspace is NOT a write root. */
   workspaceWritable?: boolean;
   /**
-   * W9110: the whole host — every volume, every directory. A first-class
-   * CAPABILITY: checkRead/checkWrite allow any target without consulting the
-   * root lists. Also implied by [ALL_PATHS_ROOT] in either roots list, so a
-   * caller that can only pass roots (the engine's composed grants) still says it.
+   * W9110: the whole host is readable AND writable — a first-class CAPABILITY
+   * (both halves at once). checkRead/checkWrite allow any target without
+   * consulting the root lists.
+   *
+   * W9205: this is the ONLY way a caller says "both". The `"/"` spelling in a
+   * DECLARED roots list is read as the matching HALF only — `readRoots: ["/"]`
+   * opens reads, `writeRoots: ["/"]` opens writes — so a read-only baseline
+   * that happens to list `"/"` can no longer be talked into writing.
    */
   allPaths?: boolean;
   /** Set when the declared roots were unusable → every path call is denied. */
@@ -193,18 +221,40 @@ export class PathGuardPolicy {
   /** Workspace first; grants may only append (never remove or demote). */
   readonly writeRoots: readonly string[];
   /**
-   * W9110: the whole host is readable AND writable — a CAPABILITY, not a root.
-   * Set by the explicit flag or implied by [ALL_PATHS_ROOT] in either list, so
-   * a caller that can only pass roots still expresses it.
+   * W9110/W9205: the whole host is readable AND writable — a CAPABILITY, not a
+   * root. Derived from [allPathsRead] && [allPathsWrite], so it stays a truthful
+   * summary of the two halves; the halves themselves are what checkRead and
+   * checkWrite consult, and they are NOT the same flag.
    */
   readonly allPaths: boolean;
+  /**
+   * W9205: the whole host is READABLE. Set by `allPaths: true` or by the
+   * `"/"` spelling on the caller-DECLARED read list — never by the workspace
+   * (the defect this field exists to kill) and never by the write list.
+   */
+  readonly allPathsRead: boolean;
+  /**
+   * W9205: the whole host is WRITABLE. Set by `allPaths: true` or by the
+   * `"/"` spelling on the caller-DECLARED write list — never by the workspace
+   * and never by the read list. A read-only baseline can therefore never acquire
+   * write access by naming `"/"` as a read root.
+   */
+  readonly allPathsWrite: boolean;
   readonly failClosedReason: string | null;
 
   constructor(init: PathGuardPolicyInit) {
     this.workspace = init.workspace;
     this.readRoots = [init.workspace, ...(init.readRoots ?? [])];
     this.writeRoots = init.workspaceWritable === false ? [...(init.writeRoots ?? [])] : [init.workspace, ...(init.writeRoots ?? [])];
-    this.allPaths = init.allPaths === true || hasAllPathsRoot(this.readRoots) || hasAllPathsRoot(this.writeRoots);
+    // W9205: the spelling is read off the DECLARED lists ONLY — passing
+    // `this.readRoots` here is what let `workspace === "/"` fabricate the
+    // capability. `allPaths` is the explicit both-halves flag, so it feeds both.
+    const declaredRead = init.readRoots ?? [];
+    const declaredWrite = init.writeRoots ?? [];
+    const explicit = init.allPaths === true;
+    this.allPathsRead = explicit || hasAllPathsRoot(declaredRead);
+    this.allPathsWrite = explicit || hasAllPathsRoot(declaredWrite);
+    this.allPaths = this.allPathsRead && this.allPathsWrite;
     this.failClosedReason = init.failClosedReason ?? null;
   }
 
@@ -226,18 +276,22 @@ export class PathGuardPolicy {
     // W9110: the all-paths capability is forwarded verbatim; it is widen-only
     // (nothing here can turn it off) and independent of the env roots below.
     const allPaths = grants.allPaths === true;
+    /**
+     * W9205: ONE shared base for all three exits below.
+     *
+     * The previous shape repeated the constructor literal three times and the
+     * third copy silently dropped `workspaceWritable` — so a READ-ONLY session
+     * (the `read-only` permission baseline) became writable again the moment
+     * `CELESTEA_TOOL_ROOTS` listed any usable directory, which is the PRODUCTION
+     * case (`scripts/run-studio-ts.sh` always sets it). Every field now travels
+     * through this object, so a fourth exit cannot forget one either.
+     */
+    const base = { workspace, readRoots: grantRead, writeRoots, workspaceWritable: grants.workspaceWritable, allPaths };
     const raw = envString(env, ENV_TOOL_ROOTS);
-    if (raw === undefined) return new PathGuardPolicy({ workspace, readRoots: grantRead, writeRoots, workspaceWritable: grants.workspaceWritable, allPaths });
+    if (raw === undefined) return new PathGuardPolicy(base);
     const entries = parseToolRoots(raw);
     if (entries.length === 0) {
-      return new PathGuardPolicy({
-        workspace,
-        readRoots: grantRead,
-        writeRoots,
-        workspaceWritable: grants.workspaceWritable,
-        allPaths,
-        failClosedReason: `${ENV_TOOL_ROOTS} is set but lists no directory`,
-      });
+      return new PathGuardPolicy({ ...base, failClosedReason: `${ENV_TOOL_ROOTS} is set but lists no directory` });
     }
     const readRoots: string[] = [];
     let failClosedReason: string | null = null;
@@ -247,7 +301,7 @@ export class PathGuardPolicy {
       else if (!isDirectory(canonical)) failClosedReason ??= `${ENV_TOOL_ROOTS} entry '${entry}' is not a directory`;
       else readRoots.push(canonical);
     }
-    return new PathGuardPolicy({ workspace, readRoots: [...readRoots, ...grantRead], writeRoots, allPaths, failClosedReason });
+    return new PathGuardPolicy({ ...base, readRoots: [...readRoots, ...grantRead], failClosedReason });
   }
 
   /** read/list: the canonical target must resolve inside a read root. */
@@ -257,7 +311,10 @@ export class PathGuardPolicy {
     // W9110: "all paths" means exactly that — there is no containment test to
     // run. Fail-closed still wins above, so a broken CELESTEA_TOOL_ROOTS denies
     // every path even under allPaths.
-    if (this.allPaths) return ALLOW;
+    //
+    // W9205: the READ half, not the combined flag. A read-only policy whose
+    // write side is closed must still be able to open reads.
+    if (this.allPathsRead) return ALLOW;
     const canonical = resolveExistingTarget(target, this.workspace);
     if (canonical === null) return ALLOW;
     if (this.readRoots.some((root) => isInside(canonical, root))) return ALLOW;
@@ -277,7 +334,9 @@ export class PathGuardPolicy {
     const blocked = this.failClosed();
     if (blocked !== null) return blocked;
     // W9110: see checkRead — the capability short circuits, fail-closed does not.
-    if (this.allPaths) return ALLOW;
+    // W9205: the WRITE half. This is the line the P0 turned on: it used to read
+    // the combined flag, which the workspace alone could set to true.
+    if (this.allPathsWrite) return ALLOW;
     const canonical = resolveWriteTarget(target, this.workspace);
     if (canonical === null) return ALLOW;
     if (this.writeRoots.some((root) => isInside(canonical, root))) return ALLOW;
