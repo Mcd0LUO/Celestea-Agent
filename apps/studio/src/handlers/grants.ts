@@ -17,7 +17,8 @@ import type { Context, Hono } from "hono";
 import type { RouteTable } from "../routes.js";
 import { effectiveGrantsOf, netHostsEffective, unsandboxedAvailable, type EffectiveGrants } from "../runtime/engine-grants.js";
 import { isOfferedGrantCap, MAX_TTL_SEC, emptyGrantsFile, newGrantId, readGrantsFile, writeGrantsFile, type GrantCap, type GrantRecord, type GrantsFile } from "../store/grants.js";
-import { CONFIRM_HEADER, SEC_FETCH_MODE, SEC_FETCH_SITE, ORIGIN_HEADER } from "../store/grants-tokens.js";
+import { CONFIRM_HEADER, CONFIRM_TTL_SEC, GRANT_NONCE_COOKIE, SEC_FETCH_MODE, SEC_FETCH_SITE, ORIGIN_HEADER } from "../store/grants-tokens.js";
+import { cookieValue } from "../auth/token.js";
 import { nowSec, type GrantsServices } from "../store/grants-service.js";
 import { errText } from "../store/result.js";
 import { entryJson, effectiveJson, parseGrantRequest, GRANT_ACTOR, type GrantRequest } from "./grants-shape.js";
@@ -94,7 +95,12 @@ function registerCreate(app: Hono, deps: Deps, table: RouteTable): string {
     refusal.cap = request.value.cap;
     const token = c.req.header(CONFIRM_HEADER) ?? "";
     if (token === "") return denied({ ...refusal, reason: CONFIRM_REQUIRED }, failJson(c, 403, CONFIRM_REQUIRED));
-    const verdict = services.tokens.consume(sessionId, request.value.cap, request.value.scopeHash, token);
+    // W9206-03: the POST must present the nonce cookie the mint set. A caller
+    // that only forged the request headers (the tool) has no nonce and is
+    // refused exactly like a wrong session — `hasSameOriginEvidence` is now a
+    // cheap first filter, not the security boundary.
+    const nonce = cookieValue(c.req.header("cookie"), GRANT_NONCE_COOKIE);
+    const verdict = services.tokens.consume(sessionId, request.value.cap, request.value.scopeHash, token, nonce);
     if (verdict === "invalid") return denied({ ...refusal, reason: CONFIRM_REQUIRED }, failJson(c, 403, CONFIRM_REQUIRED));
     if (verdict === "used") {
       return denied({ ...refusal, reason: "confirmation token already used" }, failJson(c, 409, "confirmation token already used"));
@@ -223,6 +229,12 @@ function registerConfirmToken(app: Hono, deps: Deps, table: RouteTable): string 
     const hash = c.req.query("scope_hash") ?? "";
     if (!/^[0-9a-f]{64}$/.test(hash)) return failJson(c, 400, "scope_hash must be a 64-char sha256 hex string");
     const issued = deps.grants.tokens.issue(resolved.value.id, cap, hash);
+    // W9206-03: the nonce travels as an HttpOnly cookie, NOT in the body. The
+    // session's own `http_request` tool can read a JSON body but cannot read
+    // `Set-Cookie` (its response view is HEADER_SUBSET), so this is the half of
+    // the handshake the tool cannot forge. SameSite=Strict keeps a cross-site
+    // page from riding an existing one.
+    c.header("set-cookie", grantNonceCookie(issued.nonce, isSecureRequest(c)));
     return c.json({ ok: true, token: issued.token, expires_at: issued.expiresAt });
   });
   return route.id;
@@ -233,6 +245,25 @@ function registerConfirmToken(app: Hono, deps: Deps, table: RouteTable): string 
  * tool can forge. `Sec-Fetch-Site: same-origin` is the strong evidence; the
  * CORS fallback additionally requires an Origin that matches Host.
  */
+/** W9206-03: the HttpOnly nonce cookie a grant POST must echo back. */
+function grantNonceCookie(nonce: string, secure: boolean): string {
+  const attrs = [
+    GRANT_NONCE_COOKIE + "=" + nonce,
+    "Path=/",
+    "Max-Age=" + String(CONFIRM_TTL_SEC),
+    "HttpOnly",
+    "SameSite=Strict",
+  ];
+  if (secure) attrs.push("Secure");
+  return attrs.join("; ");
+}
+
+/** `Secure` only behind TLS (nginx), same rule as the api-token cookie. */
+function isSecureRequest(c: Context): boolean {
+  const first = (c.req.header("x-forwarded-proto") ?? "").toLowerCase().split(",")[0];
+  return first !== undefined && first.trim() === "https";
+}
+
 function hasSameOriginEvidence(c: Context): boolean {
   if ((c.req.header(SEC_FETCH_SITE) ?? "").toLowerCase() === "same-origin") return true;
   if ((c.req.header(SEC_FETCH_MODE) ?? "").toLowerCase() !== "cors") return false;

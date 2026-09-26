@@ -6,9 +6,11 @@
  *   1. it reuses the run_shell execution path — the SAME `selectSandboxDetailed`
  *      policy, `sessionSandboxConfig` (workdir/root), `sanitizedEnv` allowlist
  *      and output cap the engine's `run_shell` uses, so isolation cannot fork;
- *   2. it passes the PERMISSION gate: a preset that denies `run_shell`, or a
- *      sandbox policy that refuses to execute, is a structured refusal — never a
- *      silent run;
+ *   2. it passes the PERMISSION gate: a preset that denies `run_shell` (403), or
+ *      a sandbox policy that refuses to execute (400), is a structured refusal —
+ *      never a silent run. W9210: the sandbox refusal is answered wherever it
+ *      happens, including at SELECTION time (`sandboxFor`), not only from
+ *      `sandbox.run`;
  *   3. it is NOT a tool: nothing here touches the model-visible tool face.
  *
  * The `sandbox` block carries ONLY the contract fields (provider / net_isolated
@@ -23,7 +25,7 @@ import { effectiveGrantsOf } from "../runtime/engine-grants.js";
 import { nowSec } from "../store/grants-service.js";
 import { sessionWorkspaceOf, type ResolvedSession } from "../store/sessions.js";
 import { errText } from "../store/result.js";
-import { failJson, readJsonBody, strField, type Deps } from "./common.js";
+import { activeSession, failJson, readJsonBody, strField, type Deps } from "./common.js";
 
 /** The structured refusal when this session's preset denies the shell. */
 export const SHELL_DENIED_CODE = "shell_denied";
@@ -43,7 +45,22 @@ function readCommand(body: Record<string, unknown>): string | { error: string } 
 }
 
 /**
- * Resolve the target session (explicit id, else the detached/default scope).
+ * Resolve the target session: the explicit id, else the FOCUSED session
+ * (`active_session`), else the true detached scope.
+ *
+ * W9210 (the W9206-37 P0): an omitted id used to mean "no baseline at all".
+ * The detached scope reads the DEPLOYMENT default preset, so a caller could
+ * skip a restricted session's `toolDeny` just by not naming it (naming the
+ * session was a 403; omitting it ran). "Which session does an omitted id mean"
+ * already has ONE answer in this host — `active_session`, exactly as
+ * `handlers/health.ts` (/api/status, /api/tools) and `handlers/dialog.ts`
+ * read it — so this function now follows it instead of inventing a second one.
+ *
+ * A STALE `active_session` (the session it names was deleted) still falls back
+ * to the detached scope: it names nothing live, so there is no baseline to
+ * apply, and a 404 there would break the legitimate "nothing is focused" case.
+ * An id the CALLER supplied is different — that is the caller's own claim, so
+ * its failure stays the caller's 404.
  *
  * W1528: exported because the terminal handler resolves its target through the
  * SAME function — a second implementation would be a second answer to "which
@@ -51,10 +68,15 @@ function readCommand(body: Record<string, unknown>): string | { error: string } 
  * prevent.
  */
 export function targetSession(deps: Deps, id: string | undefined): { resolved: ResolvedSession | null; status: number; error: string } {
-  if (id === undefined || id === "") return { resolved: null, status: 0, error: "" };
-  const resolved = deps.sessions.require(id);
+  const named = id !== undefined && id !== "";
+  const asked = named ? id : activeSession(deps);
+  if (asked === undefined || asked === null || asked === "") return { resolved: null, status: 0, error: "" };
+  const resolved = deps.sessions.require(asked);
   if (resolved.ok) return { resolved: resolved.value, status: 0, error: "" };
-  return { resolved: null, status: resolved.status, error: resolved.error };
+  // An explicit id is the caller's own claim: its failure is the caller's 404.
+  if (named) return { resolved: null, status: resolved.status, error: resolved.error };
+  // An omitted id whose focused session no longer resolves names nothing live.
+  return { resolved: null, status: 0, error: "" };
 }
 
 /**
@@ -123,9 +145,15 @@ export function registerExec(app: Hono, deps: Deps, table: RouteTable): string[]
     const denied = shellDeniedReason(deps, target.resolved);
     if (denied !== null) return failJson(c, 403, denied, { code: SHELL_DENIED_CODE });
 
-    const sandbox = sandboxFor(deps, target.resolved);
-    const started = Date.now();
     try {
+      // W9210 (F3): the BOUNDARY is built inside the try. `sandboxFor` reaches
+      // `selectSandboxDetailed`, which THROWS a structured `SandboxError` when
+      // the policy refuses to execute (`CELESTEA_SANDBOX_FALLBACK=fail` on a
+      // host without bwrap, a partial-enforcement refusal, or an invalid
+      // fallback value). Outside the try that throw escaped as an uncaught
+      // error and the client got a bare 500 instead of the contract's 400.
+      const sandbox = sandboxFor(deps, target.resolved);
+      const started = Date.now();
       const run = await sandbox.run({
         command,
         ...(workdirField.value === undefined ? {} : { workdir: workdirField.value }),

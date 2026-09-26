@@ -178,28 +178,73 @@ export function jsonRequest(method: string, body?: unknown): RequestInit {
 /**
  * W516 grant helpers: a grant needs a one-shot token from the same-origin
  * token endpoint, so every test drives the same two-step handshake the UI does.
+ *
+ * W9206-03: the mint ALSO sets an HttpOnly nonce cookie and the POST must echo
+ * it, so the helper keeps the two steps' cookies together (a real browser does
+ * this for free; `app.request` does not carry a cookie jar).
  */
 export async function grantToken(h: StudioHarness, id: string, cap: string, scope: Record<string, unknown>): Promise<string> {
-  const hash = canonicalScopeHash(cap, scope as never);
-  const res = await getJson(h.app, `/api/sessions/${id}/grants/confirm-token?cap=${cap}&scope_hash=${hash}`, {
-    headers: { "sec-fetch-site": "same-origin" },
-  });
-  // An unsupported cap has no token to issue; the POST's own 400 still wins
-  // because the body is validated before the token is looked at.
-  return res.status === 200 ? String(res.body["token"]) : "";
+  const mint = await mintGrantToken(h, id, cap, scope);
+  return mint.token;
 }
 
-/** POST a grant (token minted automatically unless one is passed / `null`). */
+/** The mint result: the one-shot token AND the nonce cookie it set. */
+export interface MintedGrantToken {
+  token: string;
+  /** `null` when no token was issued (the POST's own 400/403 still wins). */
+  cookie: string | null;
+}
+
+/** W9206-03: mint a token and capture the nonce cookie the browser would hold. */
+export async function mintGrantToken(
+  h: StudioHarness,
+  id: string,
+  cap: string,
+  scope: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+): Promise<MintedGrantToken> {
+  const hash = canonicalScopeHash(cap, scope as never);
+  const res = await h.app.request(`/api/sessions/${id}/grants/confirm-token?cap=${cap}&scope_hash=${hash}`, {
+    headers: { "sec-fetch-site": "same-origin", ...extraHeaders },
+  });
+  const text = await res.text();
+  let body: Record<string, unknown> = {};
+  try {
+    body = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  // The cookie is the part BEFORE the first ';' of the Set-Cookie header.
+  const setCookie = res.headers.get("set-cookie");
+  const cookie = setCookie === null ? null : setCookie.split(";")[0] ?? null;
+  // An unsupported cap has no token to issue; the POST's own 400 still wins
+  // because the body is validated before the token is looked at.
+  return { token: res.status === 200 ? String(body["token"]) : "", cookie };
+}
+
+/**
+ * POST a grant (token + nonce cookie minted automatically unless a token is
+ * passed / `null`). Passing an explicit token WITHOUT a cookie is the
+ * "forged headers" case the W9206-03 tests exercise.
+ */
 export async function grant(
   h: StudioHarness,
   id: string,
   body: Record<string, unknown>,
   token?: string | null,
+  cookie?: string | null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   const scope = (body["scope"] ?? {}) as Record<string, unknown>;
-  const used = token === null ? null : (token ?? (await grantToken(h, id, String(body["cap"]), scope)));
+  let used = token ?? null;
+  let jar = cookie ?? null;
+  if (token === undefined) {
+    const minted = await mintGrantToken(h, id, String(body["cap"]), scope);
+    used = minted.token === "" ? null : minted.token;
+    jar = minted.cookie;
+  }
   if (used !== null) headers["x-celestea-grant-confirm"] = used;
+  if (jar !== null) headers["cookie"] = jar;
   return getJson(h.app, `/api/sessions/${id}/grants`, { method: "POST", headers, body: JSON.stringify(body) });
 }
 

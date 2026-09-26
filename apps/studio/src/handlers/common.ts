@@ -47,14 +47,84 @@ export function errorOnly(c: Context, status: number, error: string): Response {
 export type BodyRead = { ok: true; body: JsonObject } | { ok: false; response: Response };
 
 /**
+ * W9206-36: the refusal of a cross-site write.
+ *
+ * Why this exists at all. Every `/api/*` write is reachable from a browser on
+ * the SAME MACHINE (the default bind is loopback, and no token is configured by
+ * default). A cross-origin `fetch` with `Content-Type: text/plain` is a CORS
+ * **simple** request, so the browser sends it with NO preflight and the handler
+ * used to run it: any page the operator visited could POST `/api/exec` and run
+ * shell commands. The gate below is the server half of the fix (the other half
+ * is the Content-Type check in `readJsonBody`).
+ *
+ * The evidence is the browser's own Fetch Metadata, which a page CANNOT
+ * suppress: a cross-origin write always carries `Sec-Fetch-Site: cross-site`
+ * (or `same-site`) and an `Origin` that does not match `Host`. A request that
+ * carries NEITHER header is not a browser at all (curl, the CLI, the tests), and
+ * absence is not forgeable from a page — so it is allowed through, which keeps
+ * every non-browser client working unchanged.
+ */
+export const CROSS_SITE_ERROR = "cross-site request refused";
+
+/** Methods with no side effect: a cross-site GET is not a write here. */
+const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * `null` = the request may proceed; otherwise the refusal to return.
+ *
+ * Mounted for every `/api/*` request (see `app.ts`), so a new write endpoint
+ * cannot be added without the gate.
+ */
+export function crossSiteRefusal(c: Context): Response | null {
+  if (SAFE_METHODS.has(c.req.method.toUpperCase())) return null;
+  const site = (c.req.header("sec-fetch-site") ?? "").trim().toLowerCase();
+  if (site !== "") {
+    // The browser told us where the request came from. `none` = the user typed
+    // the URL / used a bookmark (not scriptable cross-origin); `same-origin` =
+    // our own page. Everything else — `cross-site`, `same-site` — is refused.
+    return site === "same-origin" || site === "none" ? null : failJson(c, 403, CROSS_SITE_ERROR);
+  }
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== "") {
+    return originHostMatches(origin, c.req.header("host") ?? "") ? null : failJson(c, 403, CROSS_SITE_ERROR);
+  }
+  // No Fetch Metadata and no Origin: a non-browser client. A page cannot remove
+  // either header, so this branch is unreachable from an attacking origin.
+  return null;
+}
+
+/** `Origin` matches the request's own `Host` (scheme-insensitive, port-sensitive). */
+function originHostMatches(origin: string, host: string): boolean {
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
+/** The media type of the request body, lower-cased and parameter-free. */
+function mediaTypeOf(c: Context): string {
+  return (c.req.header("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+/**
  * Read a JSON object body. The retired backend's rejections are mirrored:
  * missing body -> 415, unparsable -> 400, non-object -> 422.
+ *
+ * W9206-36: a NON-EMPTY body must declare `application/json`. Accepting any
+ * Content-Type is what made the cross-site `text/plain` write a CORS simple
+ * request; requiring JSON forces a preflight, which the browser then fails
+ * because no CORS headers are served. The terminal's raw-text input route
+ * deliberately does NOT come through here (it has its own reader).
  */
 export async function readJsonBody(c: Context, required = true): Promise<BodyRead> {
   const raw = await c.req.text();
   if (raw.trim() === "") {
     if (required) return { ok: false, response: failJson(c, 415, "request body required") };
     return { ok: true, body: {} };
+  }
+  if (mediaTypeOf(c) !== "application/json") {
+    return { ok: false, response: failJson(c, 415, "content-type must be application/json") };
   }
   let parsed: unknown;
   try {

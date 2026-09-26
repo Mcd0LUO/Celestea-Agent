@@ -32,6 +32,7 @@ import { loadStudioConfig, type StudioConfig } from "./config.js";
 import { apiTokenMiddleware, registerTokenBootstrap } from "./auth/api-token.js";
 import { composeStudio, type EngineFactory, type StudioServices } from "./plugins.js";
 import { registerHandlers } from "./handlers/index.js";
+import { crossSiteRefusal } from "./handlers/common.js";
 import { assembleSystemPromptFor } from "./handlers/config-shape.js";
 import { registerStatic } from "./static.js";
 import type { EngineProfile, RuntimeAdapter } from "./runtime-adapter.js";
@@ -270,6 +271,17 @@ export function createStudioApp(opts: StudioAppOptions = {}): StudioApp {
   const table = routeTable();
   const app = new Hono();
 
+  // W9206-36: the cross-site gate, mounted for EVERY /api/* request — before
+  // (and independently of) the token check, because it must also protect the
+  // default deployment, where no token is configured at all. It refuses a
+  // cross-origin write that a page could issue without a CORS preflight; see
+  // `crossSiteRefusal` for why an absent Sec-Fetch-Site/Origin is allowed.
+  app.use("/api/*", async (c, next) => {
+    const refusal = crossSiteRefusal(c);
+    if (refusal !== null) return refusal;
+    await next();
+    return undefined;
+  });
   // H-security: a configured token gates every /api/* request except
   // /api/health. No token = the historical nginx-delegated path, unchanged
   // (the listener is loopback; a non-loopback bind is refused in server.ts).

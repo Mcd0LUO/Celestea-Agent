@@ -96,9 +96,12 @@ describe("W783 · the answer resolves the parked tool call (never a message)", (
     expect(h.runtime.isBusy("sample-ws/s1")).toBe(true);
 
     // `selected` carries LABELS (never indices), plus the free-text answer.
+    // W9206-32: a real client always names the session it is answering for
+    // (`card.ts` omits it only for the detached pane); the omitted field used
+    // to skip the guard entirely, which is the bypass the fix closes.
     const answered = await h.app.request(
       `/api/questions/${id}/answer`,
-      jsonRequest("POST", { answers: [{ id: "mode", selected: ["方案 B"], custom: "补充一句" }] }),
+      jsonRequest("POST", { answers: [{ id: "mode", selected: ["方案 B"], custom: "补充一句" }], session: "sample-ws/s1" }),
     );
     expect(answered.status).toBe(200);
     expect(await answered.json()).toEqual({ ok: true, id, session: "sample-ws/s1", timed_out: false });
@@ -124,7 +127,7 @@ describe("W783 · the answer resolves the parked tool call (never a message)", (
     const turned = await h.app.request("/api/turn", jsonRequest("POST", { input: "问一下", session: "sample-ws/s1" }));
     expect(turned.status).toBe(202);
     const id = await waitForQuestion(h);
-    await h.app.request(`/api/questions/${id}/answer`, jsonRequest("POST", { answers: [{ id: "mode", selected: ["方案 A（推荐）"] }] }));
+    await h.app.request(`/api/questions/${id}/answer`, jsonRequest("POST", { answers: [{ id: "mode", selected: ["方案 A（推荐）"] }], session: "sample-ws/s1" }));
     await waitIdleOf(h);
 
     const raw = readLogOf(h);
@@ -193,7 +196,7 @@ describe("W783 · the maximum wait (§6)", () => {
     const after = (await (await h.app.request("/api/questions")).json()) as { questions: unknown[] };
     expect(after.questions).toEqual([]);
     // A late answer is a clear 404, never a silent success (§6.2).
-    const late = await h.app.request(`/api/questions/${id}/answer`, jsonRequest("POST", { answers: [{ id: "mode", selected: [] }] }));
+    const late = await h.app.request(`/api/questions/${id}/answer`, jsonRequest("POST", { answers: [{ id: "mode", selected: [] }], session: "sample-ws/s1" }));
     expect(late.status).toBe(404);
   }, 20_000);
 

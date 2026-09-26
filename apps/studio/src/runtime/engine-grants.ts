@@ -26,7 +26,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute } from "node:path";
-import { ALL_PATHS_ROOT, httpOptions, isInside, parseIpRange, parseToolRoots, pathApi } from "@celestea/tools";
+import { ALL_PATHS_ROOT, httpOptions, isInside, isWindows, parseIpRange, parseToolRoots, pathApi } from "@celestea/tools";
 /**
  * W747: `sessionIdOfDir` moved to the engine (`@celestea/runtime`, host layer
  * `host/engine-session.ts`) — the `<workspace>/<session>` id space is what that
@@ -343,14 +343,45 @@ function rejectRoot(entry: string, ctx: Ctx, grant: GrantRecord): string | null 
   // through a grant entry.
   if (resolved === volumeRootOf(resolved)) return `root '${show(entry, ctx)}' is the filesystem root`;
   const dataDir = canonicalPath(dirname(loadStudioConfig({ env: ctx.env }).paths.workspacesFile));
-  if (dataDir !== null && (isInside(dataDir, resolved) || dataDir === resolved)) return "root covers the studio data directory";
+  // W9210: every comparison below goes through `samePath`/`insidePath` so the
+  // platform's case rules are applied in ONE place. `insidePath` already answers
+  // true for equality, so it subsumes the old `dataDir === resolved` clause.
+  if (dataDir !== null && insidePath(dataDir, resolved)) return "root covers the studio data directory";
   const home = canonicalPath(ctx.env["HOME"] ?? homedir());
-  if (home !== null && resolved === home) return "root is $HOME";
+  if (home !== null && samePath(resolved, home)) return "root is $HOME";
   if (grant.cap === "write_roots") {
-    const clash = ctx.readRoots.find((root) => isInside(resolved, root) || isInside(root, resolved));
+    const clash = ctx.readRoots.find((root) => insidePath(resolved, root) || insidePath(root, resolved));
     if (clash !== undefined) return `write root overlaps the read root '${clash}'`;
   }
   return null;
+}
+
+/**
+ * W9210 (F4): path equality/containment under the PLATFORM's own semantics.
+ *
+ * `realpathSync` collapses separators, `..` and symlinks but does NOT fold case
+ * on Windows — `realpathSync("C:\USERS\LENOVO")` answers
+ * `"C:\USERS\LENOVO"`. Windows paths are case-INSENSITIVE, so a plain
+ * `===` / `startsWith` let a grant spelled with different case slip past the
+ * data-dir and `$HOME` refusals: it was accepted as a writable root covering
+ * `<data dir>/providers.json` — a privilege escalation.
+ *
+ * POSIX is case-SENSITIVE and must NOT be folded: `~/.ssh` and `~/.SSH` are
+ * different directories there, and folding would both refuse the wrong one and
+ * accept the wrong one. The platform seam decides (`isWindows`), so the win32
+ * branch is unit-testable on Linux — the same W885 rule `volumeRootOf` follows.
+ */
+export function samePath(a: string, b: string, platform: string = process.platform): boolean {
+  return foldPath(a, platform) === foldPath(b, platform);
+}
+
+/** `isInside` under the platform's case rules (equality included, as there). */
+export function insidePath(child: string, root: string, platform: string = process.platform): boolean {
+  return isInside(foldPath(child, platform), foldPath(root, platform));
+}
+
+function foldPath(path: string, platform: string): string {
+  return isWindows(platform) ? path.toLowerCase() : path;
 }
 
 function canonicalPath(path: string): string | null {

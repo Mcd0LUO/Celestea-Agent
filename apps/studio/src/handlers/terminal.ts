@@ -183,6 +183,16 @@ async function openTerminal(c: Context, deps: Deps, pump: StreamPump, terminals:
 
   spawned.child.stdout?.on("data", (chunk: unknown) => pump.pump(terminals.get(entry.id), entry.id + ":out", chunk));
   spawned.child.stderr?.on("data", (chunk: unknown) => pump.pump(terminals.get(entry.id), entry.id + ":err", chunk));
+  // W9206-35: an 'error' on the child's stdin MUST have a listener.
+  //
+  // Without one, Node treats the emit as an UNCAUGHT exception and the whole
+  // Studio process exits — every session, every running turn and every other
+  // pty dies with it. The trigger is ordinary: the child exits (the user typed
+  // `exit`) between the `writable` check below and the write, and the write then
+  // fails with EPIPE. The listener is attached ONCE at spawn, so it is already
+  // in place for every later write, and it deliberately does NOT rethrow: the
+  // bytes were lost to a dead child, which the next input call reports as 409.
+  spawned.child.stdin?.on("error", () => terminals.drop(entry.id));
   // The child is reaped by the OS; the TABLE entry is dropped here so a dead
   // terminal stops counting against the ceiling (no leak of registry rows).
   void spawned.child.wait().then(() => terminals.drop(entry.id));
@@ -203,12 +213,29 @@ async function inputTerminal(c: Context, terminals: TerminalRegistry): Promise<R
   const entry = terminals.get(id);
   if (entry === undefined) return failJson(c, 404, `unknown terminal '${id}'`, { code: TERMINAL_GONE_CODE });
   const stdin = entry.child.stdin;
-  if (stdin === null || stdin.destroyed) return failJson(c, 409, "this terminal's input stream is closed", { code: TERMINAL_GONE_CODE });
+  // W9206-35: `writable` (not just `destroyed`) is the state that actually
+  // decides whether a write is safe; a stream that has ENDED is still
+  // `destroyed === false` for a tick and would emit EPIPE.
+  if (stdin === null || stdin.destroyed || !stdin.writable) {
+    return failJson(c, 409, "this terminal's input stream is closed", { code: TERMINAL_GONE_CODE });
+  }
   // Enter is a byte the CLIENT sends (\r), so inventing one here would break
   // every REPL: the same endpoint must carry 'p' and then '\r' separately.
   const text = await c.req.text();
   if (text !== "") {
-    stdin.write(Buffer.from(text, "utf8"));
+    // W9206-35: the child can exit while `await c.req.text()` is in flight, so
+    // the state is re-checked immediately before the write and the write itself
+    // is guarded. The `error` listener attached at spawn already prevents the
+    // process-killing unhandled emit; this turns the same race into the
+    // structured 409 the client can act on.
+    if (stdin.destroyed || !stdin.writable) {
+      return failJson(c, 409, "this terminal's input stream is closed", { code: TERMINAL_GONE_CODE });
+    }
+    try {
+      stdin.write(Buffer.from(text, "utf8"));
+    } catch {
+      return failJson(c, 409, "this terminal's input stream is closed", { code: TERMINAL_GONE_CODE });
+    }
     entry.touchedAt = Date.now();
   }
   return c.json({ ok: true, id, bytes: Buffer.byteLength(text, "utf8") });

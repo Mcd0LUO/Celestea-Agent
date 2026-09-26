@@ -56,7 +56,13 @@ export class QuestionView {
   answer(requestId: string, answers: AskUserQuestionAnswerItem[], sessionId?: string): QuestionAnswerOutcome {
     const question = this.registry.get(requestId);
     if (question === undefined) return { ok: false, reason: "unknown" };
-    if (sessionId !== undefined && question.sessionId !== sessionId) return { ok: false, reason: "mismatch" };
+    // W9206-32: the guard is NOT optional. Request ids are sequential (`q-<n>`),
+    // so an omitted `session` used to skip the check entirely and let a stale
+    // tab answer another session's question by guessing the id. An absent field
+    // is now compared as `null`, which is exactly the detached generation's own
+    // value — so a legitimate detached-scope answer still matches, and any other
+    // session's question is refused.
+    if ((sessionId ?? null) !== question.sessionId) return { ok: false, reason: "mismatch" };
     if (question.isSettled) {
       return { ok: false, reason: question.settlement === "timed_out" ? "timed_out" : "settled" };
     }

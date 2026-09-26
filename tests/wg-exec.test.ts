@@ -105,4 +105,99 @@ describe("G2 · POST /api/exec", () => {
     const unknown = await exec(h, { command: "true", session: "sample-ws/ghost" });
     expect(unknown.status).toBe(404);
   });
+
+  /**
+   * W9210 (F3): a sandbox that REFUSES AT SELECTION TIME is the contract's
+   * structured 400, not a 500.
+   *
+   * The trigger is deliberately host-independent: an INVALID
+   * `CELESTEA_SANDBOX_FALLBACK` value is refused by `fallbackMode` on every
+   * platform (a typo must never decide the security posture), so this case
+   * cannot degrade into "passes because this host happens to have bwrap".
+   *
+   * Before the fix `sandboxFor` was called OUTSIDE the try, so the throw
+   * escaped the handler and Hono answered `500 Internal Server Error`.
+   */
+  it("answers a selection-time sandbox refusal as the structured 400, never a 500", async () => {
+    const h = makeHarness({ session: SESSION, env: { CELESTEA_TOOL_GUARD: "0", CELESTEA_SANDBOX_FALLBACK: "bogus" } });
+    const res = await exec(h, { command: "echo never-runs" });
+    expect(res.status).toBe(400);
+    expect(res.body["ok"]).toBe(false);
+    // The structured vocabulary of the sandbox contract survives to the client.
+    expect(String(res.body["error"])).toContain("run_shell-sandbox: code=config");
+    expect(String(res.body["error"])).toContain("CELESTEA_SANDBOX_FALLBACK='bogus'");
+    h.cleanup();
+  });
+
+  /**
+   * W9210 (F3), the `fail` branch: when the policy refuses to degrade, the
+   * refusal is ALSO a 400. `CELESTEA_SANDBOX_BWRAP` is pinned at a path that
+   * cannot exist, so the probe rejects bwrap on every host — deterministic
+   * without depending on whether THIS machine has bubblewrap installed.
+   */
+  it("answers a fail-closed sandbox refusal as a structured 400", async () => {
+    const h = makeHarness({
+      session: SESSION,
+      env: { CELESTEA_TOOL_GUARD: "0", CELESTEA_SANDBOX_FALLBACK: "fail", CELESTEA_SANDBOX_BWRAP: "/nonexistent/w9210/not-bwrap" },
+    });
+    const res = await exec(h, { command: "echo never-runs" });
+    expect(res.status).toBe(400);
+    expect(res.body["ok"]).toBe(false);
+    expect(String(res.body["error"])).toContain("sandbox_unavailable");
+    h.cleanup();
+  });
+
+  /**
+   * W9210 (W9206-37): an OMITTED `session` must not be a way to skip the
+   * focused session's permission baseline.
+   *
+   * Naming the restricted session was a 403 while omitting it ran, because the
+   * detached scope reads the DEPLOYMENT default preset. "Which session does an
+   * omitted id mean" already has one answer in this host — `active_session`,
+   * the same reading /api/status and /api/tools use — so the omitted case must
+   * answer exactly like the named one.
+   */
+  it("applies the FOCUSED session's baseline when session is omitted (no bypass by omission)", async () => {
+    const h = harness();
+    writeFileSync(join(h.root, "permissions.json"), JSON.stringify({ version: 1, updated_at: 0, presets: [SHELL_DENY_PRESET] }));
+    writeFileSync(
+      join(h.workspace, "s1", "permission.json"),
+      JSON.stringify({ version: 1, session: S1, preset: SHELL_DENY_PRESET.id, updated_at: 0 }),
+    );
+    // Focus the restricted session the way the GUI does (POST .../activate).
+    h.studio.services.workspaces.setActiveSession(S1);
+
+    const omitted = await exec(h, { command: "echo bypass?" });
+    expect(omitted.status).toBe(403);
+    expect(omitted.body["code"]).toBe("shell_denied");
+
+    // ...and the explicit form answers identically, so neither is a loophole.
+    const named = await exec(h, { command: "echo bypass?", session: S1 });
+    expect(named.status).toBe(403);
+    expect(named.body["code"]).toBe("shell_denied");
+    h.cleanup();
+  });
+
+  /**
+   * W9210 (W9206-37), the other direction: a STALE `active_session` (the
+   * session it names no longer exists) must NOT turn a legitimate detached run
+   * into a 404. It names nothing live, so there is no baseline to apply — the
+   * pre-existing detached behaviour is correct there.
+   *
+   * This is the negative control for "just require a session": requiring one
+   * would refuse this case, and the fix must not break it.
+   */
+  it("falls back to the detached scope for a stale active session, but still 404s a caller-named ghost", async () => {
+    const h = harness();
+    h.studio.services.workspaces.setActiveSession("sample-ws/ghost");
+
+    const omitted = await exec(h, { command: "echo detached-ok" });
+    expect(omitted.status).toBe(200);
+    expect(omitted.body["ok"]).toBe(true);
+
+    // A session the CALLER named is the caller's own claim: its 404 stands.
+    const named = await exec(h, { command: "echo ghost", session: "sample-ws/ghost" });
+    expect(named.status).toBe(404);
+    h.cleanup();
+  });
 });

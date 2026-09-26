@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakeRuntimeAdapter } from "./fake-runtime-adapter.js";
-import { busyRuntime, FILE_MODES_MEANINGFUL, getJson, grant, grantToken, jsonRequest, makeHarness, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
+import { busyRuntime, FILE_MODES_MEANINGFUL, getJson, grant, grantToken, jsonRequest, makeHarness, mintGrantToken, pinPathOnly, type StudioHarness } from "./harness.test-util.js";
 import { fsRoots } from "./config.js";
 import { workspaceHome } from "./store/celestea-home.js";
 
@@ -258,9 +258,11 @@ describe("session grants endpoints", () => {
     // §5.5: no token -> 403; a token is one-shot -> 409; an old one -> 403.
     expect((await grant(h, S1, { cap: "network" }, null)).body).toEqual({ ok: false, error: "grant confirmation required" });
     reset();
-    const token = await grantToken(h, S1, "network", {});
-    expect((await grant(h, S1, { cap: "network" }, token)).status).toBe(200);
-    const replay = await grant(h, S1, { cap: "network" }, token);
+    // W9206-03: a real browser carries the HttpOnly nonce cookie the mint set,
+    // so the single-use assertion drives BOTH halves of the handshake.
+    const minted = await mintGrantToken(h, S1, "network", {});
+    expect((await grant(h, S1, { cap: "network" }, minted.token, minted.cookie)).status).toBe(200);
+    const replay = await grant(h, S1, { cap: "network" }, minted.token, minted.cookie);
     expect(replay.status).toBe(409);
     expect(replay.body).toEqual({ ok: false, error: "confirmation token already used" });
     reset();

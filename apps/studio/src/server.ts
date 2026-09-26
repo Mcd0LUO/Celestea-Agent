@@ -30,6 +30,12 @@ export interface StudioServerOptions extends StudioAppOptions {
   hostname: string;
   /** Emit the startup banner (default true; tests may silence it). */
   log?: boolean;
+  /**
+   * W9206-35: install the process-level last-resort handlers (default true).
+   * Tests turn it off so a deliberate throw is still observable as a failure
+   * instead of being logged and absorbed by the server under test.
+   */
+  crashNet?: boolean;
   /** Called once the listener is up, with the ACTUAL bound port. */
   onListening?: (info: { port: number; hostname: string; endpointCount: number }) => void;
 }
@@ -47,6 +53,32 @@ export interface StudioServerHandle {
 interface ServeHandle {
   close(cb?: () => void): void;
   closeAllConnections?(): void;
+}
+
+/**
+ * W9206-35: the LAST-RESORT net, installed once per server.
+ *
+ * Node's default for an unhandled stream `error` (or a rejected promise with
+ * no handler) is to tear the process down, which would take every session,
+ * turn and pty with it. The specific cause found in this audit is fixed where
+ * it happens (the terminal's stdin listener), but a server whose whole value
+ * is long-lived state must not die from one stray emitter: log it loudly and
+ * keep serving. This does NOT swallow anything — the line names the error, and
+ * an unrecoverable state still surfaces on the next request.
+ */
+function installCrashNet(log: (line: string) => void): void {
+  process.on("uncaughtException", (error) => {
+    log("[celestea] uncaught exception (kept serving): " + describeError(error));
+  });
+  process.on("unhandledRejection", (reason) => {
+    log("[celestea] unhandled rejection (kept serving): " + describeError(reason));
+  });
+}
+
+/** One error as a single line for the crash net (never a nested stack dump). */
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.stack ?? error.message;
+  return String(error);
 }
 
 /** The one startup banner (kept out of `startStudioServer` for the size rule). */
@@ -112,6 +144,8 @@ export function startStudioServer(options: StudioServerOptions): StudioServerHan
   const log = (line: string): void => {
     if (loud) console.log(`[celestea-studio-ts] ${line}`);
   };
+  // W9206-35: installed once the logger exists (the net reports through it).
+  if (options.crashNet !== false) installCrashNet(log);
 
   async function within(work: Promise<void> | void, ms: number): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | null = null;
