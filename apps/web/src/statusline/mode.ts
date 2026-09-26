@@ -141,20 +141,78 @@ export interface ModeHost {
   setNote(text: string, ms: number): void;
 }
 
-let popup: HTMLElement | null = null;
-let overlay: OverlayHandle | null = null;
-let host: ModeHost | null = null;
+// ---- W9204（P1-3）：弹层状态**按实例**保存 -----------------------------------------
+//
+// 原先 popup/overlay/host 是模块级单例，后果有三（审计 P1-3）：
+//   ① Esc 被吞：弹层节点被外力摘掉（宿主重绘）时没人调 closeModePopup，而 utils/overlays
+//      的栈里还留着那一层 —— 下一次 Esc 被它 preventDefault 后调一个空转的 close；
+//   ② 跨实例误判：modePopupHit 只看模块级 popup，第二个 Statusline 实例的弹层会被第一个
+//      实例认成自己的，点外部时互相关掉；
+//   ③ 副作用过宽：closeModePopup 无条件把 host 置 null，正在进行的切换会静默失败
+//      （pickMode 里 h = host 拿到 null 直接 return）。
+//
+// 现在状态挂在**实例**上（key = 宿主根元素 #statusline），并且：overlay 的 close 闭包带
+// **对象同一性守卫**（只关它自己压进去的那一张）、close 只在「确实关的是一张开着的弹层」
+// 时才丢 host。对外 API 保持原形，只多一个可选的 root 参数（缺省 = 全部实例）。
+interface ModePopupState {
+  popup: HTMLElement | null;
+  overlay: OverlayHandle | null;
+  host: ModeHost | null;
+}
+/**
+ * 每个实例一份状态（key = 宿主根元素）。
+ *
+ * 为什么用 WeakMap 而不是「一个 Set + 手工清理」：Set 会**强引用**住状态对象，进而强引用
+ * 住 host 与弹层节点 —— 页面被替换掉的状态就永远回收不了（测试里每次 resetModules 都造
+ * 一批）。WeakMap 让「根元素没了」= 「状态自然回收」，无需任何清理路径。
+ */
+const popupByRoot = new WeakMap<HTMLElement, ModePopupState>();
+/**
+ * **当前开着**弹层的实例（只为「无 root 的调用」兜底）。
+ *
+ * 为什么不用一个长命的 Set 记住所有实例：那会强引用住状态 → host → 弹层节点，
+ * 被替换掉的页面就永远回收不了。这里只装**开着**的那些（生产上恒为 0 或 1），
+ * closeState 一关就摘掉 —— 集合大小有界，且不阻碍回收。
+ */
+const openStates = new Set<ModePopupState>();
 
-export function closeModePopup(): void {
-  if (overlay !== null) {
-    popOverlay(overlay);
-    overlay = null;
+function popupStateOf(root: HTMLElement): ModePopupState {
+  let st = popupByRoot.get(root);
+  if (!st) {
+    st = { popup: null, overlay: null, host: null };
+    popupByRoot.set(root, st);
   }
-  if (popup !== null) {
-    popup.remove();
-    popup = null;
+  return st;
+}
+
+/** 关掉一份状态（幂等；host 只在确实关了一张开着的弹层时才清）。 */
+function closeState(s: ModePopupState): void {
+  const wasOpen = s.popup !== null;
+  if (s.overlay !== null) {
+    popOverlay(s.overlay);
+    s.overlay = null;
   }
-  host = null;
+  if (s.popup !== null) {
+    s.popup.remove();
+    s.popup = null;
+  }
+  if (wasOpen) s.host = null;
+  openStates.delete(s);
+}
+
+/**
+ * 关掉弹层（幂等）。
+ *   · 给了 root ⇒ 只关**这一个实例**的（跨实例误关正是 P1-3 ② 的错法）；
+ *   · 没给 root（statusline.ts 的既有调用点）⇒ 关掉当前**开着**的实例。
+ *     生产上恒为 0 或 1 个，所以这与旧行为等价，但不碰「没开着的实例」的状态。
+ */
+export function closeModePopup(root?: HTMLElement): void {
+  if (root) {
+    const st = popupByRoot.get(root);
+    if (st) closeState(st);
+    return;
+  }
+  for (const s of [...openStates]) closeState(s);
 }
 
 /**
@@ -167,17 +225,24 @@ export function closeModePopup(): void {
  * `composedPath()` 在事件派发时就固定了路径，不受随后的重绘影响。
  * 兼容路径：环境没有 composedPath 时退回 contains()（旧行为）。
  */
-export function modePopupHit(e: Event): boolean {
-  if (popup === null) return false;
+export function modePopupHit(e: Event, root?: HTMLElement): boolean {
+  // W9204：给了 root ⇒ 只认**本实例**的弹层（原先看模块级单例 ⇒ 跨实例误判）；
+  // 没给（statusline.ts 的既有调用点）⇒ 认当前开着的那些（生产上恒为 0/1 个）。
+  const states = root ? [popupByRoot.get(root)] : [...openStates];
   const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
   const target = e.target;
-  return path.some((n) => n === popup) || (target instanceof Node && popup.contains(target));
+  for (const s of states) {
+    const p = s?.popup ?? null;
+    if (p === null) continue;
+    if (path.some((n) => n === p) || (target instanceof Node && p.contains(target))) return true;
+  }
+  return false;
 }
 
 /** 徽标点击：已开则关，未开则开（与模型/档位弹层的 toggle 语义一致）。 */
 export function toggleModePopup(h: ModeHost): void {
-  if (popup !== null) {
-    closeModePopup();
+  if (popupStateOf(h.root).popup !== null) {
+    closeModePopup(h.root);
     return;
   }
   openModePopup(h);
@@ -188,34 +253,52 @@ export function toggleModePopup(h: ModeHost): void {
  * 再原地替换成只读态（铁律 1/3：不先清空，晚到的结果不与新状态打架）。
  */
 export function openModePopup(h: ModeHost): void {
-  closeModePopup();
+  const st = popupStateOf(h.root);
+  closeState(st);
   const p = el('div', 'sl-popup');
   p.setAttribute('role', 'menu');
-  popup = p;
-  host = h;
+  st.popup = p;
+  st.host = h;
+  openStates.add(st);
   h.root.appendChild(p);
-  overlay = pushOverlay(() => closeModePopup());
+  // W9204：close 闭包带**对象同一性守卫** —— Esc 只关「它自己压进去的那一张」。
+  // 少了这道门，一张已被换掉的弹层的迟到 close 会去关当前那一张（并清掉它的 host）。
+  st.overlay = pushOverlay(() => {
+    if (st.popup !== p) return;
+    closeState(st);
+  });
   p.appendChild(el('div', 'sl-popup-title', t('statusline.mode.title')));
   const body = el('div', 'sl-popup-body');
   p.appendChild(body);
-  renderModeList(body, h.currentMode, true);
+  renderModeList(st, body, h.currentMode, true);
   void modeSwitchSupported().then((can) => {
-    if (can || popup !== p) return;
-    renderModeList(body, h.currentMode, false);
+    if (can || st.popup !== p) return;
+    renderModeList(st, body, h.currentMode, false);
   });
 }
 
 /** 清单渲染（离屏构建 + 单次替换，铁律 1）。`can=false` = 只读降级。 */
-function renderModeList(body: HTMLElement, current: string, can: boolean): void {
+function renderModeList(st: ModePopupState, body: HTMLElement, current: string, can: boolean): void {
   const off = document.createElement('div');
-  for (const o of modeChoices()) off.appendChild(modeRow(o.value, o.label, o.value === current, can));
+  for (const o of modeChoices()) off.appendChild(modeRow(st, o.value, o.label, o.value === current, can));
   const note = can ? t('statusline.mode.currentNote', { mode: modeLabel(current) || t('statusline.unknown') }) : modeNotes().unsupported;
   off.appendChild(el('div', 'sl-popup-note', note));
   body.replaceChildren(...off.childNodes);
 }
 
-/** 一行工作方式：当前项标注「当前」并禁用（点它没有意义）；只读态全部禁用。 */
-function modeRow(value: SessionMode, label: string, current: boolean, can: boolean): HTMLElement {
+/**
+ * 一行工作方式：当前项标注「当前」并禁用（点它没有意义）；只读态全部禁用。
+ *
+ * W9204：行必须知道**自己属于哪一张弹层**（st）—— 点击才不会再从模块级单例里找宿主
+ * （P1-3 ③：closeModePopup 把 host 置 null 之后，那条路径会静默 return）。
+ */
+function modeRow(
+  st: ModePopupState,
+  value: SessionMode,
+  label: string,
+  current: boolean,
+  can: boolean,
+): HTMLElement {
   const b = el('button', 'sl-opt' + (current ? ' current' : '')) as HTMLButtonElement;
   b.type = 'button';
   b.appendChild(el('span', 'sl-opt-name', label));
@@ -223,7 +306,7 @@ function modeRow(value: SessionMode, label: string, current: boolean, can: boole
   b.disabled = !can || current;
   b.addEventListener('click', () => {
     if (!can || current) return;
-    void pickMode(value);
+    void pickMode(st, value);
   });
   return b;
 }
@@ -247,9 +330,11 @@ function modeRow(value: SessionMode, label: string, current: boolean, can: boole
  * 必须保留 —— 那是「不假装成功」的诚实降级（任务书 §4），删掉它才是真破坏。
  * 徽标本身已经当帧画成终态（乐观更新），用户看得到切换成功，不需要额外一句话。
  */
-async function pickMode(mode: SessionMode): Promise<void> {
-  const h = host;
-  const p = popup;
+async function pickMode(st: ModePopupState, mode: SessionMode): Promise<void> {
+  // W9204（P1-3 ③）：宿主/弹层由**调用点**（modeRow 的闭包）直接给出 —— 不再从模块级
+  // 单例里取。原先 const h = host 会在 closeModePopup 把 host 置 null 之后静默 return。
+  const h = st.host;
+  const p = st.popup;
   if (h === null || p === null) return;
   // 会话 id 未解析 ⇒ 必然失败的请求不发、也不先画终态（免得白闪一下）
   if (h.sessionId === '') {
@@ -260,20 +345,20 @@ async function pickMode(mode: SessionMode): Promise<void> {
   const body = p.querySelector('.sl-popup-body');
   // 终态：徽标 = 目标模式，清单里目标项标「当前」并禁用
   h.applyMode(mode);
-  if (body !== null) renderModeList(body as HTMLElement, mode, true);
+  if (body !== null) renderModeList(st, body as HTMLElement, mode, true);
 
   const out = await requestModeSwitch(h.sessionId, mode);
   if (out.kind === 'ok') {
     // W1520：成功不弹提示 —— 徽标已当帧画成终态，再写 #slHint 会撑爆右端集群
     // （见 pickMode 的模块注释：44px → 245px 的真机实测）。
-    closeModePopup();
+    closeState(st);
     return;
   }
   // 失败回滚：徽标退回原模式（乐观的显示不许留在错的模式上）
   h.applyMode(prev as SessionMode);
   if (out.kind === 'unsupported') {
     // 老服务：只读降级（弹层留在屏幕上，把清单换成禁用态，不假装成功）
-    if (body !== null) renderModeList(body as HTMLElement, prev, false);
+    if (body !== null) renderModeList(st, body as HTMLElement, prev, false);
   }
   const notes = modeNotes();
   const text =
@@ -285,6 +370,6 @@ async function pickMode(mode: SessionMode): Promise<void> {
           ? notes.invalid
           : out.text;
   h.setNote(text, 6000);
-  if (popup !== p) return; // 期间弹层被关掉/重开：只留状态栏提示
+  if (st.popup !== p) return; // 期间弹层被关掉/重开：只留状态栏提示
   p.appendChild(el('div', 'sl-popup-status err', text));
 }

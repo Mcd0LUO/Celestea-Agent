@@ -11,7 +11,7 @@
  * （防止「把阈值改成 0 = 谁也吸不上」这种假修复）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { at, doc, Ev, resetHarness, type ElLike } from './lib/w795-dom.js';
+import { at, doc, Ev, flushRaf, rafStub, resetHarness, type ElLike } from './lib/w795-dom.js';
 
 const MAIN_W = 900;
 const PANE_H = 600;
@@ -66,6 +66,8 @@ async function bootRail(): Promise<{ rail: RailMod; main: ElLike; msgs: ElLike }
       disconnect(): void {}
     },
   );
+  // W9204：rAF 单独接管成显式队列（见 tests/lib/w795-dom.ts 的 rafStub）。
+  vi.stubGlobal('requestAnimationFrame', rafStub);
   const hint = (await import(/* @vite-ignore */ at('ui/hint/index.ts'))) as HintMod;
   hint.initHints();
   const ctx = (await import(/* @vite-ignore */ at('ui/viewctx.ts'))) as ViewCtxMod;
@@ -96,6 +98,8 @@ async function bootRail(): Promise<{ rail: RailMod; main: ElLike; msgs: ElLike }
     msgs.appendChild(round);
     rail.railAdd(pane, round, 'user');
   }
+  // W9204：建列走 rAF 合并（railAdd → queueSync）—— 帧跑完长条才有 top/宽度可断言。
+  flushRaf();
   return { rail, main, msgs };
 }
 
@@ -103,13 +107,19 @@ const bars = (): ElLike[] => Array.from(doc.querySelectorAll('#main .railv3-item
 const barY = (i: number): number => Number.parseFloat(String(bars()[i]?.style?.['top'])) + 2.5;
 const cardText = (hint: HintMod): string => hint.hintCardEl()?.textContent ?? '';
 
-/** 在 #main 上推一次指针（rail 的 onMove → rAF → applyMove），再等过提示停留的 150ms。 */
+/**
+ * 在 #main 上推一次指针（rail 的 onMove → rAF → applyMove），再等过提示停留的 150ms。
+ *
+ * W9204：先 flushRaf() 把 rail 自己的帧跑完，再推进定时器让提示引擎的停留到期 ——
+ * 两件事分开做，rail 的 rAF 不再与 150ms 停留耦合（本仓 jsdom 里 rAF = setTimeout 0）。
+ */
 function moveTo(main: ElLike, x: number, y: number): void {
   const e = new Ev('pointermove', { bubbles: true });
   Object.defineProperty(e, 'clientX', { value: x });
   Object.defineProperty(e, 'clientY', { value: y });
   main.dispatchEvent(e);
-  vi.advanceTimersByTime(200); // rAF 帧 + 提示引擎的 150ms 停留
+  flushRaf();
+  vi.advanceTimersByTime(200); // 提示引擎的 150ms 停留
 }
 
 describe('W867 · 用户 6①：rail 吸附/命中距离收短', () => {

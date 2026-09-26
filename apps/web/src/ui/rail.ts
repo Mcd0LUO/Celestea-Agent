@@ -19,6 +19,16 @@
 //   的悬停停留 = **0**（railHintPlugin.delayMs），与全站密集控件的 150ms 缺省分开；
 //   条带内换条由提示引擎就地换内容（不撤卡、不重新计时）。见 ui/hint/registry.ts 的
 //   delayMs 注释（那里是本口径的唯一真源）。
+// ★ W9204（P1-1 / P1-2）：
+//   · 布局改为**增量**：一次 layout 只把「真的变了」的条写进 DOM，并带整帧早退。
+//     原实现对**全部**条无条件写 display/top/--barh，而 layout 又被每次 railAdd 同步
+//     调用一次 —— 于是每次调用都要为 O(N) 个脏元素付一次强制同步重排，总代价 O(N²)
+//     （W9111 实测 1 200 列 21.9s、3 000 列 92.5s）。现在建列走 queueSync（rAF 合并），
+//     单次 layout 的脏集只有真正变化的那些条。
+//   · 摘高亮覆盖**整轨**：clearHover 原先只遍历 st.items，而**折叠条不在 st.items 里**
+//     （它在 st.foldItem，只有 allItems 才含它）⇒ 折叠条的高亮永远摘不掉、一直留在
+//     「吸附」态。窗口外的条本来就在 st.items 里（窗口只影响 display），所以那一条是
+//     回归护栏；W9204 的审计报告已就「窗口外条会复活」这一说法更正。
 // ★ W514 多会话：长条按「会话视图容器」分别保存（WeakMap<SessionPane, RailState>）。
 //   切换会话只做一次指针交换 + 元素搬家（appendChild 移动节点，不重建）：
 //   各会话的长条集合/折叠条随容器一起保存，切回立即可见，零重排重建。
@@ -33,9 +43,15 @@ import { t } from '../i18n';
 // ---- 紧凑几何（细条 —— 自然高 5px、间隙 4px） ----
 // W867：几何常量与公式搬到 ./rail-geom.ts（纯搬家，逐字未变：零 DOM、可单测）。
 import {
-  RAIL_PAD_Y, RAIL_PITCH_NATURAL, railBarHeight, railBarOpacity, railBarWidth,
-  railCardPlacement, railFitsAll, railGrow, railGutterWidth, railHit, railHitRadius, railLane, railPitch,
+  railBarOpacity, railBarWidth,
+  railCardPlacement, railGrow, railHit, railHitRadius,
 } from './rail-geom';
+// W9204（P1-1）：布局引擎整段搬到 ./rail-layout.ts（脏检查 + 整帧早退 + 先读后写）。
+// 几何状态（railTop/railH/railX/railW/pitch/modeAll）改由该模块持有，这里只经 getter 读。
+import {
+  layoutRail, railHeight, railLeftX, railPitchNow, railShowsAll, railTopY, railWidth,
+  resetRailLayoutCache, syncCenterNow, type RailLayoutHost,
+} from './rail-layout';
 /** W1485：记账层变量（轨道 DOM 与几何仍归本模块）。 */
 let mainEl: HTMLElement | null = null;
 /** 轨道当前绑定的会话容器（= 视觉上正在显示的那个）。 */
@@ -49,27 +65,20 @@ let moveQueued = false;
 let moveX = -1;
 let moveY = -1;
 
-let railX = 8;
-let railTop = 0;
-let railH = 0;
-let railW = 110; // W867：缺省 = rail-geom 的 RAIL_MAX_W（此处不再单独引常量）
-let pitch = RAIL_PITCH_NATURAL;
-let modeAll = true;
 
 function curState(): ReturnType<typeof stateOf> | null {
   return cur ? stateOf(cur) : null;
 }
 // W9106：中间判定的**呈现**搬到 ./rail-center-view.ts（纯搬家，见该文件头注释）
-import { paintCenter, resetCenter } from './rail-center-view';
+// W9204（P1-1）：paintCenter 现在只由 ./rail-layout.ts 调（中间判定的几何在那里）。
+import { resetCenter } from './rail-center-view';
 import { buildRailCard } from './rail-card';
-import { viewWindow } from './rail-doc';
 // W1485：长条记账搬到 ./rail-state.ts（模块体积棘轮；纯搬家 + 一个摘除手术）
 import { allItems, bindItem, dropColsInState, itemOf, stateOf, stateOfOnly, type RailItem } from './rail-state';
 // W867：命中半径（hover 命中与点击命中共用同一口径；测试直接断言这个纯函数）。
 export { railHitRadius };
 /** W790：rail 预览卡在提示注册缝里的提供者身份（priority 10 = 压过内置纯文本卡）。 */
 export const RAIL_HINT_ID = 'rail-preview';
-const MAX_ROWS = 20;
 
 // ---- 轨道与几何 ---------------------------------------------------------------
 
@@ -79,119 +88,34 @@ function ensureTrack(): boolean {
     track = document.createElement('div');
     track.className = 'railv3';
     mainEl.appendChild(track);
+    // W9204：新轨道是空 DOM ⇒ 与布局缓存里的读数不再对应，必须丢弃（否则新条不落位）。
+    invalidateLayout();
   }
   return true;
 }
 
-/** W9106：本模块只剩调用点；判定与呈现分别在 ./rail-center.ts / ./rail-center-view.ts。 */
-function syncCenter(shown: RailItem[]): void {
-  paintCenter(msgsEl, railH, railW, shown);
+/**
+ * W9204（P1-1）：布局引擎的宿主接线。布局本身在 ./rail-layout.ts（脏检查 + 整帧早退 +
+ * 先读后写），本模块只把「当前会话的记账 / 两个容器 / 轨道」这三件事交给它。
+ * 方向是单向的：rail-layout 不 import rail.ts，因此不会成环。
+ */
+const LAYOUT_HOST: RailLayoutHost = {
+  state: () => curState(),
+  elements: () => (mainEl && msgsEl ? { main: mainEl, msgs: msgsEl } : null),
+  track: () => track,
+};
+
+/** W9204：轨道被重建 / 整批搬家 / 记账被清空时丢弃布局缓存（见 resetRailLayoutCache）。 */
+function invalidateLayout(): void {
+  resetRailLayoutCache();
 }
 
-/** 留白带宽：.mcol 左缘 − #main 左缘（算式在 ./rail-geom.ts，这里只取 rect）。 */
-function gutterWidth(): number {
-  if (!mainEl || !msgsEl) return 0;
-  const col = msgsEl.querySelector<HTMLElement>('.mcol');
-  const m = mainEl.getBoundingClientRect();
-  return railGutterWidth(m.left, m.width, col ? col.getBoundingClientRect().left : null);
-}
-
-/** 全量重排：横向档位 + 纵向节距 + 条组居中（railSync / 滚动 / 尺寸变化）。 */
+/** W9204：布局入口（几何状态由 ./rail-layout.ts 持有，这里只是调用点）。 */
 function layout(): void {
-  const st = curState();
-  if (!mainEl || !msgsEl || !track || !st) return;
-  const m = mainEl.getBoundingClientRect();
-  const v = msgsEl.getBoundingClientRect();
-  railTop = Math.max(0, v.top - m.top);
-  railH = v.height;
-
-  const lane = railLane(gutterWidth());
-  if (lane.hidden) {
-    track.style.display = 'none';
-    railW = 0;
-    return;
-  }
-  track.style.display = '';
-  const thin = lane.thin;
-  railX = lane.left;
-  railW = lane.width;
-  track.classList.toggle('railv3-thin', thin);
-  track.style.left = railX + 'px';
-  track.style.top = railTop + 'px';
-  track.style.height = railH + 'px';
-
-  const usable = Math.max(0, railH - 2 * RAIL_PAD_Y);
-  if (st.items.length === 0) {
-    if (st.foldItem) {
-      st.foldItem.el.remove();
-      st.foldItem = null;
-    }
-    syncCenter([]); // W872：没有条可判 → 清掉「居中」态
-    return;
-  }
-  const foldN = st.items.length > MAX_ROWS ? st.items.length - MAX_ROWS : 0;
-  if (foldN > 0) {
-    const fi = st.foldItem;
-    // 折叠条必须挂在 track 上才有效（holder 里的旧折叠条在切换时被搬走）
-    if (!fi || fi.el.parentNode !== track) {
-      const stale = fi?.el;
-      const fresh: RailItem = {
-        startCol: st.items[st.items.length - MAX_ROWS]!.startCol,
-        cols: [],
-        hasReply: false,
-        el: document.createElement('div'),
-        y: 0,
-        visible: false,
-        fold: foldN,
-        hint: '',
-      };
-      fresh.el.className = 'railv3-item railv3-fold';
-      fresh.el.textContent = '⋯';
-      track.appendChild(fresh.el);
-      bindItem(fresh.el, fresh);
-      st.foldItem = fresh;
-      if (stale && stale.parentNode) stale.remove();
-    } else {
-      fi.fold = foldN;
-    }
-    if (st.foldItem) {
-      st.foldItem.fold = foldN;
-      st.foldItem.hint = t('chat.rail.folded', { n: foldN });
-      setHint(st.foldItem.el, st.foldItem.hint);
-    }
-  } else if (st.foldItem) {
-    st.foldItem.el.remove();
-    st.foldItem = null;
-  }
-  const bars = allItems(st);
-  const count = bars.length;
-  let shown: RailItem[];
-  if (railFitsAll(usable, count)) {
-    modeAll = true;
-    pitch = railPitch(usable, count);
-    shown = bars;
-  } else {
-    modeAll = false;
-    shown = viewWindow(msgsEl!, railH, st.items);
-    pitch = railPitch(usable, shown.length);
-  }
-  const stripTop = RAIL_PAD_Y + Math.max(0, (usable - shown.length * pitch) / 2);
-  const barH = railBarHeight(pitch);
-  for (const it of bars) {
-    const i = shown.indexOf(it);
-    if (i < 0) {
-      it.visible = false;
-      it.el.style.display = 'none';
-      continue;
-    }
-    it.visible = true;
-    it.el.style.display = '';
-    it.y = stripTop + i * pitch + pitch / 2;
-    it.el.style.top = it.y - barH / 2 + 'px';
-    it.el.style.setProperty('--barh', barH + 'px');
-  }
-  syncCenter(shown); // W872：同帧刷新「居中」态（一个类 + 文案，不重建 DOM）
+  layoutRail(LAYOUT_HOST);
 }
+
+
 
 // ---- 预览卡片 = 提示注册缝的一个提供者（W790；W872 只把「取内容」搬到 ./rail-card.ts） ----
 
@@ -200,7 +124,7 @@ function positionCard(box: HTMLElement, anchor: HTMLElement): void {
   if (!mainEl) return;
   const m = mainEl.getBoundingClientRect();
   const r = anchor.getBoundingClientRect();
-  const geom = { mainX: m.left, mainY: m.top, mainW: m.width, railTop, railH, railX, anchor: { top: r.top, right: r.right }, cardH: box.offsetHeight };
+  const geom = { mainX: m.left, mainY: m.top, mainW: m.width, railTop: railTopY(), railH: railHeight(), railX: railLeftX(), anchor: { top: r.top, right: r.right }, cardH: box.offsetHeight };
   const at = railCardPlacement(geom);
   box.style.top = at.top + 'px';
   box.style.left = at.left + 'px';
@@ -228,15 +152,28 @@ export function railHintPlugin(): HintPlugin {
 
 function setGrow(it: RailItem, g: number): void {
   // W867：宽度 / 不透明度算式搬到 ./rail-geom.ts（逐字同式，纯搬家）。
-  it.el.style.width = railBarWidth(g, railW).toFixed(1) + 'px';
+  it.el.style.width = railBarWidth(g, railWidth()).toFixed(1) + 'px';
   it.el.style.opacity = railBarOpacity(g).toFixed(3);
 }
 
+/**
+ * 撤悬停：摘掉**整轨**的高亮并撤卡。
+ *
+ * W9204（P1-2）：遍历必须用 allItems 而不是 st.items ——
+ *   · 折叠条**不在** st.items 里（allItems 才把它排在前面），原先它一旦带上 .is-hover
+ *     就再也没人摘：applyMove 只在「当前可见且命中」时 toggle，而 clearHover 又看不到它。
+ *     实测（变异负控制）：把这里改回 st.items，本轮的「折叠条离开条带后仍带 .is-hover」
+ *     用例立刻变红。
+ *   · 窗口外的条**在** st.items 里（窗口只影响 display，不影响记账），所以旧写法对它们
+ *     本来是清得到的 —— 这一条是回归护栏，不是本次修的 bug（审计报告 W9204 已更正：
+ *     原先声称「窗口外条的高亮会复活」是错的，st.items 含全部轮次）。
+ * 无条件摘（不看 visible）是这里的正确性要求，不是优化。
+ */
 function clearHover(): void {
   hoverItem = null;
   hideHint(); // W790：撤卡交给提示引擎（延迟/宿主/落位都不在本模块）
   const st = curState();
-  if (st) for (const it of st.items) it.el.classList.remove('is-hover', 'is-near');
+  if (st) for (const it of allItems(st)) it.el.classList.remove('is-hover', 'is-near');
 }
 
 function collapse(): void {
@@ -265,14 +202,17 @@ function applyMove(): void {
   const m = mainEl.getBoundingClientRect();
   const x = moveX - m.left;
   const y = moveY - m.top;
-  const inZone = railW > 0 && x >= railX - 6 && x <= railX + railW + 14 && y >= railTop && y <= railTop + railH;
+  const railX = railLeftX();
+  const railW = railWidth();
+  const railTop = railTopY();
+  const inZone = railW > 0 && x >= railX - 6 && x <= railX + railW + 14 && y >= railTop && y <= railTop + railHeight();
   if (!inZone) {
     collapse();
     return;
   }
   const bars = allItems(st).filter((it) => it.visible);
   for (const it of bars) setGrow(it, railGrow(Math.abs(y - (railTop + it.y)))); // W867：增益公式在 ./rail-geom.ts
-  const at = railHit(bars, y, railTop, pitch); // W1546：最近条 + 是否在悬停半径内（两个口径同一份计算）
+  const at = railHit(bars, y, railTop, railPitchNow()); // W1546：最近条 + 是否在悬停半径内（两个口径同一份计算）
   const hit = at?.hover ? at.item : null; // W867：悬停 = 落在长条上（旧 max(pitch/2, 8) 恒 8px ⇒ 跨条误吸）
   if (hit) setGrow(hit, 1);
   else clearHover(); // 死区：不吸附、不弹卡（下面的 .is-near 让「点它会点中谁」看得见）
@@ -303,10 +243,13 @@ function onClick(e: MouseEvent): void {
   const m = mainEl.getBoundingClientRect();
   const x = e.clientX - m.left;
   const y = e.clientY - m.top;
+  const railX = railLeftX();
+  const railW = railWidth();
+  const railTop = railTopY();
   if (x < railX - 6 || x > railX + railW + 14) return;
   const st = curState();
-  if (!st || y < railTop || y > railTop + railH) return;
-  const at = railHit(allItems(st).filter((it) => it.visible), y, railTop, pitch);
+  if (!st || y < railTop || y > railTop + railHeight()) return;
+  const at = railHit(allItems(st).filter((it) => it.visible), y, railTop, railPitchNow());
   if (!at) return;
   e.preventDefault();
   at.item.startCol.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -314,7 +257,7 @@ function onClick(e: MouseEvent): void {
 
 function onScroll(): void {
   // W872：条带全显示时也要重判「视口中央命中哪一轮」，但不做全量重排（只走一次 rAF）。
-  if (modeAll) {
+  if (railShowsAll()) {
     queueMid();
     return;
   }
@@ -328,7 +271,7 @@ function queueMid(): void {
   requestAnimationFrame(() => {
     midQueued = false;
     const st = curState();
-    if (modeAll && st) syncCenter(allItems(st));
+    if (railShowsAll() && st && msgsEl) syncCenterNow(msgsEl, allItems(st));
   });
 }
 
@@ -377,7 +320,10 @@ export function railAdd(ctx: SessionPane, col: HTMLElement, role: 'user' | 'assi
       last.el.classList.add('is-reply');
     }
   }
-  if (live) layout();
+  // W9204（P1-1）：建列**不再同步重排**。原先每列一次同步 layout()，而单次 layout 要面对
+  // 上一帧留下的 O(N) 个脏元素（强制同步重排）⇒ 建 N 列总代价 O(N²)（W9111：1 200 列 21.9s、
+  // 3 000 列 92.5s）。走 queueSync 后 N 列合并成每帧一次布局，且 layout 自带脏检查与整帧早退。
+  if (live) queueSync();
 }
 
 /**
@@ -396,6 +342,7 @@ export function railDropCols(ctx: SessionPane, cols: readonly HTMLElement[]): nu
     // 一个已脱离文档的节点，长条与高亮对不上）。
     clearHover();
     resetCenter(false); // W9106：命中条即将被摘掉，类随节点一起消失
+    invalidateLayout(); // W9204：条数变了 ⇒ 丢弃整帧早退缓存
     queueSync();
   }
   return dropped;
@@ -412,6 +359,9 @@ export function railReset(ctx: SessionPane): void {
     hoverItem = null;
     resetCenter(false); // W872：命中条即将被清空，判定随之复位（W9106 起在 rail-center-view）
     if (track) track.textContent = '';
+    // W9204：记账被清空 ⇒ 丢弃整帧早退缓存（否则「新一批恰好同样多」会让早退命中，
+    // 新条永远拿不到位置；条数缓存是 -1 时早退不可能命中，所以这里只需显式丢弃）。
+    invalidateLayout();
   }
 }
 
@@ -442,6 +392,8 @@ export function railActivate(ctx: SessionPane): void {
   if (!ensureTrack() || !track) return;
   const st = stateOf(ctx);
   while (st.holder.firstChild) track.appendChild(st.holder.firstChild);
+  // W9204：整批搬家换了节点 ⇒ 丢弃布局缓存（否则与上一批同样多时会命中早退）。
+  invalidateLayout();
   layout();
 }
 

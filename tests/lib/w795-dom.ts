@@ -90,6 +90,36 @@ export const flush = async (n = 8): Promise<void> => {
   for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
+/**
+ * W9204：把 requestAnimationFrame 接管成一个**显式队列**（真实浏览器里 rAF 与定时器是
+ * 两个队列，本仓 jsdom 里 rAF = setTimeout(cb, 0)，两者混在一起）。
+ *
+ * 为什么需要：rail 的建列从「每列一次同步 layout()」改成 rAF 合并的 queueSync()
+ * （见 ui/rail.ts 的 railAdd 与 ui/rail-layout.ts 的文件头）。若继续用
+ * advanceTimersByTime(N) 驱动，会**连带**推进提示引擎的 150ms 停留，把「当帧弹卡」与
+ * 「停留后弹卡」两种语义混在一起 —— W9106 的用例正是要区分这两者，判别力就没了。
+ *
+ * 用法（在装配被测模块**之前**）：
+ *   vi.stubGlobal('requestAnimationFrame', rafStub);
+ *   …装配 / 派发事件…
+ *   flushRaf();            // 跑完这一帧（含帧内再排的帧，最多 MAX_FRAMES 轮）
+ *   vi.advanceTimersByTime(200);  // 需要时才推进停留定时器
+ *
+ * 队列语义保证「N 次建列只合并成一帧」这条不变量在测试里同样成立：railAdd 的
+ * queueSync 由 syncQueued 去重，push 进来的回调只有一个。
+ */
+const rafQueue: ((t: number) => void)[] = [];
+/** requestAnimationFrame 的测试替身：只入队，不执行（等 flushRaf 排空）。 */
+export const rafStub = (cb: (t: number) => void): number => rafQueue.push(cb);
+const MAX_FRAMES = 16;
+/** 排空 rAF 队列（帧内再排的帧也一并跑，最多 MAX_FRAMES 轮，防自激）。 */
+export const flushRaf = (): void => {
+  for (let i = 0; i < MAX_FRAMES && rafQueue.length > 0; i++) {
+    const batch = rafQueue.splice(0, rafQueue.length);
+    for (const cb of batch) cb(0);
+  }
+};
+
 /** 与 index.html 同构的最小骨架（statusline + 状态栏 + 会话容器）。 */
 export const HTML =
   '<div id="app"><div id="layout"><aside id="sidebar">' +

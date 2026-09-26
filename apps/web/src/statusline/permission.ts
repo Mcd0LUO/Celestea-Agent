@@ -156,25 +156,38 @@ export function registerTierRepaint(fn: () => void): void {
 }
 
 /**
- * 拉取当前会话的档位（onSession 调用）。竞态守卫：结果回来时会话已切换则丢弃。
+ * 请求代号（W9204 · P1-4）。**只比会话 id 是不够的**：同一个会话上两次请求乱序返回时
+ * （20s 轮询的 refresh(true) 与 statusline.setSession 的重入、用户快速切回同一会话），
+ * 后到的**旧**快照会把新的覆盖掉 —— asked === h.sessionId 对两者都成立，守卫拦不住。
+ * 代号一旦自增，所有在途请求都作废，只有最后一次发出的请求才有资格写回。
+ *
+ * 先例：grants.ts 的 askedAt（快照发起时刻 + settleOptimistic 比先后）、
+ * mode.ts 的对象同一性守卫、preview/panel 的 seq。
+ */
+let permSeq = 0;
+
+/**
+ * 拉取当前会话的档位（onSession 调用）。竞态守卫：结果回来时**不是最后一次请求**就丢弃
+ * （会话已切换、或同一会话上已有更新的请求在飞 —— 见 permSeq 的注释）。
  * 404/405 = 该部署没有这个能力 → 徽标留空；网络不可达（status 0）保留上次视图。
  */
 export async function refreshPermission(h: PermissionHost): Promise<void> {
   const asked = h.sessionId;
+  const seq = ++permSeq;
   if (asked === '') {
     h.applyPermission('', '');
     return;
   }
   try {
     const [r] = await Promise.all([api.sessionPermission(asked), ensureTierLabels()]);
-    if (asked !== h.sessionId) return;
+    if (seq !== permSeq || asked !== h.sessionId) return;
     if (r.ok === false || typeof r.preset !== 'string' || r.preset === '') {
       h.applyPermission('', '');
       return;
     }
     h.applyPermission(r.preset, labelOf(r.preset));
   } catch (err) {
-    if (asked !== h.sessionId) return;
+    if (seq !== permSeq || asked !== h.sessionId) return;
     if (err instanceof ApiError && err.status !== 0) h.applyPermission('', '');
   }
 }

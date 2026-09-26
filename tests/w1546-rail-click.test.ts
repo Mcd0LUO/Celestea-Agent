@@ -16,7 +16,7 @@
  * 坐标：railTop = 0（夹具里 #main 与消息区 rect 同顶），y 直接就是事件 clientY。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { at, doc, Ev, resetHarness, type ElLike } from './lib/w795-dom.js';
+import { at, doc, Ev, flushRaf, rafStub, resetHarness, type ElLike } from './lib/w795-dom.js';
 
 const MAIN_W = 900;
 const PANE_H = 600;
@@ -56,6 +56,8 @@ const calls: number[] = [];
 /** 夹具：N 轮、视口 600px。N=12 ⇒ pitch 被自然节距 9 收住（条间死区 2px）；N=100 ⇒ 密集 + 折叠条。 */
 async function bootRail(rounds = ROUNDS): Promise<{ main: ElLike }> {
   vi.stubGlobal('ResizeObserver', class { observe(): void {} unobserve(): void {} disconnect(): void {} });
+  // W9204：rAF 单独接管成显式队列（见 tests/lib/w795-dom.ts 的 rafStub）。
+  vi.stubGlobal('requestAnimationFrame', rafStub);
   const hint = (await import(/* @vite-ignore */ at('ui/hint/index.ts'))) as { initHints(): void };
   hint.initHints();
   const ctx = (await import(/* @vite-ignore */ at('ui/viewctx.ts'))) as ViewCtxMod;
@@ -80,7 +82,8 @@ async function bootRail(rounds = ROUNDS): Promise<{ main: ElLike }> {
     msgs.appendChild(round);
     rail.railAdd(pane, round, 'user');
   }
-  vi.advanceTimersByTime(50);
+  // W9204：建列走 rAF 合并（railAdd → queueSync）—— 帧跑完长条才有 top 可点。
+  flushRaf();
   return { main };
 }
 
@@ -95,13 +98,19 @@ function clickAt(main: ElLike, x: number, y: number): void {
   main.dispatchEvent(e);
 }
 
-/** 在 #main 上推一次指针（rail 的 onMove → rAF → applyMove）。 */
+/**
+ * 在 #main 上推一次指针（rail 的 onMove → rAF → applyMove）。
+ *
+ * W9204：先 flushRaf() 跑完 rail 自己的帧，再推进定时器让提示引擎的停留到期 ——
+ * 两件事分开做（本仓 jsdom 里 requestAnimationFrame = setTimeout 0）。
+ */
 function moveTo(main: ElLike, x: number, y: number): void {
   const e = new Ev('pointermove', { bubbles: true });
   Object.defineProperty(e, 'clientX', { value: x });
   Object.defineProperty(e, 'clientY', { value: y });
   main.dispatchEvent(e);
-  vi.advanceTimersByTime(200); // rAF 帧 + 提示引擎的 150ms 停留
+  flushRaf();
+  vi.advanceTimersByTime(200); // 提示引擎的 150ms 停留
 }
 
 describe('W1546 · rail 点击无死区（点击归属 vs 悬停半径）', () => {
@@ -196,7 +205,8 @@ describe('W1546 · rail 点击无死区（点击归属 vs 悬停半径）', () =
   });
 
   it('⑤ 密集节距 + 折叠条：带内逐 px 点击都命中**恰好**一轮；折叠条本身可点', async () => {
-    const { main } = await bootRail(100); // 100 轮 ⇒ 折叠条(80 轮) + 100 条 = 101 根，pitch ≈ 5.78
+    const DENSE_ROUNDS = 100;
+    const { main } = await bootRail(DENSE_ROUNDS); // 100 轮 ⇒ 折叠条(80 轮) + 100 条 = 101 根，pitch ≈ 5.78
     const list = bars();
     expect(list.length, '折叠条 + 100 条').toBe(101);
     const topOf = (b: ElLike): number => Number.parseFloat(String(b.style?.['top']));
@@ -207,12 +217,13 @@ describe('W1546 · rail 点击无死区（点击归属 vs 悬停半径）', () =
     expect(list.filter((b) => b.classList.contains('railv3-fold')).length, '恰好一根折叠条').toBe(1);
     expect(vis[0]?.classList.contains('railv3-fold'), '视觉第一根是折叠条').toBe(true);
     expect(vis[0]?.getAttribute('data-hint') ?? '', '折叠条文案（注册缝的 data-hint）').toContain('80');
-    // 折叠条本身可点：恰好命中一轮（**不**断言具体是哪一轮 —— 折叠条的 startCol 在
-    // 创建时就固定了、此后不随新轮次前移，那是 W1546 之外的既有记账问题，见报告
-    // 「刻意没做什么」；本波只保证「折叠条不再是死区、且一次点击只命中一根」）。
+    // 折叠条本身可点：恰好命中一轮，且命中的就是**它指向的那一轮**。
+    // W9204：折叠条 = 「更早 80 轮已折叠」，它指向的必须是当前边界那一轮（0 起 80 =
+    // 第 81 轮，也就是最早还看得见的那一根）。旧实现只在创建时取一次 startCol、
+    // 此后永不刷新 —— 本用例原先断言的 1 就是那个漂移值（把错误行为固化成了期望）。
     clickAt(main, 20, topOf(vis[0]!) + 2.5);
     expect(calls.length, '折叠条可点（旧写法：死区里 0 次）').toBe(1);
-    expect(calls[0], '命中的是它指向的那一轮（0 起 1）').toBe(1);
+    expect(calls[0], '命中的是折叠条指向的当前边界轮（0 起 ' + (DENSE_ROUNDS - 20) + '）').toBe(DENSE_ROUNDS - 20);
     // 带内逐 px 扫：每一 px 都必须命中**恰好**一轮（0 个死区、0 次「一次点多根」）
     const miss: number[] = [];
     const multi: number[] = [];

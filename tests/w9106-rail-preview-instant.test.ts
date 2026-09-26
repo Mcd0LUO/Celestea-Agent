@@ -15,14 +15,12 @@
  * 夹具沿用 tests/w867-rail-hit.test.ts 的写实桩（几何全用固定 rect，不依赖 jsdom 排版）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { at, doc, Ev, resetHarness, type ElLike } from './lib/w795-dom.js';
+import { at, doc, Ev, flushRaf, rafStub, resetHarness, type ElLike } from './lib/w795-dom.js';
 
 const MAIN_W = 900;
 const PANE_H = 600;
 const GUTTER = 100;
 const ROUNDS = 4;
-/** 一根 rAF 帧（rail 的 pointermove 走 rAF 节流）。 */
-const FRAME = 16;
 
 interface HintMod {
   initHints(): void;
@@ -54,6 +52,8 @@ const rect = (l: number, t: number, r: number, b: number): RectLike =>
 /** 装一个「有条带、有留白、有 ROUNDS 轮」的会话容器（同 w867 夹具）。 */
 async function bootRail(): Promise<{ main: ElLike; hint: HintMod }> {
   vi.stubGlobal('ResizeObserver', class { observe(): void {} unobserve(): void {} disconnect(): void {} });
+  // W9204：rAF 单独接管成显式队列（见 tests/lib/w795-dom.ts 的 rafStub）。
+  vi.stubGlobal('requestAnimationFrame', rafStub);
   const hint = (await import(/* @vite-ignore */ at('ui/hint/index.ts'))) as HintMod;
   hint.initHints();
   const ctx = (await import(/* @vite-ignore */ at('ui/viewctx.ts'))) as ViewCtxMod;
@@ -81,6 +81,7 @@ async function bootRail(): Promise<{ main: ElLike; hint: HintMod }> {
     msgs.appendChild(round);
     rail.railAdd(pane, round, 'user');
   }
+  flushRaf(); // W9204：建列走 rAF 合并（railAdd → queueSync），帧跑完长条才有位置
   return { main, hint };
 }
 
@@ -88,13 +89,21 @@ const bars = (): ElLike[] => Array.from(doc.querySelectorAll('#main .railv3-item
 const barY = (i: number): number => Number.parseFloat(String(bars()[i]?.style?.['top'])) + 2.5;
 const cardCount = (): number => doc.querySelectorAll('.hint-card').length;
 
-/** 推一次指针并跑**恰好一帧**（不推进提示停留的 150ms）。 */
+/**
+ * 推一次指针并跑**恰好一帧**（不推进提示停留的 150ms）。
+ *
+ * W9204：rail 的建列与命中判定都走 rAF（railAdd → queueSync，onMove → rAF → applyMove），
+ * 而本仓 jsdom 夹具的 requestAnimationFrame 就是 setTimeout(cb, 0) ⇒ 用
+ * advanceTimersByTime(FRAME) 会**连带**推进提示引擎的 150ms 停留，这一节要区分的
+ * 「当帧弹卡 vs 停留后弹卡」就没了判别力。做法与真实浏览器一致：把 rAF 单独接管成
+ * 一个队列（flushRaf），需要帧就 flush 它，需要停留才推进定时器。
+ */
 function moveOneFrame(main: ElLike, x: number, y: number): void {
   const e = new Ev('pointermove', { bubbles: true });
   Object.defineProperty(e, 'clientX', { value: x });
   Object.defineProperty(e, 'clientY', { value: y });
   main.dispatchEvent(e);
-  vi.advanceTimersByTime(FRAME);
+  flushRaf();
 }
 
 describe('W9106 · 条带预览零停留（延迟按提供者区分，不是全站一刀切）', () => {
