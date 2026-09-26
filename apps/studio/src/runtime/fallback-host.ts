@@ -43,6 +43,14 @@ import type { Profile } from "@celestea/runtime";
 import { bridgeProviderLlm, liveEngineLlmFor } from "./llm-assembly.js";
 import type { FallbackFrame, FallbackStatusView } from "./fallback-contract.js";
 
+/**
+ * F-06: the target name a chain-OFF retry reports. There is no configured
+ * target to name, so the audit line / status frame says the honest thing: the
+ * composed profile's own endpoint. `from === to` is still the discriminator
+ * that says "retry, not hand-over".
+ */
+export const RETRY_ONLY_TARGET = "profile";
+
 /** `<data dir>/fallbacks-audit.jsonl` (§4.2.3 #3, same discipline as grants). */
 export const FALLBACKS_AUDIT_FILE = "fallbacks-audit.jsonl";
 /** Rotate at 16 MiB, keeping the previous chain (LTS ops audit rules). */
@@ -161,11 +169,35 @@ export class AdapterFallback {
   }
 }
 
+/**
+ * The identity a retry reports on its audit line / status frame. `name` is the
+ * chain target when one exists, else [RETRY_ONLY_TARGET].
+ */
+export interface RetryIdentity {
+  name: string;
+  model: string;
+}
+
 export interface FallbackWiring {
   /** True only when the switch is on AND a chain could be assembled. */
   readonly enabled: boolean;
   /** The decorated seam, or null = "fallback off, use your normal path". */
   wrap(input: FallbackWrapInput): Llm | null;
+  /**
+   * F-06: the SAME-TARGET retry as a standalone decorator, for a deployment with
+   * no fallback chain. The chain and the retry are different capabilities, so the
+   * retry must not be reachable only through `wrap` — that is what made
+   * `POST /api/config.max_retries` a dead knob on the default deployment.
+   *
+   * It is deliberately a SEPARATE entry point rather than "wrap never returns
+   * null": the caller composes the ledger and the attachment layers around
+   * whatever `wrap` returns, so changing `wrap` would bypass them. Here the
+   * caller keeps its own chain and only the innermost client is wrapped.
+   *
+   * Armed wiring returns `inner` unchanged (its per-target retry already covers
+   * this); the chain-off wiring applies the budget.
+   */
+  retryOnly(inner: Llm, identity: RetryIdentity, sessionId: string | null): Llm;
   /** The `/api/status` half for one session. */
   view(sessionId: string | null): FallbackStatusView;
   /** Await in-flight platform deliveries (tests / shutdown). */
@@ -212,8 +244,13 @@ export function createFallbackWiring(opts: FallbackHostOptions = {}): FallbackWi
   const env = opts.env ?? process.env;
   const config = loadFallbackConfig({ dataDir: opts.dataDir ?? null, env });
   const audit = new FallbackAudit(opts);
-  // OFF (or nothing configured) is the default: no chain, no state, no file.
-  if (config === null || !config.enabled) return disabledWiring(config, audit);
+  // The FALLBACK CHAIN is off by default; the same-target RETRY is not (F-06).
+  // The two are different capabilities: fallback needs a second target and a
+  // credential inventory, retry needs nothing but the endpoint already in use.
+  // [disabledWiring] therefore still builds the retry decorator around the one
+  // composed client, and reports `enabled: false` (that flag means "is a chain
+  // armed", which is what /api/status.fallback and the audit depend on).
+  if (config === null || !config.enabled) return disabledWiring({ opts, env, audit, sessions: new Map() }, config);
 
   const problems = configProblems(config, env);
   const state = new FallbackState();
@@ -225,33 +262,61 @@ export function createFallbackWiring(opts: FallbackHostOptions = {}): FallbackWi
   return {
     enabled: true,
     wrap: (input) => armedLlm(deps, input),
+    // The armed chain already puts a retry decorator in front of EVERY target
+    // (see [retryingClient]), so the standalone path must stay inert here —
+    // otherwise a caller that used both entries would retry twice.
+    retryOnly: (inner) => inner,
     view: (sessionId) => statusView(deps, sessionId),
     flush: () => audit.flush(),
     pendingCount: () => audit.pendingCount(),
   };
 }
 
-/** The OFF wiring: `wrap` hands the caller nothing, so the path cannot change. */
-function disabledWiring(config: ReturnType<typeof loadFallbackConfig>, audit: FallbackAudit): FallbackWiring {
+/**
+ * The CHAIN-OFF wiring. `enabled: false` means "no fallback chain is armed" and
+ * `wrap` still returns null (the caller keeps its own path) — but [retryOnly]
+ * is live, so the same-target retry budget (`POST /api/config.max_retries`) is
+ * honoured on a default deployment.
+ */
+function disabledWiring(deps: RetryDeps, config: FallbackConfig | null): FallbackWiring {
+  const { audit } = deps;
   if (config !== null && !config.enabled) {
     audit.write({ event: "target_unavailable", session: null, detail: "config declares enabled:false" });
   }
   return {
     enabled: false,
     wrap: () => null,
+    retryOnly: (inner, identity, sessionId) => retryOnly(deps, inner, identity, sessionId),
     view: () => DISABLED_VIEW,
     flush: () => audit.flush(),
     pendingCount: () => audit.pendingCount(),
   };
 }
 
-/** Everything one wiring instance needs (kept in one object for the helpers). */
-interface WiringDeps {
+/**
+ * What the RETRY half needs. It deliberately carries NO chain: the same-target
+ * retry is independent of fallback (F-06), so a helper that only retries must
+ * not be able to reach the configured targets even by accident.
+ */
+interface RetryDeps {
   opts: FallbackHostOptions;
   env: NodeJS.ProcessEnv;
-  state: FallbackState;
-  sessions: Map<string, { model: string; name: string; reason: string | null }>;
   audit: FallbackAudit;
+  /**
+   * `session -> what is really serving it`, shared with the chain half.
+   * A retry records itself here too (with `from === to`), so the two halves
+   * cannot disagree about the effective model after a retry.
+   */
+  sessions: Map<string, { model: string; name: string; reason: string | null }>;
+}
+
+/**
+ * What the CHAIN half additionally needs. `config` is NON-null here: these
+ * helpers only exist behind `enabled: true`, so "the chain is configured" is
+ * a fact of the type rather than a runtime check repeated at every call site.
+ */
+interface WiringDeps extends RetryDeps {
+  state: FallbackState;
   now: () => number;
   problems: string[];
   config: FallbackConfig;
@@ -266,17 +331,60 @@ interface WiringDeps {
  * hand-over uses (audit line + SSE `status` frame), so a retry is never silent.
  */
 function retryingClient(deps: WiringDeps, input: FallbackWrapInput, target: LlmTarget): ProviderLlm {
-  const maxRetries = clampRetries(deps.opts.maxRetries?.() ?? DEFAULT_RETRY_POLICY.maxRetries);
   const client = asProviderSeam(deps.opts.clientFor?.(target, input.profile) ?? liveEngineLlmFor(input.profile, target, deps.env));
+  return withSameTargetRetry(deps, input, client, { name: target.name, model: target.model });
+}
+
+
+/**
+ * The ONE place the retry decorator is built, shared by the chain-armed path
+ * (per target, inside [retryingClient]) and the chain-OFF path ([retryOnly]).
+ * Keeping it in one function is what stops the two paths from drifting on the
+ * budget, the report channel or the identity.
+ *
+ * `maxRetries <= 0` returns the client UNWRAPPED: "retry off" must mean the
+ * pre-W9104 byte-for-byte path (no extra closure, no report), which is also
+ * what makes the "0 = no extra call" assertion meaningful.
+ */
+function withSameTargetRetry(
+  deps: RetryDeps,
+  input: { sessionId: string | null },
+  client: ProviderLlm,
+  identity: RetryIdentity,
+): ProviderLlm {
+  const maxRetries = clampRetries(deps.opts.maxRetries?.() ?? DEFAULT_RETRY_POLICY.maxRetries);
   if (maxRetries <= 0) return client;
   return createRetryLlm({
     inner: client,
-    target: target.name,
-    model: target.model,
+    target: identity.name,
+    model: identity.model,
     policy: { maxRetries },
     ...(deps.opts.sleep === undefined ? {} : { sleep: deps.opts.sleep }),
     onRetry: (info) => reportRetry(deps, input.sessionId, info),
   });
+}
+
+/**
+ * F-06: the standalone same-target retry (no fallback chain).
+ *
+ * Why retry must not be hostage to the fallback switch: the two capabilities
+ * answer different questions. Fallback needs a second target, a credential
+ * inventory and a cooldown table; retry needs only the endpoint the session is
+ * ALREADY using. Before this function existed the decorator was reachable
+ * exclusively through `createFallbackLlm({ clientFor })`, so on a default
+ * deployment (`CELESTEA_LLM_FALLBACK` unset) `POST /api/config.max_retries` was
+ * accepted, echoed and even covered by the config contract while NO request was
+ * ever retried — a dead knob.
+ *
+ * `inner` is whatever the caller already composed (the raw client, or the
+ * ledger/attachment chain around it), and it comes back UNCHANGED when the
+ * budget is 0, so "retry off" stays the pre-W9104 path byte for byte.
+ */
+function retryOnly(deps: RetryDeps, inner: Llm, identity: RetryIdentity, sessionId: string | null): Llm {
+  const client = asProviderSeam(inner);
+  const retrying = withSameTargetRetry(deps, { sessionId }, client, identity);
+  if (retrying === client) return inner;
+  return bridgeProviderLlm(retrying);
 }
 
 /**
@@ -289,7 +397,7 @@ function retryingClient(deps: WiringDeps, input: FallbackWrapInput, target: LlmT
  * discriminating fact ("this was a retry, not a hand-over") is `from === to`,
  * and the audit line below spells it out with `event:"retry"`.
  */
-function reportRetry(deps: WiringDeps, sessionId: string | null, info: RetryAttemptInfo): void {
+function reportRetry(deps: RetryDeps, sessionId: string | null, info: RetryAttemptInfo): void {
   if (info.target !== null) {
     deps.sessions.set(sessionKey(sessionId), { model: info.model ?? "", name: info.target, reason: info.reason });
     deps.opts.emit?.(sessionId, {

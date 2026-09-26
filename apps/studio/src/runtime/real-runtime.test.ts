@@ -102,7 +102,18 @@ describe("POST /api/turn over the real engine", () => {
    * reported from a real 504/timeout session.
    */
   it("a failed turn publishes its reason on the terminal status frame", async () => {
-    const h = make({ sessions: { s1: [] }, llm: { script: [{ fail: "stream request failed: 504 Gateway Timeout" }] } });
+    // W9208/F-06: the same-target retry is live by default, and a `failed` frame
+    // that produced no output is retryable — so ONE fail step no longer describes a
+    // failing turn (the retry consumes it and the offline seam falls back to its
+    // deterministic echo). DEFAULT_RETRY_POLICY.maxRetries is 1, i.e. 2 attempts,
+    // so a genuinely failed turn needs TWO fail steps.
+    const h = make({
+      sessions: { s1: [] },
+      llm: { script: [
+        { fail: "stream request failed: 504 Gateway Timeout" },
+        { fail: "stream request failed: 504 Gateway Timeout" },
+      ] },
+    });
     await activate(h, "sample-ws/s1");
     const res = await runTurnWithFrames(h, "hi");
     expect(res.status).toBe(202);

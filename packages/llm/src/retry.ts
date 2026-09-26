@@ -1,12 +1,25 @@
 /**
  * Same-target retry decorator (W9104) — a `Llm`, not a new seam.
  *
- * The fallback decorator (`fallback.ts`) HAND OVER to another target; this one
+ * The fallback decorator (`fallback.ts`) HANDS OVER to another target; this one
  * re-issues the SAME request against the SAME target. They are two different
- * questions and they compose in a fixed order:
+ * questions, and when both are armed the ACTUAL nesting is retry-INNER,
+ * fallback-OUTER — each target gets its own retry decorator, so "the current
+ * endpoint is retried `maxRetries` times, and only then does the chain hand
+ * over to the next target":
  *
- *     createRetryLlm({ inner })            <- retries target A maxRetries times
- *       └─ createFallbackLlm({ clientFor }) <- then hands over to target B
+ *     createFallbackLlm({ clientFor })        <- hands over to target B
+ *       └─ createRetryLlm({ inner: client })  <- retries target A maxRetries times
+ *
+ * (F-05 correction: this header used to draw the opposite nesting, retry
+ * OUTSIDE fallback. That would re-run the WHOLE chain — A then B — `maxRetries`
+ * times, which is not what `apps/studio/src/runtime/fallback-host.ts` builds.
+ * The wiring is the source of truth; the two compositions are not equivalent.)
+ *
+ * The decorator is ALSO usable standalone: with no fallback chain configured
+ * (`CELESTEA_LLM_FALLBACK` off, the default) the host wraps the single composed
+ * client in it directly, so same-target retry is not hostage to the fallback
+ * switch.
  *
  * **Why retry-first** (the order is a product decision, not an accident): a
  * 503/timeout/idle-stall is usually a blip on an endpoint that is otherwise
@@ -26,10 +39,10 @@
  *   2. the PRODUCED LOCK — once a text/thinking delta reached the consumer the
  *      attempt is NEVER re-issued (re-issuing would drop text the user already
  *      saw and double-bill the provider);
- *   3. BACKOFF — attempt k waits `backoffMs * 2^k`, capped at `maxDelayMs`; a
- *      `Retry-After` the failure carried wins, and (mirroring the fallback
- *      decorator's `respectRetryAfter` rule) a header beyond the cap is not
- *      waited out at all. The sleep is injectable, so tests never really wait;
+ *   3. BACKOFF — attempt k waits `backoffMs * 2^k`; a `Retry-After` the failure
+ *      carried wins over the exponential, and either way the wait is CLAMPED
+ *      into `[0, maxDelayMs]` (an over-cap header means "wait the cap", never
+ *      "retry instantly"). The sleep is injectable, so tests never really wait;
  *   4. VISIBILITY — every retry is reported through `onRetry`, so "this was a
  *      retry" can never be silent.
  *
@@ -61,7 +74,7 @@ export interface RetryPolicy {
   maxRetries: number;
   /** Base backoff: attempt k waits `backoffMs * 2^k` ms. */
   backoffMs: number;
-  /** Ceiling for one wait, and the `Retry-After` cutoff (fallback口径). */
+  /** Ceiling for ONE wait; `Retry-After` is clamped to it, never discarded. */
   maxDelayMs: number;
   /** Honour the failure's `Retry-After`; false = pure backoff. */
   respectRetryAfter: boolean;
@@ -92,14 +105,27 @@ export function clampRetries(value: unknown): number {
 
 /**
  * How long attempt `retryIndex` (0-based) waits before it is re-issued.
- * `Retry-After` wins when it fits inside `maxDelayMs`; a header beyond the cap
- * returns 0, mirroring the fallback decorator's "beyond the cap we move on"
- * rule (`fallback.ts:honourRetryAfter`).
+ *
+ * `Retry-After` wins over the exponential when it is a usable number, and is
+ * then CLAMPED into `[0, maxDelayMs]`. The clamp is the whole point: the
+ * fallback decorator's "beyond the cap we move on" rule (`fallback.ts:honourRetryAfter`)
+ * is sound there because it means "stop waiting and switch TARGET", but this
+ * decorator keeps hammering the SAME endpoint. Returning 0 for an over-cap
+ * header would turn a server's explicit `Retry-After: 120` ("come back in two
+ * minutes") into the MOST aggressive possible retry — four immediate hits on an
+ * endpoint that just asked to be left alone, i.e. strictly worse than not
+ * reading the header at all. Clamping instead means "we do not wait longer than
+ * the policy allows, but we do not retry instantly either".
+ *
+ * Every branch is bounded, so the returned value is always a finite number in
+ * `[0, maxDelayMs]` (a negative `backoffMs`/non-finite policy is floored at 0).
  */
 export function retryDelayMs(info: { retryAfterMs: number | null }, retryIndex: number, policy: RetryPolicy): number {
+  const cap = Number.isFinite(policy.maxDelayMs) ? Math.max(0, policy.maxDelayMs) : 0;
   const retryAfter = policy.respectRetryAfter ? info.retryAfterMs : null;
-  if (retryAfter !== null) return retryAfter > policy.maxDelayMs ? 0 : retryAfter;
-  return Math.min(policy.backoffMs * 2 ** Math.max(0, retryIndex), policy.maxDelayMs);
+  if (retryAfter !== null && Number.isFinite(retryAfter)) return Math.min(Math.max(0, retryAfter), cap);
+  const backoff = policy.backoffMs * 2 ** Math.max(0, retryIndex);
+  return Math.min(Number.isFinite(backoff) ? Math.max(0, backoff) : cap, cap);
 }
 
 /** One retry, as reported to the host (audit line + SSE `status` frame). */
@@ -153,9 +179,28 @@ interface RetryRuntime {
   retries: number;
 }
 
+/**
+ * Resolve one policy: the defaults, the caller's overrides, then the clamps.
+ *
+ * The two STATUS ARRAYS are copied on purpose (F-11). A plain spread would leave
+ * `policy.retryableStatuses` pointing at `DEFAULT_RETRY_POLICY`'s own array —
+ * and at every other instance's — so one `llm.policy().retryableStatuses.push(...)`
+ * (the getter returned a shallow copy too) would silently rewrite the trigger
+ * table of the whole process, future instances included. A policy is per
+ * decorator; it must not be shared mutable state.
+ */
+function resolvePolicy(overrides: Partial<RetryPolicy> | undefined): RetryPolicy {
+  const merged: RetryPolicy = { ...DEFAULT_RETRY_POLICY, ...(overrides ?? {}) };
+  return {
+    ...merged,
+    maxRetries: clampRetries(merged.maxRetries),
+    notRetryableStatuses: [...merged.notRetryableStatuses],
+    retryableStatuses: [...merged.retryableStatuses],
+  };
+}
+
 export function createRetryLlm(opts: RetryLlmOptions): RetryLlm {
-  const policy: RetryPolicy = { ...DEFAULT_RETRY_POLICY, ...(opts.policy ?? {}) };
-  policy.maxRetries = clampRetries(policy.maxRetries);
+  const policy = resolvePolicy(opts.policy);
   const rt: RetryRuntime = { opts, policy, sleep: opts.sleep ?? sleepMs, retries: 0 };
   return {
     // EAGER on the pre-stream phase on purpose: a request that never opened a
@@ -164,7 +209,9 @@ export function createRetryLlm(opts: RetryLlmOptions): RetryLlm {
     // every caller that awaits `generate()` inside its own try/catch.
     generate: async (req: ModelRequestDraft): Promise<LlmStream> => attemptLoop(rt, req, await openAttempt(rt, req, 0)),
     retries: () => rt.retries,
-    policy: () => ({ ...rt.policy }),
+    // A COPY, arrays included (F-11): a caller may inspect the resolved policy
+    // but must not be able to mutate this decorator through it.
+    policy: () => ({ ...rt.policy, notRetryableStatuses: [...rt.policy.notRetryableStatuses], retryableStatuses: [...rt.policy.retryableStatuses] }),
   };
 }
 

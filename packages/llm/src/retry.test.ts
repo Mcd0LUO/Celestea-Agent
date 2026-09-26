@@ -6,7 +6,7 @@
  *   * the TRIGGER (retryable status/timeout retried, 400/abort not);
  *   * the BUDGET (`maxRetries` extra attempts, then the error surfaces);
  *   * the PRODUCED LOCK (a failure after visible text is terminal);
- *   * the BACKOFF MATH (`backoffMs * 2^k`, `Retry-After` wins, over-cap = 0);
+ *   * the BACKOFF MATH (`backoffMs * 2^k`, `Retry-After` wins and is CLAMPED);
  *   * the VISIBILITY (one `onRetry` per re-issue, with the delay actually used).
  */
 
@@ -173,16 +173,47 @@ describe("W9104 — backoff math and Retry-After", () => {
     expect(h.retries.map((r) => r.delayMs)).toEqual([100, 200, 400]);
   });
 
-  it("honours Retry-After over the exponential backoff, and caps it", () => {
+  it("honours Retry-After over the exponential backoff, and CLAMPS it to the cap", () => {
     const policy = { ...DEFAULT_RETRY_POLICY, backoffMs: 100, maxDelayMs: 60_000 };
     expect(retryDelayMs({ retryAfterMs: null }, 0, policy)).toBe(100);
     expect(retryDelayMs({ retryAfterMs: 5_000 }, 0, policy)).toBe(5_000);
-    // Beyond the cap the header is not waited out at all (the fallback口径).
-    expect(retryDelayMs({ retryAfterMs: 120_000 }, 0, policy)).toBe(0);
+    // F-02: beyond the cap the header is CLAMPED, never discarded. Returning 0
+    // here would make an explicit header of 120s the MOST aggressive retry
+    // possible (four instant hits on an endpoint that asked to be left alone).
+    expect(retryDelayMs({ retryAfterMs: 120_000 }, 0, policy)).toBe(60_000);
+    expect(retryDelayMs({ retryAfterMs: 120_000 }, 0, policy)).toBeGreaterThan(0);
     // respectRetryAfter:false = pure backoff.
     expect(retryDelayMs({ retryAfterMs: 5_000 }, 1, { ...policy, respectRetryAfter: false })).toBe(200);
     // The exponential is itself capped.
     expect(retryDelayMs({ retryAfterMs: null }, 20, policy)).toBe(60_000);
+  });
+
+  it("F-02: an over-cap Retry-After makes the retry WAIT, never race the endpoint", async () => {
+    const h = harness([{ error: statusError(429, "Too Many Requests", "slow down") }], { maxRetries: 1, backoffMs: 100 });
+    await expect(h.llm.generate(REQ)).rejects.toThrow(/slow down/);
+    expect(h.retries).toHaveLength(1);
+    // 429 without a header: the exponential decides, and the wait really happens.
+    expect(h.retries[0]?.delayMs).toBe(100);
+    expect(h.sleeps).toEqual([100]);
+
+    // A header above maxDelayMs resolves to the CAP — strictly more patient than
+    // the exponential, and never the 0 that used to mean "retry instantly".
+    const info = { retryAfterMs: 120_000 };
+    const policy = { ...DEFAULT_RETRY_POLICY, backoffMs: 100, maxDelayMs: 60_000 };
+    expect(retryDelayMs(info, 0, policy)).toBe(policy.maxDelayMs);
+    expect(retryDelayMs(info, 0, policy)).toBeGreaterThan(retryDelayMs({ retryAfterMs: null }, 0, policy));
+  });
+
+  it("F-02: every branch is bounded — a hostile policy cannot produce a negative/NaN wait", () => {
+    const sane = { ...DEFAULT_RETRY_POLICY, backoffMs: 100, maxDelayMs: 60_000 };
+    // A non-finite header is not a header: fall through to the exponential.
+    expect(retryDelayMs({ retryAfterMs: Number.NaN }, 0, sane)).toBe(100);
+    expect(retryDelayMs({ retryAfterMs: Number.POSITIVE_INFINITY }, 0, sane)).toBe(100);
+    // A negative header is floored at 0 (immediate, but still a legal wait).
+    expect(retryDelayMs({ retryAfterMs: -5 }, 0, sane)).toBe(0);
+    // A hostile policy is floored too.
+    expect(retryDelayMs({ retryAfterMs: null }, 0, { ...sane, backoffMs: -1 })).toBe(0);
+    expect(retryDelayMs({ retryAfterMs: 1_000 }, 0, { ...sane, maxDelayMs: -1 })).toBe(0);
   });
 
   it("does not sleep at all when the delay resolves to 0", async () => {
@@ -212,5 +243,55 @@ describe("W9104 — the policy is clamped to the product's hard cap", () => {
     await expect(h.llm.generate(REQ)).rejects.toThrow();
     expect(h.llm.policy().maxRetries).toBe(MAX_RETRIES);
     expect(h.seam.calls()).toBe(MAX_RETRIES + 1);
+  });
+
+  it("F-11: the resolved policy is per-instance — mutating it cannot poison the defaults", async () => {
+    const h = harness([{ error: statusError(503, "Service Unavailable", "no") }], { maxRetries: 1 });
+    const exposed = h.llm.policy();
+    // Neither the arrays nor the object itself are the shared default.
+    expect(exposed).not.toBe(DEFAULT_RETRY_POLICY);
+    expect(exposed.retryableStatuses).not.toBe(DEFAULT_RETRY_POLICY.retryableStatuses);
+    expect(exposed.notRetryableStatuses).not.toBe(DEFAULT_RETRY_POLICY.notRetryableStatuses);
+
+    // A hostile caller rewriting the exposed policy must not reach the defaults
+    // NOR a decorator built afterwards (the pre-fix behaviour: a plain spread
+    // aliased DEFAULT_RETRY_POLICY's arrays, so this push was process-wide).
+    exposed.retryableStatuses.length = 0;
+    exposed.notRetryableStatuses.push(599);
+    expect(DEFAULT_RETRY_POLICY.retryableStatuses).toContain(503);
+    expect(DEFAULT_RETRY_POLICY.notRetryableStatuses).not.toContain(599);
+
+    const fresh = harness([{ error: statusError(503, "Service Unavailable", "no") }], { maxRetries: 1 });
+    expect(fresh.llm.policy().retryableStatuses).toContain(503);
+    // The decorator keeps retrying a 503 after the attempt to poison it.
+    await expect(fresh.llm.generate(REQ)).rejects.toThrow(/no/);
+    expect(fresh.seam.calls()).toBe(2);
+
+    // And the SAME decorator survives the poisoning: the getter handed out a
+    // copy, so mutating the caller's view cannot reach the LIVE trigger table.
+    //
+    // 429 is the discriminating status: unlike a 5xx (retryable through the
+    // `status >= 500` arm alone) it is retryable ONLY because it appears in
+    // `retryableStatuses`, so emptying that array through a leaked reference
+    // really does disarm the decorator. Same for `notRetryableStatuses`: adding
+    // 503 there would make the very next 503 terminal.
+    const live = harness([{ error: statusError(429, "Too Many Requests", "slow down") }], { maxRetries: 1 });
+    const view = live.llm.policy();
+    view.retryableStatuses.length = 0;
+    view.notRetryableStatuses.push(503);
+    await expect(live.llm.generate(REQ)).rejects.toThrow(/slow down/);
+    expect(live.seam.calls()).toBe(2);
+    expect(live.llm.retries()).toBe(1);
+    expect(live.llm.policy().retryableStatuses).toContain(429);
+  });
+
+  it("F-11: a caller-supplied status array is copied, not adopted", () => {
+    const callerStatuses = [503];
+    const llm = createRetryLlm({ inner: scripted([]).llm, policy: { retryableStatuses: callerStatuses } });
+    const exposed = llm.policy();
+    expect(exposed.retryableStatuses).toEqual([503]);
+    expect(exposed.retryableStatuses).not.toBe(callerStatuses);
+    callerStatuses.push(999);
+    expect(llm.policy().retryableStatuses).toEqual([503]);
   });
 });

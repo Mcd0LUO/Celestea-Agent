@@ -51,6 +51,7 @@ import {
   keyOfSession,
   outcomePhaseOf,
   HOST_SESSION_ID,
+  PROFILE_KEYS,
   SessionRuntimeRegistry,
   statuslineOf,
   TurnBusyError,
@@ -67,6 +68,9 @@ import { HostAutowake, autowakeLog, autowakeStateOf } from "./host-autowake.js";
 import { injectionHooksOf, publishSubCall, type SessionInjectionHooks } from "./session-publisher.js";
 import { sessionContextOf } from "./context-snapshot.js";
 import { inheritedPanelRows, mergedWorkerRows, sendWorkerThrough, spawnWorkerThrough, workerMessagesAcross } from "./worker-bridge.js";
+import { RETRY_ONLY_TARGET } from "./fallback-host.js";
+import { createEngineLlm } from "./llm-assembly.js";
+import type { Llm } from "@celestea/core";
 import type {
   ClearOutcome,
   CompactOutcome,
@@ -175,6 +179,20 @@ interface StatusExtra {
   source?: "autowake";
 }
 
+/**
+ * W9206-31: are two resolved profiles the same configuration?
+ *
+ * A field-by-field comparison over the FROZEN key list (`PROFILE_KEYS`), so a
+ * key added to `Profile` can never be silently excluded from the "did it
+ * change?" test — which is why a hand-written field list is the wrong shape
+ * here. Every profile field is a primitive or `null`, so `===` is exact; a
+ * field that ever becomes an array/object would compare by reference, and
+ * "different reference" is the SAFE direction (it still bumps).
+ */
+function sameProfile(a: Profile, b: Profile): boolean {
+  return PROFILE_KEYS.every((key) => a[key] === b[key]);
+}
+
 class RealEngine implements RealRuntimeAdapter {
   readonly name = "real-runtime-adapter";
   private readonly opts: RealRuntimeAdapterOptions;
@@ -236,8 +254,22 @@ class RealEngine implements RealRuntimeAdapter {
     // E §4 P1 (W785): OFF unless `CELESTEA_LLM_FALLBACK` says on — `wrap()`
     // then returns null and the composer keeps the pre-P1 path (D9).
     this.fallback = new AdapterFallback({ dataDir: opts.dataDir ?? null, ledgerFile: opts.ledgerFile ?? null, env: this.env, bus: () => this.bus, peek: (s) => this.registry.peek(s), maxRetries: () => this.maxRetries, ...(opts.now === undefined ? {} : { now: opts.now }) });
+    // F-06: the SAME-TARGET RETRY is a capability of its own, not a sub-case of
+    // the fallback chain — a deployment with one endpoint still deserves it.
+    // The decorator goes on the INNERMOST factory, so the composer ledger,
+    // attachment and image-downgrade layers stay OUTSIDE it and keep observing
+    // every attempt (a retry is another model step, never a hidden one).
+    // `wiring.retryOnly` is inert while a chain IS armed: the chain already puts
+    // a retry decorator in front of every target, and nesting a second one would
+    // multiply the attempts.
+    const baseLlm = opts.llm;
+    const retryingLlm = (profile: Profile): Llm => {
+      const inner = baseLlm === undefined ? createEngineLlm(profile, this.env) : baseLlm(profile);
+      return this.fallback.wiring.retryOnly(inner, { name: RETRY_ONLY_TARGET, model: profile.model }, null);
+    };
     this.composer = new SessionComposer({
       ...opts,
+      llm: retryingLlm,
       env: this.env,
       baseProfile: () => this.profileValue,
       fallback: this.fallback.wiring,
@@ -645,9 +677,20 @@ class RealEngine implements RealRuntimeAdapter {
 
   async configure(patch: ProfilePatch): Promise<EngineProfile> {
     if (patch.api_key !== undefined && patch.api_key !== "") this.env[this.profileValue.api_key_env] = patch.api_key;
-    this.profileValue = applyProfilePatch(this.profileValue, patch);
-    if (patch.max_retries !== undefined) this.maxRetries = clampRetries(patch.max_retries);
-    this.bumpEpoch();
+    const before = this.profileValue;
+    const beforeRetries = this.maxRetries;
+    const next = applyProfilePatch(before, patch);
+    const nextRetries = patch.max_retries === undefined ? beforeRetries : clampRetries(patch.max_retries);
+    this.profileValue = next;
+    this.maxRetries = nextRetries;
+    // W9206-31: bump ONLY when the effective configuration really moved. An
+    // epoch bump is not free — it invalidates every idle session instance, so
+    // `POST /api/config {}` or a client re-sending the current values (a Save
+    // button, a script) used to tear down and rebuild the whole registry for
+    // nothing. The comparison is on the RESOLVED profile, so a patch that
+    // normalizes to the current value (`max_steps: 0` floored to MIN_STEPS, a
+    // truncated float, a `null` that stays `null`) is correctly a no-op.
+    if (!sameProfile(before, next) || beforeRetries !== nextRetries) this.bumpEpoch();
     return this.profile();
   }
 
