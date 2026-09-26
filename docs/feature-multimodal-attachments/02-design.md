@@ -162,7 +162,7 @@ export type Content = TextContent | ToolCallContent | ImageContent;   // ← 唯
 | `session/src/log/derive.ts:13-19` | 纯 re-export | **无需改**（算法在 core） |
 | `session/src/jsonl.ts:54-79` | `parseSessionJsonl` 走 `parseSessionEvent` | 无需改（继承 core 的校验改动） |
 | `session/src/log/file.ts:70-105` | `replayFile` 最长有效前缀 | 无需改；但「带附件行被误判非法」会把日志从该行起截断 → 依赖 C 的正确性 |
-| `session/src/log/persistent.ts:73-90` | `append` 落盘 | 无需改（`value` 自动带） |
+| `session/src/log/persistent.ts:127-144` | `append` 落盘 | 无需改（`value` 自动带） |
 | `session/src/parity.test.ts` / `log/derive.test.ts` | 与旧实现的字节对拍 | **会红**，需要按新契约更新（§4.5） |
 
 #### E. `packages/llm` —— wire 映射
