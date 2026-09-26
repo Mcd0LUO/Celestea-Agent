@@ -324,6 +324,18 @@ describe('W9103 · 使用统计 pane', () => {
     ).toBe(true);
   });
 
+  it('趋势图主路径带时间窗口（7 日 / 30 日不是空操作）', async () => {
+    // W9103 收口修：主路径原先只发 group_by=day_model、不带 since/until，
+    // 于是把**全部历史**拉回来 —— 范围 tab 对趋势图成了空操作。
+    // 本机可复现：账本只有 2026-09-19，而 7 日窗口是 09-20..09-26，
+    // 旧实现照样把 09-19 画出来。
+    await openUsagePane();
+    const main = ledgerCalls.filter((u) => u.includes('group_by=day_model'));
+    expect(main.length, '主路径必须被调用过').toBeGreaterThan(0);
+    expect(main[0], 'day_model 必须带 since 窗口').toContain('since=');
+    expect(main[0], 'day_model 必须带 until 窗口').toContain('until=');
+  });
+
   it('摘要条：最长聊天时长来自 session 行的 first_ts/last_ts（不是 —）', async () => {
     await openUsagePane();
     const cells = Array.from(usageBody().querySelectorAll('.usage-summary-cell')) as ElLike[];

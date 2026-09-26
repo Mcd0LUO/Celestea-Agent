@@ -89,11 +89,28 @@ async function loadLongestSession(): Promise<number | null> {
   }
 }
 
-/** 趋势图：优先一次拿全区间（`day_model`），老服务 422 时回退逐日开窗。 */
+/**
+ * 趋势图：优先一次拿全区间（`day_model`），老服务 422 时回退逐日开窗。
+ *
+ * W9103 收口修：主路径**必须带窗口**。原先只发 `group_by=day_model`（不带
+ * since/until），于是它把**全部历史**拉回来 —— 「近 7 日 / 近 30 日」对趋势图
+ * 就成了空操作（回退路径反而是对的，因为它逐日带窗口）。本机可复现：账本只有
+ * 2026-09-19，而 7 日窗口是 09-20..09-26，旧实现照样把 09-19 画出来。
+ * 窗口用 UTC 日边界闭区间，与账本 `day` key 的口径一致。
+ */
 async function loadTrend(rangeDays: number, now: number): Promise<DayModelPoint[]> {
   const days = recentDays(rangeDays, now);
+  const first = days[0];
+  const last = days[days.length - 1];
   try {
-    const resp = await api.usageLedger({ group_by: 'day_model' });
+    const resp =
+      first === undefined || last === undefined
+        ? await api.usageLedger({ group_by: 'day_model' })
+        : await api.usageLedger({
+            group_by: 'day_model',
+            since: dayStartSec(first),
+            until: dayStartSec(last) + DAY_SEC - 1,
+          });
     const points = parseDayModel(resp);
     if (points.length > 0) return points;
     // 空结果也可能是「这个服务不认这个维度但没报错」——继续走回退更稳。
