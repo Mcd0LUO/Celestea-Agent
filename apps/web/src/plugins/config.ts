@@ -89,8 +89,13 @@ export function defaultOf(item: PluginConfigItem): string {
     case 'bool':
       return item.def ? CONFIG_ON : CONFIG_OFF;
     case 'number':
-      return String(item.def);
+      // W9202：描述里的 def 也可能越界（作者笔误）。走**同一把尺子**（clampNumber），
+      // 否则控件初值会显示一个保存后被夹掉的数，前后不一致。
+      return clampNumber(item, String(item.def));
     case 'enum':
+      // W9202：def 不在 options 里时回落第一项 —— 控件能显示的值必须也是能存下去的值。
+      // （options 为空是描述违规，契约要求「至少一项」；这里只保证不抛错。）
+      return item.options.some((o) => o.value === item.def) ? item.def : (item.options[0]?.value ?? '');
     case 'text':
       return item.def;
   }
@@ -147,15 +152,13 @@ export function parseConfigValues(raw: unknown, spec: PluginConfigSpec): PluginC
   return out;
 }
 
-/** 生效值 = 默认值 + 已保存值（已保存的优先）。渲染与插件实现读的都是它。 */
+/** 生效值 = 默认值 + 已保存值（已保存的优先）。渲染与插件实现读的都是它。
+ *
+ * W9202：这里**复用 parseConfigValues**（而不是再写一遍同样的循环）——
+ * 那正是「读路径归一化」的唯一实现。此前两者并存且只有本函数被调用，
+ * parseConfigValues 成了无人调用的死代码（改它不会影响任何行为）。 */
 export function effectiveConfig(spec: PluginConfigSpec, saved: PluginConfigValues | undefined): PluginConfigValues {
-  const out = configDefaults(spec);
-  if (saved === undefined) return out;
-  for (const item of spec.items) {
-    const value = saved[item.key];
-    if (typeof value === 'string' && value !== '') out[item.key] = normalizeItem(item, value);
-  }
-  return out;
+  return { ...configDefaults(spec), ...parseConfigValues(saved, spec) };
 }
 
 /** 从值表读数字（缺失/非有限 ⇒ fallback）。插件实现用。 */

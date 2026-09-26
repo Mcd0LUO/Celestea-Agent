@@ -178,7 +178,18 @@ function renderForm(cfg: ConfigInfo, statusWindow: number | null, container: HTM
       const retries = parseNum(maxRetriesCtl, t('settings.field.maxRetries'));
       if (retries !== null && retries !== cfg.max_retries) patch.max_retries = retries;
     }
-    patch.system_prompt = sysCtl.value;
+    // W9202：system_prompt 与 max_retries 同一口径 —— **只在用户真的改过时才带**。
+    //
+    // 为什么必须这样：GET /api/config 的 system_prompt 是**动态组装结果**
+    // （handlers/config-shape.ts 的 assembleSystemPromptFor：提示词注册表 + 会话 mode +
+    // workspace + 工具清单 + 部署变量），不是用户覆盖值。而 POST 的**非空** system_prompt
+    // 会被后端当成内存覆盖值（settings.setSystemPromptOverride），此后 config-shape.ts
+    // 的 `override !== null` 短路返回让整个注册表失效：再改提示词模板 / 切 mode /
+    // 换 workspace 都不影响发给模型的提示词，界面上却**没有**任何「已覆盖」提示。
+    // 表单初值正是那段组装文本，所以无条件回传 = 点一次「保存」（哪怕只想改模型）
+    // 就把那一刻的组装结果钉死。
+    // 改过才带：与紧邻的 max_retries 完全同构；清空 ⇒ 发 ''，后端据此清除覆盖。
+    if (sysCtl.value !== (cfg.system_prompt ?? '')) patch.system_prompt = sysCtl.value;
 
     saveBtn.disabled = true;
     saveBtn.textContent = t('settings.config.saving');

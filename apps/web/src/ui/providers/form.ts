@@ -148,9 +148,17 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
     addModelRow(e, m.id, m.name);
     const r = e.rows[e.rows.length - 1]!;
     // W258 任务 3 / W9107：已有模型的 reasoning_efforts 映射到对应档位片。
-    // **不写 ?? []** —— 缺省（undefined）与显式空数组是两件事：
-    //   · undefined（providers.json 里没有这个键 / 老数据）= 未配置 ⇒ 乐观默认三片全选；
-    //   · [] = 用户显式声明「该模型不支持推理」⇒ 一片不留（后端 isReasoningCapable 的真实语义）。
+    //
+    // W9202 更正：这里**没有**「undefined = 未配置 ⇒ 乐观默认三片全选」这一态。
+    //   · 后端 store/providers.ts 的 `ProviderModel.reasoning_efforts` 是**必填** `string[]`，
+    //     `parseModel` 对 providers.json 里**缺失**该键的行归一成 `[]`；
+    //     public view 的 `view()` 又写死 `[...m.reasoning_efforts]` ⇒ 前端拿到的**永远是数组**。
+    //   · 于是 `[]` 只有一个语义：该模型不支持推理（handlers/config.ts 的
+    //     `isReasoningCapable` 判 `length > 0`）。旧注释描述的是 API 不存在的状态，
+    //     曾把测试引向真实接口永不返回的形状（见 tests/w9202-provider-effort-defaults.test.ts）。
+    //   · 新建模型行的三片来自 modelrow.ts 的 addModelRow（它直接 addChip 三档），
+    //     与「回填」是两条独立路径 —— 不是同一个默认值。
+    // 想恢复「缺省 = 三片全选」必须改后端契约（保留 absent），见 results/W9202-修复.md。
     r.efforts.set(m.reasoning_efforts);
     // W1536：能力位回填。undefined（providers.json 里没有这个键）= 乐观默认态，
     // 组件会显示默认勾选并打上 is-default 标记；显式数组 = 用户配置态。
@@ -197,7 +205,12 @@ export function buildProviderForm(p: ProviderInfo | null, hooks: FormHooks): Edi
   let fetchSeq = 0;
   fetchBtn.addEventListener('click', () => {
     const seq = ++fetchSeq;
-    const id = name.value.trim();
+    // W9202：必须用**身份**（originalId），不能用显示名。name 字段装的是 p.name，
+    // 而后端 `POST /api/providers/{id}/models/fetch` 用路径参数去 store.find(id)
+    // （handlers/providers.ts）。name 与 id 不同的 provider（schema 明说 name 只是
+    // display name）此前会先保存成功、紧接着 404 unknown provider。
+    // 与 buildPayload 的身份口径（e.originalId ?? name）保持一致。
+    const id = e.originalId ?? name.value.trim();
     if (!id) {
       status.className = 'prov-editor-status err';
       status.textContent = t('settings.providers.needId');

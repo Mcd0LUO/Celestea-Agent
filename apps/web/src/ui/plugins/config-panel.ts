@@ -79,11 +79,19 @@ function buildControl(item: PluginConfigItem, values: PluginConfigValues, onChan
   return input;
 }
 
+/** 面板实例序号：让控件 id 在**整页范围内**唯一。
+ *
+ * W9202：此前 id 只由 `item.key` 组成（`plugcfg-<key>`）。而 key 的契约只保证
+ * 「**同一插件内**唯一」（plugins/config.ts 的 PluginConfigBase.key），于是两个插件
+ * 声明同名 key 时页面会出现两个同 id 的控件，两个 label 的 htmlFor 都指向第一个 ——
+ * 点 B 的标签会去动 A 的控件。加上面板序号即可，无需调用方传插件 id。 */
+let panelSeq = 0;
+
 /** 一个配置项行：标签 + 控件（+ 可选说明）。 */
-function buildItem(item: PluginConfigItem, values: PluginConfigValues, onChange: ConfigChange): HTMLElement {
+function buildItem(item: PluginConfigItem, values: PluginConfigValues, onChange: ConfigChange, prefix: string): HTMLElement {
   const row = el('div', 'plug-cfg-item');
   const control = buildControl(item, values, onChange);
-  const id = 'plugcfg-' + item.key;
+  const id = prefix + item.key;
   control.id = id;
   const label = el('label', 'plug-cfg-label', t(item.labelKey)) as HTMLLabelElement;
   label.htmlFor = id;
@@ -103,7 +111,15 @@ export function renderConfigSpec(spec: PluginConfigSpec | undefined, values: Plu
     box.appendChild(el('div', 'plug-cfg-empty', t('settings.plugins.noConfig')));
     return box;
   }
-  for (const item of spec.items) box.appendChild(buildItem(item, values, onChange));
+  // W9202：每个面板一个前缀（见 panelSeq 的说明）；同一面板内重复 key 由
+  // spec.items 的契约排除，这里再加一层防御：同 key 只建第一个控件。
+  const prefix = 'plugcfg-' + String(++panelSeq) + '-';
+  const seen = new Set<string>();
+  for (const item of spec.items) {
+    if (seen.has(item.key)) continue;
+    seen.add(item.key);
+    box.appendChild(buildItem(item, values, onChange, prefix));
+  }
   return box;
 }
 
