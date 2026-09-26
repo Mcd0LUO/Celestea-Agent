@@ -8,9 +8,10 @@
  * the same model-visible history and the same turn counter.
  *
  * Failure model: the log stays usable if a disk write fails — the event remains
- * in the in-memory view (derive_messages keeps working), the failure is counted
- * ([writeErrorCount]) and warned on stderr. Only open/replay/sync surface
- * errors to the caller.
+ * in the in-memory mirror, which IS what `events()` / `deriveMessages()` serve
+ * (see [events]), so the model-visible history keeps the row even though the
+ * file does not; the failure is counted ([writeErrorCount]) and warned on
+ * stderr. Only open/replay/sync surface errors to the caller.
  *
  * Deviation from the legacy implementation (documented, safe direction): it buffers
  * through a `BufWriter`, so `flushEachAppend=false` batches records and a crash can lose
@@ -24,8 +25,9 @@
  * BEFORE the write — the semantics of the usage-ledger precedent,
  * `UsageLedgerFile.rotateIfLarge` — and the descriptor is reopened on the
  * fresh current file immediately, so every rolled segment stays a complete
- * prefix and `events()` / `deriveMessages()` / `open()` keep projecting the
- * same history as a never-rotated log.
+ * prefix and `open()` replays exactly the stream a never-rotated log would
+ * hold. A roll never touches the in-memory mirror, so the live `events()` /
+ * `deriveMessages()` views keep projecting that same history (see [events]).
  */
 
 import { appendFileSync, closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, statSync, truncateSync, writeSync } from "node:fs";
@@ -78,6 +80,12 @@ export class PersistentSessionLog implements SessionLog {
   /** The torn tail found on open (null when the file replayed clean). */
   readonly tornTail: TornRecord | null;
 
+  /**
+   * The recorded events, in stream order — the in-memory MIRROR of the logical
+   * log, and the source of truth [events] / [deriveMessages] serve. Seeded by
+   * the replay in [open] and appended to by every [append] (including one whose
+   * disk write failed), so a read never touches the filesystem.
+   */
   private recorded: SessionEvent[] = [];
   private turnCounter = 0;
   private fd: number | null = null;
@@ -129,18 +137,30 @@ export class PersistentSessionLog implements SessionLog {
         `[celestea-session] append not persisted to ${this.path} (writeErrorCount=${this.writeErrors}); kept in memory only: ${String(e)}\n`,
       );
     }
-    // The in-memory view is the source of truth for derive_messages: keep the
-    // event even when the disk path failed (graceful degradation).
+    // The in-memory mirror is the source of truth for events()/deriveMessages()
+    // (see [events]): keep the event even when the disk path failed, otherwise a
+    // failed write would silently drop the row from the model history.
     this.recorded.push(event);
   }
 
   /**
-   * Every event on disk, in stream order: the rolled segment first, then the
-   * current file — the same sequence a never-rotated log would hold, because a
-   * roll is a whole-file rename at a record boundary.
+   * Every recorded event, in stream order — served from the in-memory mirror
+   * ([recorded]), never by re-reading the segments.
+   *
+   * WHY memory and not disk (W9207): this accessor sits on the per-model-step
+   * path (`AgentLoop.buildRequest` -> `deriveMessages`, and the usage ledger's
+   * `beginStep`), so an O(file) replay here made EVERY step pay a full
+   * read + JSON.parse of the whole conversation plus every rolled segment —
+   * measured 45 ms at 6.77 MB (~664 ms extrapolated at 100 MB), i.e. ~0.9 s of
+   * synchronous main-thread work per 20-step turn. The mirror is seeded by the
+   * replay in [open] and kept current by [append], so it is exactly the stream
+   * a fresh replay would produce, at O(1) per read.
+   *
+   * A COPY is returned (the seam contract: "a copy of the recorded events"), so
+   * a caller can never mutate the log by mutating the result.
    */
   events(): SessionEvent[] {
-    return replaySegments(segmentPathsFor(this.path)).events;
+    return [...this.recorded];
   }
 
   deriveMessages(): Message[] {
