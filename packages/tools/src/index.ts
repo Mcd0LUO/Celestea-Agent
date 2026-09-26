@@ -98,6 +98,7 @@ export { fnTool } from "./fn-tool.js";
 
 // --- guard: path whitelist ----------------------------------------------------
 export {
+  ALL_PATHS_ROOT,
   ENV_TOOL_GUARD,
   ENV_TOOL_ROOTS,
   ENV_TOOL_WORKDIR,

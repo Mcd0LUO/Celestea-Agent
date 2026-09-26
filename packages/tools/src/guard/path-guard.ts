@@ -123,6 +123,33 @@ export function parseToolRoots(value: string | undefined, platform: string = pro
     .filter((entry) => entry !== "");
 }
 
+/**
+ * W9110 — the ALL-PATHS sentinel root: the one canonical name of "every path on
+ * this host".
+ *
+ * "All paths" is a CAPABILITY, not a path. `"/"` is its canonical name because
+ * on POSIX it *is* the single filesystem root, and on Windows no real path ever
+ * canonicalizes to it (`path.win32.resolve("/")` is the current drive root), so
+ * the two readings can never collide: a roots list carrying `"/"` means the
+ * whole host and nothing else.
+ *
+ * Why this beats the alternatives:
+ *   - the SESSION DRIVE root (the W891 shape, `C:\`): Windows has one root per
+ *     volume, so a single drive root silently excluded every other drive — the
+ *     exact P0 this replaces;
+ *   - enumerating `A:\`…`Z:\`: it misses UNC shares and volumes mounted after
+ *     boot, and it keeps disguising a capability as a bounded path list.
+ *
+ * [PathGuardPolicy] consumes it as a capability (checkRead/checkWrite short
+ * circuit); it is NEVER matched as a string prefix.
+ */
+export const ALL_PATHS_ROOT = "/";
+
+/** true when a roots list carries the all-paths sentinel (see [ALL_PATHS_ROOT]). */
+function hasAllPathsRoot(roots: readonly string[]): boolean {
+  return roots.includes(ALL_PATHS_ROOT);
+}
+
 export interface PathGuardPolicyInit {
   workspace: string;
   readRoots?: readonly string[];
@@ -133,6 +160,13 @@ export interface PathGuardPolicyInit {
   writeRoots?: readonly string[];
   /** W9: false = a read-only permission; the workspace is NOT a write root. */
   workspaceWritable?: boolean;
+  /**
+   * W9110: the whole host — every volume, every directory. A first-class
+   * CAPABILITY: checkRead/checkWrite allow any target without consulting the
+   * root lists. Also implied by [ALL_PATHS_ROOT] in either roots list, so a
+   * caller that can only pass roots (the engine's composed grants) still says it.
+   */
+  allPaths?: boolean;
   /** Set when the declared roots were unusable → every path call is denied. */
   failClosedReason?: string | null;
 }
@@ -148,6 +182,8 @@ export interface PathGuardGrants {
   writeRoots?: readonly string[];
   /** W9: the permission baseline's write capability (false = read-only). */
   workspaceWritable?: boolean;
+  /** W9110: the whole host is readable + writable (a capability, not a root). */
+  allPaths?: boolean;
 }
 
 /** Canonical writable workspace + canonical read/write roots (workspace first). */
@@ -156,12 +192,19 @@ export class PathGuardPolicy {
   readonly readRoots: readonly string[];
   /** Workspace first; grants may only append (never remove or demote). */
   readonly writeRoots: readonly string[];
+  /**
+   * W9110: the whole host is readable AND writable — a CAPABILITY, not a root.
+   * Set by the explicit flag or implied by [ALL_PATHS_ROOT] in either list, so
+   * a caller that can only pass roots still expresses it.
+   */
+  readonly allPaths: boolean;
   readonly failClosedReason: string | null;
 
   constructor(init: PathGuardPolicyInit) {
     this.workspace = init.workspace;
     this.readRoots = [init.workspace, ...(init.readRoots ?? [])];
     this.writeRoots = init.workspaceWritable === false ? [...(init.writeRoots ?? [])] : [init.workspace, ...(init.writeRoots ?? [])];
+    this.allPaths = init.allPaths === true || hasAllPathsRoot(this.readRoots) || hasAllPathsRoot(this.writeRoots);
     this.failClosedReason = init.failClosedReason ?? null;
   }
 
@@ -180,8 +223,11 @@ export class PathGuardPolicy {
     const workspace = resolveExistingTarget(workspaceRaw, process.cwd()) ?? resolve(workspaceRaw);
     const grantRead = [...(grants.readRoots ?? [])];
     const writeRoots = [...(grants.writeRoots ?? [])];
+    // W9110: the all-paths capability is forwarded verbatim; it is widen-only
+    // (nothing here can turn it off) and independent of the env roots below.
+    const allPaths = grants.allPaths === true;
     const raw = envString(env, ENV_TOOL_ROOTS);
-    if (raw === undefined) return new PathGuardPolicy({ workspace, readRoots: grantRead, writeRoots, workspaceWritable: grants.workspaceWritable });
+    if (raw === undefined) return new PathGuardPolicy({ workspace, readRoots: grantRead, writeRoots, workspaceWritable: grants.workspaceWritable, allPaths });
     const entries = parseToolRoots(raw);
     if (entries.length === 0) {
       return new PathGuardPolicy({
@@ -189,6 +235,7 @@ export class PathGuardPolicy {
         readRoots: grantRead,
         writeRoots,
         workspaceWritable: grants.workspaceWritable,
+        allPaths,
         failClosedReason: `${ENV_TOOL_ROOTS} is set but lists no directory`,
       });
     }
@@ -200,13 +247,17 @@ export class PathGuardPolicy {
       else if (!isDirectory(canonical)) failClosedReason ??= `${ENV_TOOL_ROOTS} entry '${entry}' is not a directory`;
       else readRoots.push(canonical);
     }
-    return new PathGuardPolicy({ workspace, readRoots: [...readRoots, ...grantRead], writeRoots, failClosedReason });
+    return new PathGuardPolicy({ workspace, readRoots: [...readRoots, ...grantRead], writeRoots, allPaths, failClosedReason });
   }
 
   /** read/list: the canonical target must resolve inside a read root. */
   checkRead(target: string): ToolDecision {
     const blocked = this.failClosed();
     if (blocked !== null) return blocked;
+    // W9110: "all paths" means exactly that — there is no containment test to
+    // run. Fail-closed still wins above, so a broken CELESTEA_TOOL_ROOTS denies
+    // every path even under allPaths.
+    if (this.allPaths) return ALLOW;
     const canonical = resolveExistingTarget(target, this.workspace);
     if (canonical === null) return ALLOW;
     if (this.readRoots.some((root) => isInside(canonical, root))) return ALLOW;
@@ -225,6 +276,8 @@ export class PathGuardPolicy {
   checkWrite(target: string): ToolDecision {
     const blocked = this.failClosed();
     if (blocked !== null) return blocked;
+    // W9110: see checkRead — the capability short circuits, fail-closed does not.
+    if (this.allPaths) return ALLOW;
     const canonical = resolveWriteTarget(target, this.workspace);
     if (canonical === null) return ALLOW;
     if (this.writeRoots.some((root) => isInside(canonical, root))) return ALLOW;

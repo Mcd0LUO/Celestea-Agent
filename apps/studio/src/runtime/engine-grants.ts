@@ -26,7 +26,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute } from "node:path";
-import { httpOptions, isInside, parseIpRange, parseToolRoots, pathApi } from "@celestea/tools";
+import { ALL_PATHS_ROOT, httpOptions, isInside, parseIpRange, parseToolRoots, pathApi } from "@celestea/tools";
 /**
  * W747: `sessionIdOfDir` moved to the engine (`@celestea/runtime`, host layer
  * `host/engine-session.ts`) — the `<workspace>/<session>` id space is what that
@@ -138,7 +138,7 @@ export function effectiveGrantsOf(
   // fail-closed (nothing readable) rather than falling back to path inference.
   const sessionTools = sessionDir === null || sessionId === null ? { disabled: [], warnings: [] } : readSessionTools(sessionDir, sessionId);
   const base = collectGrants(sessionDir, sessionId, env, now);
-  const merged = intersectGrants(base.grants, permission, env, sessionTools.disabled, filesystemRoot(sessionDir));
+  const merged = intersectGrants(base.grants, permission, env, sessionTools.disabled);
   return { grants: merged.grants, warnings: [...permission.warnings, ...sessionTools.warnings, ...base.warnings, ...merged.warnings] };
 }
 
@@ -154,29 +154,25 @@ function collectGrants(sessionDir: string | null, sessionId: string | null, env:
 }
 
 /**
- * W891: the filesystem root AS THIS HOST SPELLS IT.
+ * W9110: the VOLUME root of `path` as `platform` spells it (`"/"` on POSIX, `"C:\\"`
+ * on Windows). `path` must already be absolute + canonical.
  *
- * `allPaths` used to be the literal `"/"`, which the guard's segment-aware
- * `isInside()` can never match against a Windows path: on win32 the separator is
- * `"\\"`, so the prefix becomes `"/\\"` and `C:\\Users\\…` does not start with it.
- * The default `full-access` preset therefore denied EVERYTHING outside the
- * workspace on Windows — the exact opposite of its meaning.
+ * This is the ONE definition of "a path that is a whole volume rather than a
+ * directory inside one", and it has exactly ONE consumer: the §4.3.3 grant rule
+ * (`rejectRoot`) that refuses a `read_roots`/`write_roots` entry which is a
+ * volume root. It is deliberately NOT how `allPaths` is expressed any more:
  *
- * Derived from the session directory (an absolute path on the real host) via the
- * platform path API, so POSIX still yields `"/"` byte-for-byte and Windows yields
- * the drive root (`C:\\`). No session directory (nothing to derive from) keeps the
- * POSIX literal: that path is the pre-existing behaviour for callers that pass no
- * directory at all, and it is the conservative side (a root that matches nothing).
+ *   - W891 expressed `allPaths` as `filesystemRoot(sessionDir)`, i.e. the drive
+ *     the SESSION happened to live on. Windows has one root per volume, so a
+ *     session under `C:\\` silently denied every other drive — the reported P0;
+ *   - W9110 expresses it as the [ALL_PATHS_ROOT] CAPABILITY, which has no drive
+ *     to get wrong. The two readings can no longer contradict each other because
+ *     only one of them still exists.
  *
  * `platform` is injectable so the win32 branch is unit-testable on Linux.
  */
-export function filesystemRoot(sessionDir: string | null, platform: string = process.platform): string {
-  const api = pathApi(platform);
-  // isAbsolute MUST come from the same platform as parse(): the host's
-  // isAbsolute() rejects "C:\\..." on Linux, which would silently fall back to
-  // the POSIX literal in exactly the win32 case this function exists to fix.
-  if (sessionDir === null || !api.isAbsolute(sessionDir)) return "/";
-  return api.parse(sessionDir).root;
+export function volumeRootOf(path: string, platform: string = process.platform): string {
+  return pathApi(platform).parse(path).root;
 }
 
 /**
@@ -190,13 +186,24 @@ function intersectGrants(
   permission: PermissionBaseline,
   env: NodeJS.ProcessEnv,
   sessionDisabled: readonly string[] = [],
-  root: string = "/",
 ): { grants: EffectiveGrants; warnings: string[] } {
   const warnings: string[] = [];
   /**
-   * W864: an `allPaths` baseline replaces BOTH root lists with the filesystem
-   * root. Both sides are required: `writeRoots` alone would leave the path
-   * guard denying `read_file`/`list_dir`, and bwrap without the rw bind.
+   * W864/W9110: an `allPaths` baseline replaces BOTH root lists with
+   * [ALL_PATHS_ROOT] — the SENTINEL NAME of the all-paths capability, not a
+   * path to contain against. Both sides carry it because both are serialized to
+   * consumers that only speak roots: the path guard turns the sentinel into the
+   * capability (it never prefix-matches it), and bwrap's POSIX argv already maps
+   * a `"/"` write root onto `--bind / /` (W864).
+   *
+   * Why a sentinel at all, rather than a boolean on this interface: `allPaths`
+   * must reach the guard through the composed grants, and the guard is the
+   * security enforcement point, so the capability is defined THERE (explicit
+   * `allPaths` input on `PathGuardPolicy`) and this list is only its canonical
+   * spelling. On Windows the old spelling — the session drive root — could only
+   * ever name one volume; `"/"` names every one of them, and no real Windows
+   * path can ever canonicalize to it (`path.win32.resolve("/")` is a drive root).
+   *
    * Scoping note: this is the ONLY cap `allPaths` moves — network, net_hosts,
    * tool_extra, unsandboxed and the W860 toolDeny union keep their own rules.
    */
@@ -206,8 +213,8 @@ function intersectGrants(
   return {
     grants: {
       network: permission.network,
-      readRoots: allPaths ? [root] : grants.readRoots,
-      writeRoots: allPaths ? [root] : writesAllowed ? [...new Set([...permission.writeRoots, ...grants.writeRoots])] : [],
+      readRoots: allPaths ? [ALL_PATHS_ROOT] : grants.readRoots,
+      writeRoots: allPaths ? [ALL_PATHS_ROOT] : writesAllowed ? [...new Set([...permission.writeRoots, ...grants.writeRoots])] : [],
       netHosts: grants.netHosts,
       toolExtra: grants.toolExtra,
       unsandboxed: (permission.unsandboxed || grants.unsandboxed) && unsandboxedAvailable(env),
@@ -329,10 +336,12 @@ function rejectRoot(entry: string, ctx: Ctx, grant: GrantRecord): string | null 
   const resolved = canonicalPath(entry);
   if (resolved === null) return `root '${show(entry, ctx)}' does not exist`;
   if (!isDirectory(resolved)) return `root '${show(entry, ctx)}' is not a directory`;
-  // W892: the filesystem root AS THIS HOST SPELLS IT. The literal "/" was
-  // POSIX-only: on Windows canonicalPath("/") is the current drive root (D:\),
-  // so a grant for the WHOLE filesystem slipped through the §4.3.2/§4.3.3 rule.
-  if (resolved === filesystemRoot(resolved)) return `root '${show(entry, ctx)}' is the filesystem root`;
+  // W9110: the ONE remaining "is this entry a whole volume?" test (W892's rule,
+  // now named for what it actually decides). A volume root is refused as a
+  // GRANT root because it is not a directory anyone can reason about — the
+  // all-paths capability is granted through the permission baseline, never
+  // through a grant entry.
+  if (resolved === volumeRootOf(resolved)) return `root '${show(entry, ctx)}' is the filesystem root`;
   const dataDir = canonicalPath(dirname(loadStudioConfig({ env: ctx.env }).paths.workspacesFile));
   if (dataDir !== null && (isInside(dataDir, resolved) || dataDir === resolved)) return "root covers the studio data directory";
   const home = canonicalPath(ctx.env["HOME"] ?? homedir());

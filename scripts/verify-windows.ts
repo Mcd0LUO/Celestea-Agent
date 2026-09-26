@@ -8,7 +8,8 @@
  * `pnpm check` 的 windows 任务能覆盖类型/lint/单测，但覆盖不了这些**真实 OS 行为**：
  *   1. 真实进程树回收（taskkill /T 到底收没收掉孙子进程）——单测只能证明「判定逻辑」，
  *      证明不了 taskkill 在真机上有效；
- *   2. allPaths「全权限」在工作区外真的可读写（这是 W891 报的 P0，我在 Linux 上只能推理）；
+ *   2. allPaths「全权限」在工作区外、且在**另一个卷**上真的可读写（W891 报的 P0；
+ *      W9110 修掉「只开 session 所在盘」——本机 C: + D: 两个可写卷，真跑）；
  *   3. 本机 Playwright 浏览器缓存真的能被找到（`.exe` 后缀 + 逐 OS 根目录）；
  *   4. 生产解释器解析（带空格的 `C:\\Program Files\\...` 路径）。
  *
@@ -21,6 +22,7 @@ import { join, parse } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renameWithRetry } from "@celestea/core";
 import {
+  ALL_PATHS_ROOT,
   PathGuardPolicy,
   findHeadlessShell,
   playwrightCacheRoot,
@@ -32,6 +34,8 @@ import {
 type Verdict = "PASS" | "FAIL" | "SKIP";
 interface Row { name: string; verdict: Verdict; detail: string }
 const rows: Row[] = [];
+/** Throwaway probe dirs minted on other volumes (reclaimed in `main`). */
+const volumes: string[] = [];
 
 function record(name: string, verdict: Verdict, detail: string): void {
   rows.push({ name, verdict, detail });
@@ -175,24 +179,83 @@ async function checkTreeKill(dir: string): Promise<void> {
   }
 }
 
-/** allPaths must open the WHOLE filesystem, not just the workspace (the W891 P0). */
+/** A throwaway dir directly on `root`; null when that volume is not writable. */
+function probeVolume(root: string): string | null {
+  try {
+    const dir = mkdtempSync(join(root, "w9110-vol-"));
+    volumes.push(dir);
+    return dir;
+  } catch {
+    return null;
+  }
+}
+
+/** Every OTHER writable volume on this host (win32: real drive letters). */
+function otherVolumes(): string[] {
+  const hostRoot = parse(tmpdir()).root;
+  const found: string[] = [];
+  if (process.platform === "win32") {
+    for (const letter of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+      const root = letter + ":\\";
+      if (root.toLowerCase() === hostRoot.toLowerCase()) continue;
+      const dir = probeVolume(root);
+      if (dir !== null) found.push(dir);
+    }
+  } else {
+    for (const mount of ["/mnt", "/media", "/Volumes"]) {
+      if (existsSync(mount) && parse(mount).root !== hostRoot) found.push(mount);
+    }
+  }
+  return found;
+}
+
+/**
+ * allPaths must open the WHOLE host — every volume — not just the workspace or
+ * the session's own drive (W891 reported the P0, W9110 is the real fix).
+ *
+ * The regression proof is the W891 shape itself: the session's DRIVE root. On a
+ * single-volume host that shape happens to be correct, so the proof is a visible
+ * SKIP there rather than a vacuous pass.
+ */
 function checkAllPaths(wsDir: string, outsideDir: string): void {
   const outsideFile = join(outsideDir, "secret.txt");
   writeFileSync(outsideFile, "outside\n");
-  const hostRoot = parse(wsDir).root;
-  const wide = new PathGuardPolicy({ workspace: wsDir, readRoots: [hostRoot], writeRoots: [hostRoot], workspaceWritable: false });
+  const wide = new PathGuardPolicy({ workspace: wsDir, allPaths: true, workspaceWritable: false });
   const allowed = wide.checkRead(outsideFile).kind === "allow" && wide.checkWrite(join(outsideDir, "made.txt")).kind === "allow";
-  record("allPaths host root", allowed ? "PASS" : "FAIL", "root=" + JSON.stringify(hostRoot) + " read=" + wide.checkRead(outsideFile).kind);
-  // The OLD hardcoded literal must be shown to be broken ON WINDOWS. On POSIX it
-  // is the correct root, so this proof is win32-only (and says so rather than
-  // pretending to have checked something).
-  if (process.platform !== "win32") {
-    record("allPaths regression proof", "SKIP", "only meaningful on win32 (on POSIX \"/\" IS the host root)");
+  record("allPaths capability", allowed ? "PASS" : "FAIL", "sentinel=" + JSON.stringify(ALL_PATHS_ROOT) + " read=" + wide.checkRead(outsideFile).kind);
+  // The exact composition the engine emits (both lists carry the sentinel).
+  const composed = new PathGuardPolicy({ workspace: wsDir, readRoots: [ALL_PATHS_ROOT], writeRoots: [ALL_PATHS_ROOT], workspaceWritable: false });
+  const composedOk = composed.allPaths && composed.checkRead(outsideFile).kind === "allow";
+  record("allPaths via composed roots", composedOk ? "PASS" : "FAIL", "readRoots=" + JSON.stringify(composed.readRoots));
+  // The restricted baseline must still refuse — otherwise the two checks above
+  // could pass because everything passes.
+  const restricted = new PathGuardPolicy({ workspace: wsDir, workspaceWritable: true });
+  const denied = restricted.checkRead(outsideFile).kind === "deny" && restricted.checkWrite(join(outsideDir, "ro.txt")).kind === "deny";
+  record("write-read baseline still denies", denied ? "PASS" : "FAIL", "allPaths=" + String(restricted.allPaths));
+  // W9110 regression proof: the session's drive root is a BOUNDED root.
+  const others = otherVolumes();
+  if (others.length === 0) {
+    record("allPaths cross-volume regression proof", "SKIP", "single writable volume on this host: the old shape cannot be shown to fail");
     return;
   }
-  const buggy = new PathGuardPolicy({ workspace: wsDir, readRoots: ["/"], writeRoots: ["/"], workspaceWritable: false });
-  const buggyDenies = buggy.checkRead(outsideFile).kind === "deny";
-  record("allPaths regression proof", buggyDenies ? "PASS" : "FAIL", "the POSIX literal \"/\" must NOT match a Windows path (deny=" + String(buggyDenies) + ")");
+  const hostRoot = parse(wsDir).root;
+  const bounded = new PathGuardPolicy({ workspace: wsDir, readRoots: [hostRoot], writeRoots: [hostRoot], workspaceWritable: false });
+  const fails = others.filter((dir) => {
+    const target = join(dir, "w9110-cross.txt");
+    writeFileSync(target, "cross\n");
+    return bounded.checkRead(target).kind === "deny";
+  });
+  record(
+    "allPaths cross-volume regression proof",
+    fails.length === others.length ? "PASS" : "FAIL",
+    "drive root " + JSON.stringify(hostRoot) + " cannot reach " + String(fails.length) + "/" + String(others.length) + " other volume(s)",
+  );
+  const cross = others.filter((dir) => wide.checkRead(join(dir, "w9110-cross.txt")).kind === "allow");
+  record(
+    "allPaths reaches every volume",
+    cross.length === others.length ? "PASS" : "FAIL",
+    String(cross.length) + "/" + String(others.length) + " other volume(s) readable under allPaths",
+  );
 }
 
 /** A real atomic write must still move the file on Windows. */
@@ -231,7 +294,7 @@ async function main(): Promise<void> {
     checkAllPaths(wsDir, outsideDir);
     checkRename(dir);
   } finally {
-    for (const d of [dir, wsDir, outsideDir]) rmSync(d, { recursive: true, force: true });
+    for (const d of [dir, wsDir, outsideDir, ...volumes.splice(0)]) rmSync(d, { recursive: true, force: true });
   }
   const failed = rows.filter((r) => r.verdict === "FAIL");
   const skipped = rows.filter((r) => r.verdict === "SKIP");

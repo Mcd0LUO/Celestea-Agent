@@ -61,3 +61,29 @@ packages/core/contracts/
 # 本机事实（机器相关：路径/账号/凭据位置/端口）。模板入库，真身绝不入库。
 #   AGENT.md 是提交进仓库的协作规范，必须与机器无关；本机差异写在 AGENT.local.md。
 docs/AGENT.local.md
+
+# ---- Studio 数据目录的**根上**落点（W9107 复核时发现的仓卫生缺口） ----------------
+# loadStudioConfig() 的默认值是 resolve(cwd, "<name>")（apps/studio/src/config.ts:111-113）：
+# 没设 CELESTEA_HOME / CELESTEA_*_FILE 时，从**仓库根**起实例就会把数据文件写在仓库根。
+# 实测（2026-09-26）：跑过源码实例之后，根上留下了 recovery-audit.jsonl —— 而
+# workspaces.json / providers.json / prompts.json / worker-registry.tsv /
+# grants-audit.jsonl / display-plugins.json / studio-auth.secret 同样会落在那里，
+# 且**当时全部未被忽略**。其中 providers.json 含 API Key、studio-auth.secret 是登录
+# cookie 的 HMAC 密钥 —— 一次 `git add -A` 就会把凭据提交进**公开仓**（AGENT.md §3.5
+# 「任何凭据」）。这些文件按设计属于 $CELESTEA_HOME，本就不该出现在工作树里。
+#
+# 为什么用**根锚定**（前导 /）而不是裸文件名：fixtures/live/ 下有**故意入库**的
+# workspaces.json / providers.json / prompts.json 合成夹具，裸名字会把它们一并挡掉。
+# 锚定后只忽略仓库根那一份，夹具与子目录不受影响（gitignore 对已跟踪文件本就不生效，
+# 这里只是为了不再让**新**的根上产物溜进提交）。
+/workspaces.json
+/providers.json
+/prompts.json
+/recovery-audit.jsonl
+/worker-registry.tsv
+/grants-audit.jsonl
+/display-plugins.json
+/studio-auth.secret
+# W9113 收口补漏：usage-ledger.jsonl 同样由 <data dir> 决定（CELESTEA_USAGE_LEDGER_FILE），
+# 从仓库根起实例时也会落在根上。它含逐轮的 token/成本明细，与上面几个同一类产物。
+/usage-ledger.jsonl

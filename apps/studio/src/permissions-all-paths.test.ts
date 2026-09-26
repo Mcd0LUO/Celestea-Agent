@@ -1,27 +1,33 @@
 /**
- * W864: `allPaths` — the full-access baseline opens the whole filesystem.
+ * W864/W9110: `allPaths` — the full-access baseline opens the whole filesystem.
  *
  * The product decision (operator ask): the default preset is `full-access`, and
  * full access must mean ALL directories, read AND write. The capability is
  * deliberately PATH-ONLY: network, unsandboxed and the W860 session toolDeny
  * union stay exactly where they were.
  *
- * This file asserts the two layers the design touches end to end:
+ * W9110 (the Windows P0): `allPaths` is a CAPABILITY, not a path. It used to be
+ * expressed as the session directory's volume root, which on Windows could only
+ * ever name ONE drive — a session under `C:\` was blind to `D:\`. The composed
+ * grants now carry the sentinel [ALL_PATHS_ROOT] (`"/"` on every OS) in both root
+ * lists, and the path guard turns that sentinel into the capability.
+ *
+ * This file asserts the layers the design touches end to end:
  *   1. the baseline (store/permissions.ts + runtime/engine-permissions.ts);
- *   2. the composed EffectiveGrants (runtime/engine-grants.ts) — `readRoots` and
- *      `writeRoots` both become ["/"], which is what the path guard
- *      (packages/tools) and the bwrap argv (sandbox) consume.
- * The guard/argv side is asserted in packages/tools (guard.test.ts,
- * sandbox/w9-rw-roots.test.ts).
+ *   2. the composed EffectiveGrants (runtime/engine-grants.ts);
+ *   3. the guard that ENFORCES it, including a real path on ANOTHER volume;
+ *   4. the POSIX bwrap argv, which keeps its byte-identical `--bind / /`.
+ * The guard side is also asserted in packages/tools/guard/all-paths.test.ts and
+ * sandbox/w9-rw-roots.test.ts.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, parse } from "node:path";
+import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { Profile } from "@celestea/runtime";
-import { bwrapOptionsFromEnv, buildBwrapArgv, pathApi, POSIX_SHELL } from "@celestea/tools";
+import { ALL_PATHS_ROOT, bwrapOptionsFromEnv, buildBwrapArgv, PathGuardPolicy, POSIX_SHELL } from "@celestea/tools";
 import { getJson, jsonRequest, makeHarness, type StudioHarness } from "./harness.test-util.js";
-import { effectiveGrantsOf, filesystemRoot } from "./runtime/engine-grants.js";
+import { effectiveGrantsOf, volumeRootOf } from "./runtime/engine-grants.js";
 import { effectivePermissionOf } from "./runtime/engine-permissions.js";
 import { engineTools } from "./runtime/engine-plugins.js";
 import { createOfflineLlm } from "./runtime/offline-llm.js";
@@ -64,6 +70,34 @@ function sessionDir(name: string): string {
   return session;
 }
 
+/**
+ * A throwaway directory on a volume OTHER than the session fixtures' (tmpdir)
+ * volume, or `null` when this host has only one writable volume.
+ *
+ * The win32 branch probes real drive letters (a missing or read-only drive just
+ * fails) — that is the case the report is about, and it is a VISIBLE skip on a
+ * single-volume host rather than a silently vacuous pass.
+ */
+function otherVolumeDir(): string | null {
+  const hostRoot = volumeRootOf(tmpdir());
+  const candidates: string[] = [];
+  if (process.platform === "win32") {
+    for (const letter of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") if ((letter + ":\\").toLowerCase() !== hostRoot.toLowerCase()) candidates.push(letter + ":\\");
+  } else {
+    for (const mount of ["/mnt", "/media", "/Volumes"]) if (existsSync(mount) && volumeRootOf(mount) !== hostRoot) candidates.push(mount);
+  }
+  for (const root of candidates) {
+    try {
+      const dir = mkdtempSync(join(root, "allpaths-vol-"));
+      roots.push(dir);
+      return dir;
+    } catch {
+      // Not writable / not present: try the next volume.
+    }
+  }
+  return null;
+}
+
 function envOf(dataDir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return { CELESTEA_WORKSPACES_FILE: join(dataDir, "workspaces.json"), HOME: process.env["HOME"] ?? homedir(), ...extra };
 }
@@ -79,57 +113,105 @@ function presetBody(over: Record<string, unknown> = {}): Record<string, unknown>
   return { id: "wide-path", label: "wide path", network: false, workspaceWritable: false, toolRootsWritable: false, writeRoots: [], allPaths: false, unsandboxed: false, toolDeny: [], ...over };
 }
 
-describe("W891 filesystemRoot — the allPaths root as the host spells it", () => {
-  it("POSIX yields '/' for any absolute path", () => {
-    expect(filesystemRoot("/src/celestea_studio-ts/ws/s1", "linux")).toBe("/");
-    expect(filesystemRoot("/", "linux")).toBe("/");
+describe("W9110 the all-paths CAPABILITY — every volume, one name", () => {
+  it("the sentinel is '/' and it is a capability, not a drive", () => {
+    // "All paths" is a capability whose canonical NAME is "/" — the POSIX root.
+    // Expressing it as a drive root (W891's shape) is what made a C: session
+    // blind to D:; the name now has no drive in it to get wrong.
+    expect(ALL_PATHS_ROOT).toBe("/");
+    const policy = new PathGuardPolicy({ workspace: "/tmp/w9110-ws", allPaths: true, workspaceWritable: false });
+    expect(policy.allPaths).toBe(true);
+    // A path that does not even exist is allowed — nothing is contained against.
+    expect(policy.checkRead("/tmp/w9110-ws/../elsewhere/file.txt")).toEqual({ kind: "allow" });
+    expect(policy.checkWrite("relative/new.txt")).toEqual({ kind: "allow" });
+    // Opt-in only: the default policy is exactly as narrow as before.
+    expect(new PathGuardPolicy({ workspace: "/tmp/w9110-ws" }).allPaths).toBe(false);
   });
 
-  it("win32 yields the DRIVE root, not the POSIX literal", () => {
-    // The bug this replaces: allPaths used "/", and the guard's segment-aware
-    // isInside() then never matched "C:\…" (its prefix became "/\"), so the
-    // default full-access preset denied everything outside the workspace.
-    expect(filesystemRoot("C:\\Users\\me\\proj\\ws\\s1", "win32")).toBe("C:\\");
-    expect(filesystemRoot("D:\\data\\ws\\s1", "win32")).toBe("D:\\");
+  it("the sentinel root in the composed lists sets the capability (win32 included)", () => {
+    // The engine's composed grants carry the sentinel in BOTH lists; the guard
+    // must read that as the capability rather than as a string prefix — a
+    // prefix match on "/" would never contain "C:\\…".
+    const viaRoots = new PathGuardPolicy({ workspace: "C:\\ws\\s1", readRoots: [ALL_PATHS_ROOT], writeRoots: [ALL_PATHS_ROOT], workspaceWritable: false });
+    expect(viaRoots.allPaths).toBe(true);
+    expect(viaRoots.checkRead("D:\\other\\file.txt")).toEqual({ kind: "allow" });
+    expect(viaRoots.checkWrite("D:\\other\\new.txt")).toEqual({ kind: "allow" });
   });
 
-  it("no / non-absolute session dir keeps the conservative POSIX literal", () => {
-    expect(filesystemRoot(null, "linux")).toBe("/");
-    expect(filesystemRoot("relative/ws/s1", "linux")).toBe("/");
-  });
-
-  it("the win32 root really CONTAINS a path outside the workspace (the invariant that was broken)", () => {
-    // Replicate the guard's own containment rule (packages/tools guard/paths.ts
-    // isInside) with the WIN32 separator — the guard uses the HOST separator, so
-    // only an explicit win32 run of the same rule can prove the win32 case here.
-    const sep = "\\";
-    const inside = (child: string, root: string): boolean => {
-      if (child === root) return true;
-      const prefix = root.endsWith(sep) ? root : root + sep;
-      return child.startsWith(prefix);
-    };
-    const root = filesystemRoot("C:\\Users\\me\\proj\\ws\\s1", "win32");
-    const outside = "C:\\Users\\me\\other\\file.txt";
-    expect(inside(outside, root), "the derived root must contain a path outside the workspace").toBe(true);
-    // The POSIX literal really does NOT contain it — that WAS the bug.
-    expect(inside(outside, "/"), "the old hardcoded '/' could never match a C:\\ path").toBe(false);
+  it("volumeRootOf names a VOLUME, and no longer feeds allPaths", () => {
+    // The single remaining "is this a whole volume?" definition (the §4.3.3
+    // grant rule). POSIX spells it "/", win32 spells it per drive — which is
+    // exactly why it cannot be the allPaths expression.
+    expect(volumeRootOf("/src/celestea_studio-ts/ws/s1", "linux")).toBe("/");
+    expect(volumeRootOf("C:\\Users\\me\\proj\\ws\\s1", "win32")).toBe("C:\\");
+    expect(volumeRootOf("D:\\data\\ws\\s1", "win32")).toBe("D:\\");
+    // The two drive roots are DIFFERENT strings — one string root can never
+    // cover both, which is the whole bug.
+    expect(volumeRootOf("C:\\x\\y", "win32")).not.toBe(volumeRootOf("D:\\x\\y", "win32"));
   });
 });
 
 describe("W864 allPaths — the baseline", () => {
-  it("the default full-access baseline sets allPaths and BOTH effective root lists to the HOST root", () => {
+  it("the default full-access baseline sets allPaths and BOTH effective root lists to the sentinel", () => {
     const dir = sessionDir("default");
     const baseline = effectivePermissionOf(dir, "ws/s1", envOf(dir));
     expect(baseline.preset).toBe("full-access");
     expect(baseline.allPaths).toBe(true);
     const grants = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
-    // W891: the root is the host filesystem root — "/" on POSIX, "C:\\" on Windows.
-    expect(grants.readRoots).toEqual([parse(dir).root]);
-    expect(grants.writeRoots).toEqual([parse(dir).root]);
+    // W9110: the sentinel NAME of the all-paths capability — "/" on every OS,
+    // never the session's drive root (that only ever named one volume).
+    expect(grants.readRoots).toEqual([ALL_PATHS_ROOT]);
+    expect(grants.writeRoots).toEqual([ALL_PATHS_ROOT]);
+    // ...and the guard really reads it as the capability on BOTH root lists.
+    const policy = new PathGuardPolicy({ workspace: dir, readRoots: grants.readRoots, writeRoots: grants.writeRoots, workspaceWritable: grants.workspaceWritable });
+    expect(policy.allPaths).toBe(true);
     // Unchanged caps: only the paths moved.
     expect(grants.network).toBe(true);
     expect(grants.workspaceWritable).toBe(true);
     expect(grants.toolExtra).toEqual([]);
+  });
+
+  it("W9110: the composed allPaths policy allows a path on ANOTHER volume (win32 real machine)", (ctx) => {
+    // The reported P0, asserted end to end: session dir on C:, target on D:.
+    // On a single-volume host this is a VISIBLE skip, never a silent pass.
+    const other = otherVolumeDir();
+    if (other === null) {
+      ctx.skip("this host exposes a single writable volume; the cross-drive case cannot be built here");
+      return;
+    }
+    const dir = sessionDir("cross-drive");
+    const target = join(other, "allpaths-cross-drive.txt");
+    writeFileSync(target, "w9110\n");
+    expect(volumeRootOf(target)).not.toBe(volumeRootOf(dir));
+    const grants = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
+    const policy = new PathGuardPolicy({ workspace: dir, readRoots: grants.readRoots, writeRoots: grants.writeRoots, workspaceWritable: grants.workspaceWritable });
+    expect(policy.checkRead(target)).toEqual({ kind: "allow" });
+    expect(policy.checkWrite(join(other, "allpaths-cross-drive-made.txt"))).toEqual({ kind: "allow" });
+  });
+
+  it("W9110: the restricted baseline (write-read) still denies outside the workspace on every volume", (ctx) => {
+    // Requirement ④ — the control. If this ever goes green, the suite would be
+    // proving "everything is allowed" rather than "the capability is honoured".
+    const dir = sessionDir("restricted");
+    const env = envOf(dir, { CELESTEA_PERMISSION_MAX: "write-read" });
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
+    expect(grants.readRoots).toEqual([]);
+    const policy = new PathGuardPolicy({ workspace: dir, readRoots: grants.readRoots, writeRoots: grants.writeRoots, workspaceWritable: grants.workspaceWritable });
+    expect(policy.allPaths).toBe(false);
+    const outside = mkdtempSync(join(tmpdir(), "allpaths-restricted-"));
+    roots.push(outside);
+    writeFileSync(join(outside, "secret.txt"), "x\n");
+    expect(policy.checkRead(join(outside, "secret.txt")).kind).toBe("deny");
+    expect(policy.checkWrite(join(outside, "made.txt")).kind).toBe("deny");
+    const other = otherVolumeDir();
+    if (other === null) {
+      ctx.skip("single-volume host: the second-volume half of the control cannot be built");
+      return;
+    }
+    const target = join(other, "allpaths-restricted-other.txt");
+    writeFileSync(target, "x\n");
+    expect(policy.checkRead(target).kind).toBe("deny");
+    expect(policy.checkWrite(target).kind).toBe("deny");
   });
 
   it("CELESTEA_PERMISSION_MAX=write-read clamps allPaths away (no '/' anywhere)", () => {
@@ -163,8 +245,8 @@ describe("W864 allPaths — the baseline", () => {
     const baseline = effectivePermissionOf(dir, "ws/s1", env);
     expect(baseline).toMatchObject({ preset: "wide-path", allPaths: true, network: false, unsandboxed: false });
     const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
-    expect(grants.readRoots).toEqual([parse(dir).root]);
-    expect(grants.writeRoots).toEqual([parse(dir).root]); // allPaths opens writes even with workspaceWritable:false
+    expect(grants.readRoots).toEqual([ALL_PATHS_ROOT]);
+    expect(grants.writeRoots).toEqual([ALL_PATHS_ROOT]); // allPaths opens writes even with workspaceWritable:false
     expect(grants.network).toBe(false); // path-only: network is untouched
     expect(grants.network === false && grants.unsandboxed === false).toBe(true);
   });
@@ -173,8 +255,8 @@ describe("W864 allPaths — the baseline", () => {
     const dir = sessionDir("tooldeny");
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ version: 1, session: "ws/s1", disabled: ["write_file", "http_request"] }));
     const grants = effectiveGrantsOf(dir, "ws/s1", envOf(dir), NOW).grants;
-    expect(grants.readRoots).toEqual([parse(dir).root]);
-    expect(grants.writeRoots).toEqual([parse(dir).root]);
+    expect(grants.readRoots).toEqual([ALL_PATHS_ROOT]);
+    expect(grants.writeRoots).toEqual([ALL_PATHS_ROOT]);
     expect(grants.toolDeny).toEqual(["write_file", "http_request"]);
   });
 
@@ -233,9 +315,9 @@ describe("W864 allPaths — the HTTP face", () => {
 });
 
 
-// W891: the root is now the HOST filesystem root (engine-grants.filesystemRoot()),
-// so the behavioural half runs on every OS — the fixture paths below are derived
-// from the host (tmpdir()/parse().root) instead of the POSIX literals.
+// W9110: the capability is named by the sentinel "/" on every OS, so the
+// behavioural half runs everywhere — the fixture paths below are real host paths
+// (tmpdir() + a second volume when the host has one) instead of POSIX literals.
 describe("W864 allPaths — the composed tool face", () => {
   it("read_file/list_dir outside the workspace pass, and a write lands outside it", async () => {
     const dir = sessionDir("face");
@@ -246,7 +328,7 @@ describe("W864 allPaths — the composed tool face", () => {
     writeFileSync(join(outside, "secret.txt"), "w864-outside\n");
     const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir });
     const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
-    expect(grants.readRoots).toEqual([parse(dir).root]);
+    expect(grants.readRoots).toEqual([ALL_PATHS_ROOT]);
     const tools = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants });
 
     const read = await tools.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: join(outside, "secret.txt") } });
@@ -271,7 +353,10 @@ describe("W864 allPaths — the composed tool face", () => {
       workspaceWritable: grants.workspaceWritable,
       writeRoots: grants.writeRoots,
     });
-    expect(opts.writeRoots).toEqual([parse(dir).root]);
+    // W9110: the composed write root is the sentinel "/" — the same byte the
+    // POSIX bwrap argv has always mapped onto `--bind / /`, so the POSIX sandbox
+    // half needs no change (see the report; bwrap is POSIX-only).
+    expect(opts.writeRoots).toEqual([ALL_PATHS_ROOT]);
     const argv = buildBwrapArgv(dir, opts);
     expect(argv.join(" ")).toContain("--bind / /");
     expect(argv).not.toContain("--ro-bind");
@@ -291,6 +376,28 @@ describe("W864 allPaths — the composed tool face", () => {
     expect(String(read.error)).toContain("toolguard: code=path_forbidden");
     const write = await tools.registry.dispatch({ call_id: "w1", name: "write_file", args: { path: join(outside, "made.txt"), content: "w864" } });
     expect(String(write.error)).toContain("toolguard: code=path_forbidden");
+  });
+
+  it("W9110: the composed tool face reaches ANOTHER volume too (the reported P0)", async (ctx) => {
+    // The end-to-end half of the cross-drive proof: real registry, real guard,
+    // real fs tools, target on a volume the session directory is not on.
+    const other = otherVolumeDir();
+    if (other === null) {
+      ctx.skip("this host exposes a single writable volume; the cross-drive case cannot be built here");
+      return;
+    }
+    const dir = sessionDir("face-cross");
+    const env = envOf(dir, { CELESTEA_TOOL_WORKDIR: dir });
+    const grants = effectiveGrantsOf(dir, "ws/s1", env, NOW).grants;
+    const tools = engineTools({ profile, llm: createOfflineLlm(), workers: null, env, grants });
+    const target = join(other, "allpaths-face-cross.txt");
+    writeFileSync(target, "w9110-cross\n");
+    const read = await tools.registry.dispatch({ call_id: "r1", name: "read_file", args: { path: target } });
+    expect(read.error).toBeNull();
+    expect(String(read.value)).toContain("w9110-cross");
+    const write = await tools.registry.dispatch({ call_id: "w1", name: "write_file", args: { path: join(other, "allpaths-face-cross-made.txt"), content: "w9110" } });
+    expect(write.error).toBeNull();
+    expect(readFileSync(join(other, "allpaths-face-cross-made.txt"), "utf8")).toBe("w9110");
   });
 });
 
